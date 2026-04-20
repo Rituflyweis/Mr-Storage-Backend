@@ -33,8 +33,10 @@ app.use(rateLimit({
 app.get('/health', (req, res) => res.json({ status: 'ok', env: NODE_ENV }))
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth',   require('./src/routes/auth.routes'))
-app.use('/api/public', require('./src/routes/public.routes'))
+app.use('/api/auth',          require('./src/routes/auth.routes'))
+app.use('/api/auth/customer', require('./src/routes/customerAuth.routes'))
+app.use('/api/customer',      require('./src/routes/customerPortal.routes'))
+app.use('/api/public',        require('./src/routes/public.routes'))
 app.use('/api/admin',  require('./src/routes/admin/index'))
 app.use('/api/sales',  require('./src/routes/sales/index'))
 app.use('/api',        require('./src/routes/common/index'))
