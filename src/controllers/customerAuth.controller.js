@@ -23,11 +23,11 @@ exports.login = asyncHandler(async (req, res) => {
   const { email, password } = req.body
 
   const customer = await Customer.findOne({ email: email.toLowerCase().trim() })
-  if (!customer) return unauthorized(res, 'Invalid credentials')
-  if (!customer.isActive) return unauthorized(res, 'Account is deactivated')
+  if (!customer) return unauthorized(res, 'No account found with that email address')
+  if (!customer.isActive) return unauthorized(res, 'This account has been deactivated')
 
   const match = await bcrypt.compare(password, customer.password)
-  if (!match) return unauthorized(res, 'Invalid credentials')
+  if (!match) return unauthorized(res, 'Incorrect password')
 
   const accessToken = signAccess(customer)
   const refreshToken = signRefresh(customer)
@@ -36,10 +36,11 @@ exports.login = asyncHandler(async (req, res) => {
     accessToken,
     refreshToken,
     customer: {
-      _id: customer._id,
-      firstName: customer.firstName,
-      email: customer.email,
+      _id:        customer._id,
+      firstName:  customer.firstName,
+      email:      customer.email,
       customerId: customer.customerId,
+      photo:      customer.photo,
     },
   })
 })
@@ -62,6 +63,21 @@ exports.refresh = asyncHandler(async (req, res) => {
   }
 })
 
-exports.logout = asyncHandler(async (_req, res) => {
-  return success(res, {}, 'Logged out successfully')
+exports.changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body
+  if (!currentPassword || !newPassword) {
+    return badRequest(res, 'Both currentPassword and newPassword are required')
+  }
+
+  const customer = await Customer.findById(req.customer._id)
+  if (!customer) return unauthorized(res)
+
+  const match = await bcrypt.compare(currentPassword, customer.password)
+  if (!match) return badRequest(res, 'Current password is incorrect')
+
+  customer.password = await bcrypt.hash(newPassword, 12)
+  customer.passwordChangedAt = new Date()
+  await customer.save()
+
+  return success(res, {}, 'Password updated successfully')
 })
