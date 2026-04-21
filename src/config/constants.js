@@ -1,6 +1,6 @@
 const USER_ROLES = ['admin', 'sales', 'construction', 'plant', 'account']
 
-const LEAD_SOURCES = ['chat', 'manual', 'import']
+const LEAD_SOURCES = ['chat', 'manual', 'import', 'customer_portal']
 
 const LIFECYCLE_STAGES = [
   'initial_contact',

@@ -32,10 +32,13 @@ const LeadScoringSchema = new mongoose.Schema(
   { _id: false }
 )
 
+const DOCUMENT_TYPES = ['drawing', 'approval', 'general', 'contract', 'photo', 'other']
+
 const DocumentSchema = new mongoose.Schema(
   {
     url:        { type: String, required: true },
     name:       { type: String, required: true },
+    type:       { type: String, enum: DOCUMENT_TYPES, default: 'general' },
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     uploadedAt: { type: Date, default: Date.now },
   },
