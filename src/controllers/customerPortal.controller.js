@@ -18,7 +18,7 @@ const computeDueDate = (invoice) => {
 // ── Profile ───────────────────────────────────────────────────────────────────
 
 exports.getProfile = asyncHandler(async (req, res) => {
-  const customer = await Customer.findById(req.customer._id).lean()
+  const customer = await Customer.findById(req.customer._id).select('-password').lean()
   if (!customer) return notFound(res, 'Customer not found')
   return success(res, { customer })
 })

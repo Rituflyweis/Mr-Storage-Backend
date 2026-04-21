@@ -11,7 +11,7 @@ exports.getStats = asyncHandler(async (req, res) => {
   const paid     = taxes.filter(t => t.status === 'paid')
   const overdue  = pending.filter(t => t.dueDate < now)
 
-  const totalPayable = overdue.reduce((s, t) => s + t.amount, 0)
+  const totalPayable = pending.reduce((s, t) => s + t.amount, 0)
   const totalPaid    = paid.reduce((s, t) => s + t.amount, 0)
 
   return success(res, {
