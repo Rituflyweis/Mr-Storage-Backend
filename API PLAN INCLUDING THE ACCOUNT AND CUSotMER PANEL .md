@@ -12,6 +12,7 @@
 - [Standard Response](#standard-response)
 - [Errors & Status Codes](#errors--status-codes)
 - [Authentication](#authentication)
+  - [Forgot Password (OTP Reset)](#forgot-password-otp-reset--staffadminsalesaccounts)
 - [Public — Chat Init](#public--chat-init)
 - [Admin — Dashboard](#admin--dashboard)
 - [Admin — Customers](#admin--customers)
@@ -466,6 +467,66 @@ Works for any authenticated role.
 ```json
 { "currentPassword": "OldPass@123", "newPassword": "NewPass@456" }
 ```
+
+---
+
+### Forgot Password (OTP Reset) — Staff/Admin/Sales/Accounts
+
+Three-step flow. No auth required on any of these endpoints.
+
+**Step 1 — Request OTP**
+
+### `POST /api/auth/forgot-password`
+
+**Request body**
+```json
+{ "email": "admin@company.com" }
+```
+
+**Response 200**
+```json
+{ "message": "If that email exists, an OTP has been sent" }
+```
+
+A 6-digit numeric OTP is emailed to the address. Valid for **10 minutes**. Always returns 200 regardless of whether the email exists (prevents enumeration).
+
+---
+
+**Step 2 — Verify OTP**
+
+### `POST /api/auth/verify-otp`
+
+**Request body**
+```json
+{ "email": "admin@company.com", "otp": "483920" }
+```
+
+**Response 200**
+```json
+{ "message": "OTP verified successfully", "data": { "resetToken": "eyJhbGci..." } }
+```
+
+`resetToken` is a short-lived JWT (5 minutes). Pass it to Step 3. OTP is invalidated immediately after verification — single use.
+
+Errors: `400 — Invalid OTP` | `400 — OTP has expired. Please request a new one`
+
+---
+
+**Step 3 — Reset Password**
+
+### `POST /api/auth/reset-password`
+
+**Request body**
+```json
+{ "resetToken": "eyJhbGci...", "newPassword": "NewPass@456" }
+```
+
+**Response 200**
+```json
+{ "message": "Password reset successfully" }
+```
+
+Errors: `400 — Invalid or expired reset token` | `400 — OTP not verified. Please start over`
 
 ---
 
@@ -2123,6 +2184,66 @@ Requires customer JWT.
 ```
 
 Errors: `400 — Both currentPassword and newPassword are required` | `400 — Current password is incorrect`
+
+---
+
+### Forgot Password (OTP Reset) — Customer
+
+Same three-step pattern as staff. No auth required.
+
+**Step 1 — Request OTP**
+
+### `POST /api/customer/auth/forgot-password`
+
+**Request body**
+```json
+{ "email": "arjun@example.com" }
+```
+
+**Response 200**
+```json
+{ "message": "If that email exists, an OTP has been sent" }
+```
+
+6-digit OTP emailed to the address. Valid for **10 minutes**. Always returns 200.
+
+---
+
+**Step 2 — Verify OTP**
+
+### `POST /api/customer/auth/verify-otp`
+
+**Request body**
+```json
+{ "email": "arjun@example.com", "otp": "483920" }
+```
+
+**Response 200**
+```json
+{ "message": "OTP verified successfully", "data": { "resetToken": "eyJhbGci..." } }
+```
+
+`resetToken` valid for 5 minutes. Single use.
+
+Errors: `400 — Invalid OTP` | `400 — OTP has expired. Please request a new one`
+
+---
+
+**Step 3 — Reset Password**
+
+### `POST /api/customer/auth/reset-password`
+
+**Request body**
+```json
+{ "resetToken": "eyJhbGci...", "newPassword": "MyNewPass@123" }
+```
+
+**Response 200**
+```json
+{ "message": "Password reset successfully" }
+```
+
+Errors: `400 — Invalid or expired reset token` | `400 — OTP not verified. Please start over`
 
 ---
 

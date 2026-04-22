@@ -10,6 +10,9 @@ const UserSchema = new mongoose.Schema(
     role:     { type: String, enum: USER_ROLES, required: true },
     isActive:           { type: Boolean, default: true },
     passwordChangedAt:  { type: Date,    default: null },
+    resetOtp:           { type: String,  default: null },
+    resetOtpExpiry:     { type: Date,    default: null },
+    resetOtpVerified:   { type: Boolean, default: false },
   },
   { timestamps: true }
 )

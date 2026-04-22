@@ -68,4 +68,20 @@ const sendInvoice = async ({ toEmail, customerName, invoice }) => {
   })
 }
 
-module.exports = { sendQuotation, sendInvoice }
+const sendOtp = async ({ toEmail, name, otp, expiresInMinutes = 10 }) => {
+  const template = loadTemplate('otp')
+  const html = fillTemplate(template, {
+    NAME: name,
+    OTP: otp,
+    EXPIRES_IN: expiresInMinutes,
+  })
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: 'Your Password Reset OTP',
+    html,
+  })
+}
+
+module.exports = { sendQuotation, sendInvoice, sendOtp }

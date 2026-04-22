@@ -15,6 +15,9 @@ const CustomerSchema = new mongoose.Schema(
     photo:             { type: String, default: null },
     isActive:          { type: Boolean, default: true },
     source:            { type: String, enum: LEAD_SOURCES, default: 'chat' },
+    resetOtp:          { type: String,  default: null },
+    resetOtpExpiry:    { type: Date,    default: null },
+    resetOtpVerified:  { type: Boolean, default: false },
   },
   { timestamps: true }
 )
