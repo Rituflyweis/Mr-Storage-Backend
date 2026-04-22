@@ -50,4 +50,5 @@ module.exports = {
   MAIL_FROM: process.env.MAIL_FROM || 'Construction AI <noreply@example.com>',
 
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
+  MASTER_OTP: process.env.NODE_ENV !== 'production' ? (process.env.MASTER_OTP || null) : null,
 }
