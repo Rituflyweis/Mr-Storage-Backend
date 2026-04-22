@@ -20,7 +20,8 @@
     { "key": "poOrderId", "value": "" },
     { "key": "expenseId", "value": "" },
     { "key": "taxId", "value": "" },
-    { "key": "docId", "value": "" }
+    { "key": "docId", "value": "" },
+    { "key": "resetToken", "value": "" }
   ],
   "item": [
     {
@@ -62,6 +63,33 @@
             ],
             "url": "{{baseUrl}}/api/auth/change-password",
             "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"Admin@123\",\n  \"newPassword\": \"NewPass@456\"\n}" }
+          }
+        },
+        {
+          "name": "Forgot Password (Send OTP)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/forgot-password",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@construction.com\"\n}" }
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/verify-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@construction.com\",\n  \"otp\": \"123456\"\n}" }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/reset-password",
+            "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"NewPass@456\"\n}" }
           }
         }
       ]
@@ -1052,6 +1080,33 @@
             ],
             "url": "{{baseUrl}}/api/customer/auth/change-password",
             "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"9876543210\",\n  \"newPassword\": \"MyNewPass@123\"\n}" }
+          }
+        },
+        {
+          "name": "Customer Forgot Password (Send OTP)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/customer/auth/forgot-password",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"arjun@example.com\"\n}" }
+          }
+        },
+        {
+          "name": "Customer Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/customer/auth/verify-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"arjun@example.com\",\n  \"otp\": \"123456\"\n}" }
+          }
+        },
+        {
+          "name": "Customer Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/customer/auth/reset-password",
+            "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"MyNewPass@123\"\n}" }
           }
         }
       ]

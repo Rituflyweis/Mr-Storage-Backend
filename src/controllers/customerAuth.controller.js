@@ -4,6 +4,9 @@ const Customer = require('../models/Customer')
 const env = require('../config/env')
 const { success, unauthorized, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
+const { sendOtp } = require('../services/email/mailer')
+
+const OTP_EXPIRY_MINUTES = 10
 
 const signAccess = (customer) =>
   jwt.sign(
@@ -61,6 +64,78 @@ exports.refresh = asyncHandler(async (req, res) => {
   } catch {
     return unauthorized(res, 'Invalid or expired refresh token')
   }
+})
+
+exports.forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body
+  const customer = await Customer.findOne({ email: email.toLowerCase().trim() })
+
+  if (!customer || !customer.isActive) return success(res, {}, 'If that email exists, an OTP has been sent')
+
+  const otp = String(Math.floor(100000 + Math.random() * 900000))
+  const hashedOtp = await bcrypt.hash(otp, 10)
+
+  customer.resetOtp = hashedOtp
+  customer.resetOtpExpiry = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000)
+  customer.resetOtpVerified = false
+  await customer.save()
+
+  await sendOtp({ toEmail: customer.email, name: customer.firstName, otp, expiresInMinutes: OTP_EXPIRY_MINUTES })
+
+  return success(res, {}, 'If that email exists, an OTP has been sent')
+})
+
+exports.verifyOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body
+  const customer = await Customer.findOne({ email: email.toLowerCase().trim() })
+
+  if (!customer || !customer.resetOtp || !customer.resetOtpExpiry)
+    return badRequest(res, 'Invalid or expired OTP')
+
+  if (new Date() > customer.resetOtpExpiry)
+    return badRequest(res, 'OTP has expired. Please request a new one')
+
+  const match = await bcrypt.compare(otp, customer.resetOtp)
+  if (!match) return badRequest(res, 'Invalid OTP')
+
+  customer.resetOtp = null
+  customer.resetOtpExpiry = null
+  customer.resetOtpVerified = true
+  await customer.save()
+
+  const resetToken = jwt.sign(
+    { _id: customer._id, purpose: 'password-reset', type: 'customer' },
+    env.JWT_RESET_SECRET,
+    { expiresIn: '5m' }
+  )
+
+  return success(res, { resetToken }, 'OTP verified successfully')
+})
+
+exports.resetPassword = asyncHandler(async (req, res) => {
+  const { resetToken, newPassword } = req.body
+
+  let decoded
+  try {
+    decoded = jwt.verify(resetToken, env.JWT_RESET_SECRET)
+  } catch {
+    return badRequest(res, 'Invalid or expired reset token')
+  }
+
+  if (decoded.purpose !== 'password-reset' || decoded.type !== 'customer')
+    return badRequest(res, 'Invalid reset token')
+
+  const customer = await Customer.findById(decoded._id)
+  if (!customer || !customer.resetOtpVerified) return badRequest(res, 'OTP not verified. Please start over')
+
+  customer.password = await bcrypt.hash(newPassword, 12)
+  customer.passwordChangedAt = new Date()
+  customer.resetOtp = null
+  customer.resetOtpExpiry = null
+  customer.resetOtpVerified = false
+  await customer.save()
+
+  return success(res, {}, 'Password reset successfully')
 })
 
 exports.changePassword = asyncHandler(async (req, res) => {
