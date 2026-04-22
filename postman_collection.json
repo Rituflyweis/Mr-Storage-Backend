@@ -32,7 +32,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/auth/login",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@construction.com\",\n  \"password\": \"Admin@123\"\n}" }
           }
         },
@@ -41,7 +45,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/auth/refresh",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"<refreshToken>\"\n}" }
           }
         },
@@ -50,7 +58,11 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/auth/logout"
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
+            }
           }
         },
         {
@@ -61,7 +73,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/auth/change-password",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "change-password"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"Admin@123\",\n  \"newPassword\": \"NewPass@456\"\n}" }
           }
         },
@@ -70,7 +86,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/auth/forgot-password",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "forgot-password"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@construction.com\"\n}" }
           }
         },
@@ -79,7 +99,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/auth/verify-otp",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/verify-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "verify-otp"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@construction.com\",\n  \"otp\": \"123456\"\n}" }
           }
         },
@@ -88,7 +112,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/auth/reset-password",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "reset-password"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"NewPass@456\"\n}" }
           }
         }
@@ -102,7 +130,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/public/chat/init",
+            "url": {
+              "raw": "{{baseUrl}}/api/public/chat/init",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "chat", "init"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Arjun\",\n  \"email\": \"arjun@example.com\",\n  \"phone\": \"9876543210\",\n  \"countryCode\": \"+91\"\n}" }
           }
         },
@@ -111,7 +143,11 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/public/chat/history/{{leadId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/public/chat/history/{{leadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "chat", "history", "{{leadId}}"]
+            }
           }
         }
       ]
@@ -124,7 +160,15 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/admin/dashboard/lead-stats", "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/dashboard/lead-stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "dashboard", "lead-stats"],
+              "query": [
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -132,7 +176,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/dashboard/customer-stats"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/dashboard/customer-stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "dashboard", "customer-stats"]
+            }
           }
         },
         {
@@ -140,7 +188,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/dashboard/ai-vs-human"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/dashboard/ai-vs-human",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "dashboard", "ai-vs-human"]
+            }
           }
         }
       ]
@@ -153,7 +205,17 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/admin/customers?page=1&limit=20", "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }, { "key": "search", "value": "", "disabled": true }, { "key": "isActive", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/customers?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "customers"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "isActive", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -161,7 +223,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/customers/{{customerId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "customers", "{{customerId}}"]
+            }
           }
         },
         {
@@ -169,7 +235,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/customers/{{customerId}}/projects/{{leadId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/customers/{{customerId}}/projects/{{leadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "customers", "{{customerId}}", "projects", "{{leadId}}"]
+            }
           }
         },
         {
@@ -180,7 +250,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/customers/{{customerId}}/leads",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/customers/{{customerId}}/leads",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "customers", "{{customerId}}", "leads"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"assignedSales\": \"{{userId}}\"\n}" }
           }
         }
@@ -194,7 +268,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/leads/stats"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "leads", "stats"]
+            }
           }
         },
         {
@@ -202,7 +280,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/leads/scoring/today"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/scoring/today",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "leads", "scoring", "today"]
+            }
           }
         },
         {
@@ -213,7 +295,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/leads/import",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/import",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "leads", "import"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"csv\": \"name,email,phone,projectType\\nArjun,a@ex.com,9876543210,Warehouse\"\n}" }
           }
         },
@@ -222,7 +308,18 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/admin/leads?page=1&limit=20", "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }, { "key": "lifecycleStatus", "value": "", "disabled": true }, { "key": "assignedSales", "value": "", "disabled": true }, { "key": "isQuoteReady", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "leads"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "lifecycleStatus", "value": "", "disabled": true },
+                { "key": "assignedSales", "value": "", "disabled": true },
+                { "key": "isQuoteReady", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -233,7 +330,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/leads",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "leads"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"assignedSales\": \"{{userId}}\"\n}" }
           }
         },
@@ -242,7 +343,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/leads/{{leadId}}/detail"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/detail",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "leads", "{{leadId}}", "detail"]
+            }
           }
         },
         {
@@ -250,7 +355,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/leads/{{leadId}}/timeline"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/timeline",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "leads", "{{leadId}}", "timeline"]
+            }
           }
         },
         {
@@ -261,7 +370,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/leads/{{leadId}}",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "leads", "{{leadId}}"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"quoteValue\": 300000,\n  \"lifecycleStatus\": \"negotiation\"\n}" }
           }
         },
@@ -273,7 +386,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/leads/{{leadId}}/assign",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/assign",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "leads", "{{leadId}}", "assign"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"employeeId\": \"{{userId}}\"\n}" }
           }
         }
@@ -287,7 +404,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/meetings"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/meetings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "meetings"]
+            }
           }
         },
         {
@@ -298,7 +419,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/meetings",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/meetings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "meetings"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"leadId\": \"{{leadId}}\",\n  \"title\": \"Project discussion\",\n  \"meetingTime\": \"2024-06-15T14:00:00.000Z\",\n  \"duration\": 60,\n  \"mode\": \"online\",\n  \"meetingLink\": \"https://meet.google.com/abc\",\n  \"notes\": \"Review warehouse specs\",\n  \"assignedTo\": \"{{userId}}\"\n}" }
           }
         },
@@ -310,7 +435,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/meetings/{{meetingId}}",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/meetings/{{meetingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "meetings", "{{meetingId}}"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"notes\": \"Updated notes\"\n}" }
           }
         },
@@ -319,7 +448,11 @@
           "request": {
             "method": "PUT",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/meetings/{{meetingId}}/complete"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/meetings/{{meetingId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "meetings", "{{meetingId}}", "complete"]
+            }
           }
         }
       ]
@@ -332,7 +465,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/followups/stats"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/followups/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "followups", "stats"]
+            }
           }
         },
         {
@@ -340,7 +477,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/followups/upcoming"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/followups/upcoming",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "followups", "upcoming"]
+            }
           }
         },
         {
@@ -348,7 +489,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/followups/kpi"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/followups/kpi",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "followups", "kpi"]
+            }
           }
         },
         {
@@ -356,7 +501,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/followups/ai-script"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/followups/ai-script",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "followups", "ai-script"]
+            }
           }
         },
         {
@@ -367,7 +516,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/followups",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/followups",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "followups"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"assignedTo\": \"{{userId}}\",\n  \"followUpDate\": \"2024-06-20T10:00:00.000Z\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"high\"\n}" }
           }
         },
@@ -376,7 +529,11 @@
           "request": {
             "method": "PUT",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/followups/{{followUpId}}/complete"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/followups/{{followUpId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "followups", "{{followUpId}}", "complete"]
+            }
           }
         }
       ]
@@ -389,7 +546,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/employees/stats"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/employees/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "employees", "stats"]
+            }
           }
         },
         {
@@ -397,7 +558,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/employees/performance"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/employees/performance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "employees", "performance"]
+            }
           }
         },
         {
@@ -405,7 +570,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/employees"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/employees",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "employees"]
+            }
           }
         },
         {
@@ -416,7 +585,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/employees",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/employees",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "employees"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@company.com\",\n  \"password\": \"Pass@123\",\n  \"phone\": \"9876543210\",\n  \"role\": \"sales\"\n}" }
           }
         },
@@ -425,7 +598,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/employees/{{userId}}/timeline"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/employees/{{userId}}/timeline",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "employees", "{{userId}}", "timeline"]
+            }
           }
         },
         {
@@ -433,7 +610,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/admin/employees/{{userId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/employees/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "employees", "{{userId}}"]
+            }
           }
         },
         {
@@ -444,7 +625,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/employees/{{userId}}",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/employees/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "employees", "{{userId}}"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"name\": \"Ravi K\",\n  \"isActive\": true,\n  \"role\": \"sales\"\n}" }
           }
         }
@@ -458,7 +643,14 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/admin/escalations?status=pending", "query": [{ "key": "status", "value": "pending" }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/escalations?status=pending",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "escalations"],
+              "query": [
+                { "key": "status", "value": "pending" }
+              ]
+            }
           }
         },
         {
@@ -469,7 +661,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/escalations/{{escalationId}}/assign",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/escalations/{{escalationId}}/assign",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "escalations", "{{escalationId}}", "assign"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"employeeId\": \"{{userId}}\"\n}" }
           }
         }
@@ -483,7 +679,14 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/admin/po-orders?status=pending", "query": [{ "key": "status", "value": "pending" }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/po-orders?status=pending",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "po-orders"],
+              "query": [
+                { "key": "status", "value": "pending" }
+              ]
+            }
           }
         },
         {
@@ -494,7 +697,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/admin/po-orders/{{poOrderId}}/status",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/po-orders/{{poOrderId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "po-orders", "{{poOrderId}}", "status"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"status\": \"approved\",\n  \"adminNotes\": \"All checks passed\"\n}" }
           }
         }
@@ -508,7 +715,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/sales/dashboard/lead-stats"
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/dashboard/lead-stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "dashboard", "lead-stats"]
+            }
           }
         },
         {
@@ -516,7 +727,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/sales/dashboard/customer-stats"
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/dashboard/customer-stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "dashboard", "customer-stats"]
+            }
           }
         }
       ]
@@ -529,7 +744,15 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/sales/leads?page=1&limit=20", "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "leads"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
           }
         },
         {
@@ -537,7 +760,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/sales/leads/{{leadId}}/detail"
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/detail",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "leads", "{{leadId}}", "detail"]
+            }
           }
         },
         {
@@ -548,7 +775,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/sales/leads/{{leadId}}/lifecycle",
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/lifecycle",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "leads", "{{leadId}}", "lifecycle"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"lifecycleStatus\": \"negotiation\"\n}" }
           }
         },
@@ -560,7 +791,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/sales/leads/{{leadId}}/escalate",
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/escalate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "leads", "{{leadId}}", "escalate"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"note\": \"Customer demanding 40% discount — outside my authority.\"\n}" }
           }
         },
@@ -572,7 +807,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/sales/leads/{{leadId}}/po-order",
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/po-order",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "leads", "{{leadId}}", "po-order"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"poNumber\": \"PO-0001\",\n  \"invoiceId\": \"{{invoiceId}}\",\n  \"quotationId\": \"{{quotationId}}\"\n}" }
           }
         }
@@ -586,7 +825,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/sales/followups/stats"
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/followups/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "followups", "stats"]
+            }
           }
         },
         {
@@ -594,7 +837,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/sales/followups/upcoming"
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/followups/upcoming",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "followups", "upcoming"]
+            }
           }
         },
         {
@@ -602,7 +849,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/sales/followups/kpi"
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/followups/kpi",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "followups", "kpi"]
+            }
           }
         },
         {
@@ -613,7 +864,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/sales/followups",
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/followups",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "followups"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"followUpDate\": \"2024-06-20T10:00:00.000Z\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"medium\"\n}" }
           }
         },
@@ -622,7 +877,11 @@
           "request": {
             "method": "PUT",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/sales/followups/{{followUpId}}/complete"
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/followups/{{followUpId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "followups", "{{followUpId}}", "complete"]
+            }
           }
         }
       ]
@@ -635,7 +894,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/sales/projects"
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/projects",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "projects"]
+            }
           }
         },
         {
@@ -643,7 +906,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/sales/po-orders"
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/po-orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "po-orders"]
+            }
           }
         }
       ]
@@ -659,7 +926,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/quotations",
+            "url": {
+              "raw": "{{baseUrl}}/api/quotations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quotations"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"buildingType\": \"Warehouse\",\n  \"basePrice\": 250000,\n  \"maxPrice\": 300000,\n  \"sqft\": \"5000\",\n  \"currency\": \"USD\",\n  \"roofStyle\": \"Gable\",\n  \"location\": \"Chennai\",\n  \"validTill\": \"2024-05-30T00:00:00.000Z\",\n  \"paymentTerms\": \"30% upfront, 70% on delivery\",\n  \"specialNote\": \"Price locked for 30 days\",\n  \"internalNotes\": \"High-value client\",\n  \"priorityLevel\": \"high\",\n  \"includedMaterials\": [{\"name\": \"Steel frame\", \"description\": \"Grade A\", \"quantity\": 1}],\n  \"optionalAddOns\": [{\"name\": \"Insulation\", \"description\": \"Premium\", \"price\": 15000}]\n}" }
           }
         },
@@ -668,7 +939,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/quotations/{{quotationId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/quotations/{{quotationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quotations", "{{quotationId}}"]
+            }
           }
         },
         {
@@ -679,7 +954,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/quotations/{{quotationId}}",
+            "url": {
+              "raw": "{{baseUrl}}/api/quotations/{{quotationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quotations", "{{quotationId}}"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"basePrice\": 260000,\n  \"specialNote\": \"Updated terms\"\n}" }
           }
         },
@@ -688,7 +967,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/quotations/{{quotationId}}/send"
+            "url": {
+              "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quotations", "{{quotationId}}", "send"]
+            }
           }
         },
         {
@@ -696,7 +979,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/quotations/{{quotationId}}/summary"
+            "url": {
+              "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quotations", "{{quotationId}}", "summary"]
+            }
           }
         },
         {
@@ -704,7 +991,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/leads/{{leadId}}/quotations"
+            "url": {
+              "raw": "{{baseUrl}}/api/leads/{{leadId}}/quotations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "leads", "{{leadId}}", "quotations"]
+            }
           }
         }
       ]
@@ -720,7 +1011,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/invoices",
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"quotationId\": \"{{quotationId}}\",\n  \"date\": \"2024-03-15T00:00:00.000Z\",\n  \"daysToPay\": 30,\n  \"totalAmount\": 280000,\n  \"subtotal\": 260000,\n  \"markupTotal\": 20000,\n  \"discount\": 0,\n  \"depositAmount\": 84000,\n  \"lineItems\": [{\"items\": [\"Steel frame\", \"Install\"], \"rate\": 50000, \"markup\": 5000, \"quantity\": 1, \"tax\": 9000, \"total\": 64000}]\n}" }
           }
         },
@@ -729,7 +1024,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/invoices/{{invoiceId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}"]
+            }
           }
         },
         {
@@ -740,7 +1039,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/invoices/{{invoiceId}}",
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"totalAmount\": 290000\n}" }
           }
         },
@@ -749,7 +1052,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/invoices/{{invoiceId}}/send"
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}", "send"]
+            }
           }
         },
         {
@@ -757,7 +1064,11 @@
           "request": {
             "method": "PUT",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/invoices/{{invoiceId}}/mark-paid"
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/mark-paid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}", "mark-paid"]
+            }
           }
         },
         {
@@ -765,7 +1076,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/leads/{{leadId}}/invoices"
+            "url": {
+              "raw": "{{baseUrl}}/api/leads/{{leadId}}/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "leads", "{{leadId}}", "invoices"]
+            }
           }
         }
       ]
@@ -781,7 +1096,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/payment-schedules",
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-schedules",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-schedules"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"leadId\": \"{{leadId}}\",\n  \"invoiceId\": \"{{invoiceId}}\",\n  \"totalAmount\": 280000,\n  \"payments\": [\n    {\"name\": \"Deposit\", \"amount\": 30, \"amountType\": \"percentage\", \"dueDate\": \"2024-03-20T00:00:00.000Z\"},\n    {\"name\": \"On delivery\", \"amount\": 70, \"amountType\": \"percentage\"}\n  ]\n}" }
           }
         },
@@ -790,7 +1109,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/payment-schedules/invoice/{{invoiceId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-schedules/invoice/{{invoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-schedules", "invoice", "{{invoiceId}}"]
+            }
           }
         },
         {
@@ -798,7 +1121,11 @@
           "request": {
             "method": "PUT",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/payment-schedules/{{scheduleId}}/payments/{{paymentId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-schedules/{{scheduleId}}/payments/{{paymentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-schedules", "{{scheduleId}}", "payments", "{{paymentId}}"]
+            }
           }
         }
       ]
@@ -814,7 +1141,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/upload/presigned-url",
+            "url": {
+              "raw": "{{baseUrl}}/api/upload/presigned-url",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "upload", "presigned-url"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"fileName\": \"site-plan.pdf\",\n  \"fileType\": \"application/pdf\",\n  \"folder\": \"documents\"\n}" }
           }
         },
@@ -826,7 +1157,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/upload/leads/{{leadId}}/documents",
+            "url": {
+              "raw": "{{baseUrl}}/api/upload/leads/{{leadId}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "upload", "leads", "{{leadId}}", "documents"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"url\": \"https://bucket.s3.amazonaws.com/documents/uuid.pdf\",\n  \"name\": \"site-plan.pdf\"\n}" }
           }
         },
@@ -835,7 +1170,11 @@
           "request": {
             "method": "DELETE",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/upload/leads/{{leadId}}/documents/{{docId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/upload/leads/{{leadId}}/documents/{{docId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "upload", "leads", "{{leadId}}", "documents", "{{docId}}"]
+            }
           }
         }
       ]
@@ -848,7 +1187,15 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/account/dashboard/stats", "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/account/dashboard/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "dashboard", "stats"],
+              "query": [
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -856,7 +1203,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/dashboard/invoice-stats"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/dashboard/invoice-stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "dashboard", "invoice-stats"]
+            }
           }
         },
         {
@@ -864,7 +1215,14 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/account/dashboard/income-vs-expense?period=monthly", "query": [{ "key": "period", "value": "monthly" }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/account/dashboard/income-vs-expense?period=monthly",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "dashboard", "income-vs-expense"],
+              "query": [
+                { "key": "period", "value": "monthly" }
+              ]
+            }
           }
         },
         {
@@ -872,7 +1230,14 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/account/dashboard/recent-transactions?limit=10", "query": [{ "key": "limit", "value": "10" }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/account/dashboard/recent-transactions?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "dashboard", "recent-transactions"],
+              "query": [
+                { "key": "limit", "value": "10" }
+              ]
+            }
           }
         },
         {
@@ -880,7 +1245,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/dashboard/upcoming-payments"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/dashboard/upcoming-payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "dashboard", "upcoming-payments"]
+            }
           }
         },
         {
@@ -888,7 +1257,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/dashboard/payment-distribution"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/dashboard/payment-distribution",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "dashboard", "payment-distribution"]
+            }
           }
         },
         {
@@ -896,7 +1269,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/dashboard/revenue-trend"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/dashboard/revenue-trend",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "dashboard", "revenue-trend"]
+            }
           }
         },
         {
@@ -904,7 +1281,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/dashboard/expense-trend"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/dashboard/expense-trend",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "dashboard", "expense-trend"]
+            }
           }
         }
       ]
@@ -917,7 +1298,15 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/account/projects", "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/account/projects",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "projects"],
+              "query": [
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         }
       ]
@@ -930,7 +1319,16 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/account/invoices?status=paid", "query": [{ "key": "status", "value": "paid", "disabled": true }, { "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/account/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "invoices"],
+              "query": [
+                { "key": "status", "value": "paid", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -938,7 +1336,15 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/account/invoices/analytics", "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/account/invoices/analytics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "invoices", "analytics"],
+              "query": [
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -946,7 +1352,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/invoices/project/{{leadId}}/breakdown"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/invoices/project/{{leadId}}/breakdown",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "invoices", "project", "{{leadId}}", "breakdown"]
+            }
           }
         },
         {
@@ -954,7 +1364,11 @@
           "request": {
             "method": "PUT",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/invoices/{{invoiceId}}/mark-paid"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/invoices/{{invoiceId}}/mark-paid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "invoices", "{{invoiceId}}", "mark-paid"]
+            }
           }
         }
       ]
@@ -967,7 +1381,15 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/account/expenses/stats", "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/account/expenses/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "expenses", "stats"],
+              "query": [
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -975,7 +1397,19 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/account/expenses?page=1&limit=20", "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }, { "key": "category", "value": "", "disabled": true }, { "key": "leadId", "value": "", "disabled": true }, { "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/account/expenses?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "expenses"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "category", "value": "", "disabled": true },
+                { "key": "leadId", "value": "", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -986,7 +1420,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/account/expenses",
+            "url": {
+              "raw": "{{baseUrl}}/api/account/expenses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "expenses"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"expenseId\": \"EXP-2024-001\",\n  \"category\": \"materials\",\n  \"date\": \"2024-03-15T00:00:00.000Z\",\n  \"amount\": 45000,\n  \"description\": \"Steel frame order\",\n  \"leadId\": \"{{leadId}}\"\n}" }
           }
         },
@@ -995,7 +1433,11 @@
           "request": {
             "method": "PUT",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/expenses/{{expenseId}}/deactivate"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/expenses/{{expenseId}}/deactivate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "expenses", "{{expenseId}}", "deactivate"]
+            }
           }
         },
         {
@@ -1003,7 +1445,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/expenses/project/{{leadId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/expenses/project/{{leadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "expenses", "project", "{{leadId}}"]
+            }
           }
         }
       ]
@@ -1016,7 +1462,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/tax/stats"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/tax/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "tax", "stats"]
+            }
           }
         },
         {
@@ -1024,7 +1474,16 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/account/tax", "query": [{ "key": "status", "value": "pending", "disabled": true }, { "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/account/tax",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "tax"],
+              "query": [
+                { "key": "status", "value": "pending", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -1035,7 +1494,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
-            "url": "{{baseUrl}}/api/account/tax",
+            "url": {
+              "raw": "{{baseUrl}}/api/account/tax",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "tax"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"state\": \"Tamil Nadu\",\n  \"dueDate\": \"2024-04-30T00:00:00.000Z\",\n  \"amount\": 32000,\n  \"websiteLink\": \"https://tnvat.gov.in\"\n}" }
           }
         },
@@ -1044,7 +1507,11 @@
           "request": {
             "method": "PUT",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": "{{baseUrl}}/api/account/tax/{{taxId}}/mark-paid"
+            "url": {
+              "raw": "{{baseUrl}}/api/account/tax/{{taxId}}/mark-paid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "account", "tax", "{{taxId}}", "mark-paid"]
+            }
           }
         }
       ]
@@ -1057,7 +1524,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/customer/auth/login",
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "auth", "login"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"arjun@example.com\",\n  \"password\": \"9876543210\"\n}" }
           }
         },
@@ -1066,7 +1537,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/customer/auth/refresh",
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "auth", "refresh"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"<refreshToken>\"\n}" }
           }
         },
@@ -1078,7 +1553,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{customerToken}}" }
             ],
-            "url": "{{baseUrl}}/api/customer/auth/change-password",
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/auth/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "auth", "change-password"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"9876543210\",\n  \"newPassword\": \"MyNewPass@123\"\n}" }
           }
         },
@@ -1087,7 +1566,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/customer/auth/forgot-password",
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "auth", "forgot-password"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"arjun@example.com\"\n}" }
           }
         },
@@ -1096,7 +1579,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/customer/auth/verify-otp",
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/auth/verify-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "auth", "verify-otp"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"arjun@example.com\",\n  \"otp\": \"123456\"\n}" }
           }
         },
@@ -1105,7 +1592,11 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/customer/auth/reset-password",
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "auth", "reset-password"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"MyNewPass@123\"\n}" }
           }
         }
@@ -1119,7 +1610,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": "{{baseUrl}}/api/customer/dashboard"
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "dashboard"]
+            }
           }
         }
       ]
@@ -1132,7 +1627,16 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/customer/projects?page=1&limit=20", "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }, { "key": "lifecycleStatus", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/projects?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "projects"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "lifecycleStatus", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -1140,7 +1644,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": "{{baseUrl}}/api/customer/projects/{{leadId}}"
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/projects/{{leadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "projects", "{{leadId}}"]
+            }
           }
         },
         {
@@ -1151,8 +1659,12 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{customerToken}}" }
             ],
-            "url": "{{baseUrl}}/api/customer/projects",
-            "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\"\n}" }
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/projects",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "projects"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"roofStyle\": \"Gable\",\n  \"sqft\": \"5000\",\n  \"width\": 100,\n  \"length\": 50,\n  \"description\": \"Need loading dock and office mezzanine\"\n}" }
           }
         }
       ]
@@ -1165,7 +1677,14 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/customer/documents", "query": [{ "key": "type", "value": "drawing", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "documents"],
+              "query": [
+                { "key": "type", "value": "drawing", "disabled": true }
+              ]
+            }
           }
         }
       ]
@@ -1178,7 +1697,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": "{{baseUrl}}/api/customer/payments"
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "payments"]
+            }
           }
         },
         {
@@ -1186,7 +1709,35 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": { "raw": "{{baseUrl}}/api/customer/payments/invoices", "query": [{ "key": "status", "value": "", "disabled": true }] }
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/payments/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "payments", "invoices"],
+              "query": [
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer — Upload",
+      "item": [
+        {
+          "name": "Get Presigned URL",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/upload/presigned-url",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "upload", "presigned-url"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"fileName\": \"photo.jpg\",\n  \"fileType\": \"image/jpeg\",\n  \"folder\": \"customer-uploads\"\n}" }
           }
         }
       ]
@@ -1199,7 +1750,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": "{{baseUrl}}/api/customer/profile"
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "profile"]
+            }
           }
         },
         {
@@ -1210,7 +1765,11 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{customerToken}}" }
             ],
-            "url": "{{baseUrl}}/api/customer/profile",
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "profile"]
+            },
             "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Arjun K\",\n  \"photo\": \"https://s3.../photo.jpg\"\n}" }
           }
         }

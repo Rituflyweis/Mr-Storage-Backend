@@ -1,3 +1,6 @@
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3')
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner')
+const { v4: uuidv4 } = require('uuid')
 const Customer = require('../models/Customer')
 const Lead = require('../models/Lead')
 const Invoice = require('../models/Invoice')
@@ -7,6 +10,17 @@ const PaymentSchedule = require('../models/PaymentSchedule')
 const { success, created, notFound, forbidden, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
 const bcrypt = require('bcryptjs')
+const env = require('../config/env')
+const auditService = require('../services/audit.service')
+const { AUDIT_ACTIONS } = require('../config/constants')
+
+const s3 = new S3Client({
+  region: env.AWS_REGION,
+  credentials: {
+    accessKeyId: env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+  },
+})
 
 const CLOSED_STAGES = ['payment_done', 'delivered']
 
@@ -166,16 +180,27 @@ exports.getProject = asyncHandler(async (req, res) => {
 })
 
 exports.createProject = asyncHandler(async (req, res) => {
-  const { buildingType, location } = req.body
-  if (!buildingType) return badRequest(res, 'buildingType is required to create a project')
-  if (!location)     return badRequest(res, 'location is required to create a project')
+  const { buildingType, location, roofStyle, sqft, width, length, description } = req.body
 
   const lead = await Lead.create({
-    customerId:    req.customer._id,
+    customerId:      req.customer._id,
     buildingType,
     location,
-    source:        'customer_portal',
+    roofStyle:       roofStyle  || '',
+    sqft:            sqft       || '',
+    width:           width      ?? null,
+    length:          length     ?? null,
+    notes:           description || '',
+    source:          'customer_portal',
     lifecycleStatus: 'initial_contact',
+  })
+
+  await auditService.log({
+    type:       'lead',
+    action:     AUDIT_ACTIONS.CUSTOMER_PROJECT_CREATED,
+    leadId:     lead._id,
+    customerId: req.customer._id,
+    metadata:   { buildingType, location },
   })
 
   return created(res, {
@@ -183,6 +208,11 @@ exports.createProject = asyncHandler(async (req, res) => {
       _id:             lead._id,
       buildingType:    lead.buildingType,
       location:        lead.location,
+      roofStyle:       lead.roofStyle,
+      sqft:            lead.sqft,
+      width:           lead.width,
+      length:          lead.length,
+      notes:           lead.notes,
       source:          lead.source,
       lifecycleStatus: lead.lifecycleStatus,
       assignedSales:   null,
@@ -259,6 +289,27 @@ exports.getPayments = asyncHandler(async (req, res) => {
   upcoming.sort((a, b) => (a.dueDate || 0) - (b.dueDate || 0))
 
   return success(res, { upcoming, overdue, paid })
+})
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+
+exports.getPresignedUrl = asyncHandler(async (req, res) => {
+  const { fileName, fileType, folder = 'customer-uploads' } = req.body
+  if (!fileName || !fileType) return badRequest(res, 'fileName and fileType are required')
+
+  const ext = fileName.split('.').pop()
+  const key = `${folder}/${req.customer._id}/${uuidv4()}.${ext}`
+
+  const command = new PutObjectCommand({
+    Bucket: env.AWS_S3_BUCKET,
+    Key: key,
+    ContentType: fileType,
+  })
+
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: env.AWS_S3_PRESIGNED_URL_EXPIRES })
+  const fileUrl = `https://${env.AWS_S3_BUCKET}.s3.${env.AWS_REGION}.amazonaws.com/${key}`
+
+  return success(res, { uploadUrl, fileUrl, key })
 })
 
 exports.getPaymentInvoices = asyncHandler(async (req, res) => {

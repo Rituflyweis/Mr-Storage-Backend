@@ -50,6 +50,10 @@ const LeadSchema = new mongoose.Schema(
     customerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
     buildingType:    { type: String, default: '' },
     location:        { type: String, default: '' },
+    roofStyle:       { type: String, default: '' },
+    sqft:            { type: String, default: '' },
+    width:           { type: Number, default: null },
+    length:          { type: Number, default: null },
     source:          { type: String, enum: LEAD_SOURCES, default: 'chat' },
 
     assignedSales:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -66,6 +70,7 @@ const LeadSchema = new mongoose.Schema(
     // poStatus: only validated when non-null — mongoose enum won't run on null
     poStatus:        { type: String, enum: PO_STATUSES, default: null },
 
+    notes:     { type: String, default: '' },
     documents: { type: [DocumentSchema], default: [] },
 
     aiQuoteData:               { type: mongoose.Schema.Types.Mixed, default: null },
