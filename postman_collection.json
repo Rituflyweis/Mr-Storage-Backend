@@ -711,6 +711,70 @@
       "name": "Sales — Dashboard",
       "item": [
         {
+          "name": "Stats (v2)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/dashboard/stats?startDate=2026-05-01&endDate=2026-05-13",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "dashboard", "stats"],
+              "query": [
+                { "key": "startDate", "value": "2026-05-01" },
+                { "key": "endDate", "value": "2026-05-13" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Conversion Funnel (v2)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/dashboard/conversion-funnel?startDate=2026-05-01&endDate=2026-05-13",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "dashboard", "conversion-funnel"],
+              "query": [
+                { "key": "startDate", "value": "2026-05-01" },
+                { "key": "endDate", "value": "2026-05-13" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Performance Trend (v2)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/dashboard/performance-trend?tab=customers&range=30d",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "dashboard", "performance-trend"],
+              "query": [
+                { "key": "tab", "value": "customers" },
+                { "key": "range", "value": "30d" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Today Tasks (v2)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/dashboard/today-tasks?startDate=2026-05-13&endDate=2026-05-13",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "dashboard", "today-tasks"],
+              "query": [
+                { "key": "startDate", "value": "2026-05-13" },
+                { "key": "endDate", "value": "2026-05-13" }
+              ]
+            }
+          }
+        },
+        {
           "name": "Lead Stats",
           "request": {
             "method": "GET",
@@ -745,12 +809,32 @@
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
             "url": {
-              "raw": "{{baseUrl}}/api/sales/leads?page=1&limit=20",
+              "raw": "{{baseUrl}}/api/sales/leads?search=warehouse&lifecycleStatus=initial_contact&buildingType=steel&isQuoteReady=false&page=1&limit=20",
               "host": ["{{baseUrl}}"],
               "path": ["api", "sales", "leads"],
               "query": [
+                { "key": "search", "value": "warehouse" },
+                { "key": "lifecycleStatus", "value": "initial_contact" },
+                { "key": "buildingType", "value": "steel" },
+                { "key": "isQuoteReady", "value": "false" },
                 { "key": "page", "value": "1" },
                 { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Leads Stats (v2)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/stats?startDate=2026-05-01&endDate=2026-05-13",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sales", "leads", "stats"],
+              "query": [
+                { "key": "startDate", "value": "2026-05-01" },
+                { "key": "endDate", "value": "2026-05-13" }
               ]
             }
           }

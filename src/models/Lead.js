@@ -55,6 +55,11 @@ const LeadSchema = new mongoose.Schema(
     width:           { type: Number, default: null },
     length:          { type: Number, default: null },
     source:          { type: String, enum: LEAD_SOURCES, default: 'chat' },
+    projectName:     { type: String, default: '' },
+    numberOfBuildings: { type: Number, default: 1, min: 1 },
+    isTerminated:    { type: Boolean, default: false },
+    terminationReason: { type: String, default: '' },
+    terminatedAt:    { type: Date, default: null },
 
     assignedSales:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     assigningHistory: { type: [AssigningHistorySchema], default: [] },
@@ -83,6 +88,7 @@ const LeadSchema = new mongoose.Schema(
 LeadSchema.index({ customerId: 1 })
 LeadSchema.index({ assignedSales: 1 })
 LeadSchema.index({ lifecycleStatus: 1 })
+LeadSchema.index({ isTerminated: 1 })
 LeadSchema.index({ 'leadScoring.lastScoredAt': -1 })
 LeadSchema.index({ isQuoteReady: 1 })
 LeadSchema.index({ createdAt: -1 })

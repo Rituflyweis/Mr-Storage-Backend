@@ -82,3 +82,21 @@ JWT access + refresh tokens. `verifyToken` middleware attaches `req.user = { _id
 Copy `.env.example` to `.env`. Required vars: `MONGO_URI`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `ANTHROPIC_API_KEY`, AWS S3 credentials, SMTP credentials. All parsed and validated in `src/config/env.js` at startup.
 
 Default seed admin: `admin@construction.com` / `Admin@123` (overridable via env vars).
+
+
+<claude-mem-context>
+# Memory Context
+
+# claude-mem status
+
+This project has no memory yet. The current session will seed it; subsequent sessions will receive auto-injected context for relevant past work.
+
+Memory injection starts on your second session in a project.
+
+`/learn-codebase` is available if the user wants to front-load the entire repo into memory in a single pass (~5 minutes on a typical repo, optional). Otherwise memory builds passively as work happens.
+
+Live activity: http://localhost:37701
+How it works: `/how-it-works`
+
+This message disappears once the first observation lands.
+</claude-mem-context>

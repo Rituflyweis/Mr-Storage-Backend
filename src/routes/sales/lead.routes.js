@@ -4,6 +4,7 @@ const ctrl = require('../../controllers/sales/lead.controller')
 const validate = require('../../middleware/validate')
 
 router.get('/', ctrl.getLeads)
+router.get('/stats', ctrl.getLeadsStats)
 router.get('/:leadId/detail', ctrl.getLeadDetail)
 
 router.put('/:leadId/lifecycle',

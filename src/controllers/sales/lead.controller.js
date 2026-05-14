@@ -1,9 +1,11 @@
 const Lead = require('../../models/Lead')
+const Customer = require('../../models/Customer')
 const Message = require('../../models/Message')
 const Quotation = require('../../models/Quotation')
 const QuoteSummary = require('../../models/QuoteSummary')
 const Invoice = require('../../models/Invoice')
 const PaymentSchedule = require('../../models/PaymentSchedule')
+const FollowUp = require('../../models/FollowUp')
 const Escalation = require('../../models/Escalation')
 const POOrder = require('../../models/POOrder')
 const auditService = require('../../services/audit.service')
@@ -21,26 +23,107 @@ const guardLead = async (leadId, salesId) => {
 }
 
 exports.getLeads = asyncHandler(async (req, res) => {
-  const { buildingType, lifecycleStatus, isQuoteReady, page = 1, limit = 20 } = req.query
+  const { search, buildingType, lifecycleStatus, isQuoteReady, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
 
   const filter = { assignedSales: req.user._id, ...dateFilter }
   if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
   if (isQuoteReady !== undefined) filter.isQuoteReady = isQuoteReady === 'true'
+  if (search && search.trim()) {
+    const term = search.trim()
+    const regex = new RegExp(term, 'i')
+    const matchingCustomerIds = await Customer.find({
+      $or: [
+        { firstName: regex },
+        { email: regex },
+        { customerId: regex },
+      ],
+    }).distinct('_id')
 
-  const skip = (parseInt(page) - 1) * parseInt(limit)
+    filter.$or = [
+      { projectName: regex },
+      { buildingType: regex },
+      { location: regex },
+      { customerId: { $in: matchingCustomerIds } },
+    ]
+  }
+
+  const skip = (parsedPage - 1) * parsedLimit
   const [leads, total] = await Promise.all([
     Lead.find(filter)
-      .populate('customerId')
+      .select('_id projectName customerId lifecycleStatus quoteValue leadScoring buildingType location')
+      .populate({ path: 'customerId', select: 'firstName email' })
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(parsedLimit)
       .lean(),
     Lead.countDocuments(filter),
   ])
 
-  return success(res, { leads, total, page: parseInt(page), limit: parseInt(limit) })
+  const leadIds = leads.map(l => l._id)
+  const nextFollowUpByLeadId = new Map()
+  if (leadIds.length > 0) {
+    const pendingFollowUps = await FollowUp.find({
+      leadId: { $in: leadIds },
+      status: 'pending',
+    })
+      .select('_id leadId followUpDate notes priority')
+      .sort({ followUpDate: 1 })
+      .lean()
+
+    for (const followUp of pendingFollowUps) {
+      const key = String(followUp.leadId)
+      if (!nextFollowUpByLeadId.has(key)) {
+        nextFollowUpByLeadId.set(key, {
+          _id: followUp._id,
+          followUpDate: followUp.followUpDate,
+          notes: followUp.notes,
+          priority: followUp.priority,
+        })
+      }
+    }
+  }
+
+  const normalizedLeads = leads.map(lead => ({
+    _id: lead._id,
+    projectName: lead.projectName || '',
+    customerId: lead.customerId
+      ? {
+        _id: lead.customerId._id,
+        firstName: lead.customerId.firstName || '',
+        email: lead.customerId.email || '',
+      }
+      : null,
+    lifecycleStatus: lead.lifecycleStatus,
+    quoteValue: lead.quoteValue || 0,
+    leadScoring: { score: lead.leadScoring?.score || 0 },
+    buildingType: lead.buildingType || '',
+    location: lead.location || '',
+    nextFollowUp: nextFollowUpByLeadId.get(String(lead._id)) || null,
+  }))
+
+  return success(res, { leads: normalizedLeads, total, page: parsedPage, limit: parsedLimit })
+})
+
+exports.getLeadsStats = asyncHandler(async (req, res) => {
+  const salesId = req.user._id
+  const dateFilter = buildDateFilter(req.query)
+
+  const [totalLeads, leadsClosed, followUpPending, escalationsPending] = await Promise.all([
+    Lead.countDocuments({ assignedSales: salesId, ...dateFilter }),
+    Lead.countDocuments({
+      assignedSales: salesId,
+      lifecycleStatus: { $in: CLOSED_STAGES },
+      ...dateFilter,
+    }),
+    FollowUp.countDocuments({ assignedTo: salesId, status: 'pending', ...dateFilter }),
+    Escalation.countDocuments({ raisedBy: salesId, status: 'pending', ...dateFilter }),
+  ])
+
+  return success(res, { totalLeads, leadsClosed, followUpPending, escalationsPending })
 })
 
 exports.getLeadDetail = asyncHandler(async (req, res) => {

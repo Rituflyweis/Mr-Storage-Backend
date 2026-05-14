@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const { PRIORITY_LEVELS, FOLLOW_UP_STATUSES } = require('../config/constants')
+const { PRIORITY_LEVELS, FOLLOW_UP_STATUSES, FOLLOW_UP_MODES } = require('../config/constants')
 
 const FollowUpSchema = new mongoose.Schema(
   {
@@ -8,6 +8,7 @@ const FollowUpSchema = new mongoose.Schema(
     assignedTo:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     createdBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     followUpDate: { type: Date, required: true },
+    modeOfContact: { type: String, enum: FOLLOW_UP_MODES, default: 'call' },
     notes:        { type: String, default: '' },
     priority:     { type: String, enum: PRIORITY_LEVELS, default: 'medium' },
     // 'overdue' is NOT stored — computed at read time:
