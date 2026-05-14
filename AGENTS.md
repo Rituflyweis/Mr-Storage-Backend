@@ -87,16 +87,63 @@ Default seed admin: `admin@construction.com` / `Admin@123` (overridable via env 
 <claude-mem-context>
 # Memory Context
 
-# claude-mem status
+# [Mr_Storage_Backend] recent context, 2026-05-14 6:34pm GMT+5:30
 
-This project has no memory yet. The current session will seed it; subsequent sessions will receive auto-injected context for relevant past work.
+Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
+Format: ID TIME TYPE TITLE
+Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Memory injection starts on your second session in a project.
+Stats: 43 obs (16,985t read) | 470,579t work | 96% savings
 
-`/learn-codebase` is available if the user wants to front-load the entire repo into memory in a single pass (~5 minutes on a typical repo, optional). Otherwise memory builds passively as work happens.
+### May 14, 2026
+S85 Major backend expansion of Mr_Storage_Backend — caveman-mode rapid development of new controllers and endpoints (May 14 at 2:21 PM)
+S84 Caveman mode activation request (May 14 at 2:21 PM)
+825 2:22p 🔵 Mr_Storage_Backend Route Structure Mapped
+826 " 🔵 Sales Lead Controller: Full Business Logic Mapped
+827 " 🔵 Sales FollowUp Controller: KPI Endpoint is Stub
+828 2:23p 🔵 Admin Lead Controller: CSV Import, Round-Robin, and Smart Re-assignment
+829 " 🔵 Admin Customer Controller: Aggregates Financial Summary on Detail View
+830 " 🔵 Invoice Controller: PO Number Carry-Forward and Role-Based Access Guard
+831 " 🔵 Payment Schedule Controller: Auto-Rolls Up to Invoice Paid When All Installments Complete
+832 " 🔵 Quotation Controller: AI Summary Generation and Lifecycle Advancement on Send
+833 " 🔵 Admin PO Controller: Approval Syncs Status to Lead Document
+834 " 🔵 Admin Dashboard: AI vs Human Tracking and MongoDB Aggregation for Pipeline Metrics
+835 " 🔵 File Upload: S3 Presigned URL Flow with Lead Document Registry
+836 2:24p 🔵 PaymentSchedule Model Uses 'stages' But Controller Uses 'payments' — Schema Mismatch
+837 " 🔵 Lead Model: Full Schema with AI Scoring, Document Registry, and Lifecycle State Flags
+838 " 🔵 Sales Route Index Wires 'Dead' Controller Methods Inline — Not Actually Dead
+839 " 🔵 Building and ProjectBudget Models Defined But Have No Routes or Controllers
+840 2:25p 🔵 Common Routes Index Also Wires 'Dead' getLeadQuotations and getLeadInvoices Inline
+841 " 🔵 Sequential ID Generation Utilities Have Race Condition Risk
+842 " ⚖️ AuditLog Model is INSERT-ONLY by Design
+843 " 🔵 Five User Roles Defined But Only Admin and Sales Have Routes
+844 2:26p 🟣 Sales Lead Controller Massively Expanded: 8 New Endpoints Including Building Management, CSV Import/Export, and Activity Logging
+845 " 🟣 Sales FollowUp Controller: AI Script Assistant Added Using Claude API, KPI Stub Replaced with Real Analytics
+846 2:27p 🟣 New Sales Customer Controller Created: Scoped Customer Management for Sales Role
+847 2:28p 🟣 Admin Lead Controller Expanded: Budget Management, Lead Termination, AI Leads View, Signed Contracts, and Terminated Leads Endpoints
+S86 Caveman mode — Sales Lead Management API endpoints implemented for Mr_Storage_Backend (May 14 at 2:29 PM)
+848 2:30p 🟣 Sales Lead Routes Fully Wired: All New Controller Methods Now Have API Endpoints
+S87 Caveman-style sales module backend implementation — Part 2 of multi-part feature build for Mr_Storage_Backend (May 14 at 3:38 PM)
+849 4:22p 🟣 Sales Follow-Up Routes Expanded with Analytics and AI Script Endpoints
+850 4:23p 🔵 Sales Routes Index Structure in Mr_Storage_Backend
+851 " 🟣 Sales Routes Index Updated: Customers Sub-Router and Quotations Endpoint Added
+852 " 🟣 New Customer Routes File Created for Sales Module
+853 5:06p 🟣 Sales Module: Follow-up and Customer Controllers/Routes Added
+854 6:26p 🔵 Mr_Storage_Backend API Plan Contains 88 Planned APIs
+S88 API Plan vs. Implementation Progress Audit — Mr_Storage_Backend (admin_panel_sales_panel_v2.md) (May 14 at 6:26 PM)
+855 6:28p 🔵 Mr_Storage_Backend API Implementation Coverage Audit
+856 " 🔵 Mr_Storage_Backend: Implemented NEW and CHANGE Endpoints Inventory
+857 " 🔵 Sales Lead Controller: Full Implementation Details
+858 " 🔵 Sales Followup Controller: AI Script via Anthropic SDK + Analytics
+859 " 🔵 Route-Spec Mismatches: Admin PO Assign and Admin Customer Projects
+860 6:29p 🔵 Corrected API Coverage: 69/83 Matched After Including sales/customer.routes.js
+861 " 🔵 Sales Customer Controller: Ownership-Scoped Customer Management
+862 " 🔵 Mr_Storage_Backend Full Project Structure
+863 6:31p 🔵 Admin Lead Controller: Budget, Terminate, and Lifecycle Views Implemented but Not Routed
+864 " 🔵 Admin Customer Controller: Missing createCustomer and getCustomerStats Handlers
+865 " 🔵 Common Quotation Controller: AI Summary Generation and Lifecycle Advancement on Send
+866 " 🔵 Common Invoice and Payment Controllers: PO Number Reuse and Payment Rollup Logic
+867 " 🔵 Sales Dashboard Controller: Full v2 Implementation with Trend Windowing Utility
 
-Live activity: http://localhost:37701
-How it works: `/how-it-works`
-
-This message disappears once the first observation lands.
+Access 471k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
