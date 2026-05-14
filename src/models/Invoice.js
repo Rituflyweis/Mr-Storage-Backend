@@ -24,6 +24,9 @@ const InvoiceSchema = new mongoose.Schema(
 
     date:              { type: Date, default: Date.now },
     paymentScheduleId: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentSchedule', default: null },
+    // Links this invoice to a specific stage in a lead-level PaymentSchedule.
+    // Null if invoice was not created against a payment schedule stage.
+    paymentScheduleStageId: { type: mongoose.Schema.Types.ObjectId, default: null },
     daysToPay:         { type: Number, default: null },
     poNumber:          { type: String, default: '' },
 
