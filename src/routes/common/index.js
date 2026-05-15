@@ -16,5 +16,6 @@ router.use('/quotations', ...guard, require('./quotation.routes'))
 router.use('/invoices', ...guard, require('./invoice.routes'))
 router.use('/payment-schedules', ...guard, require('./payment.routes'))
 router.use('/upload', ...guard, require('./upload.routes'))
+router.use('/uploads', ...guard, require('./upload.routes'))
 
 module.exports = router

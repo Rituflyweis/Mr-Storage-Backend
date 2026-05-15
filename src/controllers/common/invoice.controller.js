@@ -45,6 +45,8 @@ exports.createInvoice = asyncHandler(async (req, res) => {
   const invoiceData = {}
   ALLOWED_CREATE.forEach(k => { if (req.body[k] !== undefined) invoiceData[k] = req.body[k] })
 
+  const { paymentScheduleStageId } = req.body
+
   const invoice = await Invoice.create({
     ...invoiceData,
     invoiceNumber,
@@ -52,7 +54,17 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
     leadId,
     customerId: lead.customerId,
+    paymentScheduleStageId: paymentScheduleStageId || null,
   })
+
+  // If linked to a payment schedule stage, mark that stage as invoiced
+  if (paymentScheduleStageId) {
+    const PaymentSchedule = require('../../models/PaymentSchedule')
+    await PaymentSchedule.findOneAndUpdate(
+      { 'stages._id': paymentScheduleStageId },
+      { $set: { 'stages.$.invoiceId': invoice._id, 'stages.$.status': 'invoiced' } }
+    )
+  }
 
   await auditService.log({
     type: 'invoice',
@@ -150,6 +162,23 @@ exports.markAsPaid = asyncHandler(async (req, res) => {
   invoice.paidAt = new Date()
   invoice.paidBy = req.user._id
   await invoice.save()
+
+  // Auto-update linked payment schedule stage
+  if (invoice.paymentScheduleStageId) {
+    const PaymentSchedule = require('../../models/PaymentSchedule')
+    await PaymentSchedule.findOneAndUpdate(
+      { 'stages._id': invoice.paymentScheduleStageId },
+      { $set: { 'stages.$.status': 'paid', 'stages.$.paidAt': new Date(), 'stages.$.paidBy': req.user._id } }
+    )
+    await auditService.log({
+      type: 'invoice',
+      action: AUDIT_ACTIONS.PAYMENT_STAGE_PAID,
+      leadId: invoice.leadId,
+      customerId: invoice.customerId,
+      performedBy: req.user._id,
+      metadata: { stageId: invoice.paymentScheduleStageId, invoiceId: invoice._id },
+    })
+  }
 
   await auditService.log({
     type: 'invoice',

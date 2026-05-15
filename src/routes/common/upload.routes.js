@@ -19,4 +19,11 @@ router.post('/leads/:leadId/documents',
 
 router.delete('/leads/:leadId/documents/:docId', ctrl.removeDocument)
 
+// Upload signed agreement / contract file URL to a lead
+router.post('/leads/:leadId/agreement',
+  [body('url').notEmpty(), body('name').notEmpty()],
+  validate,
+  ctrl.uploadAgreement
+)
+
 module.exports = router

@@ -61,6 +61,34 @@ exports.addDocument = asyncHandler(async (req, res) => {
   return success(res, { documents: lead.documents })
 })
 
+exports.uploadAgreement = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const { url, name } = req.body
+  if (!url || !name) return badRequest(res, 'url and name are required')
+
+  const lead = await Lead.findById(leadId)
+  if (!lead) return notFound(res, 'Lead not found')
+  if (req.user.role === 'sales' && String(lead.assignedSales) !== String(req.user._id)) {
+    return forbidden(res, 'Access denied')
+  }
+
+  const now = new Date()
+  lead.documents.push({ url, name, type: 'contract', uploadedBy: req.user._id, uploadedAt: now })
+  await lead.save()
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.DOCUMENT_ADDED,
+    leadId,
+    customerId: lead.customerId,
+    performedBy: req.user._id,
+    metadata: { name, url, documentType: 'contract' },
+  })
+
+  const agreement = lead.documents[lead.documents.length - 1]
+  return success(res, { agreement, agreementUploadedAt: agreement.uploadedAt })
+})
+
 exports.removeDocument = asyncHandler(async (req, res) => {
   const { leadId, docId } = req.params
 

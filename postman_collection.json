@@ -1,56 +1,146 @@
 {
   "info": {
-    "name": "Construction AI — Full API",
+    "name": "Construction AI \u2014 Full API",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:5000" },
-    { "key": "staffToken", "value": "" },
-    { "key": "customerToken", "value": "" },
-    { "key": "leadId", "value": "" },
-    { "key": "customerId", "value": "" },
-    { "key": "quotationId", "value": "" },
-    { "key": "invoiceId", "value": "" },
-    { "key": "scheduleId", "value": "" },
-    { "key": "paymentId", "value": "" },
-    { "key": "userId", "value": "" },
-    { "key": "meetingId", "value": "" },
-    { "key": "followUpId", "value": "" },
-    { "key": "escalationId", "value": "" },
-    { "key": "poOrderId", "value": "" },
-    { "key": "expenseId", "value": "" },
-    { "key": "taxId", "value": "" },
-    { "key": "docId", "value": "" },
-    { "key": "resetToken", "value": "" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "staffToken",
+      "value": ""
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "leadId",
+      "value": ""
+    },
+    {
+      "key": "customerId",
+      "value": ""
+    },
+    {
+      "key": "quotationId",
+      "value": ""
+    },
+    {
+      "key": "invoiceId",
+      "value": ""
+    },
+    {
+      "key": "scheduleId",
+      "value": ""
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "meetingId",
+      "value": ""
+    },
+    {
+      "key": "followUpId",
+      "value": ""
+    },
+    {
+      "key": "escalationId",
+      "value": ""
+    },
+    {
+      "key": "poOrderId",
+      "value": ""
+    },
+    {
+      "key": "expenseId",
+      "value": ""
+    },
+    {
+      "key": "taxId",
+      "value": ""
+    },
+    {
+      "key": "docId",
+      "value": ""
+    },
+    {
+      "key": "resetToken",
+      "value": ""
+    },
+    {
+      "key": "buildingId",
+      "value": ""
+    },
+    {
+      "key": "sessionId",
+      "value": ""
+    }
   ],
   "item": [
     {
-      "name": "Auth — Staff",
+      "name": "Auth \u2014 Staff",
       "item": [
         {
           "name": "Login",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@construction.com\",\n  \"password\": \"Admin@123\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@construction.com\",\n  \"password\": \"Admin@123\"\n}"
+            }
           }
         },
         {
           "name": "Refresh Token",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/refresh",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "refresh"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"<refreshToken>\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"<refreshToken>\"\n}"
+            }
           }
         },
         {
@@ -60,8 +150,14 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/auth/logout",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "logout"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
             }
           }
         },
@@ -70,72 +166,144 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/change-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "change-password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "change-password"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"Admin@123\",\n  \"newPassword\": \"NewPass@456\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Admin@123\",\n  \"newPassword\": \"NewPass@456\"\n}"
+            }
           }
         },
         {
           "name": "Forgot Password (Send OTP)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/forgot-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "forgot-password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "forgot-password"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@construction.com\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@construction.com\"\n}"
+            }
           }
         },
         {
           "name": "Verify OTP",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/verify-otp",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "verify-otp"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "verify-otp"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@construction.com\",\n  \"otp\": \"123456\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@construction.com\",\n  \"otp\": \"123456\"\n}"
+            }
           }
         },
         {
           "name": "Reset Password",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/reset-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "reset-password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "reset-password"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"NewPass@456\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"NewPass@456\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Public — Chat",
+      "name": "Public \u2014 Chat",
       "item": [
         {
           "name": "Chat Init",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/public/chat/init",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "public", "chat", "init"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "public",
+                "chat",
+                "init"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Arjun\",\n  \"email\": \"arjun@example.com\",\n  \"phone\": \"9876543210\",\n  \"countryCode\": \"+91\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Arjun\",\n  \"email\": \"arjun@example.com\",\n  \"phone\": \"9876543210\",\n  \"countryCode\": \"+91\"\n}"
+            }
           }
         },
         {
@@ -145,28 +313,56 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/public/chat/history/{{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "public", "chat", "history", "{{leadId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "public",
+                "chat",
+                "history",
+                "{{leadId}}"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Admin — Dashboard",
+      "name": "Admin \u2014 Dashboard",
       "item": [
         {
           "name": "Lead Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/dashboard/lead-stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "dashboard", "lead-stats"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "dashboard",
+                "lead-stats"
+              ],
               "query": [
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true }
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -175,11 +371,23 @@
           "name": "Customer Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/dashboard/customer-stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "dashboard", "customer-stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "dashboard",
+                "customer-stats"
+              ]
             }
           }
         },
@@ -187,58 +395,213 @@
           "name": "AI vs Human",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/dashboard/ai-vs-human",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "dashboard", "ai-vs-human"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "dashboard",
+                "ai-vs-human"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Performance Trend",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/dashboard/performance-trend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "dashboard",
+                "performance-trend"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "customers",
+                  "disabled": false
+                },
+                {
+                  "key": "range",
+                  "value": "30d",
+                  "disabled": false
+                }
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Admin — Customers",
+      "name": "Admin \u2014 Customers",
       "item": [
         {
-          "name": "List Customers",
+          "name": "Customer Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/customers?page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "customers"],
-              "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "search", "value": "", "disabled": true },
-                { "key": "isActive", "value": "", "disabled": true }
+              "raw": "{{baseUrl}}/api/admin/customers/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "customers",
+                "stats"
               ]
             }
           }
         },
         {
-          "name": "Get Customer Detail",
+          "name": "List Customers",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/customers/{{customerId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "customers", "{{customerId}}"]
+              "raw": "{{baseUrl}}/api/admin/customers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
             }
           }
         },
         {
-          "name": "Get Customer Project",
+          "name": "Create Customer + Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/customers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "customers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ravi\",\n  \"email\": \"ravi@ex.com\",\n  \"phone\": \"9876543210\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"projectName\": \"Ravi Warehouse\",\n  \"countryCode\": \"+91\",\n  \"assignedSales\": \"{{userId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Customer Detail",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/customers/{{customerId}}/projects/{{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "customers", "{{customerId}}", "projects", "{{leadId}}"]
+              "raw": "{{baseUrl}}/api/admin/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "customers",
+                "{{customerId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Customer Projects",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/customers/{{customerId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "customers",
+                "{{customerId}}",
+                "projects"
+              ]
             }
           }
         },
@@ -247,31 +610,168 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/customers/{{customerId}}/leads",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "customers", "{{customerId}}", "leads"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "customers",
+                "{{customerId}}",
+                "leads"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"assignedSales\": \"{{userId}}\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"assignedSales\": \"{{userId}}\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Admin — Leads",
+      "name": "Admin \u2014 Leads",
       "item": [
         {
           "name": "Lead Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/leads/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "leads", "stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "stats"
+              ]
+            }
+          }
+        },
+        {
+          "name": "AI-Handled Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/ai-handled",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "ai-handled"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Signed Contracts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/signed-contracts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "signed-contracts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Terminated Projects",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/terminated",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "terminated"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
             }
           }
         },
@@ -279,11 +779,24 @@
           "name": "Scoring Today",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/leads/scoring/today",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "leads", "scoring", "today"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "scoring",
+                "today"
+              ]
             }
           }
         },
@@ -292,32 +805,89 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/leads/import",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "leads", "import"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "import"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"csv\": \"name,email,phone,projectType\\nArjun,a@ex.com,9876543210,Warehouse\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"csv\": \"name,email,phone,projectType\\nArjun,a@ex.com,9876543210,Warehouse\"\n}"
+            }
           }
         },
         {
           "name": "List Leads",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/leads?page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "leads"],
+              "raw": "{{baseUrl}}/api/admin/leads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads"
+              ],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "lifecycleStatus", "value": "", "disabled": true },
-                { "key": "assignedSales", "value": "", "disabled": true },
-                { "key": "isQuoteReady", "value": "", "disabled": true }
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "lifecycleStatus",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "assignedSales",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isHandedToSales",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isTerminated",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
               ]
             }
           }
@@ -327,26 +897,54 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/leads",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "leads"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"assignedSales\": \"{{userId}}\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"assignedSales\": \"{{userId}}\"\n}"
+            }
           }
         },
         {
-          "name": "Lead Detail",
+          "name": "Lead Detail (v2)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/detail",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "leads", "{{leadId}}", "detail"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "{{leadId}}",
+                "detail"
+              ]
             }
           }
         },
@@ -354,11 +952,115 @@
           "name": "Lead Timeline",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/timeline",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "leads", "{{leadId}}", "timeline"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "{{leadId}}",
+                "timeline"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Budget",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/budget",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "{{leadId}}",
+                "budget"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set Budget",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/budget",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "{{leadId}}",
+                "budget"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"materialBudget\": 100000,\n  \"logisticBudget\": 20000,\n  \"productionBudget\": 50000,\n  \"shipperBudget\": 15000,\n  \"otherCost\": 5000\n}"
+            }
+          }
+        },
+        {
+          "name": "Terminate Project",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/terminate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "{{leadId}}",
+                "terminate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Customer cancelled due to budget constraints\"\n}"
             }
           }
         },
@@ -367,15 +1069,31 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "leads", "{{leadId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "{{leadId}}"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"quoteValue\": 300000,\n  \"lifecycleStatus\": \"negotiation\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"quoteValue\": 300000\n}"
+            }
           }
         },
         {
@@ -383,31 +1101,59 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/assign",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "leads", "{{leadId}}", "assign"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "{{leadId}}",
+                "assign"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"employeeId\": \"{{userId}}\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": \"{{userId}}\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Admin — Meetings",
+      "name": "Admin \u2014 Meetings",
       "item": [
         {
           "name": "List Meetings",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/meetings",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "meetings"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "meetings"
+              ]
             }
           }
         },
@@ -416,15 +1162,30 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/meetings",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "meetings"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "meetings"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"leadId\": \"{{leadId}}\",\n  \"title\": \"Project discussion\",\n  \"meetingTime\": \"2024-06-15T14:00:00.000Z\",\n  \"duration\": 60,\n  \"mode\": \"online\",\n  \"meetingLink\": \"https://meet.google.com/abc\",\n  \"notes\": \"Review warehouse specs\",\n  \"assignedTo\": \"{{userId}}\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"leadId\": \"{{leadId}}\",\n  \"title\": \"Project discussion\",\n  \"meetingTime\": \"2024-06-15T14:00:00.000Z\",\n  \"duration\": 60,\n  \"mode\": \"online\",\n  \"meetingLink\": \"https://meet.google.com/abc\",\n  \"notes\": \"Review warehouse specs\",\n  \"assignedTo\": \"{{userId}}\"\n}"
+            }
           }
         },
         {
@@ -432,43 +1193,84 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/meetings/{{meetingId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "meetings", "{{meetingId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "meetings",
+                "{{meetingId}}"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"notes\": \"Updated notes\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Updated notes\"\n}"
+            }
           }
         },
         {
           "name": "Complete Meeting",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/meetings/{{meetingId}}/complete",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "meetings", "{{meetingId}}", "complete"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "meetings",
+                "{{meetingId}}",
+                "complete"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Admin — Follow-ups",
+      "name": "Admin \u2014 Follow-ups",
       "item": [
         {
           "name": "Follow-up Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/followups/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "followups", "stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "followups",
+                "stats"
+              ]
             }
           }
         },
@@ -476,11 +1278,23 @@
           "name": "Upcoming Follow-ups",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/followups/upcoming",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "followups", "upcoming"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "followups",
+                "upcoming"
+              ]
             }
           }
         },
@@ -488,11 +1302,23 @@
           "name": "Follow-up KPI",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/followups/kpi",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "followups", "kpi"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "followups",
+                "kpi"
+              ]
             }
           }
         },
@@ -500,11 +1326,23 @@
           "name": "AI Scripts",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/followups/ai-script",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "followups", "ai-script"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "followups",
+                "ai-script"
+              ]
             }
           }
         },
@@ -513,43 +1351,83 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/followups",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "followups"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "followups"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"assignedTo\": \"{{userId}}\",\n  \"followUpDate\": \"2024-06-20T10:00:00.000Z\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"high\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"assignedTo\": \"{{userId}}\",\n  \"followUpDate\": \"2024-06-20T10:00:00.000Z\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"high\"\n}"
+            }
           }
         },
         {
           "name": "Complete Follow-up",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/followups/{{followUpId}}/complete",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "followups", "{{followUpId}}", "complete"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "followups",
+                "{{followUpId}}",
+                "complete"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Admin — Employees",
+      "name": "Admin \u2014 Employees",
       "item": [
         {
           "name": "Employee Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/employees/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "employees", "stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "employees",
+                "stats"
+              ]
             }
           }
         },
@@ -557,11 +1435,23 @@
           "name": "Employee Performance",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/employees/performance",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "employees", "performance"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "employees",
+                "performance"
+              ]
             }
           }
         },
@@ -569,11 +1459,22 @@
           "name": "List Employees",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/employees",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "employees"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "employees"
+              ]
             }
           }
         },
@@ -582,26 +1483,54 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/employees",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "employees"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "employees"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@company.com\",\n  \"password\": \"Pass@123\",\n  \"phone\": \"9876543210\",\n  \"role\": \"sales\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@company.com\",\n  \"password\": \"Pass@123\",\n  \"phone\": \"9876543210\",\n  \"role\": \"sales\"\n}"
+            }
           }
         },
         {
           "name": "Employee Timeline",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/employees/{{userId}}/timeline",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "employees", "{{userId}}", "timeline"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "employees",
+                "{{userId}}",
+                "timeline"
+              ]
             }
           }
         },
@@ -609,11 +1538,23 @@
           "name": "Employee Detail",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/employees/{{userId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "employees", "{{userId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "employees",
+                "{{userId}}"
+              ]
             }
           }
         },
@@ -622,33 +1563,63 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/employees/{{userId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "employees", "{{userId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "employees",
+                "{{userId}}"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Ravi K\",\n  \"isActive\": true,\n  \"role\": \"sales\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ravi K\",\n  \"isActive\": true,\n  \"role\": \"sales\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Admin — Escalations",
+      "name": "Admin \u2014 Escalations",
       "item": [
         {
           "name": "List Escalations",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/escalations?status=pending",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "escalations"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "escalations"
+              ],
               "query": [
-                { "key": "status", "value": "pending" }
+                {
+                  "key": "status",
+                  "value": "pending"
+                }
               ]
             }
           }
@@ -658,33 +1629,64 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/escalations/{{escalationId}}/assign",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "escalations", "{{escalationId}}", "assign"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "escalations",
+                "{{escalationId}}",
+                "assign"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"employeeId\": \"{{userId}}\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": \"{{userId}}\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Admin — PO Orders",
+      "name": "Admin \u2014 PO Orders",
       "item": [
         {
           "name": "List PO Orders",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/po-orders?status=pending",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "po-orders"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "po-orders"
+              ],
               "query": [
-                { "key": "status", "value": "pending" }
+                {
+                  "key": "status",
+                  "value": "pending"
+                }
               ]
             }
           }
@@ -694,34 +1696,102 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/po-orders/{{poOrderId}}/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "po-orders", "{{poOrderId}}", "status"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "po-orders",
+                "{{poOrderId}}",
+                "status"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"approved\",\n  \"adminNotes\": \"All checks passed\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\",\n  \"adminNotes\": \"All checks passed\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Assign PO to Plant User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/po-orders/{{poOrderId}}/assign",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "po-orders",
+                "{{poOrderId}}",
+                "assign"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assignedTo\": \"{{userId}}\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Sales — Dashboard",
+      "name": "Sales \u2014 Dashboard",
       "item": [
         {
           "name": "Stats (v2)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/dashboard/stats?startDate=2026-05-01&endDate=2026-05-13",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "dashboard", "stats"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "dashboard",
+                "stats"
+              ],
               "query": [
-                { "key": "startDate", "value": "2026-05-01" },
-                { "key": "endDate", "value": "2026-05-13" }
+                {
+                  "key": "startDate",
+                  "value": "2026-05-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-05-13"
+                }
               ]
             }
           }
@@ -730,14 +1800,32 @@
           "name": "Conversion Funnel (v2)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/dashboard/conversion-funnel?startDate=2026-05-01&endDate=2026-05-13",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "dashboard", "conversion-funnel"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "dashboard",
+                "conversion-funnel"
+              ],
               "query": [
-                { "key": "startDate", "value": "2026-05-01" },
-                { "key": "endDate", "value": "2026-05-13" }
+                {
+                  "key": "startDate",
+                  "value": "2026-05-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-05-13"
+                }
               ]
             }
           }
@@ -746,14 +1834,32 @@
           "name": "Performance Trend (v2)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/dashboard/performance-trend?tab=customers&range=30d",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "dashboard", "performance-trend"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "dashboard",
+                "performance-trend"
+              ],
               "query": [
-                { "key": "tab", "value": "customers" },
-                { "key": "range", "value": "30d" }
+                {
+                  "key": "tab",
+                  "value": "customers"
+                },
+                {
+                  "key": "range",
+                  "value": "30d"
+                }
               ]
             }
           }
@@ -762,14 +1868,32 @@
           "name": "Today Tasks (v2)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/dashboard/today-tasks?startDate=2026-05-13&endDate=2026-05-13",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "dashboard", "today-tasks"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "dashboard",
+                "today-tasks"
+              ],
               "query": [
-                { "key": "startDate", "value": "2026-05-13" },
-                { "key": "endDate", "value": "2026-05-13" }
+                {
+                  "key": "startDate",
+                  "value": "2026-05-13"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-05-13"
+                }
               ]
             }
           }
@@ -778,11 +1902,23 @@
           "name": "Lead Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/dashboard/lead-stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "dashboard", "lead-stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "dashboard",
+                "lead-stats"
+              ]
             }
           }
         },
@@ -790,64 +1926,343 @@
           "name": "Customer Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/dashboard/customer-stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "dashboard", "customer-stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "dashboard",
+                "customer-stats"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Sales — Leads",
+      "name": "Sales \u2014 Leads",
       "item": [
         {
           "name": "List My Leads",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/sales/leads?search=warehouse&lifecycleStatus=initial_contact&buildingType=steel&isQuoteReady=false&page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "leads"],
+              "raw": "{{baseUrl}}/api/sales/leads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads"
+              ],
               "query": [
-                { "key": "search", "value": "warehouse" },
-                { "key": "lifecycleStatus", "value": "initial_contact" },
-                { "key": "buildingType", "value": "steel" },
-                { "key": "isQuoteReady", "value": "false" },
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" }
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "lifecycleStatus",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "buildingType",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isQuoteReady",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
               ]
             }
           }
         },
         {
-          "name": "Leads Stats (v2)",
+          "name": "Lead Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/sales/leads/stats?startDate=2026-05-01&endDate=2026-05-13",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "leads", "stats"],
-              "query": [
-                { "key": "startDate", "value": "2026-05-01" },
-                { "key": "endDate", "value": "2026-05-13" }
+              "raw": "{{baseUrl}}/api/sales/leads/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "stats"
               ]
             }
           }
         },
         {
-          "name": "Lead Detail",
+          "name": "Scored Leads",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/scored",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "scored"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Escalated Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/escalated",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "escalated"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": false
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Leads (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "lifecycleStatus",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Import Leads (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/import",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "import"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"csv\": \"projectName,customerName,customerEmail,customerPhone,buildingType,location\\nWarehouse A,Arjun,arjun@ex.com,9876543210,Warehouse,Chennai\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"projectName\": \"New Warehouse\",\n  \"customerEmail\": \"arjun@ex.com\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"customerName\": \"Arjun\",\n  \"customerPhone\": \"9876543210\",\n  \"customerCountryCode\": \"+91\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 100,\n  \"length\": 50\n}"
+            }
+          }
+        },
+        {
+          "name": "Lead Detail (v2)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/detail",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "leads", "{{leadId}}", "detail"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "{{leadId}}",
+                "detail"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Buildings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/buildings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "{{leadId}}",
+                "buildings"
+              ]
             }
           }
         },
@@ -856,15 +2271,130 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/lifecycle",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "leads", "{{leadId}}", "lifecycle"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "{{leadId}}",
+                "lifecycle"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"lifecycleStatus\": \"negotiation\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lifecycleStatus\": \"negotiation\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Edit Lead",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "{{leadId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"projectName\": \"Updated Name\",\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"notes\": \"Updated\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Log Activity",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/activity",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "{{leadId}}",
+                "activity"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"activityType\": \"call\",\n  \"notes\": \"Discussed pricing\",\n  \"outcome\": \"positive\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Buildings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/buildings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "{{leadId}}",
+                "buildings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numberOfBuildings\": 3,\n  \"quotationId\": \"{{quotationId}}\"\n}"
+            }
           }
         },
         {
@@ -872,15 +2402,32 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/escalate",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "leads", "{{leadId}}", "escalate"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "{{leadId}}",
+                "escalate"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"note\": \"Customer demanding 40% discount — outside my authority.\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Customer demanding 40% discount \\u2014 outside my authority.\"\n}"
+            }
           }
         },
         {
@@ -888,31 +2435,60 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/po-order",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "leads", "{{leadId}}", "po-order"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "{{leadId}}",
+                "po-order"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"poNumber\": \"PO-0001\",\n  \"invoiceId\": \"{{invoiceId}}\",\n  \"quotationId\": \"{{quotationId}}\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"poNumber\": \"PO-0001\",\n  \"invoiceId\": \"{{invoiceId}}\",\n  \"quotationId\": \"{{quotationId}}\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Sales — Follow-ups",
+      "name": "Sales \u2014 Follow-ups",
       "item": [
         {
           "name": "Follow-up Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/followups/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "followups", "stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "followups",
+                "stats"
+              ]
             }
           }
         },
@@ -920,23 +2496,192 @@
           "name": "Upcoming Follow-ups",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/followups/upcoming",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "followups", "upcoming"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "followups",
+                "upcoming"
+              ]
             }
           }
         },
         {
-          "name": "Follow-up KPI",
+          "name": "Trend",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/sales/followups/kpi",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "followups", "kpi"]
+              "raw": "{{baseUrl}}/api/sales/followups/trend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "followups",
+                "trend"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "7d",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Response Rate",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/followups/response-rate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "followups",
+                "response-rate"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Communication Timeline",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/followups/communication-timeline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "followups",
+                "communication-timeline"
+              ],
+              "query": [
+                {
+                  "key": "leadId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "activityType",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "AI Script Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/followups/ai-script",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "followups",
+                "ai-script"
+              ]
+            }
+          }
+        },
+        {
+          "name": "AI Script \u2014 Chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/followups/ai-script",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "followups",
+                "ai-script"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Help me write a follow-up email for a warm lead\"\n    }\n  ],\n  \"leadId\": \"{{leadId}}\"\n}"
             }
           }
         },
@@ -945,43 +2690,104 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/followups",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "followups"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "followups"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"followUpDate\": \"2024-06-20T10:00:00.000Z\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"medium\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"followUpDate\": \"2026-06-01T10:00:00.000Z\",\n  \"modeOfContact\": \"call\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"medium\"\n}"
+            }
           }
         },
         {
           "name": "Complete Follow-up",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/followups/{{followUpId}}/complete",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "followups", "{{followUpId}}", "complete"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "followups",
+                "{{followUpId}}",
+                "complete"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Sales — Projects & PO",
+      "name": "Sales \u2014 Quotations & PO",
       "item": [
         {
-          "name": "My Projects",
+          "name": "My Quotations",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/sales/projects",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "projects"]
+              "raw": "{{baseUrl}}/api/sales/quotations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "quotations"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
             }
           }
         },
@@ -989,44 +2795,248 @@
           "name": "My PO Orders",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/sales/po-orders",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "sales", "po-orders"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "po-orders"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Common — Quotations",
+      "name": "Sales \u2014 Customers",
+      "item": [
+        {
+          "name": "Customer Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/customers/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "customers",
+                "stats"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/customers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Customer Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "customers",
+                "{{customerId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Customer Projects",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/customers/{{customerId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "customers",
+                "{{customerId}}",
+                "projects"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Project for Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/customers/{{customerId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "customers",
+                "{{customerId}}",
+                "projects"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"projectName\": \"New Warehouse\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 100,\n  \"length\": 50\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Common \u2014 Quotations",
       "item": [
         {
           "name": "Create Quotation",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/quotations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "quotations"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quotations"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"buildingType\": \"Warehouse\",\n  \"basePrice\": 250000,\n  \"maxPrice\": 300000,\n  \"sqft\": \"5000\",\n  \"currency\": \"USD\",\n  \"roofStyle\": \"Gable\",\n  \"location\": \"Chennai\",\n  \"validTill\": \"2024-05-30T00:00:00.000Z\",\n  \"paymentTerms\": \"30% upfront, 70% on delivery\",\n  \"specialNote\": \"Price locked for 30 days\",\n  \"internalNotes\": \"High-value client\",\n  \"priorityLevel\": \"high\",\n  \"includedMaterials\": [{\"name\": \"Steel frame\", \"description\": \"Grade A\", \"quantity\": 1}],\n  \"optionalAddOns\": [{\"name\": \"Insulation\", \"description\": \"Premium\", \"price\": 15000}]\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"buildingType\": \"Warehouse\",\n  \"basePrice\": 250000,\n  \"maxPrice\": 300000,\n  \"sqft\": \"5000\",\n  \"currency\": \"USD\",\n  \"roofStyle\": \"Gable\",\n  \"location\": \"Chennai\",\n  \"validTill\": \"2024-05-30T00:00:00.000Z\",\n  \"paymentTerms\": \"30% upfront, 70% on delivery\",\n  \"specialNote\": \"Price locked for 30 days\",\n  \"internalNotes\": \"High-value client\",\n  \"priorityLevel\": \"high\",\n  \"includedMaterials\": [{\"name\": \"Steel frame\", \"description\": \"Grade A\", \"quantity\": 1}],\n  \"optionalAddOns\": [{\"name\": \"Insulation\", \"description\": \"Premium\", \"price\": 15000}]\n}"
+            }
           }
         },
         {
           "name": "Get Quotation",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/quotations/{{quotationId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "quotations", "{{quotationId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quotations",
+                "{{quotationId}}"
+              ]
             }
           }
         },
@@ -1035,26 +3045,53 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/quotations/{{quotationId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "quotations", "{{quotationId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quotations",
+                "{{quotationId}}"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"basePrice\": 260000,\n  \"specialNote\": \"Updated terms\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"basePrice\": 260000,\n  \"specialNote\": \"Updated terms\"\n}"
+            }
           }
         },
         {
           "name": "Send Quotation",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/send",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "quotations", "{{quotationId}}", "send"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quotations",
+                "{{quotationId}}",
+                "send"
+              ]
             }
           }
         },
@@ -1062,11 +3099,23 @@
           "name": "Get Quote Summary",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/summary",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "quotations", "{{quotationId}}", "summary"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quotations",
+                "{{quotationId}}",
+                "summary"
+              ]
             }
           }
         },
@@ -1074,44 +3123,81 @@
           "name": "Lead Quotations",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/leads/{{leadId}}/quotations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "leads", "{{leadId}}", "quotations"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "leads",
+                "{{leadId}}",
+                "quotations"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Common — Invoices",
+      "name": "Common \u2014 Invoices",
       "item": [
         {
           "name": "Create Invoice",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/invoices",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "invoices"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"quotationId\": \"{{quotationId}}\",\n  \"date\": \"2024-03-15T00:00:00.000Z\",\n  \"daysToPay\": 30,\n  \"totalAmount\": 280000,\n  \"subtotal\": 260000,\n  \"markupTotal\": 20000,\n  \"discount\": 0,\n  \"depositAmount\": 84000,\n  \"lineItems\": [{\"items\": [\"Steel frame\", \"Install\"], \"rate\": 50000, \"markup\": 5000, \"quantity\": 1, \"tax\": 9000, \"total\": 64000}]\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"quotationId\": \"{{quotationId}}\",\n  \"date\": \"2024-03-15T00:00:00.000Z\",\n  \"daysToPay\": 30,\n  \"totalAmount\": 280000,\n  \"subtotal\": 260000,\n  \"markupTotal\": 20000,\n  \"discount\": 0,\n  \"depositAmount\": 84000,\n  \"lineItems\": [{\"items\": [\"Steel frame\", \"Install\"], \"rate\": 50000, \"markup\": 5000, \"quantity\": 1, \"tax\": 9000, \"total\": 64000}]\n}"
+            }
           }
         },
         {
           "name": "Get Invoice",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "invoices", "{{invoiceId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invoiceId}}"
+              ]
             }
           }
         },
@@ -1120,26 +3206,53 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "invoices", "{{invoiceId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invoiceId}}"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"totalAmount\": 290000\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"totalAmount\": 290000\n}"
+            }
           }
         },
         {
           "name": "Send Invoice",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/send",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "invoices", "{{invoiceId}}", "send"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invoiceId}}",
+                "send"
+              ]
             }
           }
         },
@@ -1147,11 +3260,23 @@
           "name": "Mark Invoice Paid",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/mark-paid",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "invoices", "{{invoiceId}}", "mark-paid"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "{{invoiceId}}",
+                "mark-paid"
+              ]
             }
           }
         },
@@ -1159,78 +3284,119 @@
           "name": "Lead Invoices",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/leads/{{leadId}}/invoices",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "leads", "{{leadId}}", "invoices"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "leads",
+                "{{leadId}}",
+                "invoices"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Common — Payment Schedules",
+      "name": "Common \u2014 Payment Schedules",
       "item": [
         {
-          "name": "Create Schedule",
+          "name": "Create Schedule (leadId-based)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/payment-schedules",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "payment-schedules"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "payment-schedules"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"leadId\": \"{{leadId}}\",\n  \"invoiceId\": \"{{invoiceId}}\",\n  \"totalAmount\": 280000,\n  \"payments\": [\n    {\"name\": \"Deposit\", \"amount\": 30, \"amountType\": \"percentage\", \"dueDate\": \"2024-03-20T00:00:00.000Z\"},\n    {\"name\": \"On delivery\", \"amount\": 70, \"amountType\": \"percentage\"}\n  ]\n}" }
-          }
-        },
-        {
-          "name": "Get Schedule by Invoice",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/api/payment-schedules/invoice/{{invoiceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "payment-schedules", "invoice", "{{invoiceId}}"]
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"totalAmount\": 280000,\n  \"stages\": [\n    {\n      \"stageName\": \"Deposit\",\n      \"amount\": 30,\n      \"amountType\": \"percentage\",\n      \"dueDate\": \"2026-06-01T00:00:00.000Z\"\n    },\n    {\n      \"stageName\": \"On Delivery\",\n      \"amount\": 70,\n      \"amountType\": \"percentage\"\n    }\n  ]\n}"
             }
           }
         },
         {
-          "name": "Mark Payment Item Paid",
+          "name": "Get Schedule by Lead",
           "request": {
-            "method": "PUT",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/payment-schedules/{{scheduleId}}/payments/{{paymentId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "payment-schedules", "{{scheduleId}}", "payments", "{{paymentId}}"]
+              "raw": "{{baseUrl}}/api/payment-schedules/lead/{{leadId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "payment-schedules",
+                "lead",
+                "{{leadId}}"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Common — Documents & Uploads",
+      "name": "Common \u2014 Documents & Uploads",
       "item": [
         {
           "name": "Get Presigned URL",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/upload/presigned-url",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "upload", "presigned-url"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "upload",
+                "presigned-url"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"fileName\": \"site-plan.pdf\",\n  \"fileType\": \"application/pdf\",\n  \"folder\": \"documents\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"site-plan.pdf\",\n  \"fileType\": \"application/pdf\",\n  \"folder\": \"documents\"\n}"
+            }
           }
         },
         {
@@ -1238,46 +3404,130 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/upload/leads/{{leadId}}/documents",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "upload", "leads", "{{leadId}}", "documents"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "upload",
+                "leads",
+                "{{leadId}}",
+                "documents"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"url\": \"https://bucket.s3.amazonaws.com/documents/uuid.pdf\",\n  \"name\": \"site-plan.pdf\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://bucket.s3.amazonaws.com/documents/uuid.pdf\",\n  \"name\": \"site-plan.pdf\"\n}"
+            }
           }
         },
         {
           "name": "Delete Document",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/upload/leads/{{leadId}}/documents/{{docId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "upload", "leads", "{{leadId}}", "documents", "{{docId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "upload",
+                "leads",
+                "{{leadId}}",
+                "documents",
+                "{{docId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload Agreement (Lead)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/uploads/leads/{{leadId}}/agreement",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "uploads",
+                "leads",
+                "{{leadId}}",
+                "agreement"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://bucket.s3.amazonaws.com/documents/agreement-uuid.pdf\",\n  \"name\": \"signed-agreement.pdf\"\n}"
             }
           }
         }
       ]
     },
     {
-      "name": "Account — Dashboard",
+      "name": "Account \u2014 Dashboard",
       "item": [
         {
           "name": "Financial Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/dashboard/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "dashboard", "stats"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "dashboard",
+                "stats"
+              ],
               "query": [
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true }
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1286,11 +3536,23 @@
           "name": "Invoice Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/dashboard/invoice-stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "dashboard", "invoice-stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "dashboard",
+                "invoice-stats"
+              ]
             }
           }
         },
@@ -1298,13 +3560,28 @@
           "name": "Income vs Expense",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/dashboard/income-vs-expense?period=monthly",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "dashboard", "income-vs-expense"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "dashboard",
+                "income-vs-expense"
+              ],
               "query": [
-                { "key": "period", "value": "monthly" }
+                {
+                  "key": "period",
+                  "value": "monthly"
+                }
               ]
             }
           }
@@ -1313,13 +3590,28 @@
           "name": "Recent Transactions",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/dashboard/recent-transactions?limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "dashboard", "recent-transactions"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "dashboard",
+                "recent-transactions"
+              ],
               "query": [
-                { "key": "limit", "value": "10" }
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
               ]
             }
           }
@@ -1328,11 +3620,23 @@
           "name": "Upcoming Payments",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/dashboard/upcoming-payments",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "dashboard", "upcoming-payments"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "dashboard",
+                "upcoming-payments"
+              ]
             }
           }
         },
@@ -1340,11 +3644,23 @@
           "name": "Payment Distribution",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/dashboard/payment-distribution",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "dashboard", "payment-distribution"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "dashboard",
+                "payment-distribution"
+              ]
             }
           }
         },
@@ -1352,11 +3668,23 @@
           "name": "Revenue Trend",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/dashboard/revenue-trend",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "dashboard", "revenue-trend"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "dashboard",
+                "revenue-trend"
+              ]
             }
           }
         },
@@ -1364,31 +3692,22 @@
           "name": "Expense Trend",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/dashboard/expense-trend",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "dashboard", "expense-trend"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Account — Projects",
-      "item": [
-        {
-          "name": "List Completed Projects",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/api/account/projects",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "projects"],
-              "query": [
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true }
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "dashboard",
+                "expense-trend"
               ]
             }
           }
@@ -1396,21 +3715,84 @@
       ]
     },
     {
-      "name": "Account — Invoices",
+      "name": "Account \u2014 Projects",
+      "item": [
+        {
+          "name": "List Completed Projects",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/account/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "projects"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Account \u2014 Invoices",
       "item": [
         {
           "name": "List Invoices (Grouped by Project)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/invoices",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "invoices"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "invoices"
+              ],
               "query": [
-                { "key": "status", "value": "paid", "disabled": true },
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true }
+                {
+                  "key": "status",
+                  "value": "paid",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1419,14 +3801,34 @@
           "name": "Invoice Analytics",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/invoices/analytics",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "invoices", "analytics"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "invoices",
+                "analytics"
+              ],
               "query": [
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true }
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1435,11 +3837,25 @@
           "name": "Project Breakdown",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/invoices/project/{{leadId}}/breakdown",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "invoices", "project", "{{leadId}}", "breakdown"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "invoices",
+                "project",
+                "{{leadId}}",
+                "breakdown"
+              ]
             }
           }
         },
@@ -1447,31 +3863,64 @@
           "name": "Mark Invoice Paid",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/invoices/{{invoiceId}}/mark-paid",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "invoices", "{{invoiceId}}", "mark-paid"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "invoices",
+                "{{invoiceId}}",
+                "mark-paid"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Account — Expenses",
+      "name": "Account \u2014 Expenses",
       "item": [
         {
           "name": "Expense Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/expenses/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "expenses", "stats"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "expenses",
+                "stats"
+              ],
               "query": [
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true }
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1480,18 +3929,51 @@
           "name": "List Expenses",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/expenses?page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "expenses"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "expenses"
+              ],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "category", "value": "", "disabled": true },
-                { "key": "leadId", "value": "", "disabled": true },
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true }
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "category",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "leadId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1501,26 +3983,54 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/account/expenses",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "expenses"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "expenses"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"expenseId\": \"EXP-2024-001\",\n  \"category\": \"materials\",\n  \"date\": \"2024-03-15T00:00:00.000Z\",\n  \"amount\": 45000,\n  \"description\": \"Steel frame order\",\n  \"leadId\": \"{{leadId}}\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expenseId\": \"EXP-2024-001\",\n  \"category\": \"materials\",\n  \"date\": \"2024-03-15T00:00:00.000Z\",\n  \"amount\": 45000,\n  \"description\": \"Steel frame order\",\n  \"leadId\": \"{{leadId}}\"\n}"
+            }
           }
         },
         {
           "name": "Deactivate Expense",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/expenses/{{expenseId}}/deactivate",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "expenses", "{{expenseId}}", "deactivate"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "expenses",
+                "{{expenseId}}",
+                "deactivate"
+              ]
             }
           }
         },
@@ -1528,28 +4038,53 @@
           "name": "Project Expenses",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/expenses/project/{{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "expenses", "project", "{{leadId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "expenses",
+                "project",
+                "{{leadId}}"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Account — Tax",
+      "name": "Account \u2014 Tax",
       "item": [
         {
           "name": "Tax Stats",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/tax/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "tax", "stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "tax",
+                "stats"
+              ]
             }
           }
         },
@@ -1557,15 +4092,38 @@
           "name": "List Tax Entries",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/tax",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "tax"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "tax"
+              ],
               "query": [
-                { "key": "status", "value": "pending", "disabled": true },
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true }
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1575,58 +4133,116 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/account/tax",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "tax"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "tax"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"state\": \"Tamil Nadu\",\n  \"dueDate\": \"2024-04-30T00:00:00.000Z\",\n  \"amount\": 32000,\n  \"websiteLink\": \"https://tnvat.gov.in\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"state\": \"Tamil Nadu\",\n  \"dueDate\": \"2024-04-30T00:00:00.000Z\",\n  \"amount\": 32000,\n  \"websiteLink\": \"https://tnvat.gov.in\"\n}"
+            }
           }
         },
         {
           "name": "Mark Tax Paid",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/account/tax/{{taxId}}/mark-paid",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "account", "tax", "{{taxId}}", "mark-paid"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "tax",
+                "{{taxId}}",
+                "mark-paid"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "Customer — Auth",
+      "name": "Customer \u2014 Auth",
       "item": [
         {
           "name": "Customer Login",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "auth",
+                "login"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"arjun@example.com\",\n  \"password\": \"9876543210\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"arjun@example.com\",\n  \"password\": \"9876543210\"\n}"
+            }
           }
         },
         {
           "name": "Customer Refresh Token",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/auth/refresh",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "auth", "refresh"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "auth",
+                "refresh"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"<refreshToken>\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"<refreshToken>\"\n}"
+            }
           }
         },
         {
@@ -1634,91 +4250,184 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/auth/change-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "auth", "change-password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "auth",
+                "change-password"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"9876543210\",\n  \"newPassword\": \"MyNewPass@123\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"9876543210\",\n  \"newPassword\": \"MyNewPass@123\"\n}"
+            }
           }
         },
         {
           "name": "Customer Forgot Password (Send OTP)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/auth/forgot-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "auth", "forgot-password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "auth",
+                "forgot-password"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"arjun@example.com\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"arjun@example.com\"\n}"
+            }
           }
         },
         {
           "name": "Customer Verify OTP",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/auth/verify-otp",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "auth", "verify-otp"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "auth",
+                "verify-otp"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"arjun@example.com\",\n  \"otp\": \"123456\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"arjun@example.com\",\n  \"otp\": \"123456\"\n}"
+            }
           }
         },
         {
           "name": "Customer Reset Password",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/auth/reset-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "auth", "reset-password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "auth",
+                "reset-password"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"MyNewPass@123\"\n}" }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Customer — Dashboard",
-      "item": [
-        {
-          "name": "Dashboard",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/api/customer/dashboard",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "dashboard"]
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"MyNewPass@123\"\n}"
             }
           }
         }
       ]
     },
     {
-      "name": "Customer — Projects",
+      "name": "Customer \u2014 Dashboard",
+      "item": [
+        {
+          "name": "Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "dashboard"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer \u2014 Projects",
       "item": [
         {
           "name": "List My Projects",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/projects?page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "projects"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "projects"
+              ],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "lifecycleStatus", "value": "", "disabled": true }
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "lifecycleStatus",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1727,11 +4436,23 @@
           "name": "Project Detail",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/projects/{{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "projects", "{{leadId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "projects",
+                "{{leadId}}"
+              ]
             }
           }
         },
@@ -1740,33 +4461,63 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/projects",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "projects"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "projects"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"roofStyle\": \"Gable\",\n  \"sqft\": \"5000\",\n  \"width\": 100,\n  \"length\": 50,\n  \"description\": \"Need loading dock and office mezzanine\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"roofStyle\": \"Gable\",\n  \"sqft\": \"5000\",\n  \"width\": 100,\n  \"length\": 50,\n  \"description\": \"Need loading dock and office mezzanine\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Customer — Documents",
+      "name": "Customer \u2014 Documents",
       "item": [
         {
           "name": "All Documents",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/documents",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "documents"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "documents"
+              ],
               "query": [
-                { "key": "type", "value": "drawing", "disabled": true }
+                {
+                  "key": "type",
+                  "value": "drawing",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1774,17 +4525,28 @@
       ]
     },
     {
-      "name": "Customer — Payments",
+      "name": "Customer \u2014 Payments",
       "item": [
         {
           "name": "Payments Overview",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/payments",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "payments"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "payments"
+              ]
             }
           }
         },
@@ -1792,13 +4554,29 @@
           "name": "Invoices by Project",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/payments/invoices",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "payments", "invoices"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "payments",
+                "invoices"
+              ],
               "query": [
-                { "key": "status", "value": "", "disabled": true }
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1806,38 +4584,65 @@
       ]
     },
     {
-      "name": "Customer — Upload",
+      "name": "Customer \u2014 Upload",
       "item": [
         {
           "name": "Get Presigned URL",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/upload/presigned-url",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "upload", "presigned-url"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "upload",
+                "presigned-url"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"fileName\": \"photo.jpg\",\n  \"fileType\": \"image/jpeg\",\n  \"folder\": \"customer-uploads\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"photo.jpg\",\n  \"fileType\": \"image/jpeg\",\n  \"folder\": \"customer-uploads\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Customer — Profile",
+      "name": "Customer \u2014 Profile",
       "item": [
         {
           "name": "Get Profile",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/profile",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "profile"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "profile"
+              ]
             }
           }
         },
@@ -1846,15 +4651,30 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/customer/profile",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customer", "profile"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "profile"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Arjun K\",\n  \"photo\": \"https://s3.../photo.jpg\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Arjun K\",\n  \"photo\": \"https://s3.../photo.jpg\"\n}"
+            }
           }
         }
       ]

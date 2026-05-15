@@ -9,5 +9,10 @@ router.put('/:poOrderId/status',
   validate,
   ctrl.updatePOStatus
 )
+router.put('/:poOrderId/assign',
+  [body('assignedTo').notEmpty()],
+  validate,
+  ctrl.assignPOOrder
+)
 
 module.exports = router
