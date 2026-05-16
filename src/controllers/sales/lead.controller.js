@@ -26,6 +26,22 @@ const guardLead = async (leadId, salesId) => {
   return { lead }
 }
 
+const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const normalizeProjectName = (value = '') => value.trim()
+const toNumberOrNull = (value) => {
+  if (value === undefined || value === null || value === '') return null
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
+}
+const pickNonEmpty = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (value !== undefined && value !== null && typeof value !== 'string') return value
+  }
+  return ''
+}
+const isValidEmail = (email = '') => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+
 exports.getLeads = asyncHandler(async (req, res) => {
   const { search, buildingType, lifecycleStatus, isQuoteReady, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
@@ -110,29 +126,56 @@ exports.createLead = asyncHandler(async (req, res) => {
   const {
     projectName, customerEmail, buildingType, location,
     customerName, customerPhone, customerCountryCode,
-    roofStyle, width, length, height,
+    roofStyle, width, length, height, notes,
+    firstName, lastName, email, emailAddress, phone, phoneNumber,
+    countryCode, phoneCountryCode,
+    companyName, company,
+    city, projectLocation, siteLocation, companyLocation,
+    projectType, structureType,
+    estimatedValue, leadStatus,
   } = req.body
 
-  if (!projectName || !customerEmail || !buildingType || !location) {
-    return badRequest(res, 'projectName, customerEmail, buildingType, location are required')
+  const mergedName = `${pickNonEmpty(firstName)} ${pickNonEmpty(lastName)}`.trim()
+  const normalizedCustomerName = pickNonEmpty(customerName, mergedName, firstName)
+  const rawEmail = pickNonEmpty(customerEmail, email, emailAddress)
+  const normalizedEmail = rawEmail.toLowerCase()
+  const normalizedCustomerPhone = pickNonEmpty(customerPhone, phone, phoneNumber)
+  const normalizedCountryCode = pickNonEmpty(customerCountryCode, countryCode, phoneCountryCode, '+91')
+  const normalizedBuildingType = pickNonEmpty(buildingType, projectType, structureType)
+  const normalizedLocation = pickNonEmpty(location, city, projectLocation, siteLocation, companyLocation, 'TBD')
+
+  const providedProjectName = pickNonEmpty(projectName)
+  const generatedProjectBase = pickNonEmpty(companyName, company, normalizedCustomerName, 'Project')
+  const generatedProjectName = `${generatedProjectBase} ${normalizedBuildingType || 'Project'} ${new Date().toISOString().replace(/[:.]/g, '-')}`
+  const normalizedProjectName = normalizeProjectName(
+    pickNonEmpty(providedProjectName, generatedProjectName)
+  )
+
+  if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+    return badRequest(res, 'A valid customer email is required')
+  }
+  if (!normalizedBuildingType) {
+    return badRequest(res, 'buildingType is required')
   }
 
-  let customer = await Customer.findOne({ email: customerEmail.toLowerCase().trim() })
+  let customer = await Customer.findOne({ email: normalizedEmail })
   let isNewCustomer = false
 
   if (!customer) {
-    if (!customerName || !customerPhone) {
-      return badRequest(res, 'customerName and customerPhone required for new customer')
+    if (!normalizedCustomerName || !normalizedCustomerPhone) {
+      return badRequest(res, 'customerName/customer firstName and customerPhone/phoneNumber are required for new customer')
     }
     const custId = await generateCustomerId()
-    const hashed = await bcrypt.hash(customerPhone.trim(), 12)
+    const hashed = await bcrypt.hash(normalizedCustomerPhone, 12)
     customer = await Customer.create({
       customerId: custId,
-      firstName: customerName.trim(),
-      email: customerEmail.toLowerCase().trim(),
-      phone: { number: customerPhone.trim(), countryCode: customerCountryCode || '' },
+      firstName: normalizedCustomerName,
+      email: normalizedEmail,
+      phone: { number: normalizedCustomerPhone, countryCode: normalizedCountryCode },
       password: hashed,
       source: 'manual',
+      company: pickNonEmpty(companyName, company),
+      location: normalizedLocation === 'TBD' ? '' : normalizedLocation,
     })
     isNewCustomer = true
     await auditService.log({
@@ -142,16 +185,47 @@ exports.createLead = asyncHandler(async (req, res) => {
       performedBy: req.user._id,
       metadata: { email: customer.email },
     })
+  } else {
+    let shouldSaveCustomer = false
+    const incomingCompany = pickNonEmpty(companyName, company)
+    if (!customer.company && incomingCompany) {
+      customer.company = incomingCompany
+      shouldSaveCustomer = true
+    }
+    if ((!customer.location || !customer.location.trim()) && normalizedLocation !== 'TBD') {
+      customer.location = normalizedLocation
+      shouldSaveCustomer = true
+    }
+    if (shouldSaveCustomer) await customer.save()
+  }
+
+  if (providedProjectName) {
+    const existingLead = await Lead.findOne({
+      customerId: customer._id,
+      projectName: { $regex: new RegExp(`^${escapeRegex(normalizedProjectName)}$`, 'i') },
+    })
+      .select('_id projectName lifecycleStatus assignedSales isTerminated')
+      .lean()
+    if (existingLead) {
+      return badRequest(
+        res,
+        'A project with this name already exists for this customer. Please edit the existing lead instead.',
+        { existingLead }
+      )
+    }
   }
 
   const lead = await Lead.create({
     customerId: customer._id,
-    projectName,
-    buildingType,
-    location,
+    projectName: normalizedProjectName,
+    buildingType: normalizedBuildingType,
+    location: normalizedLocation,
     roofStyle: roofStyle || '',
-    width: width || null,
-    length: length || null,
+    width: toNumberOrNull(width),
+    length: toNumberOrNull(length),
+    height: toNumberOrNull(height),
+    notes: pickNonEmpty(notes),
+    quoteValue: toNumberOrNull(estimatedValue) || 0,
     source: 'manual',
     assignedSales: req.user._id,
     isHandedToSales: true,
@@ -164,8 +238,13 @@ exports.createLead = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: customer._id,
     performedBy: req.user._id,
-    metadata: { source: 'manual', projectName },
+    metadata: { source: 'manual', projectName: normalizedProjectName },
   })
+
+  if (leadStatus && LIFECYCLE_STAGES.includes(leadStatus)) {
+    lead.lifecycleStatus = leadStatus
+    await lead.save()
+  }
 
   return created(res, { lead, customer, isNewCustomer })
 })

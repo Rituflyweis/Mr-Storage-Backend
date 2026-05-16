@@ -28,7 +28,14 @@ router.get('/:customerId/projects', ctrl.getCustomerProjects)
 router.get('/:customerId/projects/:leadId', ctrl.getCustomerProject)
 
 router.post('/:customerId/leads',
-  [body('buildingType').optional().trim(), body('location').optional().trim()],
+  [
+    body('projectName').notEmpty().trim(),
+    body('buildingType').notEmpty().trim(),
+    body('location').notEmpty().trim(),
+    body('width').optional().isNumeric(),
+    body('length').optional().isNumeric(),
+    body('height').optional().isNumeric(),
+  ],
   validate,
   leadCtrl.createProjectForCustomer
 )

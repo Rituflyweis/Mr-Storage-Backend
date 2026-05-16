@@ -20,6 +20,14 @@ const { parse } = require('csv-parse/sync')
 const bcrypt = require('bcryptjs')
 const { startOfDay, endOfDay } = require('date-fns')
 
+const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const normalizeProjectName = (value = '') => value.trim()
+const toNumberOrNull = (value) => {
+  if (value === undefined || value === null || value === '') return null
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
 exports.getLeadStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
 
@@ -187,15 +195,37 @@ exports.getTerminatedLeads = asyncHandler(async (req, res) => {
 })
 
 exports.createLead = asyncHandler(async (req, res) => {
-  const { customerId, buildingType, location, assignedSales } = req.body
+  const { customerId, projectName, buildingType, location, assignedSales, roofStyle, width, length, height } = req.body
 
   const customer = await Customer.findById(customerId)
   if (!customer) return notFound(res, 'Customer not found')
 
+  const normalizedProjectName = projectName ? normalizeProjectName(projectName) : ''
+  if (normalizedProjectName) {
+    const existingLead = await Lead.findOne({
+      customerId,
+      projectName: { $regex: new RegExp(`^${escapeRegex(normalizedProjectName)}$`, 'i') },
+    })
+      .select('_id projectName lifecycleStatus assignedSales isTerminated')
+      .lean()
+    if (existingLead) {
+      return badRequest(
+        res,
+        'A project with this name already exists for this customer. Please edit the existing lead instead.',
+        { existingLead }
+      )
+    }
+  }
+
   const lead = await Lead.create({
     customerId,
-    buildingType,
-    location,
+    projectName: normalizedProjectName,
+    buildingType: buildingType ? buildingType.trim() : '',
+    location: location ? location.trim() : '',
+    roofStyle: roofStyle || '',
+    width: toNumberOrNull(width),
+    length: toNumberOrNull(length),
+    height: toNumberOrNull(height),
     source: 'manual',
     assignedSales: assignedSales || null,
     isHandedToSales: !!assignedSales,
@@ -462,10 +492,29 @@ exports.terminateLead = asyncHandler(async (req, res) => {
 
 exports.createProjectForCustomer = asyncHandler(async (req, res) => {
   const { customerId } = req.params
-  const { buildingType, location, assignedSales } = req.body
+  const { projectName, buildingType, location, assignedSales, roofStyle, width, length, height } = req.body
 
   const customer = await Customer.findById(customerId)
   if (!customer) return notFound(res, 'Customer not found')
+
+  if (!projectName || !buildingType || !location) {
+    return badRequest(res, 'projectName, buildingType, location are required')
+  }
+
+  const normalizedProjectName = normalizeProjectName(projectName)
+  const existingLead = await Lead.findOne({
+    customerId,
+    projectName: { $regex: new RegExp(`^${escapeRegex(normalizedProjectName)}$`, 'i') },
+  })
+    .select('_id projectName lifecycleStatus assignedSales isTerminated')
+    .lean()
+  if (existingLead) {
+    return badRequest(
+      res,
+      'A project with this name already exists for this customer. Please edit the existing lead instead.',
+      { existingLead }
+    )
+  }
 
   let salesEmployeeId = assignedSales || null
   if (!salesEmployeeId) {
@@ -478,8 +527,13 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
 
   const lead = await Lead.create({
     customerId,
-    buildingType: buildingType || '',
-    location: location || '',
+    projectName: normalizedProjectName,
+    buildingType: buildingType.trim(),
+    location: location.trim(),
+    roofStyle: roofStyle || '',
+    width: toNumberOrNull(width),
+    length: toNumberOrNull(length),
+    height: toNumberOrNull(height),
     source: 'manual',
     assignedSales: salesEmployeeId,
     isHandedToSales: !!salesEmployeeId,

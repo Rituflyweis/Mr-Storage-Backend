@@ -54,8 +54,11 @@ const LeadSchema = new mongoose.Schema(
     sqft:            { type: String, default: '' },
     width:           { type: Number, default: null },
     length:          { type: Number, default: null },
+    height:          { type: Number, default: null },
     source:          { type: String, enum: LEAD_SOURCES, default: 'chat' },
+    jobId:           { type: String, default: null },
     projectName:     { type: String, default: '' },
+    endDate:         { type: Date, default: null },
     numberOfBuildings: { type: Number, default: 1, min: 1 },
     isTerminated:    { type: Boolean, default: false },
     terminationReason: { type: String, default: '' },
@@ -85,6 +88,7 @@ const LeadSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+LeadSchema.index({ jobId: 1 }, { unique: true, sparse: true })
 LeadSchema.index({ customerId: 1 })
 LeadSchema.index({ assignedSales: 1 })
 LeadSchema.index({ lifecycleStatus: 1 })
@@ -92,5 +96,17 @@ LeadSchema.index({ isTerminated: 1 })
 LeadSchema.index({ 'leadScoring.lastScoredAt': -1 })
 LeadSchema.index({ isQuoteReady: 1 })
 LeadSchema.index({ createdAt: -1 })
+
+LeadSchema.pre('save', async function (next) {
+  if (this.isNew && !this.jobId) {
+    const last = await this.constructor
+      .findOne({ jobId: { $exists: true, $ne: null } }, { jobId: 1 })
+      .sort({ createdAt: -1 })
+      .lean()
+    const num = last?.jobId ? parseInt(last.jobId.split('-')[1], 10) + 1 : 1
+    this.jobId = `PRO-${String(num).padStart(3, '0')}`
+  }
+  next()
+})
 
 module.exports = mongoose.model('Lead', LeadSchema)
