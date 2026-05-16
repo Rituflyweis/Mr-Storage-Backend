@@ -54,6 +54,7 @@ const LeadSchema = new mongoose.Schema(
     sqft:            { type: String, default: '' },
     width:           { type: Number, default: null },
     length:          { type: Number, default: null },
+    height:          { type: Number, default: null },
     source:          { type: String, enum: LEAD_SOURCES, default: 'chat' },
     projectName:     { type: String, default: '' },
     numberOfBuildings: { type: Number, default: 1, min: 1 },

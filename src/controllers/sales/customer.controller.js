@@ -153,6 +153,7 @@ exports.createProject = asyncHandler(async (req, res) => {
     roofStyle: roofStyle || '',
     width: width || null,
     length: length || null,
+    height: height || null,
     source: 'manual',
     assignedSales: req.user._id,
     isHandedToSales: true,
