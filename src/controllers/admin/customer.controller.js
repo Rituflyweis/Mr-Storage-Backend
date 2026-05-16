@@ -61,7 +61,12 @@ exports.getAllCustomers = asyncHandler(async (req, res) => {
   const skip = (parsedPage - 1) * parsedLimit
 
   const [customers, total] = await Promise.all([
-    Customer.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit).lean(),
+    Customer.find(filter)
+      .select('_id customerId firstName email phone isActive source createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
     Customer.countDocuments(filter),
   ])
 
@@ -130,18 +135,20 @@ exports.createCustomerWithLead = asyncHandler(async (req, res) => {
 exports.getCustomerDetail = asyncHandler(async (req, res) => {
   const { customerId } = req.params
 
-  const customer = await Customer.findById(customerId).lean()
+  const customer = await Customer.findById(customerId)
+    .select('_id customerId firstName email phone isActive source createdAt')
+    .lean()
   if (!customer) return notFound(res, 'Customer not found')
 
-  const [leads, invoices] = await Promise.all([
-    Lead.find({ customerId }).sort({ createdAt: -1 }).lean(),
-    Invoice.find({ customerId }).sort({ createdAt: -1 }).lean(),
-  ])
-
+  const invoices = await Invoice.find({ customerId }).lean()
   const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
-  const totalPending = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const pendingPayment = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const revenueGenerated = totalPaid
 
-  return success(res, { customer, totalPaid, totalPending, totalInvoices: invoices.length, projects: leads, invoices })
+  return success(res, {
+    customer,
+    financials: { totalPaid, pendingPayment, totalInvoices: invoices.length, revenueGenerated },
+  })
 })
 
 exports.getCustomerProjects = asyncHandler(async (req, res) => {

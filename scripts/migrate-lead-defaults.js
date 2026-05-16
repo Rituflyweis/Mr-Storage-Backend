@@ -13,6 +13,7 @@ const Lead = require('../src/models/Lead')
 const run = async () => {
   await connectDB()
 
+  // Backfill numberOfBuildings and height
   const result = await Lead.updateMany(
     {
       $or: [
@@ -34,8 +35,26 @@ const run = async () => {
       },
     ]
   )
+  console.log(`[migrate] numberOfBuildings/height — matched: ${result.matchedCount}, modified: ${result.modifiedCount}`)
 
-  console.log(`[migrate] matched: ${result.matchedCount}, modified: ${result.modifiedCount}`)
+  // Backfill jobId for leads that don't have one, sorted by createdAt so numbering is chronological
+  const leadsWithoutJobId = await Lead.find({ jobId: null }).sort({ createdAt: 1 }).lean()
+  console.log(`[migrate] leads missing jobId: ${leadsWithoutJobId.length}`)
+
+  let counter = 1
+  const lastWithJobId = await Lead.findOne({ jobId: { $exists: true, $ne: null } }, { jobId: 1 })
+    .sort({ createdAt: -1 })
+    .lean()
+  if (lastWithJobId?.jobId) {
+    counter = parseInt(lastWithJobId.jobId.split('-')[1], 10) + 1
+  }
+
+  for (const lead of leadsWithoutJobId) {
+    await Lead.updateOne({ _id: lead._id }, { $set: { jobId: `PRO-${String(counter).padStart(3, '0')}` } })
+    counter++
+  }
+  console.log(`[migrate] jobId backfill done — assigned ${leadsWithoutJobId.length} job IDs`)
+
   await mongoose.disconnect()
 }
 
