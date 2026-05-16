@@ -13,7 +13,15 @@ router.post('/import', ctrl.importLeads)
 
 router.get('/', ctrl.getAllLeads)
 router.post('/',
-  [body('customerId').notEmpty(), body('buildingType').optional().trim(), body('location').optional().trim()],
+  [
+    body('customerId').notEmpty(),
+    body('projectName').optional().trim(),
+    body('buildingType').optional().trim(),
+    body('location').optional().trim(),
+    body('width').optional().isNumeric(),
+    body('length').optional().isNumeric(),
+    body('height').optional().isNumeric(),
+  ],
   validate,
   ctrl.createLead
 )

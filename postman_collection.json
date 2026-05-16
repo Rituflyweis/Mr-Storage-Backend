@@ -2212,7 +2212,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"projectName\": \"New Warehouse\",\n  \"customerEmail\": \"arjun@ex.com\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"customerName\": \"Arjun\",\n  \"customerPhone\": \"9876543210\",\n  \"customerCountryCode\": \"+91\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 100,\n  \"length\": 50\n}"
+              "raw": "{\n  \"firstName\": \"Arjun\",\n  \"lastName\": \"Kumar\",\n  \"emailAddress\": \"arjun@ex.com\",\n  \"phoneNumber\": \"9876543210\",\n  \"countryCode\": \"+91\",\n  \"companyName\": \"AK Steels\",\n  \"projectType\": \"Warehouse\",\n  \"city\": \"Chennai\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 100,\n  \"length\": 50,\n  \"height\": 18,\n  \"estimatedValue\": 3500000,\n  \"leadStatus\": \"initial_contact\",\n  \"notes\": \"Need quotation within 2 weeks\"\n}"
             }
           }
         },

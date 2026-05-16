@@ -87,27 +87,16 @@ Default seed admin: `admin@construction.com` / `Admin@123` (overridable via env 
 <claude-mem-context>
 # Memory Context
 
-# [Mr_Storage_Backend] recent context, 2026-05-16 8:49pm GMT+5:30
+# [Mr_Storage_Backend] recent context, 2026-05-16 9:31pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (18,633t read) | 764,890t work | 98% savings
+Stats: 50 obs (19,032t read) | 1,122,747t work | 98% savings
 
 ### May 16, 2026
-1055 2:00a 🔵 Customer Response Missing `company` and `location` Fields vs API Spec
-1056 " 🔵 Root Cause Found: `company` and `location` Fields Not Defined in Customer Schema
-1057 " 🔵 Controller Already Selects `company` and `location` — Schema Is the Only Missing Piece
-1058 2:01a 🔵 Admin `getLeadDetail` Fetches Full Customer Document with `.lean()` — Bypasses `toJSON` Password Strip
-1059 2:15a 🔵 Lead Detail V2 API Response Structure Validated
-1060 " 🔵 Customer Schema Missing `company` and `location` Fields
-1061 " 🔵 Lead Controller Selects `company` and `location` from Customer — Schema Gap Confirmed
-1062 4:02a 🔵 Mr_Storage_Backend Route and Controller Structure Mapped
-1063 4:03a 🔵 Sales Panel API Spec (admin_panel_sales_panel_v2.md Part 2) Fully Catalogued
-1064 " 🔵 Sales Dashboard Routes Implement All Required Endpoints Plus Two Extra
-1065 " 🔵 Sales Lead Routes Correctly Follow Static-Before-Parameterized Ordering
-1066 " 🔵 Sales Follow-up and Customer Routes Fully Implement All Spec Endpoints
+1066 4:03a 🔵 Sales Follow-up and Customer Routes Fully Implement All Spec Endpoints
 1067 " 🔵 AI Script Generator Fully Implemented with Anthropic SDK and AIScriptSession Persistence
 1068 " 🔵 Quotation Controller Missing Server-Side COGS Auto-Calculations Required by Spec
 1069 " 🔵 Admin Panel (Part 3) APIs Fully Implemented Across All Route Files
@@ -156,27 +145,17 @@ S140 Frontend UI column audit against Lead schema — JOB ID and END DATE column
 1192 6:38p ⚖️ jobId Auto-Assignment Moved to Mongoose pre('save') Middleware
 1193 " 🟣 jobId Backfill Migration Run — 14 Existing Leads Assigned PRO-XXX IDs
 S141 Add jobId and endDate fields to Lead model and document them in not_present_in_spec.md (May 16 at 6:39 PM)
-**Investigated**: - Existing `generateCustomerId.js` utility pattern (sequential ID generation from last DB record)
-    - All 9 `Lead.create` call sites across 6 controller files (public, sales/customer, sales/lead, admin/customer, admin/lead, customerPortal)
-    - Existing migration script `scripts/migrate-lead-defaults.js` for prior field backfills
-    - Lead model indexes and schema structure
+1245 9:07p 🔵 Lead and Customer Schema Fields in Mr_Storage_Backend
+1246 " 🟣 Lead Creation API: Full Building Spec Fields + Duplicate Project Guard
+1247 9:21p 🔵 Sales Leads API Payload vs Frontend UI Field Discrepancy Identified
+1248 9:22p 🟣 Lead Creation API Massively Expanded with Field Normalization and Alias Support
+1249 " 🔴 Lead Route Validators Updated to Use `optional({ checkFalsy: true })`
+1250 " 🔵 Broader Session Changes Span Admin and Sales Controllers/Routes
+1251 9:26p 🔵 not_present_in_spec.md Documents Undocumented API Changes in Mr_Storage_Backend
+1252 " 🔵 Postman Collection "Create Lead" Request Body Lacks height and endDate Fields
+1253 " ✅ not_present_in_spec.md Updated with POST /api/sales/leads Alias and Auto-Generation Behaviors
+1254 " ✅ Postman Collection "Create Lead" Request Body Updated to Use UI Alias Field Names
+1255 9:27p 🔵 Mr_Storage_Backend Has 10 Uncommitted Modified Files Spanning Controllers, Routes, and Docs
 
-**Learned**: - The Lead model uses a pre-save Mongoose middleware approach (not controller-level utility calls) to auto-assign sequential IDs — avoids modifying all 9 call sites
-    - Sparse + unique index on jobId correctly handles null defaults (MongoDB sparse indexes skip null values, preventing unique constraint violations on existing nulls)
-    - The bulk import path at `admin/lead.controller.js:254` uses a minimal payload and bypasses Mongoose middleware — it will NOT auto-assign jobId
-    - The existing migration script was already in place for prior field backfills (numberOfBuildings, height) and was idempotent-safe to extend
-    - 14 Lead documents existed in the database with no jobId before backfill
-
-**Completed**: - Created `src/utils/generateJobId.js` — sequential PRO-XXX ID generator querying Lead model
-    - Added `jobId` (String, default null) and `endDate` (Date, default null) fields to `src/models/Lead.js`
-    - Added `LeadSchema.pre('save')` middleware to auto-assign PRO-XXX jobId on new Lead documents
-    - Added `LeadSchema.index({ jobId: 1 }, { unique: true, sparse: true })` for uniqueness enforcement
-    - Extended `scripts/migrate-lead-defaults.js` with jobId backfill phase (chronological assignment)
-    - Ran migration successfully — 14 existing leads assigned PRO-001 through PRO-014
-    - Updated `not_present_in_spec.md` to document all 3 non-spec fields: `height`, `jobId`, and `endDate`
-
-**Next Steps**: Session appears complete. All requested work has been delivered: fields added to model, auto-assignment implemented via pre-save hook, existing data backfilled, and spec-gap documentation updated.
-
-
-Access 765k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 1123k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
