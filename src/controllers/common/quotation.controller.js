@@ -5,10 +5,29 @@ const Customer = require('../../models/Customer')
 const mailer = require('../../services/email/mailer')
 const quoteSummaryService = require('../../services/ai/quoteSummary.service')
 const auditService = require('../../services/audit.service')
+const generateQuoteNumber = require('../../utils/generateQuoteNumber')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../../config/constants')
+
+// Server-side auto-calculations per spec (admin_panel_sales_panel_v2.md lines 604-609).
+// Never trust client values for these fields.
+const computeQuotePricing = (src) => {
+  const width         = Number(src.width)         || 0
+  const length        = Number(src.length)        || 0
+  const materialCost  = Number(src.materialCost)  || 0
+  const freightCost   = Number(src.freightCost)   || 0
+  const markupPercent = Number(src.markupPercent) || 0
+
+  const totalArea   = width * length
+  const totalCOGS   = materialCost + freightCost
+  const markupValue = (totalCOGS * markupPercent) / 100
+  const finalPrice  = totalCOGS + markupValue
+  const psf         = totalArea > 0 ? finalPrice / totalArea : null
+
+  return { totalArea: totalArea || null, totalCOGS, markupValue, finalPrice, psf }
+}
 
 // Sales can only act on their assigned leads
 const checkLeadAccess = async (leadId, user) => {
@@ -25,8 +44,14 @@ exports.createQuotation = asyncHandler(async (req, res) => {
   const { lead, error, code } = await checkLeadAccess(leadId, req.user)
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
 
+  const { quoteNumber: _ignoredClientQuoteNumber, ...payload } = req.body
+  const quoteNumber = await generateQuoteNumber()
+  const pricing = computeQuotePricing(payload)
+
   const quotation = await Quotation.create({
-    ...req.body,
+    ...payload,
+    ...pricing,
+    quoteNumber,
     createdBy: req.user._id,
   })
 
@@ -58,14 +83,35 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
   if (!quotation) return notFound(res, 'Quotation not found')
   if (quotation.status !== 'draft') return badRequest(res, 'Only draft quotations can be edited')
 
+  // Per spec line 614: same fields as POST except quoteNumber (never editable)
   const ALLOWED = [
     'buildingType','basePrice','maxPrice','sqft','width','length','height',
     'currency','roofStyle','validTill','location','windLoad','snowLoad',
     'paymentTerms','companyName','estimatedDelivery','includedMaterials',
     'optionalAddOns','specialNote','internalNotes','priorityLevel',
+    'proposalDate','validity','preparedBy','assignedSalesperson','margin',
+    'leftEaveHeight','rightEaveHeight','roofSlope',
+    'frameType','endwallType','girtType','purlinType','bracingType',
+    'roofPanel','wallPanelType','roofColor','wallColor','trimColor','baseAngle',
+    'insulation',
+    'shippingCost','deliveryType','shippingIncluded',
+    'materialCost','freightCost','markupPercent',
+    'doors','includedComponents','exclusions',
+    'clientNotes','changeNote',
   ]
   const prevBasePrice = quotation.basePrice
   ALLOWED.forEach(k => { if (req.body[k] !== undefined) quotation[k] = req.body[k] })
+
+  // Per spec line 616: re-run auto-calculations if any pricing input changed
+  const RECALC_KEYS = ['width', 'length', 'materialCost', 'freightCost', 'markupPercent']
+  if (RECALC_KEYS.some(k => req.body[k] !== undefined)) {
+    const pricing = computeQuotePricing(quotation)
+    Object.assign(quotation, pricing)
+  }
+
+  // Per spec line 615: auto-increment versionNumber on every save
+  quotation.versionNumber = (quotation.versionNumber || 1) + 1
+
   await quotation.save()
 
   // Keep lead.quoteValue in sync when basePrice changes
