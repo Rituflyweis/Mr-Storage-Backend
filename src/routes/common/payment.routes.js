@@ -5,17 +5,14 @@ const validate = require('../../middleware/validate')
 
 router.post('/',
   [
-    body('customerId').notEmpty(),
     body('leadId').notEmpty(),
-    body('invoiceId').notEmpty(),
-    body('payments').isArray({ min: 1 }),
+    body('stages').isArray({ min: 1 }),
     body('totalAmount').isNumeric(),
   ],
   validate,
   ctrl.createSchedule
 )
 
-router.get('/invoice/:invoiceId', ctrl.getSchedule)
-router.put('/:scheduleId/payments/:paymentId', ctrl.markPaymentPaid)
+router.get('/lead/:leadId', ctrl.getScheduleByLead)
 
 module.exports = router

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mr Storage — Chat Tester</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  :root { --bg:#0f1216; --panel:#171c23; --line:#222a35; --txt:#e6edf3; --muted:#8a96a8; --acc:#4f8cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); display:grid; grid-template-columns:380px 1fr 360px; height:100vh; }
+  .panel { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; }
+  .panel:last-child { border-right:none; border-left:1px solid var(--line); }
+  h2 { margin:0; padding:14px 16px; font-size:14px; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--line); }
+  .body { padding:14px 16px; overflow:auto; flex:1; }
+  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 4px; }
+  input, button, textarea, select { width:100%; background:#0c0f14; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:9px 10px; font:inherit; }
+  button { background:var(--acc); border-color:var(--acc); cursor:pointer; margin-top:10px; font-weight:600; }
+  button.secondary { background:transparent; color:var(--txt); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; background:#243041; color:#9cc4ff; margin-right:4px; }
+  .pill.ok { background:#1e3a2a; color:#7be29e; }
+  .pill.warn { background:#3a2e1e; color:#e2b97b; }
+  .pill.err { background:#3a1e22; color:#e27b8a; }
+  .msgs { flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:75%; padding:9px 12px; border-radius:12px; line-height:1.35; white-space:pre-wrap; word-wrap:break-word; }
+  .msg.customer { align-self:flex-end; background:var(--acc); color:#fff; }
+  .msg.ai { align-self:flex-start; background:#222b38; }
+  .msg.sales { align-self:flex-start; background:#2b3a26; }
+  .msg.sys { align-self:center; background:transparent; color:var(--muted); font-size:12px; font-style:italic; }
+  .msg .meta { font-size:10px; opacity:.7; margin-top:3px; }
+  .composer { display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); }
+  .composer input { flex:1; }
+  .composer button { width:auto; padding:9px 16px; margin:0; }
+  .log { font-family:ui-monospace,Menlo,monospace; font-size:11px; line-height:1.5; }
+  .log .ev { color:#9cc4ff; }
+  .log .er { color:#e27b8a; }
+  .log .ok { color:#7be29e; }
+  .kv { font-family:ui-monospace,Menlo,monospace; font-size:11px; background:#0c0f14; border:1px solid var(--line); border-radius:6px; padding:8px; margin-top:6px; white-space:pre-wrap; word-break:break-all; }
+  .stage { font-weight:600; color:#7be29e; }
+  hr { border:none; border-top:1px solid var(--line); margin:14px 0; }
+  .tips { font-size:11px; color:var(--muted); line-height:1.5; }
+</style>
+</head>
+<body>
+
+<!-- ────────── LEFT: Setup ────────── -->
+<div class="panel">
+  <h2>1. Setup</h2>
+  <div class="body">
+    <label>API Base URL</label>
+    <input id="baseUrl" value="http://localhost:5001" />
+
+    <hr/>
+    <label>First Name</label>
+    <input id="firstName" value="Test Customer" />
+    <label>Email</label>
+    <input id="email" />
+    <label>Phone</label>
+    <input id="phone" />
+    <label>Country Code</label>
+    <input id="countryCode" value="+91" />
+
+    <button id="btnInit">Init Chat (create lead)</button>
+    <button id="btnRandom" class="secondary">Randomize email/phone</button>
+
+    <hr/>
+    <label>Customer ID</label>
+    <input id="customerId" readonly />
+    <label>Lead ID</label>
+    <input id="leadId" readonly />
+
+    <hr/>
+    <button id="btnConnect" disabled>Connect Socket /chat</button>
+    <button id="btnDisconnect" class="secondary" disabled>Disconnect</button>
+
+    <hr/>
+    <div class="tips">
+      <strong>Flow:</strong><br/>
+      1) Init creates Customer + Lead (<code>initial_contact</code>)<br/>
+      2) Connect socket, send messages<br/>
+      3) AI replies, scores lead, advances stage<br/>
+      4) When AI emits <code>QUOTE_DATA</code> → sales auto-assigned, AI silenced<br/>
+      <br/>
+      Try: "I need a 5000 sqft warehouse, metal roof, insulation, 2 doors, in Mumbai. Budget around 25 lakhs."
+    </div>
+  </div>
+</div>
+
+<!-- ────────── MIDDLE: Chat ────────── -->
+<div class="panel" style="border-right:1px solid var(--line);">
+  <h2>2. Chat <span id="status" class="pill err" style="float:right;margin-top:-3px;">disconnected</span></h2>
+  <div class="msgs" id="msgs"></div>
+  <div class="composer">
+    <input id="input" placeholder="Type customer message…" disabled />
+    <button id="btnSend" disabled>Send</button>
+  </div>
+</div>
+
+<!-- ────────── RIGHT: State + Log ────────── -->
+<div class="panel">
+  <h2>3. Lead State</h2>
+  <div class="body">
+    <div>
+      Stage: <span id="stage" class="stage">—</span><br/>
+      Quote Ready: <span id="quoteReady">—</span><br/>
+      Handed to Sales: <span id="handed">—</span><br/>
+      Assigned Sales: <span id="assigned">—</span><br/>
+      Score: <span id="score">—</span>
+    </div>
+    <div class="kv" id="kvLead">{}</div>
+
+    <button id="btnRefresh" class="secondary" disabled>Refresh from server (admin)</button>
+    <label style="margin-top:14px;">Admin/Sales JWT (optional, for refresh)</label>
+    <input id="jwt" placeholder="paste access token" />
+
+    <h2 style="margin-top:18px;border-top:1px solid var(--line);">Event Log</h2>
+    <div class="body log" id="log" style="padding:0;"></div>
+  </div>
+</div>
+
+<script>
+let socket = null;
+
+const $ = id => document.getElementById(id);
+const status = $('status');
+const msgs = $('msgs');
+const log  = $('log');
+
+function setStatus(t, cls) { status.textContent = t; status.className = 'pill ' + cls; }
+function addMsg(kind, text, meta) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + kind;
+  d.textContent = text;
+  if (meta) { const m = document.createElement('div'); m.className='meta'; m.textContent=meta; d.appendChild(m); }
+  msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+}
+function logEv(cls, ev, data) {
+  const d = document.createElement('div');
+  d.innerHTML = `<span class="${cls}">▸ ${ev}</span> ${data ? JSON.stringify(data) : ''}`;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+}
+
+$('btnRandom').onclick = () => {
+  const n = Math.floor(Math.random()*100000);
+  $('email').value = `test${n}@example.com`;
+  $('phone').value = '9' + String(n).padStart(9,'0');
+};
+$('btnRandom').click();
+
+// ── 1. init chat ──────────────────────────────────────────────
+$('btnInit').onclick = async () => {
+  const body = {
+    firstName: $('firstName').value,
+    email: $('email').value,
+    phone: $('phone').value,
+    countryCode: $('countryCode').value,
+  };
+  try {
+    const r = await fetch($('baseUrl').value + '/api/public/chat/init', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.message || 'init failed');
+    const d = j.data || j;
+    $('customerId').value = d.customerId;
+    $('leadId').value     = d.leadId;
+    $('btnConnect').disabled = false;
+    logEv('ok', 'chat/init', d);
+    addMsg('sys', `Lead created. Returning customer: ${d.isReturning}`);
+  } catch (e) {
+    logEv('er', 'chat/init error', { message: e.message });
+    alert(e.message);
+  }
+};
+
+// ── 2. socket connect ────────────────────────────────────────
+$('btnConnect').onclick = () => {
+  const url = $('baseUrl').value;
+  socket = io(url + '/chat', { transports: ['websocket','polling'] });
+
+  socket.on('connect', () => {
+    setStatus('connected', 'ok');
+    logEv('ok', 'connect', { id: socket.id });
+    socket.emit('join_lead', { leadId: $('leadId').value, customerId: $('customerId').value });
+    $('input').disabled = false; $('btnSend').disabled = false;
+    $('btnDisconnect').disabled = false; $('btnConnect').disabled = true;
+    $('btnRefresh').disabled = false;
+  });
+
+  socket.on('disconnect', r => { setStatus('disconnected','err'); logEv('er','disconnect',{ reason:r }); });
+  socket.on('connect_error', e => { logEv('er','connect_error',{ message: e.message }); });
+
+  socket.on('new_message', m => {
+    if (m.senderType === 'ai')       addMsg('ai',   m.content, 'AI');
+    else if (m.senderType === 'sales') addMsg('sales', m.content, 'Sales');
+    else if (m.senderType === 'customer') { /* echo of our own, skip */ }
+    logEv('ev','new_message',{ from:m.senderType });
+  });
+
+  socket.on('ai_typing', d => { if (d.isTyping) setStatus('AI typing…','warn'); else setStatus('connected','ok'); });
+  socket.on('sales_typing', d => { setStatus(d.isTyping ? `${d.name} typing…` : 'connected', d.isTyping ? 'warn' : 'ok'); });
+
+  socket.on('lead_handed_to_sales', d => {
+    $('handed').textContent = 'yes';
+    $('assigned').textContent = d.assignedSales;
+    addMsg('sys', `→ Handed to sales: ${d.assignedSales}`);
+    logEv('ok','lead_handed_to_sales', d);
+  });
+
+  socket.on('chat_error', d => { addMsg('sys', '⚠ ' + d.message); logEv('er','chat_error',d); });
+};
+
+$('btnDisconnect').onclick = () => {
+  if (socket) socket.disconnect();
+  $('btnConnect').disabled = false; $('btnDisconnect').disabled = true;
+  $('input').disabled = true; $('btnSend').disabled = true;
+};
+
+// ── 3. send ──────────────────────────────────────────────────
+function send() {
+  const v = $('input').value.trim();
+  if (!v || !socket) return;
+  socket.emit('customer_message', {
+    leadId: $('leadId').value,
+    customerId: $('customerId').value,
+    content: v,
+  });
+  addMsg('customer', v, 'You');
+  $('input').value = '';
+}
+$('btnSend').onclick = send;
+$('input').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+
+// ── 4. refresh lead state (needs JWT for admin route) ────────
+$('btnRefresh').onclick = async () => {
+  const jwt = $('jwt').value.trim();
+  if (!jwt) { alert('paste an admin/sales JWT first'); return; }
+  try {
+    const r = await fetch($('baseUrl').value + '/api/admin/leads/' + $('leadId').value, {
+      headers: { Authorization: 'Bearer ' + jwt },
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.message || 'refresh failed');
+    const lead = j.data?.lead || j.data || j;
+    $('stage').textContent      = lead.lifecycleStatus || '—';
+    $('quoteReady').textContent = String(!!lead.isQuoteReady);
+    $('handed').textContent     = String(!!lead.isHandedToSales);
+    $('assigned').textContent   = lead.assignedSales?.name || lead.assignedSales || '—';
+    $('score').textContent      = lead.leadScoring?.score ?? '—';
+    $('kvLead').textContent     = JSON.stringify(lead, null, 2);
+    logEv('ok','lead refreshed');
+  } catch (e) {
+    logEv('er','refresh error',{ message: e.message });
+    alert(e.message);
+  }
+};
+</script>
+</body>
+</html>

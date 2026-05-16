@@ -87,63 +87,77 @@ Default seed admin: `admin@construction.com` / `Admin@123` (overridable via env 
 <claude-mem-context>
 # Memory Context
 
-# [Mr_Storage_Backend] recent context, 2026-05-14 6:34pm GMT+5:30
+# [Mr_Storage_Backend] recent context, 2026-05-16 2:13am GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 43 obs (16,985t read) | 470,579t work | 96% savings
+Stats: 50 obs (21,559t read) | 435,768t work | 95% savings
 
 ### May 14, 2026
-S85 Major backend expansion of Mr_Storage_Backend — caveman-mode rapid development of new controllers and endpoints (May 14 at 2:21 PM)
-S84 Caveman mode activation request (May 14 at 2:21 PM)
-825 2:22p 🔵 Mr_Storage_Backend Route Structure Mapped
-826 " 🔵 Sales Lead Controller: Full Business Logic Mapped
-827 " 🔵 Sales FollowUp Controller: KPI Endpoint is Stub
-828 2:23p 🔵 Admin Lead Controller: CSV Import, Round-Robin, and Smart Re-assignment
-829 " 🔵 Admin Customer Controller: Aggregates Financial Summary on Detail View
-830 " 🔵 Invoice Controller: PO Number Carry-Forward and Role-Based Access Guard
-831 " 🔵 Payment Schedule Controller: Auto-Rolls Up to Invoice Paid When All Installments Complete
-832 " 🔵 Quotation Controller: AI Summary Generation and Lifecycle Advancement on Send
-833 " 🔵 Admin PO Controller: Approval Syncs Status to Lead Document
-834 " 🔵 Admin Dashboard: AI vs Human Tracking and MongoDB Aggregation for Pipeline Metrics
-835 " 🔵 File Upload: S3 Presigned URL Flow with Lead Document Registry
-836 2:24p 🔵 PaymentSchedule Model Uses 'stages' But Controller Uses 'payments' — Schema Mismatch
-837 " 🔵 Lead Model: Full Schema with AI Scoring, Document Registry, and Lifecycle State Flags
-838 " 🔵 Sales Route Index Wires 'Dead' Controller Methods Inline — Not Actually Dead
-839 " 🔵 Building and ProjectBudget Models Defined But Have No Routes or Controllers
-840 2:25p 🔵 Common Routes Index Also Wires 'Dead' getLeadQuotations and getLeadInvoices Inline
-841 " 🔵 Sequential ID Generation Utilities Have Race Condition Risk
-842 " ⚖️ AuditLog Model is INSERT-ONLY by Design
-843 " 🔵 Five User Roles Defined But Only Admin and Sales Have Routes
-844 2:26p 🟣 Sales Lead Controller Massively Expanded: 8 New Endpoints Including Building Management, CSV Import/Export, and Activity Logging
-845 " 🟣 Sales FollowUp Controller: AI Script Assistant Added Using Claude API, KPI Stub Replaced with Real Analytics
-846 2:27p 🟣 New Sales Customer Controller Created: Scoped Customer Management for Sales Role
-847 2:28p 🟣 Admin Lead Controller Expanded: Budget Management, Lead Termination, AI Leads View, Signed Contracts, and Terminated Leads Endpoints
-S86 Caveman mode — Sales Lead Management API endpoints implemented for Mr_Storage_Backend (May 14 at 2:29 PM)
-848 2:30p 🟣 Sales Lead Routes Fully Wired: All New Controller Methods Now Have API Endpoints
 S87 Caveman-style sales module backend implementation — Part 2 of multi-part feature build for Mr_Storage_Backend (May 14 at 3:38 PM)
-849 4:22p 🟣 Sales Follow-Up Routes Expanded with Analytics and AI Script Endpoints
-850 4:23p 🔵 Sales Routes Index Structure in Mr_Storage_Backend
-851 " 🟣 Sales Routes Index Updated: Customers Sub-Router and Quotations Endpoint Added
-852 " 🟣 New Customer Routes File Created for Sales Module
-853 5:06p 🟣 Sales Module: Follow-up and Customer Controllers/Routes Added
-854 6:26p 🔵 Mr_Storage_Backend API Plan Contains 88 Planned APIs
-S88 API Plan vs. Implementation Progress Audit — Mr_Storage_Backend (admin_panel_sales_panel_v2.md) (May 14 at 6:26 PM)
-855 6:28p 🔵 Mr_Storage_Backend API Implementation Coverage Audit
-856 " 🔵 Mr_Storage_Backend: Implemented NEW and CHANGE Endpoints Inventory
-857 " 🔵 Sales Lead Controller: Full Implementation Details
-858 " 🔵 Sales Followup Controller: AI Script via Anthropic SDK + Analytics
-859 " 🔵 Route-Spec Mismatches: Admin PO Assign and Admin Customer Projects
-860 6:29p 🔵 Corrected API Coverage: 69/83 Matched After Including sales/customer.routes.js
-861 " 🔵 Sales Customer Controller: Ownership-Scoped Customer Management
-862 " 🔵 Mr_Storage_Backend Full Project Structure
-863 6:31p 🔵 Admin Lead Controller: Budget, Terminate, and Lifecycle Views Implemented but Not Routed
-864 " 🔵 Admin Customer Controller: Missing createCustomer and getCustomerStats Handlers
-865 " 🔵 Common Quotation Controller: AI Summary Generation and Lifecycle Advancement on Send
-866 " 🔵 Common Invoice and Payment Controllers: PO Number Reuse and Payment Rollup Logic
-867 " 🔵 Sales Dashboard Controller: Full v2 Implementation with Trend Windowing Utility
+S88 API Plan vs. Implementation Progress Audit — Mr_Storage_Backend (admin_panel_sales_panel_v2.md) (May 14 at 5:07 PM)
+S107 Admin Panel Sales Panel v2 — Daily progress update for Part 2 API implementation across Leads, Follow-ups, Quotations, PO Orders, and Customers modules (May 14 at 6:26 PM)
+### May 15, 2026
+S108 Audit Mr_Storage_Backend Postman collection against newly implemented APIs to identify missing/outdated endpoints (May 15 at 2:06 AM)
+S109 Reconcile all APIs from admin_panel_sales_panel_v2.md into the Postman collection (postman_collection.json) for Mr_Storage_Backend, and implement any missing backend endpoints (May 15 at 2:37 AM)
+S110 Admin Panel Sales Panel V2 API audit — verify all APIs from plan doc exist, are implemented, and are in Postman collection (May 15 at 3:02 AM)
+939 1:44p 🔵 Controller Export Audit Across Sales, Admin, and Common Modules
+940 1:45p 🔵 Sales Router Architecture: Top-Level Routes for Quotations and PO Orders
+941 " 🔵 Upload, Invoice, Payment, and Quotation Endpoints Verified in Postman Collection
+942 1:46p 🔵 Postman Collection Contains 148 Requests Across 31 Organized Folders
+943 1:47p 🔵 Final API Audit: 97.7% Plan Completion, Two Gaps Identified
+944 " 🟣 Agreement Upload Endpoint Identified as Missing Implementation
+945 " 🔵 Upload Controller Implementation Details and Common Route Guard Structure
+946 1:48p 🔵 Lead Model Has 'contract' Document Type — Agreement Upload Requires No Schema Change
+947 " 🟣 Agreement Upload Endpoint Implemented — Critical Audit Gap Resolved
+948 " 🔴 Postman "Import Leads (CSV)" Entry Has Wrong URL — Points to Create Lead Instead of Import
+S118 Investigate and explain the full lead onboarding, stage progression, and salesperson assignment flow in Mr_Storage_Backend, including how to manually add and advance a lead. (May 15 at 1:49 PM)
+988 6:43p 🔵 Confirmed `/api/sales/leads/stats` Endpoint in Postman Collection
+989 " 🔵 Postman "Lead Stats" Entry: Exact Name, Method, Auth, and Adjacent Endpoints
+1005 8:23p 🔵 Frontend "New Project" Page Maps to `/leads` API Endpoint
+1006 " 🔵 Admin `POST /customers/:customerId/leads` — Full Field Contract Confirmed
+1007 " 🔵 Two Parallel "Create Project" Routes: Admin vs Sales — Field Requirements Differ
+1008 8:24p 🔵 Lead Detail Response Diverges Between Admin and Sales — Admin Gets More Fields
+1009 8:25p 🔵 Customer Onboarding Entry Point via Public Chat Route
+1010 " 🔵 Full Chatbot Onboarding Flow: `chatInit` Controller Deep Dive
+1011 8:26p 🔵 Admin Customer Management: Manual Onboarding vs Chatbot Onboarding Comparison
+1012 8:28p 🔵 Socket.IO Chat Architecture: AI-Driven Onboarding Pipeline with Auto Quote Detection and Round-Robin Sales Assignment
+1013 8:29p 🔵 AI Silence Gate: `isHandedToSales` Flag Stops AI Responses After Sales Handoff
+1014 " 🔵 Customer Auth: JWT + OTP Password Reset with MASTER_OTP Bypass
+1015 " 🔵 Customer Portal Routes: Self-Service Project Creation and Document/Payment Access
+1016 8:32p 🔵 Postman Collection Reveals Full API Surface and Domain Model ("Construction AI")
+1017 " 🔵 Customer Portal: Phone Number as Initial Password Confirmed in Postman Examples
+1018 8:34p 🔵 Package Stack: Express 5, Mongoose 8, Anthropic SDK 0.39, AWS S3 SDK v3
+1019 " 🔵 Runtime Environment: Node.js v24.12.0; Only AGENTS.md Modified in Working Tree
+### May 16, 2026
+1036 12:54a 🔵 Chatbot Handles Lead Progression Through Stages 0–3
+1037 " 🔵 Lead Lifecycle Uses Named String Stages, Not Numeric Indexes
+1038 " 🔵 Chatbot Owns Leads Until isHandedToSales Flag; Sales Handoff via Round-Robin Service
+1039 12:55a 🔵 AI Scoring Service Advances Lead Lifecycle Stages with Advance-Only Guard
+1040 " 🔵 Claude Chat Service Uses QUOTE_DATA Marker Protocol to Embed Structured JSON in Responses
+1041 " 🔵 Sales Rep Can Freely Update lifecycleStatus; No Advance-Only Guard in Sales Controller
+1042 12:56a 🔵 Lead Mongoose Schema — Complete Field Map Including AI and State Flag Fields
+1043 " 🔵 Mr_Storage_Backend Lead Onboarding Entry Points via Public Routes
+1044 " 🔵 Lead Onboarding Flow: chatInit Controller Logic in Mr_Storage_Backend
+1045 " 🔵 Round-Robin Salesperson Auto-Assignment Service
+1046 " 🔵 AI Chat Service Extracts QUOTE_DATA from Claude Response to Trigger Sales Handoff
+1047 12:57a 🔵 Complete Lead Lifecycle Stages and Stage Progression Rules in Mr_Storage_Backend
+1048 " 🔵 Chat Socket Handler Triggers Sales Handoff When AI Returns QUOTE_DATA
+S119 Understand lead onboarding, stage progression, and salesperson assignment in Mr_Storage_Backend; create a way to manually test the full flow end-to-end. (May 16 at 12:57 AM)
+1049 12:59a 🔵 Complete Socket.IO customer_message Handler: 10-Step Pipeline with Post-Handoff AI Silence
+1050 " 🔵 Socket.IO Namespace Architecture: /chat (Public) and /admin (Authenticated)
+1051 1:00a 🟣 Created test-chat.html: Browser-Based Lead Onboarding and Chat Pipeline Tester
+S120 Provide a step-by-step test script with exact chat messages to trigger the full lead pipeline: onboarding → stage progression → QUOTE_DATA → sales handoff. (May 16 at 1:01 AM)
+S121 How lead onboarding, stage progression, and sales assignment works in Mr_Storage_Backend — and how to manually add a lead and move it through stages (May 16 at 1:04 AM)
+1052 1:27a 🔵 Sales API — Leads Endpoints Documented in Postman Collection
+1053 1:47a 🔵 Mr_Storage_Backend Sales Leads API Endpoints in Postman Collection
+1054 1:56a 🔵 Lead Detail API Response Structure — Steel Warehouse CRM
+1055 2:00a 🔵 Customer Response Missing `company` and `location` Fields vs API Spec
+1056 " 🔵 Root Cause Found: `company` and `location` Fields Not Defined in Customer Schema
+1057 " 🔵 Controller Already Selects `company` and `location` — Schema Is the Only Missing Piece
+1058 2:01a 🔵 Admin `getLeadDetail` Fetches Full Customer Document with `.lean()` — Bypasses `toJSON` Password Strip
 
-Access 471k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 436k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

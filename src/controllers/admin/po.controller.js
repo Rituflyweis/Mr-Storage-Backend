@@ -25,6 +25,20 @@ exports.getAllPOOrders = asyncHandler(async (req, res) => {
   return success(res, { orders })
 })
 
+exports.assignPOOrder = asyncHandler(async (req, res) => {
+  const { poOrderId } = req.params
+  const { assignedTo } = req.body
+
+  const order = await POOrder.findById(poOrderId)
+  if (!order) return notFound(res, 'PO Order not found')
+  if (order.status !== 'approved') return badRequest(res, 'Can only assign approved PO orders')
+
+  order.assignedTo = assignedTo
+  await order.save()
+
+  return success(res, { order })
+})
+
 exports.updatePOStatus = asyncHandler(async (req, res) => {
   const { poOrderId } = req.params
   const { status, adminNotes } = req.body
