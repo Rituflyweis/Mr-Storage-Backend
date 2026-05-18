@@ -2459,7 +2459,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"poNumber\": \"PO-0001\",\n  \"invoiceId\": \"{{invoiceId}}\",\n  \"quotationId\": \"{{quotationId}}\"\n}"
+              "raw": "{\n  \"poNumber\": \"PO-0001\"\n}"
             }
           }
         }
