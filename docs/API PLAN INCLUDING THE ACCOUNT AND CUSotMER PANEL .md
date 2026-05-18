@@ -313,13 +313,12 @@ Sales raises a PO order once a deal is confirmed and invoiced. Admin approves or
 ```
 POST /api/sales/leads/:leadId/po-order
 {
-  "poNumber":    "PO-0001",
-  "invoiceId":   "64f...",
-  "quotationId": "64f..."
+  "poNumber": "PO-0001"
 }
 ```
 
-Get `poNumber` from the invoice (`invoice.poNumber` — auto-generated at invoice creation).
+Get `poNumber` from the invoice (`invoice.poNumber` — auto-generated at invoice creation).  
+Server resolves `invoiceId` and `quotationId` from the lead automatically.
 
 Server creates a `POOrder` document, sets `lead.isRaisedToPO = true`, and emits `new_po_order` to `admin_room`.
 
@@ -1264,10 +1263,11 @@ Escalate lead to admin.
 ### `POST /api/sales/leads/:leadId/po-order`
 Raise a PO order.
 
-> PO number is auto-generated when the first invoice is created. Retrieve it from the invoice and pass it here.
+> PO number is auto-generated when the first invoice is created. Retrieve it from the invoice and pass it here.  
+> Server auto-resolves the invoice and quotation from `leadId` (no `invoiceId`/`quotationId` required in body).
 
 ```json
-{ "poNumber": "PO-0001", "invoiceId": "64f...", "quotationId": "64f..." }
+{ "poNumber": "PO-0001" }
 ```
 
 ---

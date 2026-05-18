@@ -87,75 +87,76 @@ Default seed admin: `admin@construction.com` / `Admin@123` (overridable via env 
 <claude-mem-context>
 # Memory Context
 
-# [Mr_Storage_Backend] recent context, 2026-05-16 9:31pm GMT+5:30
+# [Mr_Storage_Backend] recent context, 2026-05-18 6:01pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (19,032t read) | 1,122,747t work | 98% savings
+Stats: 50 obs (18,754t read) | 518,993t work | 96% savings
 
 ### May 16, 2026
-1066 4:03a 🔵 Sales Follow-up and Customer Routes Fully Implement All Spec Endpoints
-1067 " 🔵 AI Script Generator Fully Implemented with Anthropic SDK and AIScriptSession Persistence
-1068 " 🔵 Quotation Controller Missing Server-Side COGS Auto-Calculations Required by Spec
-1069 " 🔵 Admin Panel (Part 3) APIs Fully Implemented Across All Route Files
-1070 " 🔵 Data Models for Building, ProjectBudget, and POOrder Match Spec Requirements
-1077 11:43a 🔵 Admin Customer Routes Structure in Mr_Storage_Backend
-1078 " 🔵 Admin Route Index: Full Route Map and Auth Middleware Chain
-1079 " 🔵 Admin Customer Controller: Full Implementation Details
-1080 " 🔵 Mr_Storage_Backend app.js: Full API Route Map and Middleware Stack
-1081 11:44a 🔵 Global Error Handler: Mongoose and HTTP Error Response Patterns
-1082 11:45a 🔵 No ObjectId Validation Middleware Exists in Mr_Storage_Backend
-1083 " 🔵 Complete Middleware Inventory for Mr_Storage_Backend
-1084 11:46a 🔵 Static Route Order Confirmed Correct; No Postman Collection Found
-1085 11:47a 🔵 Postman Collection Found at Project Root as postman_collection.json
-1086 " 🔵 Postman Spec Confirms Customer Stats and Projects APIs Exist for Both Admin and Sales
-1088 " 🔵 Mr_Storage_Backend Uses Anthropic SDK and AWS S3 as Dependencies
-1171 4:15p 🔵 Sales createProject endpoint — required vs auto-populated fields analysis
-1172 4:24p 🔵 Sales Panel v2 — Project Creation API Field Population Question
-1173 4:25p 🔵 Sales `createProject` API — Required Fields, Auto-Populated Fields, and Resulting Lead Document Shape
-S132 Sales Panel v2 — Investigate and fix project creation API field handling for POST /api/sales/customers/:customerId/projects (May 16 at 4:25 PM)
-1174 4:26p 🔴 Added Missing `height` Field to Lead Schema
-1175 4:27p 🔴 Fixed `height` Field Silently Dropped in `createProject` Controller
-1176 " 🔵 Admin `createProject` (Lead.create) Also Missing Dimension Fields
-S133 Diagnosing mismatch between GET /api/sales/customers/:customerId/projects API response and the UI display requirements in Mr_Storage_Backend (May 16 at 4:27 PM)
-1177 4:31p 🔵 API Response for Customer Projects Doesn't Match UI Requirements
-1178 " 🔵 Lifecycle Stage Constants Defined in Mr_Storage_Backend
-1179 " 🔵 Full LIFECYCLE_STAGES Enum and Related Constants in Mr_Storage_Backend
 S134 Explaining the logic behind GET /api/sales/customers/:customerId/projects and resolving the UI vs API mismatch for project stage/progress/status display (May 16 at 4:31 PM)
 S135 Analyze API response structure vs UI column requirements for customer projects listing — focus on structure, not data (May 16 at 4:34 PM)
-1180 4:38p ⚖️ User Preference: Prioritize Structure Over Data
 S136 Verify that the projects list API response structure matches the spec defined in admin_panel_sales_panel_v2.md (May 16 at 4:38 PM)
-1181 4:42p 🔵 API Response Structure Spec for Projects List Endpoint
 S137 Fix missing numberOfBuildings field in legacy Lead documents to make API responses match spec (May 16 at 4:42 PM)
-1182 4:43p 🔵 Mr_Storage_Backend Config Directory Structure
-1183 4:44p 🟣 Lead Defaults Backfill Migration Script Created
 S138 Audit admin customer detail API response against frontend UI — verify correctness of displayed project data for customer CUST-0005 (May 16 at 4:44 PM)
-1184 4:55p 🔵 Admin Customer Detail API Response Structure — Project Fields Review
-1185 " 🔵 Admin Customer Controller — Four Distinct Customer/Project Endpoints
 S139 Audit and fix admin customer API endpoints — security and spec compliance issues in Mr_Storage_Backend (May 16 at 4:55 PM)
-1186 4:56p 🔴 Fixed `getCustomerDetail` — Removed Password Leak, Restructured Response to Match Spec
-1187 4:57p 🔴 Fixed Password Leak in `getAllCustomers` List Endpoint
 S140 Frontend UI column audit against Lead schema — JOB ID and END DATE columns have no backend backing fields (May 16 at 4:57 PM)
-1188 6:37p ✅ Fields Added and Documented in not_present_in_spec.md
-1189 " 🟣 New generateJobId Utility Created for Lead Model
-1190 " 🟣 Lead Model Extended with jobId and endDate Fields
-1191 " 🔵 All Lead.create Call Sites Mapped Across Mr_Storage_Backend
-1192 6:38p ⚖️ jobId Auto-Assignment Moved to Mongoose pre('save') Middleware
-1193 " 🟣 jobId Backfill Migration Run — 14 Existing Leads Assigned PRO-XXX IDs
-S141 Add jobId and endDate fields to Lead model and document them in not_present_in_spec.md (May 16 at 6:39 PM)
-1245 9:07p 🔵 Lead and Customer Schema Fields in Mr_Storage_Backend
-1246 " 🟣 Lead Creation API: Full Building Spec Fields + Duplicate Project Guard
-1247 9:21p 🔵 Sales Leads API Payload vs Frontend UI Field Discrepancy Identified
-1248 9:22p 🟣 Lead Creation API Massively Expanded with Field Normalization and Alias Support
-1249 " 🔴 Lead Route Validators Updated to Use `optional({ checkFalsy: true })`
-1250 " 🔵 Broader Session Changes Span Admin and Sales Controllers/Routes
-1251 9:26p 🔵 not_present_in_spec.md Documents Undocumented API Changes in Mr_Storage_Backend
-1252 " 🔵 Postman Collection "Create Lead" Request Body Lacks height and endDate Fields
-1253 " ✅ not_present_in_spec.md Updated with POST /api/sales/leads Alias and Auto-Generation Behaviors
-1254 " ✅ Postman Collection "Create Lead" Request Body Updated to Use UI Alias Field Names
-1255 9:27p 🔵 Mr_Storage_Backend Has 10 Uncommitted Modified Files Spanning Controllers, Routes, and Docs
+S141 Add jobId and endDate fields to Lead model and document them in not_present_in_spec.md (May 16 at 4:57 PM)
+S171 Trace the full request flow of GET /api/sales/followups/communication-timeline (May 16 at 6:39 PM)
+### May 18, 2026
+1431 3:10p 🔵 communication-timeline Route Registration Location
+1432 " 🔵 Sales Followup Routes Full Structure
+1433 " 🔵 getCommunicationTimeline Controller Location
+1434 " 🔵 Sales Followup Controller Dependencies and Architecture
+1435 " 🔵 getCommunicationTimeline Full Implementation
+1436 " 🔵 AI Script Session Flow Using Anthropic claude-sonnet-4-20250514
+1437 3:22p 🔵 Smart Follow-Up Reminders API Fully Implemented in Sales Panel
+1438 " 🔵 Sales Panel Interactive AI Script Chat Uses claude-sonnet-4-20250514 with Lead Context Injection
+1439 " 🔵 FollowUp Model Stores Only "pending"/"completed" — "Overdue" Is Computed at Read Time
+1440 " 🔵 "Smart Follow-Up Reminders" Label Not Found in Backend Spec Docs
+1441 3:23p 🔵 Activity Log Data Creation Flow in Mr_Storage_Backend
+1443 " 🔵 No Automated Reminder System Exists — Follow-Up "Reminders" Are Pull-Only
+1444 " 🔵 Follow-Up API Endpoints Split Between v1 (EXISTS) and v2 (NEW) in Spec
+1445 " 🔵 Shared buildDateFilter Utility Normalizes Date Ranges Across All Controllers
+1442 " 🔵 logActivity Endpoint: Full Business Flow Confirmed
+S172 Business flow for creating data in the communication timeline feature of Mr_Storage_Backend (May 18 at 3:23 PM)
+1446 3:24p 🔵 Admin and Sales Follow-Up Route Sets Are Asymmetric — KPI Endpoint Missing in Sales Routes
+1447 3:27p 🔵 Admin Employees API Has Partial Role Filtering
+1448 3:28p 🔵 Admin Employees API Role Filter Confirmed on GET /
+1449 3:47p 🔵 PO Order API — Quotation ID and Invoice ID Source Query
+1450 " 🔵 PO Order Route Structure in Mr_Storage_Backend
+1451 3:48p 🔵 PO Order API — quotationId and invoiceId Must Come from Lead-Scoped Quotation and Invoice Endpoints
+1452 " 🔵 getLeadDetail Is the Single Source for Both quotationId and invoiceId
+1453 3:49p 🔵 GET /api/sales/quotations Filters by Creator, Not by Lead
+1454 4:40p ⚖️ Frontend Lead Detail Fetching Strategy Discussion
+1465 4:57p ⚖️ PO API Redesign: Accept Only poNumber with Backend Auto-Resolution
+1466 4:58p 🔵 Mr_Storage_Backend: PO, Invoice, and Quotation Data Model Structure
+1467 " 🔵 Current PO API Contract: Frontend Must Supply invoiceId and quotationId
+1468 " ✅ PO Route Validators: Removed invoiceId and quotationId Body Requirements
+1469 " 🟣 Backend Auto-Resolution of invoiceId and quotationId for PO Order Creation
+1470 4:59p 🔵 Three Documentation Files Contain Stale PO Order API Contract
+1471 " ✅ API_REFERENCE.md Updated to Reflect New Thin PO Order Request Contract
+1472 " ✅ API Flow Docs Updated for New PO Order Contract in Two Locations Each
+1473 " ✅ All Three API Documentation Files Now Reflect Thin PO Order Contract
+1474 5:00p ✅ PO API Redesign Fully Complete: No Stale Contract Remaining in Any Doc
+1475 " 🟣 PO API Redesign Complete: Full Diff Summary of All Changes
+1483 5:46p 🔵 Sales Panel API Structure in Mr_Storage_Backend
+1484 " 🔵 Sales Panel Follow-up API — Full Route and Controller Map
+1485 " 🔵 Sales Panel Router — Top-Level Route Structure with Role Guard
+1486 " 🔵 Invoice API Spans Multiple Panels — Common, Account, and Sales Controllers
+1487 5:47p 🔵 Mr_Storage_Backend Top-Level API Route Map
+1488 " 🔵 Complete Sales Panel API Endpoint Inventory
+1489 " 🔵 FollowUp Model Schema — Overdue Status is Computed, Not Stored
+1490 " 🔵 Sales Lead Detail API Aggregates 9 Data Sources in a Single Response
+1491 " 🔵 Admin vs Sales Follow-Up Route Differences
+1492 " 🔵 Quotation API — Server-Side Auto-Calculations and Version Tracking
+1493 " 🔵 Payment Schedule API — One Schedule Per Lead with Strict Stage Validation
+1494 " 🔵 Invoice Notify Endpoint Planned in Docs but Not Implemented in Codebase
+1495 5:48p 🔵 Mr_Storage_Backend Complete Enum Constants and Audit Action Registry
+1496 6:01p 🔵 Mr_Storage_Backend Postman Collection Files Located
+1497 " ✅ Postman "Raise PO Order" Request Body Cleaned Up — Removed invoiceId and quotationId Fields
 
-Access 1123k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 519k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

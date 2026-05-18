@@ -881,10 +881,11 @@ Escalate lead to admin.
 ### `POST /api/sales/leads/:leadId/po-order`
 Raise a PO order.
 
-> PO number is auto-generated when the first invoice is created. Retrieve it from the invoice and pass it here.
+> PO number is auto-generated when the first invoice is created. Retrieve it from the invoice and pass it here.  
+> Server auto-resolves the invoice and quotation from `leadId` (no `invoiceId`/`quotationId` required in body).
 
 ```json
-{ "poNumber": "PO-0001", "invoiceId": "64f...", "quotationId": "64f..." }
+{ "poNumber": "PO-0001" }
 ```
 
 ---

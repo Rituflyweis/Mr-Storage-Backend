@@ -79,8 +79,6 @@ router.post('/:leadId/escalate',
 router.post('/:leadId/po-order',
   [
     body('poNumber').notEmpty().trim(),
-    body('invoiceId').notEmpty(),
-    body('quotationId').notEmpty(),
   ],
   validate,
   ctrl.raisePOOrder

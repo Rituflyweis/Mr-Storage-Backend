@@ -26,6 +26,57 @@ const guardLead = async (leadId, salesId) => {
   return { lead }
 }
 
+const resolvePOFinancialRefs = async (leadId) => {
+  const invoice = await Invoice.findOne({
+    leadId,
+    status: { $in: ['sent', 'paid', 'overdue'] },
+  })
+    .select('_id leadId quotationId status createdAt')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  if (!invoice) {
+    return { error: 'Cannot raise PO order: no sent/paid invoice found for this lead' }
+  }
+
+  // Prefer the invoice-linked quotation to keep PO context consistent.
+  if (invoice.quotationId) {
+    const linkedQuotation = await Quotation.findOne({ _id: invoice.quotationId, leadId })
+      .select('_id leadId status createdAt')
+      .lean()
+
+    if (!linkedQuotation) {
+      return { error: 'Cannot raise PO order: linked quotation for the selected invoice was not found on this lead' }
+    }
+
+    return { invoiceId: invoice._id, quotationId: linkedQuotation._id }
+  }
+
+  // Fallback: latest shared quote if invoice was created without explicit quotation linkage.
+  const recentSharedQuotation = await Quotation.findOne({
+    leadId,
+    status: { $in: ['sent', 'accepted'] },
+  })
+    .select('_id leadId status createdAt')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  if (recentSharedQuotation) {
+    return { invoiceId: invoice._id, quotationId: recentSharedQuotation._id }
+  }
+
+  const latestQuotation = await Quotation.findOne({ leadId })
+    .select('_id leadId status createdAt versionNumber')
+    .sort({ versionNumber: -1, createdAt: -1 })
+    .lean()
+
+  if (!latestQuotation) {
+    return { error: 'Cannot raise PO order: no quotation found for this lead' }
+  }
+
+  return { invoiceId: invoice._id, quotationId: latestQuotation._id }
+}
+
 const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const normalizeProjectName = (value = '') => value.trim()
 const toNumberOrNull = (value) => {
@@ -620,10 +671,15 @@ exports.escalateLead = asyncHandler(async (req, res) => {
 
 exports.raisePOOrder = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { poNumber, invoiceId, quotationId } = req.body
+  const { poNumber } = req.body
 
   const { lead, error, status } = await guardLead(leadId, req.user._id)
   if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
+
+  const resolvedRefs = await resolvePOFinancialRefs(leadId)
+  if (resolvedRefs.error) return badRequest(res, resolvedRefs.error)
+
+  const { invoiceId, quotationId } = resolvedRefs
 
   const order = await POOrder.create({
     leadId,
