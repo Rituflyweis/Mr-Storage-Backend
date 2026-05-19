@@ -46,6 +46,8 @@ const AUDIT_ACTIONS = {
   LEAD_EDITED:              'lead.edited',
   LEAD_TERMINATED:          'lead.terminated',
   BUILDINGS_CREATED:        'lead.buildings_created',
+  BOM_APPROVED:             'bom.approved',
+  BOM_REJECTED:             'bom.rejected',
   QUOTATION_CREATED:        'quotation.created',
   QUOTATION_SENT:           'quotation.sent',
   QUOTATION_ACCEPTED:       'quotation.accepted',

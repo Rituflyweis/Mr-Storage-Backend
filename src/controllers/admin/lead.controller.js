@@ -7,6 +7,7 @@ const PaymentSchedule = require('../../models/PaymentSchedule')
 const AuditLog = require('../../models/AuditLog')
 const User = require('../../models/User')
 const Building = require('../../models/Building')
+const POOrder = require('../../models/POOrder')
 const ProjectBudget = require('../../models/ProjectBudget')
 const Meeting = require('../../models/Meeting')
 const FollowUp = require('../../models/FollowUp')
@@ -469,6 +470,47 @@ exports.getLeadBudget = asyncHandler(async (req, res) => {
       expectedProfit: (lead.quoteValue || 0) - (budget.totalBudget || 0),
     },
   })
+})
+
+exports.approveBOM = asyncHandler(async (req, res) => {
+  const { leadId, buildingId } = req.params
+  const { action, note } = req.body
+
+  if (!['approved', 'rejected'].includes(action)) {
+    return badRequest(res, 'action must be approved or rejected')
+  }
+  if (action === 'rejected' && !note) {
+    return badRequest(res, 'note is required when rejecting')
+  }
+
+  const building = await Building.findOneAndUpdate(
+    { _id: buildingId, leadId },
+    { status: action === 'approved' ? 'bom_approved' : 'bom_pending' },
+    { new: true }
+  )
+  if (!building) return notFound(res, 'Building not found')
+
+  const po = await POOrder.findOne({ leadId, status: 'approved' }).select('assignedTo').lean()
+  if (po?.assignedTo && global.io) {
+    global.io.of('/admin').to(`user:${po.assignedTo}`).emit('bom_review_complete', {
+      leadId,
+      buildingId,
+      buildingNumber: building.buildingNumber,
+      action,
+      note: note || '',
+    })
+  }
+
+  await auditService.log({
+    type: 'lead',
+    action: action === 'approved' ? AUDIT_ACTIONS.BOM_APPROVED : AUDIT_ACTIONS.BOM_REJECTED,
+    leadId,
+    customerId: building.customerId,
+    performedBy: req.user._id,
+    metadata: { buildingId, buildingNumber: building.buildingNumber, note: note || '' },
+  })
+
+  return success(res, { building })
 })
 
 exports.terminateLead = asyncHandler(async (req, res) => {

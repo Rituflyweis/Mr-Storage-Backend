@@ -66,3 +66,49 @@ exports.getPerProject = asyncHandler(async (req, res) => {
   const total = await Lead.countDocuments({ ...base, quoteValue: { $gt: 0 } })
   return success(res, { projects, total, page: Number(page), limit: Number(limit) })
 })
+
+exports.getInvoiceAging = asyncHandler(async (req, res) => {
+  const now = new Date()
+
+  const overdue = await Invoice.aggregate([
+    { $match: { status: { $in: ['sent', 'overdue'] } } },
+    {
+      $addFields: {
+        dueDate: { $add: ['$date', { $multiply: ['$daysToPay', 86400000] }] },
+      },
+    },
+    { $match: { dueDate: { $lt: now } } },
+    { $lookup: { from: 'leads', localField: 'leadId', foreignField: '_id', as: 'lead' } },
+    { $unwind: { path: '$lead', preserveNullAndEmptyArrays: true } },
+    { $lookup: { from: 'customers', localField: 'customerId', foreignField: '_id', as: 'customer' } },
+    { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+    { $lookup: { from: 'users', localField: 'lead.assignedSales', foreignField: '_id', as: 'sales' } },
+    {
+      $project: {
+        invoiceNumber: 1,
+        totalAmount: 1,
+        dueDate: 1,
+        daysOverdue: {
+          $floor: { $divide: [{ $subtract: [now, '$dueDate'] }, 86400000] },
+        },
+        customerName: {
+          $trim: {
+            input: {
+              $concat: [
+                { $ifNull: ['$customer.firstName', ''] },
+                ' ',
+                { $ifNull: ['$customer.lastName', ''] },
+              ],
+            },
+          },
+        },
+        projectName: '$lead.projectName',
+        assignedSales: { $arrayElemAt: ['$sales.name', 0] },
+      },
+    },
+    { $sort: { daysOverdue: -1 } },
+  ])
+
+  const totalOverdueAmount = overdue.reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0)
+  return success(res, { overdue, totalOverdueAmount })
+})

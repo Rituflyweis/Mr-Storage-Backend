@@ -1069,6 +1069,41 @@
           }
         },
         {
+          "name": "Approve BOM",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/buildings/{{buildingId}}/approve-bom",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "{{leadId}}",
+                "buildings",
+                "{{buildingId}}",
+                "approve-bom"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"approved\",\n  \"note\": \"BOM reviewed and approved\"\n}"
+            }
+          }
+        },
+        {
           "name": "Edit Lead",
           "request": {
             "method": "PUT",
@@ -1875,6 +1910,20 @@
                 { "key": "page", "value": "1" },
                 { "key": "limit", "value": "20" }
               ]
+            }
+          }
+        },
+        {
+          "name": "Invoice Aging",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/financials/invoice-aging",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "financials", "invoice-aging"]
             }
           }
         }
