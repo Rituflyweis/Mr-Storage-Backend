@@ -90,6 +90,11 @@ const applyScoreToLead = (lead, scoreData) => {
     const currentIdx = LIFECYCLE_STAGES.indexOf(lead.lifecycleStatus)
     if (newIdx > currentIdx) {
       lead.lifecycleStatus = scoreData.projectLifecycleStage
+      lead.lifecycleHistory.push({
+        stage: scoreData.projectLifecycleStage,
+        changedAt: new Date(),
+        changedBy: null,
+      })
     }
   }
 }

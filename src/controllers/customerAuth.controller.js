@@ -1,6 +1,8 @@
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const Customer = require('../models/Customer')
+const Lead = require('../models/Lead')
+const Invoice = require('../models/Invoice')
 const env = require('../config/env')
 const { success, unauthorized, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
@@ -31,6 +33,31 @@ exports.login = asyncHandler(async (req, res) => {
 
   const match = await bcrypt.compare(password, customer.password)
   if (!match) return unauthorized(res, 'Incorrect password')
+
+  // Portal activation gate: 30% payment confirmed AND PO raised
+  const leads = await Lead.find({ customerId: customer._id }).lean()
+  const hasActivatedProject = leads.some((l) => l.isRaisedToPO === true)
+  let thirtyPctPaid = false
+  if (hasActivatedProject) {
+    const paidInvoices = await Invoice.find({ customerId: customer._id, status: 'paid' }).lean()
+    for (const inv of paidInvoices) {
+      const relatedLead = leads.find((l) => String(l._id) === String(inv.leadId))
+      if (relatedLead && relatedLead.quoteValue > 0) {
+        const pct = (inv.totalAmount / relatedLead.quoteValue) * 100
+        if (pct >= 30) {
+          thirtyPctPaid = true
+          break
+        }
+      }
+    }
+  }
+  if (!hasActivatedProject || !thirtyPctPaid) {
+    return res.status(403).json({
+      success: false,
+      message:
+        'Your project portal is not yet active. It will be available after your 30% deposit is confirmed.',
+    })
+  }
 
   const accessToken = signAccess(customer)
   const refreshToken = signRefresh(customer)

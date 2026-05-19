@@ -87,13 +87,13 @@ Default seed admin: `admin@construction.com` / `Admin@123` (overridable via env 
 <claude-mem-context>
 # Memory Context
 
-# [Mr_Storage_Backend] recent context, 2026-05-18 6:01pm GMT+5:30
+# [Mr_Storage_Backend] recent context, 2026-05-18 8:41pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (18,754t read) | 518,993t work | 96% savings
+Stats: 50 obs (19,648t read) | 485,781t work | 96% savings
 
 ### May 16, 2026
 S134 Explaining the logic behind GET /api/sales/customers/:customerId/projects and resolving the UI vs API mismatch for project stage/progress/status display (May 16 at 4:31 PM)
@@ -106,18 +106,7 @@ S140 Frontend UI column audit against Lead schema — JOB ID and END DATE column
 S141 Add jobId and endDate fields to Lead model and document them in not_present_in_spec.md (May 16 at 4:57 PM)
 S171 Trace the full request flow of GET /api/sales/followups/communication-timeline (May 16 at 6:39 PM)
 ### May 18, 2026
-1431 3:10p 🔵 communication-timeline Route Registration Location
-1432 " 🔵 Sales Followup Routes Full Structure
-1433 " 🔵 getCommunicationTimeline Controller Location
-1434 " 🔵 Sales Followup Controller Dependencies and Architecture
-1435 " 🔵 getCommunicationTimeline Full Implementation
-1436 " 🔵 AI Script Session Flow Using Anthropic claude-sonnet-4-20250514
-1437 3:22p 🔵 Smart Follow-Up Reminders API Fully Implemented in Sales Panel
-1438 " 🔵 Sales Panel Interactive AI Script Chat Uses claude-sonnet-4-20250514 with Lead Context Injection
-1439 " 🔵 FollowUp Model Stores Only "pending"/"completed" — "Overdue" Is Computed at Read Time
-1440 " 🔵 "Smart Follow-Up Reminders" Label Not Found in Backend Spec Docs
-1441 3:23p 🔵 Activity Log Data Creation Flow in Mr_Storage_Backend
-1443 " 🔵 No Automated Reminder System Exists — Follow-Up "Reminders" Are Pull-Only
+1443 3:23p 🔵 No Automated Reminder System Exists — Follow-Up "Reminders" Are Pull-Only
 1444 " 🔵 Follow-Up API Endpoints Split Between v1 (EXISTS) and v2 (NEW) in Spec
 1445 " 🔵 Shared buildDateFilter Utility Normalizes Date Ranges Across All Controllers
 1442 " 🔵 logActivity Endpoint: Full Business Flow Confirmed
@@ -157,6 +146,17 @@ S172 Business flow for creating data in the communication timeline feature of Mr
 1495 5:48p 🔵 Mr_Storage_Backend Complete Enum Constants and Audit Action Registry
 1496 6:01p 🔵 Mr_Storage_Backend Postman Collection Files Located
 1497 " ✅ Postman "Raise PO Order" Request Body Cleaned Up — Removed invoiceId and quotationId Fields
+1498 " 🔵 Lead Detail API Already Returns Invoices as Payment Records
+1499 " 🔵 getLeadDetail Already Fetches Invoices in Parallel Query
+1500 6:02p 🔵 getLeadDetail Returns Payments Block Derived Entirely from Invoices
+1501 " 🔵 Pending Payment Status Is Always Derived from Invoice Status and DueDate, Never Stored Separately
+1518 7:17p 🔵 Mr_Storage_Backend Project Structure Identified
+1519 8:15p ⚖️ Instruction to Follow Only admin_panel_sales_panel_v2.md
+1520 8:16p 🔵 admin_panel_sales_panel_v2.md Spec: Payment, Invoice, Follow-Up, and KPI Coverage
+1521 8:17p 🔵 Sales Panel API Surface Fully Mapped from Spec (Lines 500–760)
+1522 " 🔵 Admin Panel API Surface Mapped: Customers, Project Detail, Leads, PO Orders (Lines 760–980)
+1523 " 🔵 Spec Constants and Audit Actions: All Enum Changes in v2
+1524 " 🔵 Common APIs: Invoice and Payment Schedule Changes in v2 (Part 4)
 
-Access 519k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 486k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

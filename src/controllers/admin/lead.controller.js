@@ -301,7 +301,14 @@ exports.editLead = asyncHandler(async (req, res) => {
   if (buildingType !== undefined) lead.buildingType = buildingType
   if (location !== undefined) lead.location = location
   if (quoteValue !== undefined) lead.quoteValue = quoteValue
-  if (lifecycleStatus && LIFECYCLE_STAGES.includes(lifecycleStatus)) lead.lifecycleStatus = lifecycleStatus
+  if (lifecycleStatus && LIFECYCLE_STAGES.includes(lifecycleStatus)) {
+    lead.lifecycleStatus = lifecycleStatus
+    lead.lifecycleHistory.push({
+      stage: lifecycleStatus,
+      changedAt: new Date(),
+      changedBy: req.user._id,
+    })
+  }
 
   await lead.save()
 

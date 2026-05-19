@@ -193,6 +193,9 @@ exports.createProject = asyncHandler(async (req, res) => {
     notes:           description || '',
     source:          'customer_portal',
     lifecycleStatus: 'initial_contact',
+    lifecycleHistory: [
+      { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
+    ],
   })
 
   await auditService.log({

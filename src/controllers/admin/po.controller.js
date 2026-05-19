@@ -1,5 +1,6 @@
 const POOrder = require('../../models/POOrder')
 const Lead = require('../../models/Lead')
+const Building = require('../../models/Building')
 const auditService = require('../../services/audit.service')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -36,6 +37,19 @@ exports.assignPOOrder = asyncHandler(async (req, res) => {
   order.assignedTo = assignedTo
   await order.save()
 
+  // Transition all buildings for this project to drawing_pending
+  await Building.updateMany({ leadId: order.leadId }, { status: 'drawing_pending' })
+
+  // Notify the assigned plant user via socket
+  if (global.io) {
+    const lead = await Lead.findById(order.leadId).select('projectName').lean()
+    global.io.of('/admin').to(`user:${assignedTo}`).emit('project_assigned', {
+      leadId: order.leadId,
+      poOrderId: order._id,
+      projectName: lead?.projectName || '',
+    })
+  }
+
   return success(res, { order })
 })
 
@@ -53,7 +67,14 @@ exports.updatePOStatus = asyncHandler(async (req, res) => {
   await order.save()
 
   // Sync to lead
-  await Lead.findByIdAndUpdate(order.leadId, { poStatus: status })
+  const leadUpdate = { poStatus: status }
+  if (status === 'approved') {
+    leadUpdate.lifecycleStatus = 'sent_to_admin'
+    leadUpdate.$push = {
+      lifecycleHistory: { stage: 'sent_to_admin', changedAt: new Date(), changedBy: req.user._id },
+    }
+  }
+  await Lead.findByIdAndUpdate(order.leadId, leadUpdate)
 
   await auditService.log({
     type: 'po',

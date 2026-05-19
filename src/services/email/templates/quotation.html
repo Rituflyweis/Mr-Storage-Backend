@@ -34,18 +34,23 @@
       </p>
 
       <div class="price-box">
-        <div class="label">Estimated Price Range ({{CURRENCY}})</div>
-        <div class="price">{{BASE_PRICE}} – {{MAX_PRICE}}</div>
+        <div class="label">Quote Reference: {{QUOTE_NUMBER}}</div>
+        <div class="price">{{CURRENCY}} {{FINAL_PRICE}}</div>
+        <div style="font-size:12px;color:#888;margin-top:4px">
+          Price per sq ft: {{PSF}} | Valid until: {{VALID_TILL}}
+        </div>
       </div>
-
       <table class="detail-table">
         <tr><td>Building Type</td><td>{{BUILDING_TYPE}}</td></tr>
         <tr><td>Location</td><td>{{LOCATION}}</td></tr>
-        <tr><td>Valid Until</td><td>{{VALID_TILL}}</td></tr>
+        <tr><td>Dimensions</td><td>{{WIDTH}} × {{LENGTH}} × {{HEIGHT}} ft</td></tr>
+        <tr><td>Roof Style</td><td>{{ROOF_STYLE}}</td></tr>
+        <tr><td>Material + Freight Cost</td><td>{{CURRENCY}} {{TOTAL_COGS}}</td></tr>
+        <tr><td>Markup ({{MARKUP_PERCENT}}%)</td><td>{{CURRENCY}} {{MARKUP_VALUE}}</td></tr>
         <tr><td>Estimated Delivery</td><td>{{ESTIMATED_DELIVERY}}</td></tr>
         <tr><td>Payment Terms</td><td>{{PAYMENT_TERMS}}</td></tr>
       </table>
-
+      {{CLIENT_NOTES}}
       {{SPECIAL_NOTE}}
 
       <p style="font-size:13px;color:#888;margin-top:24px">
