@@ -12,7 +12,6 @@ router.post('/',
   [
     body('name').notEmpty().trim(),
     body('email').isEmail(),
-    body('password').isLength({ min: 6 }),
     body('role').notEmpty(),
   ],
   validate,
@@ -20,6 +19,8 @@ router.post('/',
 )
 
 router.get('/:userId/timeline', ctrl.getEmployeeTimeline)
+router.patch('/:userId/toggle-status', ctrl.toggleStatus)
+router.post('/:userId/reset-password', ctrl.resetPassword)
 router.get('/:userId', ctrl.getEmployeeDetail)
 router.put('/:userId', ctrl.updateEmployee)
 

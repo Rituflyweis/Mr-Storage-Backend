@@ -13,5 +13,6 @@ router.use('/meetings', require('./meeting.routes'))
 router.use('/followups', require('./followup.routes'))
 router.use('/escalations', require('./escalation.routes'))
 router.use('/po-orders', require('./po.routes'))
+router.use('/financials', require('./financial.routes'))
 
 module.exports = router

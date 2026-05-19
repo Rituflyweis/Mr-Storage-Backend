@@ -5,6 +5,7 @@ const FollowUp = require('../../models/FollowUp')
 const Invoice = require('../../models/Invoice')
 const roundRobinService = require('../../services/roundRobin.service')
 const auditService = require('../../services/audit.service')
+const mailer = require('../../services/email/mailer')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
@@ -61,6 +62,14 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
   if (role) filter.role = role
   if (isActive !== undefined) filter.isActive = isActive === 'true'
 
+  const { search } = req.query
+  if (search) {
+    filter.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } },
+    ]
+  }
+
   const skip = (parseInt(page) - 1) * parseInt(limit)
   const employees = await User.find(filter)
     .sort({ createdAt: -1 })
@@ -80,15 +89,21 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
 })
 
 exports.createEmployee = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, role } = req.body
+  const { name, email, phone, role } = req.body
 
   const exists = await User.findOne({ email: email.toLowerCase().trim() })
   if (exists) return badRequest(res, 'Email already in use')
 
-  const hashed = await bcrypt.hash(password, 12)
+  const tempPassword = Math.random().toString(36).slice(-6) +
+    Math.random().toString(36).slice(-4).toUpperCase()
+  const hashed = await bcrypt.hash(tempPassword, 12)
   const user = await User.create({ name, email: email.toLowerCase().trim(), password: hashed, phone, role })
 
   if (role === 'sales') await roundRobinService.rebuildTracker()
+
+  await mailer.sendEmployeeCredentials({
+    toEmail: user.email, name: user.name, role: user.role, tempPassword,
+  })
 
   await auditService.log({
     type: 'user',
@@ -195,4 +210,32 @@ exports.getEmployeeTimeline = asyncHandler(async (req, res) => {
     .lean()
 
   return success(res, { employee, timeline })
+})
+
+exports.toggleStatus = asyncHandler(async (req, res) => {
+  const employee = await User.findById(req.params.userId)
+  if (!employee) return notFound(res, 'Employee not found')
+
+  employee.isActive = !employee.isActive
+  await employee.save()
+
+  if (employee.role === 'sales') await roundRobinService.rebuildTracker()
+
+  return success(res, { employee }, `Employee marked ${employee.isActive ? 'active' : 'inactive'}`)
+})
+
+exports.resetPassword = asyncHandler(async (req, res) => {
+  const employee = await User.findById(req.params.userId)
+  if (!employee) return notFound(res, 'Employee not found')
+
+  const tempPassword = Math.random().toString(36).slice(-6) +
+    Math.random().toString(36).slice(-4).toUpperCase()
+  employee.password = await bcrypt.hash(tempPassword, 12)
+  await employee.save()
+
+  await mailer.sendEmployeeCredentials({
+    toEmail: employee.email, name: employee.name, role: employee.role, tempPassword
+  })
+
+  return success(res, {}, 'New credentials sent to employee email')
 })

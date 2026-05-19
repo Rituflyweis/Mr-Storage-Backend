@@ -20,7 +20,6 @@ router.post('/ai-script',
 router.post('/',
   [
     body('leadId').notEmpty(),
-    body('customerId').notEmpty(),
     body('followUpDate').isISO8601(),
     body('modeOfContact').optional().isIn(['call', 'email', 'meeting']),
   ],

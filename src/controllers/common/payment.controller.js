@@ -5,10 +5,11 @@ const { success, created, notFound, badRequest } = require('../../utils/apiRespo
 const asyncHandler = require('../../utils/asyncHandler')
 
 exports.createSchedule = asyncHandler(async (req, res) => {
-  const { leadId, stages, totalAmount } = req.body
+  const { leadId, stages } = req.body
 
   const lead = await Lead.findById(leadId)
   if (!lead) return notFound(res, 'Lead not found')
+  const totalAmount = (req.body.totalAmount != null) ? req.body.totalAmount : lead.quoteValue
 
   const existing = await PaymentSchedule.findOne({ leadId })
   if (existing) return badRequest(res, 'Payment schedule already exists for this lead')

@@ -8,21 +8,46 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 
 exports.getAllEscalations = asyncHandler(async (req, res) => {
-  const { status } = req.query
+  const { status, assignedSales, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
-
   const filter = { ...dateFilter }
+
   if (status) filter.status = status
+  if (assignedSales) {
+    const leadIds = await Lead.find({ assignedSales }).distinct('_id')
+    filter.leadId = { $in: leadIds }
+  }
 
-  const escalations = await Escalation.find(filter)
-    .populate('leadId')
-    .populate('customerId')
-    .populate('raisedBy')
-    .populate('resolvedAssignedTo')
-    .sort({ createdAt: -1 })
-    .lean()
+  const [escalations, total] = await Promise.all([
+    Escalation.find(filter)
+      .populate('leadId', 'projectName lifecycleStatus')
+      .populate('customerId', 'firstName lastName email')
+      .populate('raisedBy', 'name email')
+      .populate('resolvedAssignedTo', 'name')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit).limit(Number(limit)).lean(),
+    Escalation.countDocuments(filter)
+  ])
 
-  return success(res, { escalations })
+  return success(res, { escalations, total, page: Number(page), limit: Number(limit) })
+})
+
+exports.resolveEscalation = asyncHandler(async (req, res) => {
+  const escalation = await Escalation.findById(req.params.escalationId)
+  if (!escalation) return notFound(res, 'Escalation not found')
+
+  escalation.status = 'resolved'
+  escalation.resolvedBy = req.user._id
+  escalation.resolvedAt = new Date()
+  await escalation.save()
+
+  await auditService.log({
+    type: 'escalation', action: AUDIT_ACTIONS.ESCALATION_RESOLVED,
+    leadId: escalation.leadId, performedBy: req.user._id,
+    metadata: { escalationId: escalation._id, note: req.body.note || '' }
+  })
+
+  return success(res, { escalation }, 'Escalation resolved')
 })
 
 exports.assignEscalation = asyncHandler(async (req, res) => {

@@ -4,6 +4,7 @@ const ctrl = require('../../controllers/admin/escalation.controller')
 const validate = require('../../middleware/validate')
 
 router.get('/', ctrl.getAllEscalations)
+router.put('/:escalationId/resolve', ctrl.resolveEscalation)
 router.put('/:escalationId/assign',
   [body('employeeId').notEmpty()],
   validate,

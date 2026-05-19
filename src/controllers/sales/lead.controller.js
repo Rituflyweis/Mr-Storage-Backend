@@ -26,57 +26,6 @@ const guardLead = async (leadId, salesId) => {
   return { lead }
 }
 
-const resolvePOFinancialRefs = async (leadId) => {
-  const invoice = await Invoice.findOne({
-    leadId,
-    status: { $in: ['sent', 'paid', 'overdue'] },
-  })
-    .select('_id leadId quotationId status createdAt')
-    .sort({ createdAt: -1 })
-    .lean()
-
-  if (!invoice) {
-    return { error: 'Cannot raise PO order: no sent/paid invoice found for this lead' }
-  }
-
-  // Prefer the invoice-linked quotation to keep PO context consistent.
-  if (invoice.quotationId) {
-    const linkedQuotation = await Quotation.findOne({ _id: invoice.quotationId, leadId })
-      .select('_id leadId status createdAt')
-      .lean()
-
-    if (!linkedQuotation) {
-      return { error: 'Cannot raise PO order: linked quotation for the selected invoice was not found on this lead' }
-    }
-
-    return { invoiceId: invoice._id, quotationId: linkedQuotation._id }
-  }
-
-  // Fallback: latest shared quote if invoice was created without explicit quotation linkage.
-  const recentSharedQuotation = await Quotation.findOne({
-    leadId,
-    status: { $in: ['sent', 'accepted'] },
-  })
-    .select('_id leadId status createdAt')
-    .sort({ createdAt: -1 })
-    .lean()
-
-  if (recentSharedQuotation) {
-    return { invoiceId: invoice._id, quotationId: recentSharedQuotation._id }
-  }
-
-  const latestQuotation = await Quotation.findOne({ leadId })
-    .select('_id leadId status createdAt versionNumber')
-    .sort({ versionNumber: -1, createdAt: -1 })
-    .lean()
-
-  if (!latestQuotation) {
-    return { error: 'Cannot raise PO order: no quotation found for this lead' }
-  }
-
-  return { invoiceId: invoice._id, quotationId: latestQuotation._id }
-}
-
 const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const normalizeProjectName = (value = '') => value.trim()
 const toNumberOrNull = (value) => {
@@ -594,7 +543,7 @@ exports.logActivity = asyncHandler(async (req, res) => {
 
 exports.createBuildings = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { numberOfBuildings, quotationId } = req.body
+  const { numberOfBuildings } = req.body
 
   const { lead, error, status } = await guardLead(leadId, req.user._id)
   if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
@@ -605,12 +554,8 @@ exports.createBuildings = asyncHandler(async (req, res) => {
   const existingCount = await Building.countDocuments({ leadId })
   if (existingCount > 0) return badRequest(res, 'Buildings already exist for this lead')
 
-  // Verify quotationId belongs to this lead
-  if (quotationId) {
-    const Quotation = require('../../models/Quotation')
-    const quotation = await Quotation.findOne({ _id: quotationId, leadId }).lean()
-    if (!quotation) return badRequest(res, 'quotationId does not belong to this lead')
-  }
+  const latestQuotation = await Quotation.findOne({ leadId }).sort({ versionNumber: -1, createdAt: -1 }).lean()
+  const quotationId = latestQuotation?._id || null
 
   const buildingDocs = []
   for (let i = 1; i <= num; i++) {
@@ -710,46 +655,40 @@ exports.escalateLead = asyncHandler(async (req, res) => {
 
 exports.raisePOOrder = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { poNumber } = req.body
-
   const { lead, error, status } = await guardLead(leadId, req.user._id)
   if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
 
-  const resolvedRefs = await resolvePOFinancialRefs(leadId)
-  if (resolvedRefs.error) return badRequest(res, resolvedRefs.error)
+  if (lead.isRaisedToPO) return badRequest(res, 'PO already raised for this lead')
 
-  const { invoiceId, quotationId } = resolvedRefs
+  const latestInvoice = await Invoice.findOne({ leadId }).sort({ createdAt: -1 }).lean()
+  if (!latestInvoice) return badRequest(res, 'No invoice found. Create an invoice first.')
+
+  const latestQuotation = await Quotation.findOne({
+    leadId, status: { $in: ['sent', 'accepted', 'draft'] }
+  }).sort({ versionNumber: -1 }).lean()
+  if (!latestQuotation) return badRequest(res, 'No quotation found. Create a quotation first.')
 
   const order = await POOrder.create({
     leadId,
     customerId: lead.customerId,
     raisedBy: req.user._id,
-    invoiceId,
-    quotationId,
-    poNumber,
+    invoiceId: latestInvoice._id,
+    quotationId: latestQuotation._id,
+    poNumber: latestInvoice.poNumber,
   })
 
   lead.isRaisedToPO = true
   lead.lifecycleStatus = 'converted_to_po'
-  lead.lifecycleHistory.push({
-    stage: 'converted_to_po',
-    changedAt: new Date(),
-    changedBy: req.user._id,
-  })
+  lead.lifecycleHistory.push({ stage: 'converted_to_po', changedAt: new Date(), changedBy: req.user._id })
   await lead.save()
 
-  await auditService.log({
-    type: 'po',
-    action: AUDIT_ACTIONS.LEAD_PO_RAISED,
-    leadId,
-    customerId: lead.customerId,
-    performedBy: req.user._id,
-    metadata: { poNumber },
-  })
+  if (global.io) global.io.of('/admin').to('admin_room').emit('new_po_order', { order, leadId })
 
-  if (global.io) {
-    global.io.of('/admin').to('admin_room').emit('new_po_order', { order, leadId })
-  }
+  await auditService.log({
+    type: 'po', action: AUDIT_ACTIONS.LEAD_PO_RAISED,
+    leadId, customerId: lead.customerId, performedBy: req.user._id,
+    metadata: { poNumber: latestInvoice.poNumber }
+  })
 
   return success(res, { order }, 'PO Order raised successfully')
 })

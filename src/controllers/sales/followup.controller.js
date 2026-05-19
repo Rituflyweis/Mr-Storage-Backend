@@ -98,7 +98,10 @@ exports.getResponseRate = asyncHandler(async (req, res) => {
 })
 
 exports.createFollowUp = asyncHandler(async (req, res) => {
-  const { leadId, customerId, followUpDate, modeOfContact, notes, priority } = req.body
+  const { leadId, followUpDate, modeOfContact, notes, priority } = req.body
+  const lead = await Lead.findById(leadId).select('customerId').lean()
+  if (!lead) return notFound(res, 'Lead not found')
+  const customerId = lead.customerId
 
   const followUp = await FollowUp.create({
     leadId,

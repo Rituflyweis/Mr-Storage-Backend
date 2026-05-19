@@ -96,4 +96,22 @@ const sendOtp = async ({ toEmail, name, otp, expiresInMinutes = 10 }) => {
   })
 }
 
-module.exports = { sendQuotation, sendInvoice, sendOtp }
+const sendEmployeeCredentials = async ({ toEmail, name, role, tempPassword }) => {
+  const template = loadTemplate('employee-credentials')
+  const html = fillTemplate(template, {
+    EMPLOYEE_NAME: name,
+    ROLE: role.charAt(0).toUpperCase() + role.slice(1),
+    EMAIL: toEmail,
+    TEMP_PASSWORD: tempPassword,
+    LOGIN_URL: (process.env.APP_URL || '') + '/login',
+  })
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: 'Your CRM Login Credentials',
+    html,
+  })
+}
+
+module.exports = { sendQuotation, sendInvoice, sendOtp, sendEmployeeCredentials }
