@@ -7,7 +7,7 @@ router.post('/',
   [
     body('leadId').notEmpty(),
     body('stages').isArray({ min: 1 }),
-    body('totalAmount').isNumeric(),
+    body('totalAmount').optional().isNumeric(),
   ],
   validate,
   ctrl.createSchedule

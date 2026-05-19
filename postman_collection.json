@@ -33,6 +33,10 @@
       "value": ""
     },
     {
+      "key": "paymentScheduleStageId",
+      "value": ""
+    },
+    {
       "key": "scheduleId",
       "value": ""
     },
@@ -1065,6 +1069,41 @@
           }
         },
         {
+          "name": "Approve BOM",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/leads/{{leadId}}/buildings/{{buildingId}}/approve-bom",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "leads",
+                "{{leadId}}",
+                "buildings",
+                "{{buildingId}}",
+                "approve-bom"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"approved\",\n  \"note\": \"BOM reviewed and approved\"\n}"
+            }
+          }
+        },
+        {
           "name": "Edit Lead",
           "request": {
             "method": "PUT",
@@ -1251,6 +1290,26 @@
       "name": "Admin \u2014 Follow-ups",
       "item": [
         {
+          "name": "List Follow-ups",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/followups?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "followups"],
+              "query": [
+                { "key": "employeeId", "value": "", "disabled": true },
+                { "key": "status", "value": "", "description": "pending | completed | overdue", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
           "name": "Follow-up Stats",
           "request": {
             "method": "GET",
@@ -1373,7 +1432,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"assignedTo\": \"{{userId}}\",\n  \"followUpDate\": \"2024-06-20T10:00:00.000Z\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"high\"\n}"
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"assignedTo\": \"{{userId}}\",\n  \"followUpDate\": \"2024-06-20T10:00:00.000Z\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"high\"\n}"
             }
           }
         },
@@ -1474,6 +1533,13 @@
                 "api",
                 "admin",
                 "employees"
+              ],
+              "query": [
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "role", "value": "", "disabled": true },
+                { "key": "isActive", "value": "", "disabled": true },
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "limit", "value": "20", "disabled": true }
               ]
             }
           }
@@ -1505,7 +1571,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@company.com\",\n  \"password\": \"Pass@123\",\n  \"phone\": \"9876543210\",\n  \"role\": \"sales\"\n}"
+              "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@company.com\",\n  \"phone\": \"9876543210\",\n  \"role\": \"sales\"\n}"
             }
           }
         },
@@ -1559,6 +1625,34 @@
           }
         },
         {
+          "name": "Toggle Employee Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/employees/{{userId}}/toggle-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "employees", "{{userId}}", "toggle-status"]
+            }
+          }
+        },
+        {
+          "name": "Reset Employee Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/employees/{{userId}}/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "employees", "{{userId}}", "reset-password"]
+            }
+          }
+        },
+        {
           "name": "Update Employee",
           "request": {
             "method": "PUT",
@@ -1606,7 +1700,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/escalations?status=pending",
+              "raw": "{{baseUrl}}/api/admin/escalations?status=pending&page=1&limit=20",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1616,11 +1710,30 @@
                 "escalations"
               ],
               "query": [
-                {
-                  "key": "status",
-                  "value": "pending"
-                }
+                { "key": "status", "value": "pending" },
+                { "key": "assignedSales", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
               ]
+            }
+          }
+        },
+        {
+          "name": "Resolve Escalation",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/escalations/{{escalationId}}/resolve",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "escalations", "{{escalationId}}", "resolve"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Resolved after sales follow-up call\"\n}"
             }
           }
         },
@@ -1754,6 +1867,63 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"assignedTo\": \"{{userId}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin \u2014 Financials",
+      "item": [
+        {
+          "name": "Financial Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/financials/overview",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "financials", "overview"],
+              "query": [
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Per-Project P&L",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/financials/per-project?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "financials", "per-project"],
+              "query": [
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Invoice Aging",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/financials/invoice-aging",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "financials", "invoice-aging"]
             }
           }
         }
@@ -2212,7 +2382,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"firstName\": \"Arjun\",\n  \"lastName\": \"Kumar\",\n  \"emailAddress\": \"arjun@ex.com\",\n  \"phoneNumber\": \"9876543210\",\n  \"countryCode\": \"+91\",\n  \"companyName\": \"AK Steels\",\n  \"projectType\": \"Warehouse\",\n  \"city\": \"Chennai\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 100,\n  \"length\": 50,\n  \"height\": 18,\n  \"estimatedValue\": 3500000,\n  \"leadStatus\": \"initial_contact\",\n  \"notes\": \"Need quotation within 2 weeks\"\n}"
+              "raw": "{\n  \"firstName\": \"Arjun\",\n  \"lastName\": \"Kumar\",\n  \"email\": \"arjun@ex.com\",\n  \"phone\": \"9876543210\",\n  \"countryCode\": \"+91\",\n  \"projectName\": \"Arjun Warehouse - Phase 1\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 100,\n  \"length\": 50,\n  \"height\": 18,\n  \"doors\": 2,\n  \"windows\": 4,\n  \"insulation\": 1,\n  \"estimatedValue\": 3500000,\n  \"leadStatus\": \"initial_contact\",\n  \"notes\": \"Need quotation within 2 weeks\"\n}"
             }
           }
         },
@@ -2327,7 +2497,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"projectName\": \"Updated Name\",\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"notes\": \"Updated\"\n}"
+              "raw": "{\n  \"projectName\": \"Updated Name\",\n  \"buildingType\": \"Office\",\n  \"location\": \"Bangalore\",\n  \"roofStyle\": \"Single Slope\",\n  \"width\": 120,\n  \"length\": 60,\n  \"height\": 22,\n  \"notes\": \"Updated\"\n}"
             }
           }
         },
@@ -2393,7 +2563,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"numberOfBuildings\": 3,\n  \"quotationId\": \"{{quotationId}}\"\n}"
+              "raw": "{\n  \"numberOfBuildings\": 3\n}"
             }
           }
         },
@@ -2456,10 +2626,6 @@
                 "{{leadId}}",
                 "po-order"
               ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"poNumber\": \"PO-0001\"\n}"
             }
           }
         }
@@ -2712,7 +2878,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"followUpDate\": \"2026-06-01T10:00:00.000Z\",\n  \"modeOfContact\": \"call\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"medium\"\n}"
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"followUpDate\": \"2026-06-01T10:00:00.000Z\",\n  \"modeOfContact\": \"call\",\n  \"notes\": \"Check on quote decision\",\n  \"priority\": \"medium\"\n}"
             }
           }
         },
@@ -2978,7 +3144,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"projectName\": \"New Warehouse\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 100,\n  \"length\": 50\n}"
+              "raw": "{\n  \"projectName\": \"New Warehouse\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 100,\n  \"length\": 50,\n  \"height\": 20\n}"
             }
           }
         }
@@ -3013,7 +3179,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"buildingType\": \"Warehouse\",\n  \"basePrice\": 250000,\n  \"maxPrice\": 300000,\n  \"sqft\": \"5000\",\n  \"currency\": \"USD\",\n  \"roofStyle\": \"Gable\",\n  \"location\": \"Chennai\",\n  \"validTill\": \"2024-05-30T00:00:00.000Z\",\n  \"paymentTerms\": \"30% upfront, 70% on delivery\",\n  \"specialNote\": \"Price locked for 30 days\",\n  \"internalNotes\": \"High-value client\",\n  \"priorityLevel\": \"high\",\n  \"includedMaterials\": [{\"name\": \"Steel frame\", \"description\": \"Grade A\", \"quantity\": 1}],\n  \"optionalAddOns\": [{\"name\": \"Insulation\", \"description\": \"Premium\", \"price\": 15000}]\n}"
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"buildingType\": \"Warehouse\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 50,\n  \"length\": 100,\n  \"height\": 20,\n  \"currency\": \"USD\",\n  \"windLoad\": \"120 mph\",\n  \"snowLoad\": \"30 psf\",\n  \"estimatedDelivery\": \"6-8 weeks\",\n  \"companyName\": \"Mr Storage Inc.\",\n  \"paymentTerms\": \"30% upfront, 70% on delivery\",\n  \"basePrice\": 250000,\n  \"margin\": 15,\n  \"validTill\": \"2026-06-30T00:00:00.000Z\",\n  \"assignedSalesperson\": \"{{userId}}\",\n  \"proposalDate\": \"2026-05-19T00:00:00.000Z\",\n  \"validity\": \"2 weeks\",\n  \"preparedBy\": \"John Doe\",\n  \"leftEaveHeight\": 20,\n  \"rightEaveHeight\": 20,\n  \"roofSlope\": \"1:12\",\n  \"frameType\": \"Rigid Frame\",\n  \"endwallType\": \"Post & Beam\",\n  \"girtType\": \"Bypass\",\n  \"purlinType\": \"Z-Purlin\",\n  \"bracingType\": \"X-Bracing\",\n  \"roofPanel\": \"PBR 26 Gauge\",\n  \"wallPanelType\": \"PBR 26 Gauge\",\n  \"roofColor\": \"Galvalume\",\n  \"wallColor\": \"Polar White\",\n  \"trimColor\": \"Brite Red\",\n  \"baseAngle\": \"3x3x1/4\",\n  \"insulation\": [\n    { \"insulationType\": \"roof\", \"thickness\": \"R-19\", \"material\": \"Fiberglass\" },\n    { \"insulationType\": \"wall\", \"thickness\": \"R-13\", \"material\": \"Fiberglass\" }\n  ],\n  \"shippingCost\": 8000,\n  \"deliveryType\": \"FOB Destination\",\n  \"shippingIncluded\": true,\n  \"materialCost\": 180000,\n  \"freightCost\": 8000,\n  \"markupPercent\": 20,\n  \"doors\": [\n    { \"doorCategory\": \"rolling\", \"doorType\": \"Manual Chain\", \"size\": \"12x14\", \"qty\": 2, \"notes\": \"Insulated\" },\n    { \"doorCategory\": \"personnel\", \"doorType\": \"Steel\", \"size\": \"3x7\", \"qty\": 1, \"notes\": \"\" }\n  ],\n  \"includedComponents\": [\"Anchor bolts\", \"Erection drawings\", \"Stamped engineering\"],\n  \"exclusions\": [\"Foundation\", \"Site prep\", \"Permits\"],\n  \"clientNotes\": \"Client requested expedited delivery\",\n  \"internalNotes\": \"High-value client - priority handling\",\n  \"priorityLevel\": \"high\",\n  \"changeNote\": \"Initial proposal\"\n}"
             }
           }
         },
@@ -3067,7 +3233,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"basePrice\": 260000,\n  \"specialNote\": \"Updated terms\"\n}"
+              "raw": "{\n  \"materialCost\": 190000,\n  \"freightCost\": 9000,\n  \"markupPercent\": 22,\n  \"clientNotes\": \"Updated after client feedback\",\n  \"changeNote\": \"Rev 2 pricing adjustment\"\n}"
             }
           }
         },
@@ -3174,7 +3340,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"quotationId\": \"{{quotationId}}\",\n  \"date\": \"2024-03-15T00:00:00.000Z\",\n  \"daysToPay\": 30,\n  \"totalAmount\": 280000,\n  \"subtotal\": 260000,\n  \"markupTotal\": 20000,\n  \"discount\": 0,\n  \"depositAmount\": 84000,\n  \"lineItems\": [{\"items\": [\"Steel frame\", \"Install\"], \"rate\": 50000, \"markup\": 5000, \"quantity\": 1, \"tax\": 9000, \"total\": 64000}]\n}"
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"quotationId\": \"{{quotationId}}\",\n  \"paymentScheduleStageId\": \"{{paymentScheduleStageId}}\",\n  \"date\": \"2026-05-19T00:00:00.000Z\",\n  \"daysToPay\": 30,\n  \"totalAmount\": 280000,\n  \"subtotal\": 260000,\n  \"markupTotal\": 20000,\n  \"discount\": 0,\n  \"depositAmount\": 84000,\n  \"lineItems\": [{\"items\": [\"Steel frame\", \"Install\"], \"rate\": 50000, \"markup\": 5000, \"quantity\": 1, \"tax\": 9000, \"total\": 64000}]\n}"
             }
           }
         },

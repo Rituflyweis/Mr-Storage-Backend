@@ -80,12 +80,6 @@ router.post('/:leadId/escalate',
   ctrl.escalateLead
 )
 
-router.post('/:leadId/po-order',
-  [
-    body('poNumber').notEmpty().trim(),
-  ],
-  validate,
-  ctrl.raisePOOrder
-)
+router.post('/:leadId/po-order', ctrl.raisePOOrder)
 
 module.exports = router

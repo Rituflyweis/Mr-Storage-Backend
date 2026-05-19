@@ -42,7 +42,10 @@ exports.getUpcoming = asyncHandler(async (req, res) => {
 })
 
 exports.createFollowUp = asyncHandler(async (req, res) => {
-  const { leadId, customerId, assignedTo, followUpDate, notes, priority } = req.body
+  const { leadId, assignedTo, followUpDate, notes, priority } = req.body
+  const lead = await Lead.findById(leadId).select('customerId').lean()
+  if (!lead) return notFound(res, 'Lead not found')
+  const customerId = lead.customerId
 
   const followUp = await FollowUp.create({
     leadId,
@@ -125,4 +128,39 @@ exports.completeFollowUp = asyncHandler(async (req, res) => {
   })
 
   return success(res, { followUp }, 'Follow-up marked as completed')
+})
+
+exports.getAllFollowups = asyncHandler(async (req, res) => {
+  const { employeeId, status, page = 1, limit = 20 } = req.query
+  const dateFilter = buildDateFilter(req.query)
+  const filter = { ...dateFilter }
+
+  if (status === 'overdue') {
+    filter.status = 'pending'
+    filter.followUpDate = { $lt: new Date() }
+  } else if (status) {
+    filter.status = status
+  }
+
+  if (employeeId) filter.assignedTo = employeeId
+
+  const [followups, total] = await Promise.all([
+    FollowUp.find(filter)
+      .populate('leadId', 'projectName')
+      .populate('customerId', 'firstName lastName')
+      .populate('assignedTo', 'name email')
+      .sort({ followUpDate: 1 })
+      .skip((page - 1) * limit).limit(Number(limit)).lean(),
+    FollowUp.countDocuments(filter)
+  ])
+
+  const perEmployee = await FollowUp.aggregate([
+    { $group: { _id: '$assignedTo', total: { $sum: 1 },
+        completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } } } },
+    { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'emp' } },
+    { $unwind: '$emp' },
+    { $project: { employeeId: '$_id', name: '$emp.name', total: 1, completed: 1 } }
+  ])
+
+  return success(res, { followups, total, page: Number(page), limit: Number(limit), perEmployee })
 })

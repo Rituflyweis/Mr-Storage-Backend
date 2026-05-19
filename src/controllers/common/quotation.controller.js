@@ -45,6 +45,8 @@ exports.createQuotation = asyncHandler(async (req, res) => {
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
 
   const { quoteNumber: _ignoredClientQuoteNumber, ...payload } = req.body
+  delete payload.customerId
+  payload.customerId = lead.customerId
   const quoteNumber = await generateQuoteNumber()
   const pricing = computeQuotePricing(payload)
 

@@ -37,6 +37,12 @@ router.post('/:leadId/budget',
   ctrl.setLeadBudget
 )
 
+router.put('/:leadId/buildings/:buildingId/approve-bom',
+  [body('action').isIn(['approved', 'rejected'])],
+  validate,
+  ctrl.approveBOM
+)
+
 router.put('/:leadId/terminate',
   [body('reason').notEmpty().trim()],
   validate,

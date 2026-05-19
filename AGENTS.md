@@ -87,76 +87,76 @@ Default seed admin: `admin@construction.com` / `Admin@123` (overridable via env 
 <claude-mem-context>
 # Memory Context
 
-# [Mr_Storage_Backend] recent context, 2026-05-18 8:41pm GMT+5:30
+# [Mr_Storage_Backend] recent context, 2026-05-20 1:23am GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (19,648t read) | 485,781t work | 96% savings
+Stats: 50 obs (14,348t read) | 519,391t work | 97% savings
 
-### May 16, 2026
-S134 Explaining the logic behind GET /api/sales/customers/:customerId/projects and resolving the UI vs API mismatch for project stage/progress/status display (May 16 at 4:31 PM)
-S135 Analyze API response structure vs UI column requirements for customer projects listing — focus on structure, not data (May 16 at 4:34 PM)
-S136 Verify that the projects list API response structure matches the spec defined in admin_panel_sales_panel_v2.md (May 16 at 4:38 PM)
-S137 Fix missing numberOfBuildings field in legacy Lead documents to make API responses match spec (May 16 at 4:42 PM)
-S138 Audit admin customer detail API response against frontend UI — verify correctness of displayed project data for customer CUST-0005 (May 16 at 4:44 PM)
-S139 Audit and fix admin customer API endpoints — security and spec compliance issues in Mr_Storage_Backend (May 16 at 4:55 PM)
-S140 Frontend UI column audit against Lead schema — JOB ID and END DATE columns have no backend backing fields (May 16 at 4:57 PM)
-S141 Add jobId and endDate fields to Lead model and document them in not_present_in_spec.md (May 16 at 4:57 PM)
-S171 Trace the full request flow of GET /api/sales/followups/communication-timeline (May 16 at 6:39 PM)
-### May 18, 2026
-1443 3:23p 🔵 No Automated Reminder System Exists — Follow-Up "Reminders" Are Pull-Only
-1444 " 🔵 Follow-Up API Endpoints Split Between v1 (EXISTS) and v2 (NEW) in Spec
-1445 " 🔵 Shared buildDateFilter Utility Normalizes Date Ranges Across All Controllers
-1442 " 🔵 logActivity Endpoint: Full Business Flow Confirmed
-S172 Business flow for creating data in the communication timeline feature of Mr_Storage_Backend (May 18 at 3:23 PM)
-1446 3:24p 🔵 Admin and Sales Follow-Up Route Sets Are Asymmetric — KPI Endpoint Missing in Sales Routes
-1447 3:27p 🔵 Admin Employees API Has Partial Role Filtering
-1448 3:28p 🔵 Admin Employees API Role Filter Confirmed on GET /
-1449 3:47p 🔵 PO Order API — Quotation ID and Invoice ID Source Query
-1450 " 🔵 PO Order Route Structure in Mr_Storage_Backend
-1451 3:48p 🔵 PO Order API — quotationId and invoiceId Must Come from Lead-Scoped Quotation and Invoice Endpoints
-1452 " 🔵 getLeadDetail Is the Single Source for Both quotationId and invoiceId
-1453 3:49p 🔵 GET /api/sales/quotations Filters by Creator, Not by Lead
-1454 4:40p ⚖️ Frontend Lead Detail Fetching Strategy Discussion
-1465 4:57p ⚖️ PO API Redesign: Accept Only poNumber with Backend Auto-Resolution
-1466 4:58p 🔵 Mr_Storage_Backend: PO, Invoice, and Quotation Data Model Structure
-1467 " 🔵 Current PO API Contract: Frontend Must Supply invoiceId and quotationId
-1468 " ✅ PO Route Validators: Removed invoiceId and quotationId Body Requirements
-1469 " 🟣 Backend Auto-Resolution of invoiceId and quotationId for PO Order Creation
-1470 4:59p 🔵 Three Documentation Files Contain Stale PO Order API Contract
-1471 " ✅ API_REFERENCE.md Updated to Reflect New Thin PO Order Request Contract
-1472 " ✅ API Flow Docs Updated for New PO Order Contract in Two Locations Each
-1473 " ✅ All Three API Documentation Files Now Reflect Thin PO Order Contract
-1474 5:00p ✅ PO API Redesign Fully Complete: No Stale Contract Remaining in Any Doc
-1475 " 🟣 PO API Redesign Complete: Full Diff Summary of All Changes
-1483 5:46p 🔵 Sales Panel API Structure in Mr_Storage_Backend
-1484 " 🔵 Sales Panel Follow-up API — Full Route and Controller Map
-1485 " 🔵 Sales Panel Router — Top-Level Route Structure with Role Guard
-1486 " 🔵 Invoice API Spans Multiple Panels — Common, Account, and Sales Controllers
-1487 5:47p 🔵 Mr_Storage_Backend Top-Level API Route Map
-1488 " 🔵 Complete Sales Panel API Endpoint Inventory
-1489 " 🔵 FollowUp Model Schema — Overdue Status is Computed, Not Stored
-1490 " 🔵 Sales Lead Detail API Aggregates 9 Data Sources in a Single Response
-1491 " 🔵 Admin vs Sales Follow-Up Route Differences
-1492 " 🔵 Quotation API — Server-Side Auto-Calculations and Version Tracking
-1493 " 🔵 Payment Schedule API — One Schedule Per Lead with Strict Stage Validation
-1494 " 🔵 Invoice Notify Endpoint Planned in Docs but Not Implemented in Codebase
-1495 5:48p 🔵 Mr_Storage_Backend Complete Enum Constants and Audit Action Registry
-1496 6:01p 🔵 Mr_Storage_Backend Postman Collection Files Located
-1497 " ✅ Postman "Raise PO Order" Request Body Cleaned Up — Removed invoiceId and quotationId Fields
-1498 " 🔵 Lead Detail API Already Returns Invoices as Payment Records
-1499 " 🔵 getLeadDetail Already Fetches Invoices in Parallel Query
-1500 6:02p 🔵 getLeadDetail Returns Payments Block Derived Entirely from Invoices
-1501 " 🔵 Pending Payment Status Is Always Derived from Invoice Status and DueDate, Never Stored Separately
-1518 7:17p 🔵 Mr_Storage_Backend Project Structure Identified
-1519 8:15p ⚖️ Instruction to Follow Only admin_panel_sales_panel_v2.md
-1520 8:16p 🔵 admin_panel_sales_panel_v2.md Spec: Payment, Invoice, Follow-Up, and KPI Coverage
-1521 8:17p 🔵 Sales Panel API Surface Fully Mapped from Spec (Lines 500–760)
-1522 " 🔵 Admin Panel API Surface Mapped: Customers, Project Detail, Leads, PO Orders (Lines 760–980)
-1523 " 🔵 Spec Constants and Audit Actions: All Enum Changes in v2
-1524 " 🔵 Common APIs: Invoice and Payment Schedule Changes in v2 (Part 4)
+### May 19, 2026
+1707 7:56p 🟣 FE integration guide created for Sales ↔ Lead chat system
+1712 10:50p ✅ getCustomerDetail strips invoices from response and removes sort
+1713 10:51p 🔴 createQuotation enforces server-side customerId from lead, ignores client-supplied value
+1714 " 🔵 Quotation POST route validator still requires customerId despite controller ignoring it
+1715 " 🔴 Removed redundant customerId validator from quotation POST route
+1716 " ✅ Postman collection updated to remove customerId from Create Quotation request body
+1717 11:28p 🔵 sendQuotation Controller Lifecycle Stage Transition Logic
+1718 11:42p 🔵 Payment Controller createSchedule Function Signature Traced
+1719 " 🔵 Full Payment Schedule Creation Logic in Mr_Storage_Backend
+1720 11:43p 🔴 totalAmount Now Falls Back to lead.quoteValue When Not Provided
+1721 " 🔵 Payment Route Still Validates totalAmount as Required Numeric
+1722 " 🔴 Route Validator Updated to Allow Optional totalAmount
+1723 " 🔵 Payment Schedules API Mounted at /api/payment-schedules
+1724 11:44p 🔵 updatePOStatus Sets poStatus and Conditionally Advances lifecycleStatus
+1725 " 🔵 updatePOStatus Full Logic: Approval Advances Lead Lifecycle and Pushes History
+1726 11:51p 🔵 assignPOOrder Controller Located in Mr_Storage_Backend
+S219 E11 — createEmployee refactored to auto-generate temp password and email credentials to new employee (May 19 at 11:51 PM)
+1727 11:54p 🔵 createEmployee Controller Found — No Email Notification on Creation
+1728 " 🔵 createEmployee Full Logic — Sales Role Triggers Round-Robin Rebuild
+1729 " 🔵 Mailer Service Has No Employee Credentials Email Function
+1730 " 🟣 sendEmployeeCredentials Added to Mailer Service
+1731 " 🔵 Email Template Design System — Brand Colors and Structure Pattern
+1732 11:55p 🟣 employee-credentials.html Email Template Created
+1733 " 🟣 Mailer Imported into Employee Controller for Credential Emails
+1734 " 🟣 createEmployee Refactored to Auto-Generate Temporary Password and Email Credentials
+S220 E12: Upgrade GET /api/admin/escalations with pagination, field projection, and assignedSales filter (May 19 at 11:55 PM)
+### May 20, 2026
+1735 12:51a 🔵 Admin Escalation Controller: Resolve and Reassign Flow
+1736 " 🟣 getAllEscalations Enhanced with Pagination, Field Projection, and assignedSales Filter
+1737 " ✅ Postman Collection Updated for Escalations Pagination and assignedSales Filter
+S221 E13: Add search filter to GET /api/admin/employees by name or email (May 20 at 12:52 AM)
+1738 12:52a 🔵 Admin Employee Controller: getAllEmployees Already Has Pagination and Filters
+1739 12:53a 🟣 getAllEmployees Gains Case-Insensitive Search Filter by Name or Email
+1740 " ✅ Postman Collection Updated for List Employees with Full Filter Set
+S222 E13 clarification: search filter composes with existing role/isActive/page/limit filters via AND logic (May 20 at 12:53 AM)
+S223 E13 Postman clarification: all 5 employee list params added as disabled-by-default, offer to enable them (May 20 at 12:55 AM)
+S224 E14: POST /api/sales/leads createLead — strict customer duplicate check + new fields (already implemented, no change needed) (May 20 at 12:55 AM)
+S225 Verify Postman collection was updated — specifically confirming the Sales "Create Lead" request body fields (May 20 at 12:56 AM)
+1741 1:01a 🔵 Postman Collection Contains Duplicate "Create Lead" Entries
+S226 Implement N1: standalone Resolve Escalation endpoint — new PUT /api/admin/escalations/:escalationId/resolve route, controller, and Postman entry (May 20 at 1:01 AM)
+1742 " 🔵 Escalation Routes Missing "Resolve" Endpoint Despite Constant Existing
+1743 " 🟣 Implemented resolveEscalation Endpoint for Admin Escalation Module
+1744 1:02a ✅ Postman Collection Updated with "Resolve Escalation" Request
+S227 Implement N2: GET /api/admin/followups — list all follow-ups with per-employee aggregation, filtering, and pagination (May 20 at 1:02 AM)
+1745 " 🔵 Admin Follow-up KPI Endpoint Returns Hardcoded Placeholder Data
+1746 " 🟣 Added getAllFollowups Controller with Per-Employee Aggregation
+1747 " 🟣 Registered GET / Route for getAllFollowups in Admin Follow-up Router
+1748 " ✅ Postman Collection Updated with "List Follow-ups" Admin Endpoint
+1749 1:03a 🔵 Admin Employee Routes Are Fully Wired — No Missing Endpoints
+1750 " 🟣 Added deactivateEmployee, toggleStatus, and resetPassword to Employee Controller
+1751 1:04a 🟣 Registered Toggle Status and Reset Password Routes in Admin Employee Router
+1752 1:07a 🔵 Mr_Storage_Backend Admin Routes Structure
+1753 " 🟣 Financial Overview Controller Created
+1754 " 🟣 Financial Admin Route Registered
+1755 " 🟣 Financial Routes Mounted in Admin Router
+1756 " 🔵 Postman Collection Structure Mapping
+1757 1:08a ✅ Postman Collection Updated with Admin Financials Section
+S228 N5: Implement GET /api/admin/financials/overview endpoint with financial KPI aggregation (May 20 at 1:08 AM)
+1758 " 🟣 Per-Project Financial Breakdown Handler Added
+1759 " 🟣 Per-Project Financial Route Registered
+1760 " ✅ Postman Collection Updated with Per-Project P&L Request
 
-Access 486k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 519k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

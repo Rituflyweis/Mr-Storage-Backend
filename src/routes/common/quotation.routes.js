@@ -4,7 +4,7 @@ const ctrl = require('../../controllers/common/quotation.controller')
 const validate = require('../../middleware/validate')
 
 router.post('/',
-  [body('leadId').notEmpty(), body('customerId').notEmpty()],
+  [body('leadId').notEmpty()],
   validate,
   ctrl.createQuotation
 )
