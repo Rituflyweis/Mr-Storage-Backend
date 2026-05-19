@@ -30,15 +30,27 @@ const sendQuotation = async ({ toEmail, customerName, quotation }) => {
   const html = fillTemplate(template, {
     CUSTOMER_NAME: customerName,
     BUILDING_TYPE: quotation.buildingType,
+    QUOTE_NUMBER: quotation.quoteNumber || '',
     BASE_PRICE: quotation.basePrice?.toLocaleString() || '',
-    MAX_PRICE: quotation.maxPrice?.toLocaleString() || '',
+    FINAL_PRICE: quotation.finalPrice?.toLocaleString() || '',
+    TOTAL_COGS: quotation.totalCOGS?.toLocaleString() || '',
+    MARKUP_PERCENT: quotation.markupPercent || '',
+    MARKUP_VALUE: quotation.markupValue?.toLocaleString() || '',
+    PSF: quotation.psf?.toFixed(2) || '',
     CURRENCY: quotation.currency || 'USD',
     LOCATION: quotation.location || '',
     VALID_TILL: quotation.validTill ? new Date(quotation.validTill).toDateString() : 'N/A',
     COMPANY_NAME: quotation.companyName || '',
     ESTIMATED_DELIVERY: quotation.estimatedDelivery || '',
     SPECIAL_NOTE: quotation.specialNote || '',
+    CLIENT_NOTES: quotation.clientNotes || '',
     PAYMENT_TERMS: quotation.paymentTerms || '',
+    PROPOSAL_DATE: quotation.proposalDate ? new Date(quotation.proposalDate).toDateString() : '',
+    PREPARED_BY: quotation.preparedBy || '',
+    WIDTH: quotation.width || '',
+    LENGTH: quotation.length || '',
+    HEIGHT: quotation.height || '',
+    ROOF_STYLE: quotation.roofStyle || '',
   })
 
   await transporter.sendMail({

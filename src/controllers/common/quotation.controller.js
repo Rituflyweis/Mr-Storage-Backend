@@ -154,7 +154,16 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
     const targetIdx  = LIFECYCLE_STAGES.indexOf('proposal_sent')
     const currentIdx = LIFECYCLE_STAGES.indexOf(leadForStage.lifecycleStatus)
     if (targetIdx > currentIdx) {
-      await Lead.findByIdAndUpdate(quotation.leadId, { lifecycleStatus: 'proposal_sent' })
+      await Lead.findByIdAndUpdate(quotation.leadId, {
+        lifecycleStatus: 'proposal_sent',
+        $push: {
+          lifecycleHistory: {
+            stage: 'proposal_sent',
+            changedAt: new Date(),
+            changedBy: req.user._id,
+          },
+        },
+      })
     }
   }
 

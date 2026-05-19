@@ -69,6 +69,17 @@ const LeadSchema = new mongoose.Schema(
 
     quoteValue:      { type: Number, default: 0 },
     lifecycleStatus: { type: String, enum: LIFECYCLE_STAGES, default: 'initial_contact' },
+    lifecycleHistory: [
+      {
+        stage:     { type: String, required: true },
+        changedAt: { type: Date, default: Date.now },
+        changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      },
+    ],
+
+    numDoors:      { type: Number, default: null },
+    numWindows:    { type: Number, default: null },
+    numInsulation: { type: Number, default: null },
 
     leadScoring: { type: LeadScoringSchema, default: () => ({}) },
 

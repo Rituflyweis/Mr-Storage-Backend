@@ -55,6 +55,9 @@ exports.chatInit = asyncHandler(async (req, res) => {
       customerId: customer._id,
       source: 'chat',
       lifecycleStatus: 'initial_contact',
+      lifecycleHistory: [
+        { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
+      ],
     })
 
     await auditService.log({
