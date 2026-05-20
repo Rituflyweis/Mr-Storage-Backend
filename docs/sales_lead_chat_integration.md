@@ -265,7 +265,7 @@ emit customer_message       →  saves, AI silent
 ## 8. Required Env / Config on FE
 
 ```env
-NEXT_PUBLIC_API_BASE=https://api.yourdomain.com
+NEXT_PUBLIC_API_BASE=https://mr-storage-backend.vercel.app/
 ```
 
 Socket URL = same origin as REST (no separate host).

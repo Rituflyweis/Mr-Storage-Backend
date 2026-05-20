@@ -1,14 +1,13 @@
 const FollowUp = require('../../models/FollowUp')
 const AuditLog = require('../../models/AuditLog')
 const Lead = require('../../models/Lead')
-const Anthropic = require('@anthropic-ai/sdk')
 const AIScriptSession = require('../../models/AIScriptSession')
+const aiScriptChat = require('../../services/ai/aiScriptChat.service')
 const auditService = require('../../services/audit.service')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS } = require('../../config/constants')
-const env = require('../../config/env')
 
 const isOverdue = (f) => f.status === 'pending' && new Date(f.followUpDate) < new Date()
 
@@ -193,51 +192,13 @@ exports.postAIScript = asyncHandler(async (req, res) => {
     return badRequest(res, 'messages array is required')
   }
 
-  let leadContext = ''
-  if (leadId) {
-    const lead = await Lead.findById(leadId).populate('customerId').lean()
-    if (lead) {
-      leadContext = `\nLead context:\n- Project: ${lead.projectName || 'N/A'}\n- Building type: ${lead.buildingType || 'N/A'}\n- Location: ${lead.location || 'N/A'}\n- Customer: ${lead.customerId?.firstName || 'N/A'}\n- Lifecycle: ${lead.lifecycleStatus}\n- Quote value: ${lead.quoteValue || 0}\n- AI score: ${lead.leadScoring?.score || 0}`
-    }
-  }
-
-  const systemPrompt = `You are an expert sales script assistant for a construction/storage building company. Help the salesperson craft effective communication scripts, talking points, and responses.${leadContext}\n\nProvide concise, actionable scripts and tips tailored to the context.`
-
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
-
-  const anthropicMessages = messages.map(m => ({ role: m.role, content: m.content }))
-
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages: anthropicMessages,
+  const { reply, sessionId } = await aiScriptChat.runOneShot({
+    userId: req.user._id,
+    leadId: leadId || null,
+    messages,
   })
 
-  const reply = response.content[0]?.text || ''
-
-  const userMessage = messages[messages.length - 1]
-  const sessionQuery = { salesEmployeeId: req.user._id }
-  if (leadId) sessionQuery.leadId = leadId
-
-  let session = await AIScriptSession.findOne(sessionQuery).sort({ updatedAt: -1 })
-
-  if (!session) {
-    session = await AIScriptSession.create({
-      salesEmployeeId: req.user._id,
-      leadId: leadId || null,
-      createdBy: req.user._id,
-      messages: [],
-    })
-  }
-
-  session.messages.push(
-    { role: 'user', content: userMessage.content, timestamp: new Date() },
-    { role: 'assistant', content: reply, timestamp: new Date() }
-  )
-  await session.save()
-
-  return success(res, { reply, sessionId: session._id })
+  return success(res, { reply, sessionId })
 })
 
 exports.getMyQuotations = asyncHandler(async (req, res) => {
