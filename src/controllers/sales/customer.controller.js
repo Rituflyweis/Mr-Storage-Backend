@@ -52,7 +52,7 @@ exports.getCustomerStats = asyncHandler(async (req, res) => {
 })
 
 exports.getCustomers = asyncHandler(async (req, res) => {
-  const { search, page = 1, limit = 20 } = req.query
+  const { search, isActive, page = 1, limit = 20 } = req.query
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
 
@@ -63,6 +63,8 @@ exports.getCustomers = asyncHandler(async (req, res) => {
     const regex = new RegExp(search.trim(), 'i')
     filter.$or = [{ firstName: regex }, { email: regex }, { customerId: regex }]
   }
+  if (isActive === 'true') filter.isActive = true
+  else if (isActive === 'false') filter.isActive = false
 
   const skip = (parsedPage - 1) * parsedLimit
   const [customers, total] = await Promise.all([
