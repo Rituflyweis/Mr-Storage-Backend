@@ -21,18 +21,12 @@ const loadOrCreateSession = async ({ userId, leadId, sessionId }) => {
     const existing = await AIScriptSession.findById(sessionId)
     if (existing && String(existing.salesEmployeeId) === String(userId)) return existing
   }
-  const query = { salesEmployeeId: userId }
-  if (leadId) query.leadId = leadId
-  let session = await AIScriptSession.findOne(query).sort({ updatedAt: -1 })
-  if (!session) {
-    session = await AIScriptSession.create({
-      salesEmployeeId: userId,
-      leadId: leadId || null,
-      createdBy: userId,
-      messages: [],
-    })
-  }
-  return session
+  return AIScriptSession.create({
+    salesEmployeeId: userId,
+    leadId: leadId || null,
+    createdBy: userId,
+    messages: [],
+  })
 }
 
 const persistTurn = async (session, userContent, assistantContent) => {
