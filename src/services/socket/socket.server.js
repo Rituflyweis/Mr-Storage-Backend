@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken')
 const { JWT_ACCESS_SECRET } = require('../../config/env')
 const chatHandler = require('./chat.handler')
 const adminHandler = require('./admin.handler')
+const aiScriptHandler = require('./aiScript.handler')
 
 const initSocket = (io) => {
   global.io = io
@@ -47,6 +48,7 @@ const initSocket = (io) => {
     }
 
     adminHandler(socket, adminNS)
+    aiScriptHandler(socket)
 
     socket.on('disconnect', () => {
       console.log('[Socket /admin] Disconnected:', socket.id)

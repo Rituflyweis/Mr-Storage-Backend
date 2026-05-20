@@ -2852,6 +2852,19 @@
           }
         },
         {
+          "name": "AI Script \u2014 Socket.IO (manual setup)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin"]
+            },
+            "description": "## AI Script Socket Tester\n\nThis is **not** an HTTP request \u2014 Postman collection JSON cannot store Socket.IO requests directly. Use one of the options below.\n\n---\n\n### Option A \u2014 Browser tester (fastest)\n\nOpen `tests/ai_script_socket_test.html` in any browser. Paste `accessToken` and click Connect.\n\n### Option B \u2014 Postman Socket.IO request (manual)\n\n1. In Postman, click **New \u2192 Socket.IO** (not WebSocket).\n2. **URL**: `http://localhost:5001/admin` (replace port if different; the `/admin` namespace is required).\n3. Settings tab \u2192 **Socket.IO version: v4**.\n4. **Auth** sub-tab \u2192 key `token`, value `<paste accessToken from POST /api/auth/login>`. This becomes `socket.handshake.auth.token`.\n5. **Events** panel \u2192 add and toggle ON these listeners:\n   - `ai_script:sessions`\n   - `ai_script:session`\n   - `ai_script:typing`\n   - `ai_script:chunk`\n   - `ai_script:done`\n   - `ai_script:error`\n6. Click **Connect**.\n\n### Emit events\n\n**ai_script:list** \u2014 payload:\n```json\n{}\n```\n\n**ai_script:start** \u2014 payload:\n```json\n{ \"leadId\": \"<optional_lead_id>\", \"sessionId\": null }\n```\nResponse on `ai_script:session` returns `sessionId` and full message history.\n\n**ai_script:message** \u2014 payload:\n```json\n{\n  \"sessionId\": \"<from ai_script:session>\",\n  \"content\": \"Draft a follow-up call script for a hesitant lead\",\n  \"leadId\": null\n}\n```\nWatch sequence: `ai_script:typing` \u2192 multiple `ai_script:chunk` (with `delta`) \u2192 `ai_script:done` (with full `reply`).\n\n**ai_script:end** \u2014 payload:\n```json\n{ \"sessionId\": \"<id>\" }\n```\n\n---\n\n### Notes\n\n- Allowed roles: `sales`, `admin`. Customer JWTs are rejected.\n- If `sessionId` omitted in `ai_script:message`, server resumes latest session for `{user, leadId}` or creates a new one.\n- Partial reply on mid-stream error is **not** persisted \u2014 only successful turns are saved to `AIScriptSession`.\n- Lead context (project, building type, lifecycle, quote value, AI score) auto-injected into system prompt when `leadId` is on the session.\n- REST fallback `POST /api/sales/followups/ai-script` is unchanged and shares the same backing model + service."
+          }
+        },
+        {
           "name": "Create Follow-up",
           "request": {
             "method": "POST",

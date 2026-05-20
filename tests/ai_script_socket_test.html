@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>AI Script Socket Tester</title>
+<style>
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { margin: 0; padding: 16px; background: #f5f6fa; color: #222; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 12px; height: calc(100vh - 60px); }
+  .panel { background: #fff; border: 1px solid #e3e6ee; border-radius: 8px; padding: 12px; overflow: auto; }
+  label { display: block; font-size: 12px; font-weight: 600; margin: 8px 0 4px; color: #555; }
+  input, textarea, button { width: 100%; padding: 8px; font-size: 13px; border: 1px solid #d4d8e2; border-radius: 6px; font-family: inherit; }
+  button { background: #4a4ed8; color: #fff; border: none; cursor: pointer; margin-top: 6px; font-weight: 600; }
+  button:hover { background: #3a3ec8; }
+  button:disabled { background: #aaa; cursor: not-allowed; }
+  button.secondary { background: #6c7080; }
+  .status { padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .status.disconnected { background: #fde2e2; color: #b00020; }
+  .status.connected { background: #def7e1; color: #0a7a2e; }
+  .chat { display: flex; flex-direction: column; height: 100%; }
+  .messages { flex: 1; overflow-y: auto; padding: 8px; background: #fafbfd; border-radius: 6px; border: 1px solid #eef0f6; }
+  .msg { padding: 10px 12px; border-radius: 10px; margin: 6px 0; max-width: 80%; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { background: #4a4ed8; color: #fff; margin-left: auto; }
+  .msg.assistant { background: #eef0f6; color: #222; }
+  .msg.system { background: transparent; color: #888; font-size: 11px; text-align: center; max-width: 100%; }
+  .input-row { display: flex; gap: 8px; margin-top: 8px; }
+  .input-row textarea { flex: 1; resize: vertical; min-height: 40px; }
+  .input-row button { width: 100px; }
+  .log { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #555; background: #fafbfd; padding: 8px; border-radius: 6px; max-height: 200px; overflow-y: auto; border: 1px solid #eef0f6; margin-top: 8px; }
+  .log div { padding: 2px 0; border-bottom: 1px dashed #eef0f6; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+</style>
+</head>
+<body>
+<h1>AI Script Socket Tester</h1>
+<div class="grid">
+  <!-- LEFT: connection + controls -->
+  <div class="panel">
+    <label>Server URL</label>
+    <input id="url" value="http://localhost:5001" />
+
+    <label>Access Token (JWT)</label>
+    <textarea id="token" rows="3" placeholder="Paste accessToken from POST /api/auth/login"></textarea>
+
+    <label>Lead ID (optional)</label>
+    <input id="leadId" placeholder="Mongo ObjectId or leave empty" />
+
+    <label>Session ID (optional, to resume)</label>
+    <input id="sessionId" placeholder="Filled after start" />
+
+    <div class="row2">
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn" class="secondary" disabled>Disconnect</button>
+    </div>
+
+    <div class="row2" style="margin-top:6px;">
+      <button id="startBtn" disabled>ai_script:start</button>
+      <button id="listBtn" disabled>ai_script:list</button>
+    </div>
+    <button id="endBtn" class="secondary" disabled>ai_script:end</button>
+
+    <label style="margin-top:14px;">Status</label>
+    <div id="status" class="status disconnected">disconnected</div>
+
+    <label>Event Log</label>
+    <div id="log" class="log"></div>
+  </div>
+
+  <!-- RIGHT: chat -->
+  <div class="panel chat">
+    <div id="messages" class="messages"></div>
+    <div class="input-row">
+      <textarea id="content" placeholder="Type message... (Enter to send, Shift+Enter for newline)"></textarea>
+      <button id="sendBtn" disabled>Send</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+let socket = null;
+let currentAssistantEl = null;
+
+const $ = id => document.getElementById(id);
+const statusEl = $('status');
+const messagesEl = $('messages');
+const logEl = $('log');
+
+const setStatus = (text, ok) => {
+  statusEl.textContent = text;
+  statusEl.className = 'status ' + (ok ? 'connected' : 'disconnected');
+};
+
+const log = (label, data) => {
+  const div = document.createElement('div');
+  const ts = new Date().toISOString().slice(11, 19);
+  div.textContent = `[${ts}] ${label}` + (data !== undefined ? ' → ' + JSON.stringify(data).slice(0, 200) : '');
+  logEl.prepend(div);
+};
+
+const addMessage = (role, text) => {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+};
+
+const setControlsConnected = (connected) => {
+  $('connectBtn').disabled = connected;
+  $('disconnectBtn').disabled = !connected;
+  $('startBtn').disabled = !connected;
+  $('listBtn').disabled = !connected;
+  $('endBtn').disabled = !connected;
+  $('sendBtn').disabled = !connected;
+};
+
+$('connectBtn').onclick = () => {
+  const url = $('url').value.trim();
+  const token = $('token').value.trim();
+  if (!url || !token) { alert('URL and token required'); return; }
+
+  socket = io(url + '/admin', { auth: { token }, transports: ['websocket', 'polling'] });
+
+  socket.on('connect', () => { setStatus('connected: ' + socket.id, true); setControlsConnected(true); log('connect'); });
+  socket.on('disconnect', (reason) => { setStatus('disconnected: ' + reason, false); setControlsConnected(false); log('disconnect', reason); });
+  socket.on('connect_error', (err) => { setStatus('error: ' + err.message, false); log('connect_error', err.message); });
+
+  // AI Script events
+  socket.on('ai_script:sessions', (data) => {
+    log('ai_script:sessions', { count: data.sessions?.length });
+    addMessage('system', `Past sessions: ${data.sessions?.length || 0}\n` + (data.sessions || []).map(s => `• ${s._id}  (lead: ${s.leadId?.projectName || 'none'}, msgs: ${s.messages?.length})`).join('\n'));
+  });
+
+  socket.on('ai_script:session', (data) => {
+    log('ai_script:session', { sessionId: data.sessionId, msgs: data.messages?.length });
+    $('sessionId').value = data.sessionId;
+    messagesEl.innerHTML = '';
+    addMessage('system', `Session: ${data.sessionId}`);
+    (data.messages || []).forEach(m => addMessage(m.role, m.content));
+  });
+
+  socket.on('ai_script:typing', () => {
+    log('ai_script:typing');
+    currentAssistantEl = addMessage('assistant', '');
+  });
+
+  socket.on('ai_script:chunk', ({ delta }) => {
+    if (!currentAssistantEl) currentAssistantEl = addMessage('assistant', '');
+    currentAssistantEl.textContent += delta;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+
+  socket.on('ai_script:done', ({ sessionId }) => {
+    log('ai_script:done', { sessionId });
+    currentAssistantEl = null;
+  });
+
+  socket.on('ai_script:error', (err) => {
+    log('ai_script:error', err);
+    addMessage('system', '❌ Error: ' + err.message);
+    currentAssistantEl = null;
+  });
+};
+
+$('disconnectBtn').onclick = () => { if (socket) socket.disconnect(); };
+
+$('startBtn').onclick = () => {
+  const leadId = $('leadId').value.trim() || null;
+  const sessionId = $('sessionId').value.trim() || null;
+  log('emit ai_script:start', { leadId, sessionId });
+  socket.emit('ai_script:start', { leadId, sessionId });
+};
+
+$('listBtn').onclick = () => { log('emit ai_script:list'); socket.emit('ai_script:list', {}); };
+
+$('endBtn').onclick = () => {
+  const sessionId = $('sessionId').value.trim();
+  if (!sessionId) return;
+  log('emit ai_script:end', { sessionId });
+  socket.emit('ai_script:end', { sessionId });
+};
+
+const sendMessage = () => {
+  const content = $('content').value.trim();
+  if (!content) return;
+  const sessionId = $('sessionId').value.trim() || null;
+  const leadId = $('leadId').value.trim() || null;
+  addMessage('user', content);
+  log('emit ai_script:message', { sessionId, leadId, content });
+  socket.emit('ai_script:message', { sessionId, leadId, content });
+  $('content').value = '';
+};
+
+$('sendBtn').onclick = sendMessage;
+$('content').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+</script>
+</body>
+</html>
