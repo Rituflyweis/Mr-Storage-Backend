@@ -61,9 +61,10 @@ Open / resume / create a session and load its message history.
 ```
 
 Behavior:
-- If `sessionId` provided and owned by the user → loads that session.
-- Else if `leadId` provided → loads latest session for that lead, or creates one.
-- Else → loads latest no-lead session, or creates one.
+- If `sessionId` provided and owned by the user → **resumes** that session.
+- Otherwise → **always creates a new** session (so the user can have multiple parallel conversations per lead).
+
+To resume a previous session, the FE must call `ai_script:list` first, let the user pick one, then call `ai_script:start` with that `sessionId`.
 
 Server emits `ai_script:session` in response.
 
@@ -72,11 +73,13 @@ Send a user turn. Server streams the assistant reply.
 
 ```ts
 {
-  sessionId?: string | null,   // recommended; falls back to latest session if omitted
-  leadId?: string | null,      // only used if creating a fresh session
+  sessionId?: string | null,   // strongly recommended — omit to start a brand new session
+  leadId?: string | null,      // only used if creating a fresh session (sessionId omitted)
   content: string              // required, non-empty
 }
 ```
+
+> ⚠️ If `sessionId` is omitted, a **new** session is created for this message. To continue an existing conversation, always pass the `sessionId` returned by `ai_script:session`.
 
 Sequence emitted by server (in order):
 1. `ai_script:typing` — assistant started
