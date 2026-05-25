@@ -326,7 +326,8 @@
                 "chat",
                 "history",
                 "{{leadId}}"
-              ]
+              ],
+              "query": []
             }
           }
         }
@@ -391,6 +392,18 @@
                 "admin",
                 "dashboard",
                 "customer-stats"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -415,7 +428,8 @@
                 "admin",
                 "dashboard",
                 "ai-vs-human"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -480,6 +494,18 @@
                 "admin",
                 "customers",
                 "stats"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -524,6 +550,16 @@
                   "key": "limit",
                   "value": "20",
                   "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -580,7 +616,8 @@
                 "admin",
                 "customers",
                 "{{customerId}}"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -605,7 +642,8 @@
                 "customers",
                 "{{customerId}}",
                 "projects"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -667,6 +705,18 @@
                 "admin",
                 "leads",
                 "stats"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -800,7 +850,8 @@
                 "leads",
                 "scoring",
                 "today"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -891,6 +942,41 @@
                   "key": "limit",
                   "value": "20",
                   "disabled": false
+                },
+                {
+                  "key": "buildingType",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "quoteValueMin",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "quoteValueMax",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "source",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isQuoteReady",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -948,7 +1034,8 @@
                 "leads",
                 "{{leadId}}",
                 "detail"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -973,6 +1060,18 @@
                 "leads",
                 "{{leadId}}",
                 "timeline"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -998,7 +1097,8 @@
                 "leads",
                 "{{leadId}}",
                 "budget"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -1192,6 +1292,18 @@
                 "api",
                 "admin",
                 "meetings"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1294,17 +1406,51 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/followups?page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "followups"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "followups"
+              ],
               "query": [
-                { "key": "employeeId", "value": "", "disabled": true },
-                { "key": "status", "value": "", "description": "pending | completed | overdue", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" }
+                {
+                  "key": "employeeId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "pending | completed | overdue",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1329,7 +1475,8 @@
                 "admin",
                 "followups",
                 "stats"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -1353,7 +1500,8 @@
                 "admin",
                 "followups",
                 "upcoming"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -1377,7 +1525,8 @@
                 "admin",
                 "followups",
                 "kpi"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -1401,7 +1550,8 @@
                 "admin",
                 "followups",
                 "ai-script"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -1486,6 +1636,18 @@
                 "admin",
                 "employees",
                 "stats"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1510,6 +1672,18 @@
                 "admin",
                 "employees",
                 "performance"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1535,11 +1709,41 @@
                 "employees"
               ],
               "query": [
-                { "key": "search", "value": "", "disabled": true },
-                { "key": "role", "value": "", "disabled": true },
-                { "key": "isActive", "value": "", "disabled": true },
-                { "key": "page", "value": "1", "disabled": true },
-                { "key": "limit", "value": "20", "disabled": true }
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "role",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1596,6 +1800,18 @@
                 "employees",
                 "{{userId}}",
                 "timeline"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1620,7 +1836,8 @@
                 "admin",
                 "employees",
                 "{{userId}}"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -1629,12 +1846,23 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/employees/{{userId}}/toggle-status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "employees", "{{userId}}", "toggle-status"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "employees",
+                "{{userId}}",
+                "toggle-status"
+              ]
             }
           }
         },
@@ -1643,12 +1871,23 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/employees/{{userId}}/reset-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "employees", "{{userId}}", "reset-password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "employees",
+                "{{userId}}",
+                "reset-password"
+              ]
             }
           }
         },
@@ -1710,10 +1949,33 @@
                 "escalations"
               ],
               "query": [
-                { "key": "status", "value": "pending" },
-                { "key": "assignedSales", "value": "", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" }
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "assignedSales",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1723,13 +1985,27 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/escalations/{{escalationId}}/resolve",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "escalations", "{{escalationId}}", "resolve"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "escalations",
+                "{{escalationId}}",
+                "resolve"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1799,6 +2075,16 @@
                 {
                   "key": "status",
                   "value": "pending"
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -1880,15 +2166,33 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/financials/overview",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "financials", "overview"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "financials",
+                "overview"
+              ],
               "query": [
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true }
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -1898,17 +2202,41 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/financials/per-project?page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "financials", "per-project"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "financials",
+                "per-project"
+              ],
               "query": [
-                { "key": "startDate", "value": "", "disabled": true },
-                { "key": "endDate", "value": "", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" }
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
               ]
             }
           }
@@ -1918,12 +2246,23 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/financials/invoice-aging",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "financials", "invoice-aging"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "financials",
+                "invoice-aging"
+              ],
+              "query": []
             }
           }
         }
@@ -2029,6 +2368,16 @@
                 {
                   "key": "range",
                   "value": "30d"
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -2088,6 +2437,18 @@
                 "sales",
                 "dashboard",
                 "lead-stats"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -2112,6 +2473,18 @@
                 "sales",
                 "dashboard",
                 "customer-stats"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -2171,6 +2544,16 @@
                   "key": "limit",
                   "value": "20",
                   "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -2196,6 +2579,18 @@
                 "sales",
                 "leads",
                 "stats"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -2318,6 +2713,26 @@
                   "key": "limit",
                   "value": "20",
                   "disabled": false
+                },
+                {
+                  "key": "buildingType",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isQuoteReady",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -2407,7 +2822,8 @@
                 "leads",
                 "{{leadId}}",
                 "detail"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -2432,7 +2848,8 @@
                 "leads",
                 "{{leadId}}",
                 "buildings"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -2654,7 +3071,8 @@
                 "sales",
                 "followups",
                 "stats"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -2678,7 +3096,8 @@
                 "sales",
                 "followups",
                 "upcoming"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -2790,6 +3209,16 @@
                   "key": "limit",
                   "value": "20",
                   "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -2815,7 +3244,8 @@
                 "sales",
                 "followups",
                 "ai-script"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -2858,8 +3288,13 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/admin",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin"
+              ],
+              "query": []
             },
             "description": "## AI Script Socket Tester\n\nThis is **not** an HTTP request \u2014 Postman collection JSON cannot store Socket.IO requests directly. Use one of the options below.\n\n---\n\n### Option A \u2014 Browser tester (fastest)\n\nOpen `tests/ai_script_socket_test.html` in any browser. Paste `accessToken` and click Connect.\n\n### Option B \u2014 Postman Socket.IO request (manual)\n\n1. In Postman, click **New \u2192 Socket.IO** (not WebSocket).\n2. **URL**: `http://localhost:5001/admin` (replace port if different; the `/admin` namespace is required).\n3. Settings tab \u2192 **Socket.IO version: v4**.\n4. **Auth** sub-tab \u2192 key `token`, value `<paste accessToken from POST /api/auth/login>`. This becomes `socket.handshake.auth.token`.\n5. **Events** panel \u2192 add and toggle ON these listeners:\n   - `ai_script:sessions`\n   - `ai_script:session`\n   - `ai_script:typing`\n   - `ai_script:chunk`\n   - `ai_script:done`\n   - `ai_script:error`\n6. Click **Connect**.\n\n### Emit events\n\n**ai_script:list** \u2014 payload:\n```json\n{}\n```\n\n**ai_script:start** \u2014 payload:\n```json\n{ \"leadId\": \"<optional_lead_id>\", \"sessionId\": null }\n```\nResponse on `ai_script:session` returns `sessionId` and full message history.\n\n**ai_script:message** \u2014 payload:\n```json\n{\n  \"sessionId\": \"<from ai_script:session>\",\n  \"content\": \"Draft a follow-up call script for a hesitant lead\",\n  \"leadId\": null\n}\n```\nWatch sequence: `ai_script:typing` \u2192 multiple `ai_script:chunk` (with `delta`) \u2192 `ai_script:done` (with full `reply`).\n\n**ai_script:end** \u2014 payload:\n```json\n{ \"sessionId\": \"<id>\" }\n```\n\n---\n\n### Notes\n\n- Allowed roles: `sales`, `admin`. Customer JWTs are rejected.\n- If `sessionId` omitted in `ai_script:message`, server resumes latest session for `{user, leadId}` or creates a new one.\n- Partial reply on mid-stream error is **not** persisted \u2014 only successful turns are saved to `AIScriptSession`.\n- Lead context (project, building type, lifecycle, quote value, AI score) auto-injected into system prompt when `leadId` is on the session.\n- REST fallback `POST /api/sales/followups/ai-script` is unchanged and shares the same backing model + service."
           }
@@ -2965,6 +3400,16 @@
                   "key": "limit",
                   "value": "20",
                   "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -3005,6 +3450,16 @@
                   "key": "limit",
                   "value": "20",
                   "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -3035,6 +3490,18 @@
                 "sales",
                 "customers",
                 "stats"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -3079,6 +3546,16 @@
                   "key": "isActive",
                   "value": "true",
                   "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
                 }
               ]
             }
@@ -3104,7 +3581,8 @@
                 "sales",
                 "customers",
                 "{{customerId}}"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -3129,7 +3607,8 @@
                 "customers",
                 "{{customerId}}",
                 "projects"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -3220,7 +3699,8 @@
                 "api",
                 "quotations",
                 "{{quotationId}}"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -3299,7 +3779,8 @@
                 "quotations",
                 "{{quotationId}}",
                 "summary"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -3323,7 +3804,8 @@
                 "leads",
                 "{{leadId}}",
                 "quotations"
-              ]
+              ],
+              "query": []
             }
           }
         }
@@ -3381,7 +3863,8 @@
                 "api",
                 "invoices",
                 "{{invoiceId}}"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -3484,7 +3967,8 @@
                 "leads",
                 "{{leadId}}",
                 "invoices"
-              ]
+              ],
+              "query": []
             }
           }
         }
@@ -3543,7 +4027,8 @@
                 "payment-schedules",
                 "lead",
                 "{{leadId}}"
-              ]
+              ],
+              "query": []
             }
           }
         }
@@ -3736,7 +4221,8 @@
                 "account",
                 "dashboard",
                 "invoice-stats"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -3820,7 +4306,8 @@
                 "account",
                 "dashboard",
                 "upcoming-payments"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -3844,7 +4331,8 @@
                 "account",
                 "dashboard",
                 "payment-distribution"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -3868,7 +4356,8 @@
                 "account",
                 "dashboard",
                 "revenue-trend"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -3892,7 +4381,8 @@
                 "account",
                 "dashboard",
                 "expense-trend"
-              ]
+              ],
+              "query": []
             }
           }
         }
@@ -4039,7 +4529,8 @@
                 "project",
                 "{{leadId}}",
                 "breakdown"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -4239,7 +4730,8 @@
                 "expenses",
                 "project",
                 "{{leadId}}"
-              ]
+              ],
+              "query": []
             }
           }
         }
@@ -4268,7 +4760,8 @@
                 "account",
                 "tax",
                 "stats"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -4569,7 +5062,8 @@
                 "api",
                 "customer",
                 "dashboard"
-              ]
+              ],
+              "query": []
             }
           }
         }
@@ -4636,7 +5130,8 @@
                 "customer",
                 "projects",
                 "{{leadId}}"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -4730,7 +5225,8 @@
                 "api",
                 "customer",
                 "payments"
-              ]
+              ],
+              "query": []
             }
           }
         },
@@ -4826,7 +5322,8 @@
                 "api",
                 "customer",
                 "profile"
-              ]
+              ],
+              "query": []
             }
           }
         },
