@@ -18,6 +18,7 @@ exports.getAllPOOrders = asyncHandler(async (req, res) => {
     .populate('leadId')
     .populate('customerId')
     .populate('raisedBy')
+    .populate('assignedTo', 'name email role')
     .populate('invoiceId')
     .populate('quotationId')
     .sort({ createdAt: -1 })
