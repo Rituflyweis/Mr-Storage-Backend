@@ -2,21 +2,43 @@ const Meeting = require('../../models/Meeting')
 const auditService = require('../../services/audit.service')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-const { buildDateFilter } = require('../../utils/dateRange')
-const { AUDIT_ACTIONS } = require('../../config/constants')
+const { AUDIT_ACTIONS, MEETING_STATUSES } = require('../../config/constants')
 
 exports.getMeetings = asyncHandler(async (req, res) => {
-  const dateFilter = buildDateFilter(req.query, 'meetingTime')
-  const filter = { status: { $ne: 'completed' }, ...dateFilter }
+  const { status } = req.query
+  const filter = {}
+
+  if (status) {
+    if (!MEETING_STATUSES.includes(status)) {
+      return badRequest(res, 'Invalid status. Use scheduled, completed, cancelled, or rescheduled')
+    }
+    filter.status = status
+  }
 
   const meetings = await Meeting.find(filter)
     .populate('customerId')
+    .populate('leadId')
     .populate('assignedTo')
     .populate('createdBy')
     .sort({ meetingTime: 1 })
     .lean()
 
   return success(res, { meetings })
+})
+
+exports.getMeetingById = asyncHandler(async (req, res) => {
+  const { meetingId } = req.params
+
+  const meeting = await Meeting.findById(meetingId)
+    .populate('customerId')
+    .populate('leadId')
+    .populate('assignedTo')
+    .populate('createdBy')
+    .lean()
+
+  if (!meeting) return notFound(res, 'Meeting not found')
+
+  return success(res, { meeting })
 })
 
 exports.createMeeting = asyncHandler(async (req, res) => {

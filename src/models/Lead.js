@@ -1,5 +1,12 @@
 const mongoose = require('mongoose')
-const { LEAD_SOURCES, LIFECYCLE_STAGES, ASSIGN_METHODS, PO_STATUSES } = require('../config/constants')
+const {
+  LEAD_SOURCES,
+  LIFECYCLE_STAGES,
+  ASSIGN_METHODS,
+  PO_STATUSES,
+  LEAD_TEMPERATURES,
+  resolveLeadTemperatureFromScore,
+} = require('../config/constants')
 
 const AssigningHistorySchema = new mongoose.Schema(
   {
@@ -26,6 +33,8 @@ const LeadScoringSchema = new mongoose.Schema(
   {
     scoreBreakdown: { type: ScoreBreakdownSchema, default: () => ({}) },
     score:          { type: Number, default: 0, min: 0, max: 100 },
+    temperature:         { type: String, enum: LEAD_TEMPERATURES, default: 'cold' },
+    temperatureManual:   { type: Boolean, default: false },
     requirements:   { type: String, default: '' },
     lastScoredAt:   { type: Date, default: null },
   },
@@ -107,8 +116,17 @@ LeadSchema.index({ isTerminated: 1 })
 LeadSchema.index({ 'leadScoring.lastScoredAt': -1 })
 LeadSchema.index({ isQuoteReady: 1 })
 LeadSchema.index({ createdAt: -1 })
+LeadSchema.index({ updatedAt: -1 })
+LeadSchema.index({ 'leadScoring.temperature': 1 })
+
+const syncLeadScoringTemperature = (leadScoring) => {
+  if (!leadScoring || leadScoring.temperatureManual) return
+  leadScoring.temperature = resolveLeadTemperatureFromScore(leadScoring.score)
+}
 
 LeadSchema.pre('save', async function (next) {
+  syncLeadScoringTemperature(this.leadScoring)
+
   if (this.isNew && !this.jobId) {
     const last = await this.constructor
       .findOne({ jobId: { $exists: true, $ne: null } }, { jobId: 1 })
@@ -118,6 +136,13 @@ LeadSchema.pre('save', async function (next) {
     this.jobId = `PRO-${String(num).padStart(3, '0')}`
   }
   next()
+})
+
+// Existing leads without `temperature` — derive on read (no DB migration; respects manual override)
+LeadSchema.post('init', function () {
+  if (!this.leadScoring?.temperature && !this.leadScoring?.temperatureManual) {
+    syncLeadScoringTemperature(this.leadScoring)
+  }
 })
 
 module.exports = mongoose.model('Lead', LeadSchema)

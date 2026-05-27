@@ -10,6 +10,26 @@ const { AUDIT_ACTIONS } = require('../../config/constants')
 
 const isOverdue = (f) => f.status === 'pending' && new Date(f.followUpDate) < new Date()
 
+const formatClientName = (customer) => {
+  if (!customer) return ''
+  return [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim()
+}
+
+const resolveFollowUpStatus = (followUp) => {
+  if (followUp.status === 'completed') return 'completed'
+  if (isOverdue(followUp)) return 'overdue'
+  return 'pending'
+}
+
+const findNextFollowUpDate = (followUp, pendingByLeadId) => {
+  const list = pendingByLeadId.get(String(followUp.leadId)) || []
+  const after = new Date(followUp.followUpDate).getTime()
+  const next = list.find(
+    (p) => String(p._id) !== String(followUp._id) && new Date(p.followUpDate).getTime() > after
+  )
+  return next ? next.followUpDate : null
+}
+
 exports.getStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
   const now = new Date()
@@ -128,6 +148,88 @@ exports.completeFollowUp = asyncHandler(async (req, res) => {
   })
 
   return success(res, { followUp }, 'Follow-up marked as completed')
+})
+
+exports.getFollowUpActivityLog = asyncHandler(async (req, res) => {
+  const { employeeId, type, status, page = 1, limit = 20 } = req.query
+  const dateFilter = buildDateFilter(req.query, 'followUpDate')
+
+  const filter = { ...dateFilter }
+  if (employeeId) filter.assignedTo = employeeId
+  if (type) filter.modeOfContact = type
+
+  if (status === 'overdue') {
+    filter.status = 'pending'
+    filter.followUpDate = { ...filter.followUpDate, $lt: new Date() }
+  } else if (status) {
+    filter.status = status
+  }
+
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+  const skip = (parsedPage - 1) * parsedLimit
+
+  const [followups, total] = await Promise.all([
+    FollowUp.find(filter)
+      .populate({ path: 'leadId', select: 'projectName jobId' })
+      .populate({ path: 'customerId', select: 'firstName lastName' })
+      .populate({ path: 'assignedTo', select: 'name email role' })
+      .sort({ followUpDate: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    FollowUp.countDocuments(filter),
+  ])
+
+  const leadIds = [...new Set(followups.map((f) => f.leadId?._id || f.leadId).filter(Boolean))]
+  const pendingByLeadId = new Map()
+
+  if (leadIds.length > 0) {
+    const pendingList = await FollowUp.find({
+      leadId: { $in: leadIds },
+      status: 'pending',
+    })
+      .select('_id leadId followUpDate')
+      .sort({ followUpDate: 1 })
+      .lean()
+
+    for (const p of pendingList) {
+      const key = String(p.leadId)
+      if (!pendingByLeadId.has(key)) pendingByLeadId.set(key, [])
+      pendingByLeadId.get(key).push(p)
+    }
+  }
+
+  const activities = followups.map((f) => ({
+    _id: f._id,
+    leadId: f.leadId?._id || f.leadId,
+    projectName: f.leadId?.projectName || '',
+    jobId: f.leadId?.jobId || null,
+    clientName: formatClientName(f.customerId),
+    followUpDate: f.followUpDate,
+    type: f.modeOfContact,
+    followedBy: f.assignedTo
+      ? {
+          _id: f.assignedTo._id,
+          name: f.assignedTo.name,
+          email: f.assignedTo.email,
+          role: f.assignedTo.role,
+        }
+      : null,
+    status: resolveFollowUpStatus(f),
+    nextFollowUpDate: findNextFollowUpDate(f, pendingByLeadId),
+    notes: f.notes || '',
+    priority: f.priority,
+    completedAt: f.completedAt,
+    createdAt: f.createdAt,
+  }))
+
+  return success(res, {
+    activities,
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
 })
 
 exports.getAllFollowups = asyncHandler(async (req, res) => {

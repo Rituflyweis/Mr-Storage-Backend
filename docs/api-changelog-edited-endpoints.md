@@ -1,0 +1,2037 @@
+## How to read this doc
+
+Every changed endpoint uses the same layout:
+
+| Block | Meaning |
+|-------|---------|
+| **Previous request body** | What the API accepted before (or `N/A` if new endpoint) |
+| **Current request body** | What to send now |
+| **Previous response body** | Shape under `data` before (envelope unchanged) |
+| **Current response body** | Shape under `data` now |
+
+**Global envelope (all endpoints):**
+
+```json
+// Success
+{ "success": true, "message": "Success", "data": { } }
+
+// Error
+{ "success": false, "message": "Human-readable error", "errors": [] }
+```
+
+`errors` is only present for validation failures (express-validator).
+
+**Auth header (all endpoints below):**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+---
+
+## Shared enums & field maps
+
+### `Lead.source` (when accepted)
+
+`chat` | `manual` | `import` | `customer_portal`
+
+### Invoice `status` (query filter)
+
+`draft` | `sent` | `paid` | `overdue` | `cancelled`
+
+### PO `status` (query filter)
+
+`pending` | `approved` | `rejected`
+
+### `lifecycleStatus` (edit lead)
+
+`initial_contact` | `requirements_gathered` | `proposal_sent` | `negotiation` | `deal_closed` | `payment_done` | `converted_to_po` | `sent_to_admin`
+
+### Lead `temperature` (hot / warm / cold)
+
+| Value | Meaning |
+|-------|---------|
+| `hot` | Score ≥ 70 (auto) or set manually |
+| `warm` | Score 40–69 (auto) or set manually |
+| `cold` | Score &lt; 40 (auto) or set manually |
+
+Query filter `status` on `GET /api/admin/leads/by-score` is an alias for `temperature`.
+
+### Door / window / insulation (request → DB)
+
+| Request keys | Stored as |
+|--------------|-----------|
+| `doors` or `door` | `Lead.numDoors` |
+| `windows` or `window` | `Lead.numWindows` |
+| `insulation` | `Lead.numInsulation` |
+
+### When is `source` allowed in the body?
+
+| Flow | Endpoint(s) | `source` in body? |
+|------|-------------|-------------------|
+| Create **project** (inside customer) | `POST .../customers/:id/leads`, `POST .../customers/:id/projects`, `POST /admin/customers` | **No** — server uses `manual` |
+| Create **lead** (lead section modal) | `POST /admin/leads`, `POST /sales/leads` | **Yes** — optional |
+
+### Panel → API map
+
+| UI screen | Admin | Sales |
+|-----------|-------|-------|
+| Create customer + first project | `POST /api/admin/customers` | — |
+| Customer detail → add project | `POST /api/admin/customers/:customerId/leads` | `POST /api/sales/customers/:customerId/projects` |
+| Lead section → add lead | `POST /api/admin/leads` | `POST /api/sales/leads` |
+| Edit customer | `PUT /api/admin/customers/:customerId` | `PUT /api/sales/customers/:customerId` |
+| Edit lead / project | `PUT /api/admin/leads/:leadId` | `PUT /api/sales/leads/:leadId` |
+| Assign sales rep (admin only) | `PUT /api/admin/leads/:leadId/assign` | — (sales auto-assigned on create) |
+| Export leads (Excel → S3 URL) | `GET /api/admin/leads/export/excel` | `GET /api/sales/leads/export/excel` |
+| Leads by score (admin) | `GET /api/admin/leads/by-score` | — |
+| Set lead temperature (admin) | `PUT /api/admin/leads/:leadId/temperature` | — |
+| Employee audit / last activity | `GET /api/admin/employees/audit-log` | — |
+
+---
+
+## Index
+
+| # | Method | Endpoint | Role |
+|---|--------|----------|------|
+| 1 | GET | `/api/admin/po-orders` | admin |
+| 2 | POST | `/api/admin/customers` | admin |
+| 3 | PUT | `/api/admin/customers/:customerId` | admin |
+| 4 | POST | `/api/admin/leads` | admin |
+| 5 | PUT | `/api/admin/leads/:leadId` | admin |
+| 6 | PATCH | `/api/admin/customers/:customerId/deactivate` | admin |
+| 7 | GET | `/api/admin/customers/:customerId/invoices` | admin |
+| 8 | POST | `/api/admin/customers/:customerId/leads` | admin |
+| 9 | POST | `/api/sales/customers/:customerId/projects` | sales |
+| 10 | POST | `/api/sales/leads` | sales |
+| 11 | PUT | `/api/sales/leads/:leadId` | sales |
+| 12 | PUT | `/api/sales/customers/:customerId` | sales |
+| 13 | GET | `/api/admin/meetings` | admin |
+| 14 | GET | `/api/admin/meetings/:meetingId` | admin |
+| 15 | GET | `/api/admin/leads/export/excel` | admin |
+| 16 | GET | `/api/sales/leads/export/excel` | sales |
+| 17 | GET | `/api/admin/leads/by-score` | admin |
+| 18 | PUT | `/api/admin/leads/:leadId/temperature` | admin |
+| 19 | GET | `/api/admin/employees/audit-log` | admin |
+
+---
+
+## 1. `GET /api/admin/po-orders`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **Change** | Response only — new `invoicePayment`; slimmer `invoiceId` |
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+| Param | Type | Required | Default | Notes |
+|-------|------|----------|---------|--------|
+| `status` | string | No | — | `pending`, `approved`, `rejected` |
+| `startDate` | ISO date string | No | — | Filter on `createdAt` |
+| `endDate` | ISO date string | No | — | Filter on `createdAt` |
+
+*Query params unchanged.*
+
+### Request body
+
+**Previous:** `N/A` (GET)
+
+**Current:** `N/A` (GET)
+
+### Response body
+
+**HTTP status:** `200` (unchanged)
+
+#### Previous (`data`)
+
+```json
+{
+  "orders": [
+    {
+      "_id": "665a00000000000000000001",
+      "leadId": { },
+      "customerId": { },
+      "raisedBy": { },
+      "assignedTo": { },
+      "invoiceId": {
+        "_id": "...",
+        "leadId": "...",
+        "customerId": "...",
+        "invoiceNumber": "INV-0001",
+        "lineItems": [],
+        "subtotal": 0,
+        "totalAmount": 50000,
+        "status": "paid",
+        "poNumber": "PO-0042"
+      },
+      "quotationId": { },
+      "poNumber": "PO-0042",
+      "status": "approved",
+      "adminNotes": "",
+      "createdAt": "2026-05-20T10:00:00.000Z",
+      "updatedAt": "2026-05-21T09:00:00.000Z"
+    }
+  ]
+}
+```
+
+`invoiceId` was the **full** invoice document.
+
+#### Current (`data`)
+
+```json
+{
+  "orders": [
+    {
+      "_id": "665a00000000000000000001",
+      "leadId": { },
+      "customerId": { },
+      "raisedBy": { },
+      "assignedTo": {
+        "name": "Plant User",
+        "email": "plant@example.com",
+        "role": "plant"
+      },
+      "invoiceId": {
+        "_id": "...",
+        "invoiceNumber": "INV-0001",
+        "status": "paid",
+        "poNumber": "PO-0042",
+        "paidAt": "2026-05-20T10:00:00.000Z"
+      },
+      "quotationId": { },
+      "poNumber": "PO-0042",
+      "status": "approved",
+      "adminNotes": "",
+      "createdAt": "2026-05-20T10:00:00.000Z",
+      "updatedAt": "2026-05-21T09:00:00.000Z",
+      "invoicePayment": {
+        "status": "paid",
+        "isPaid": true
+      }
+    }
+  ]
+}
+```
+
+| New field | Type | Notes |
+|-----------|------|--------|
+| `invoicePayment` | object \| null | Use for paid/unpaid badge in list |
+| `invoicePayment.status` | string | Invoice status |
+| `invoicePayment.isPaid` | boolean | `true` only when `status === "paid"` |
+
+### Errors
+
+| HTTP | When |
+|------|------|
+| 401 | Missing/invalid token |
+| 403 | Not admin role |
+
+---
+
+## 2. `POST /api/admin/customers`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Customer section — create customer + first project |
+| **Change** | Request accepts full project fields; **`source` not accepted** |
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `201 Created`
+
+#### Previous
+
+```json
+{
+  "firstName": "Jane",
+  "email": "jane@example.com",
+  "phone": "9876543210",
+  "buildingType": "Storage",
+  "location": "Austin, TX",
+  "projectName": "Warehouse A"
+}
+```
+
+Optional in practice but not validated: `countryCode`, `assignedSales`.  
+Ignored if sent: `quoteValue`, `roofStyle`, `width`, `length`, `height`, `doors`, `windows`, `insulation`, `source`.
+
+#### Current
+
+```json
+{
+  "firstName": "Jane",
+  "email": "jane@example.com",
+  "phone": "9876543210",
+  "countryCode": "+91",
+  "projectName": "Warehouse A",
+  "buildingType": "Storage",
+  "location": "Austin, TX",
+  "quoteValue": 150000,
+  "roofStyle": "Gable",
+  "width": 40,
+  "length": 60,
+  "height": 12,
+  "doors": 2,
+  "windows": 4,
+  "insulation": 1,
+  "assignedSales": "665a00000000000000000003"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `firstName` | Yes | |
+| `email` | Yes | Unique |
+| `phone` | Yes | Also used as initial login password |
+| `countryCode` | No | Default `""` |
+| `projectName` | Yes | |
+| `buildingType` | Yes | |
+| `location` | Yes | On **Lead** |
+| `quoteValue` | No | Default `0` |
+| `roofStyle` | No | |
+| `width`, `length`, `height` | No | Numbers |
+| `doors`, `windows`, `insulation` | No | Numbers |
+| `assignedSales` | No | MongoId |
+| `source` | **Do not send** | Server sets `manual` |
+
+### Response body
+
+#### Previous (`data`)
+
+```json
+{
+  "customer": {
+    "_id": "...",
+    "customerId": "CUS-00042",
+    "firstName": "Jane",
+    "email": "jane@example.com",
+    "phone": { "number": "9876543210", "countryCode": "" },
+    "isActive": true,
+    "source": "manual",
+    "createdAt": "...",
+    "updatedAt": "..."
+  },
+  "lead": {
+    "_id": "...",
+    "projectName": "Warehouse A",
+    "buildingType": "Storage",
+    "location": "Austin, TX",
+    "source": "manual",
+    "quoteValue": 0,
+    "numDoors": null,
+    "numWindows": null,
+    "numInsulation": null
+  }
+}
+```
+
+Optional lead fields were **not saved** even if sent.
+
+#### Current (`data`)
+
+Same top-level keys `{ customer, lead }`. `lead` now includes all sent project fields (`quoteValue`, `roofStyle`, `width`, `numDoors`, etc.).  
+`customer.password` is never returned.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Validation / duplicate email |
+| 400 | `Customer with this email already exists` |
+
+---
+
+## 3. `PUT /api/admin/customers/:customerId`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Edit customer profile |
+| **Change** | **New endpoint** |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `customerId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `200`
+
+#### Previous
+
+`N/A` — endpoint did not exist.
+
+#### Current
+
+At least **one** of `firstName`, `email`, `phone` required.
+
+```json
+{
+  "firstName": "Jane Doe",
+  "email": "jane.doe@example.com",
+  "phone": "9876543211",
+  "countryCode": "+91"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `firstName` | No* | Non-empty if sent |
+| `email` | No* | Unique if changed |
+| `phone` | No* | Non-empty if sent |
+| `countryCode` | No | With `phone` or alone |
+
+\*At least one of the three must be sent.
+
+### Response body
+
+#### Previous
+
+`N/A`
+
+#### Current (`data`)
+
+```json
+{
+  "customer": {
+    "_id": "...",
+    "customerId": "CUS-00042",
+    "firstName": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "phone": {
+      "number": "9876543211",
+      "countryCode": "+91"
+    },
+    "isActive": true,
+    "source": "manual",
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | At least one field required |
+| 400 | Empty field / email taken |
+| 404 | Customer not found |
+
+---
+
+## 4. `POST /api/admin/leads`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Lead section — add lead (select customer) |
+| **Change** | Full project body + **`source` allowed** |
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `201 Created`
+
+#### Previous
+
+```json
+{
+  "customerId": "665a00000000000000000001",
+  "projectName": "Warehouse A",
+  "buildingType": "Storage",
+  "location": "Austin, TX"
+}
+```
+
+Optional unvalidated: `roofStyle`, `width`, `length`, `height`, `assignedSales`.  
+`source`, doors, `quoteValue` ignored.
+
+#### Current
+
+```json
+{
+  "customerId": "665a00000000000000000001",
+  "projectName": "Warehouse A",
+  "buildingType": "Storage",
+  "location": "Austin, TX",
+  "source": "manual",
+  "quoteValue": 150000,
+  "roofStyle": "Gable",
+  "width": 40,
+  "length": 60,
+  "height": 12,
+  "doors": 2,
+  "windows": 4,
+  "insulation": 1,
+  "assignedSales": "665a00000000000000000003"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `customerId` | Yes | Existing customer |
+| `projectName` | Yes | |
+| `buildingType` | Yes | |
+| `location` | Yes | |
+| `source` | No | Optional; default `manual` |
+| `quoteValue`, `roofStyle`, dimensions, doors/windows/insulation` | No | |
+| `assignedSales` | No | MongoId |
+
+### Response body
+
+#### Previous (`data`)
+
+```json
+{
+  "lead": {
+    "_id": "...",
+    "customerId": "...",
+    "projectName": "Warehouse A",
+    "buildingType": "Storage",
+    "location": "Austin, TX",
+    "source": "manual",
+    "quoteValue": 0
+  }
+}
+```
+
+#### Current (`data`)
+
+```json
+{
+  "lead": {
+    "_id": "...",
+    "customerId": "...",
+    "projectName": "Warehouse A",
+    "buildingType": "Storage",
+    "location": "Austin, TX",
+    "source": "manual",
+    "quoteValue": 150000,
+    "roofStyle": "Gable",
+    "width": 40,
+    "length": 60,
+    "height": 12,
+    "numDoors": 2,
+    "numWindows": 4,
+    "numInsulation": 1,
+    "assignedSales": "...",
+    "isHandedToSales": true
+  }
+}
+```
+
+Shape unchanged (`{ lead }`); persisted fields expanded.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid `source` |
+| 400 | Duplicate project name for customer |
+| 404 | Customer not found |
+
+---
+
+## 5. `PUT /api/admin/leads/:leadId`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Edit lead / project |
+| **Change** | Request body greatly expanded |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `leadId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `200`
+
+At least **one** field required.
+
+#### Previous
+
+```json
+{
+  "buildingType": "Cold Storage",
+  "location": "Austin, TX",
+  "quoteValue": 150000,
+  "lifecycleStatus": "negotiation"
+}
+```
+
+#### Current
+
+```json
+{
+  "projectName": "Warehouse A - Phase 2",
+  "buildingType": "Cold Storage",
+  "location": "Dallas, TX",
+  "source": "manual",
+  "quoteValue": 175000,
+  "roofStyle": "Flat",
+  "width": 50,
+  "length": 70,
+  "height": 14,
+  "doors": 3,
+  "windows": 6,
+  "insulation": 2,
+  "notes": "Updated specs",
+  "lifecycleStatus": "negotiation"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| All fields | No* | Partial update |
+| `source` | No | Cannot be `null` |
+| `width`, `length`, `height`, `doors`, `windows`, `insulation` | No | Send `null` to clear |
+| `quoteValue` | No | `null` → `0` |
+| `assignedSales` | **Do not send** | Use `PUT .../assign` |
+
+\*At least one field required.
+
+**Assign sales rep (unchanged separate call):**
+
+```http
+PUT /api/admin/leads/:leadId/assign
+```
+
+```json
+{ "employeeId": "665a00000000000000000003" }
+```
+
+### Response body
+
+#### Previous (`data`)
+
+```json
+{
+  "lead": { }
+}
+```
+
+Full lead document returned (Mongoose); only listed fields were updated.
+
+#### Current (`data`)
+
+```json
+{
+  "lead": { }
+}
+```
+
+Same — full updated `lead` document.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | No fields / invalid source / duplicate project name |
+| 404 | Lead not found |
+
+---
+
+## 6. `PATCH /api/admin/customers/:customerId/deactivate`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **Change** | **Updated** — toggles active status (deactivate **or** reactivate) |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `customerId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `200`  
+**Message:** `Customer deactivated` when turning off; `Customer activated` when turning on.
+
+#### Previous
+
+None (empty body). Endpoint only deactivated: set `isActive` to `false`. If already inactive → **400** `Customer is already inactive`. Audit action always `customer.deactivated`.
+
+#### Current
+
+None (empty body). **Toggle** `isActive`:
+
+| Before call | After call | Top-level `message` | Audit `action` |
+|-------------|------------|---------------------|----------------|
+| `isActive: true` | `false` | `Customer deactivated` | `customer.deactivated` |
+| `isActive: false` | `true` | `Customer activated` | `customer.activated` |
+
+New audit constant: `CUSTOMER_ACTIVATED` → `customer.activated` (see §22). Shown in employee audit log / timeline via `displayMessage` (e.g. “Customer activated: Jane”).
+
+### Response body
+
+#### Previous (`data`)
+
+Same shape; `customer.isActive` always `false` on success.
+
+#### Current (`data`)
+
+```json
+{
+  "customer": {
+    "_id": "...",
+    "customerId": "CUS-00042",
+    "firstName": "Jane",
+    "email": "jane@example.com",
+    "phone": { "number": "9876543210", "countryCode": "+91" },
+    "isActive": false,
+    "source": "manual",
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+`isActive` reflects the **new** state (`false` after deactivate, `true` after reactivate).
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 404 | Customer not found |
+
+**Removed:** `400` — `Customer is already inactive` (inactive customers are reactivated instead).
+
+---
+
+## 7. `GET /api/admin/customers/:customerId/invoices`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Customer detail — invoices tab |
+| **Change** | **New endpoint** |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `customerId` | MongoId | Yes |
+
+### Query parameters
+
+| Param | Type | Required | Default | Notes |
+|-------|------|----------|---------|--------|
+| `page` | number | No | `1` | |
+| `limit` | number | No | `20` | |
+| `status` | string | No | — | Invoice status enum |
+| `startDate` | ISO date | No | — | Invoice `createdAt` |
+| `endDate` | ISO date | No | — | Invoice `createdAt` |
+
+#### Previous
+
+`N/A` — endpoint did not exist.
+
+#### Current
+
+Same as table above.
+
+### Request body
+
+**Previous / Current:** `N/A` (GET)
+
+### Response body
+
+**HTTP status:** `200`
+
+#### Previous
+
+`N/A`
+
+#### Current (`data`)
+
+```json
+{
+  "customer": {
+    "_id": "...",
+    "customerId": "CUS-00042",
+    "firstName": "Jane"
+  },
+  "invoices": [
+    {
+      "_id": "...",
+      "invoiceNumber": "INV-0001",
+      "status": "paid",
+      "totalAmount": 50000,
+      "poNumber": "PO-0042",
+      "date": "2026-05-01T10:00:00.000Z",
+      "paidAt": "2026-05-10T12:00:00.000Z",
+      "leadId": {
+        "_id": "...",
+        "projectName": "Warehouse A",
+        "jobId": "PRO-001",
+        "lifecycleStatus": "deal_closed"
+      },
+      "createdBy": { "name": "Sales Rep", "email": "sales@example.com" },
+      "paidBy": { "name": "Account User", "email": "account@example.com" }
+    }
+  ],
+  "total": 15,
+  "page": 1,
+  "limit": 10
+}
+```
+
+Sorted by `createdAt` descending.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid `status` |
+| 404 | Customer not found |
+
+---
+
+## 8. `POST /api/admin/customers/:customerId/leads`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Customer detail — add project |
+| **Change** | Full project fields; **`source` not accepted** |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `customerId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `201 Created`
+
+#### Previous
+
+```json
+{
+  "projectName": "Warehouse B",
+  "buildingType": "Storage",
+  "location": "Dallas, TX"
+}
+```
+
+Optional: `roofStyle`, `width`, `length`, `height`, `assignedSales`.  
+No doors / quote / insulation.
+
+#### Current
+
+```json
+{
+  "projectName": "Warehouse B",
+  "buildingType": "Storage",
+  "location": "Dallas, TX",
+  "quoteValue": 120000,
+  "roofStyle": "Gable",
+  "width": 40,
+  "length": 60,
+  "height": 12,
+  "doors": 2,
+  "windows": 4,
+  "insulation": 1,
+  "assignedSales": "665a00000000000000000003"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `projectName` | Yes | |
+| `buildingType` | Yes | |
+| `location` | Yes | |
+| `quoteValue`, `roofStyle`, dimensions, doors/windows/insulation` | No | |
+| `assignedSales` | No | Inherits last rep on customer if omitted |
+| `source` | **Do not send** | Server sets `manual` |
+
+### Response body
+
+#### Previous (`data`)
+
+```json
+{
+  "lead": {
+    "_id": "...",
+    "projectName": "Warehouse B",
+    "buildingType": "Storage",
+    "location": "Dallas, TX",
+    "source": "manual",
+    "quoteValue": 0
+  }
+}
+```
+
+#### Current (`data`)
+
+```json
+{
+  "lead": {
+    "_id": "...",
+    "projectName": "Warehouse B",
+    "buildingType": "Storage",
+    "location": "Dallas, TX",
+    "source": "manual",
+    "quoteValue": 120000,
+    "roofStyle": "Gable",
+    "width": 40,
+    "length": 60,
+    "height": 12,
+    "numDoors": 2,
+    "numWindows": 4,
+    "numInsulation": 1,
+    "assignedSales": "..."
+  }
+}
+```
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Duplicate project name |
+| 404 | Customer not found |
+
+---
+
+## 9. `POST /api/sales/customers/:customerId/projects`
+
+| | |
+|---|---|
+| **Role** | `sales` |
+| **UI** | Customer detail — add project |
+| **Change** | Full project fields; auto-assign rep; **`source` not accepted** |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `customerId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `201 Created`
+
+#### Previous
+
+```json
+{
+  "projectName": "Warehouse B",
+  "buildingType": "Storage",
+  "location": "Dallas, TX"
+}
+```
+
+Optional: `roofStyle`, `width`, `length`, `height`.
+
+#### Current
+
+Same as admin §8 project body, but **no `assignedSales`**:
+
+```json
+{
+  "projectName": "Warehouse B",
+  "buildingType": "Storage",
+  "location": "Dallas, TX",
+  "quoteValue": 120000,
+  "roofStyle": "Gable",
+  "width": 40,
+  "length": 60,
+  "height": 12,
+  "doors": 2,
+  "windows": 4,
+  "insulation": 1
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `projectName` | Yes | |
+| `buildingType` | Yes | |
+| `location` | Yes | |
+| Other project fields | No | |
+| `assignedSales` | **Do not send** | Set to logged-in user |
+| `source` | **Do not send** | Server sets `manual` |
+
+### Response body
+
+#### Previous (`data`)
+
+```json
+{
+  "lead": {
+    "_id": "...",
+    "assignedSales": "<logged-in user>",
+    "source": "manual",
+    "quoteValue": 0
+  }
+}
+```
+
+#### Current (`data`)
+
+```json
+{
+  "lead": {
+    "_id": "...",
+    "assignedSales": "<logged-in user>",
+    "source": "manual",
+    "quoteValue": 120000,
+    "numDoors": 2,
+    "numWindows": 4,
+    "numInsulation": 1
+  }
+}
+```
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 403 | Customer not in portfolio |
+| 404 | Customer not found |
+
+---
+
+## 10. `POST /api/sales/leads`
+
+| | |
+|---|---|
+| **Role** | `sales` |
+| **UI** | Lead section — add lead |
+| **Change** | **Breaking** — no customer creation; requires `customerId` |
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `201 Created`
+
+#### Previous (breaking)
+
+```json
+{
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "jane@example.com",
+  "phone": "9876543210",
+  "countryCode": "+91",
+  "buildingType": "Storage",
+  "location": "Austin, TX",
+  "projectName": "Warehouse A",
+  "estimatedValue": 120000,
+  "doors": 2,
+  "windows": 4,
+  "insulation": 1
+}
+```
+
+Created a **new customer** if email was new.
+
+#### Current
+
+```json
+{
+  "customerId": "665a00000000000000000001",
+  "projectName": "Warehouse B",
+  "buildingType": "Storage",
+  "location": "Austin, TX",
+  "source": "manual",
+  "quoteValue": 120000,
+  "roofStyle": "Gable",
+  "width": 40,
+  "length": 60,
+  "height": 12,
+  "doors": 2,
+  "windows": 4,
+  "insulation": 1,
+  "notes": "Optional note",
+  "leadStatus": "initial_contact"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `customerId` | Yes | Must exist |
+| `projectName` | Yes | |
+| `buildingType` | Yes | |
+| `location` | Yes | |
+| `source` | No | Optional |
+| `quoteValue` | No | Was `estimatedValue` before — use `quoteValue` now |
+| `notes`, `leadStatus` | No | `leadStatus` = lifecycle if valid |
+| Customer fields | **Removed** | Do not send email/phone/name |
+
+### Response body
+
+#### Previous (`data`)
+
+```json
+{
+  "lead": { },
+  "customer": { },
+  "isNewCustomer": true
+}
+```
+
+#### Current (`data`)
+
+```json
+{
+  "lead": {
+    "_id": "...",
+    "customerId": "...",
+    "assignedSales": "<logged-in user>",
+    "source": "manual",
+    "quoteValue": 120000
+  }
+}
+```
+
+No `customer` or `isNewCustomer`.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid source / duplicate project name / inactive customer |
+| 404 | Customer not found |
+
+---
+
+## 11. `PUT /api/sales/leads/:leadId`
+
+| | |
+|---|---|
+| **Role** | `sales` |
+| **UI** | Edit lead / project (own leads only) |
+| **Change** | Aligned with admin §5 |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `leadId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `200`
+
+At least one field required. Same fields as admin §5.
+
+#### Previous
+
+```json
+{
+  "projectName": "Warehouse A",
+  "buildingType": "Storage",
+  "location": "Austin, TX",
+  "roofStyle": "Gable",
+  "width": 40,
+  "length": 60,
+  "height": 12,
+  "notes": "Note text"
+}
+```
+
+No `quoteValue`, `source`, doors, `lifecycleStatus`.
+
+#### Current
+
+```json
+{
+  "projectName": "Warehouse A - Updated",
+  "buildingType": "Storage",
+  "location": "Austin, TX",
+  "source": "manual",
+  "quoteValue": 175000,
+  "roofStyle": "Gable",
+  "width": null,
+  "doors": 3,
+  "windows": 5,
+  "insulation": 2,
+  "notes": "Updated",
+  "lifecycleStatus": "negotiation"
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `assignedSales` | **Do not send** |
+| Numerics | `null` clears |
+
+### Response body
+
+#### Previous / Current (`data`)
+
+```json
+{
+  "lead": { }
+}
+```
+
+Full lead document; shape unchanged.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 403 | Not your lead |
+| 404 | Lead not found |
+
+---
+
+## 12. `PUT /api/sales/customers/:customerId`
+
+| | |
+|---|---|
+| **Role** | `sales` |
+| **UI** | Edit customer (portfolio customers only) |
+| **Change** | **New endpoint** — same as admin §3 |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `customerId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Request body
+
+**HTTP status:** `200`
+
+#### Previous
+
+`N/A`
+
+#### Current
+
+Same as admin §3:
+
+```json
+{
+  "firstName": "Jane Doe",
+  "email": "jane.doe@example.com",
+  "phone": "9876543211",
+  "countryCode": "+91"
+}
+```
+
+At least one of `firstName`, `email`, `phone` required.  
+**Do not send:** `photo`, `address`, `isActive`, lead fields.
+
+### Response body
+
+#### Previous
+
+`N/A`
+
+#### Current (`data`)
+
+```json
+{
+  "customer": {
+    "_id": "...",
+    "customerId": "CUS-00042",
+    "firstName": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "phone": { "number": "9876543211", "countryCode": "+91" },
+    "isActive": true,
+    "source": "manual",
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 403 | Not in portfolio |
+| 400 | Validation / email taken |
+| 404 | Customer not found |
+
+---
+
+## 13. `GET /api/admin/meetings`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Meetings list / calendar |
+| **Change** | Returns **all** meetings by default (including completed); optional `status` filter; **removed** `startDate` / `endDate`; list now populates `leadId` |
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+| Param | Type | Required | Notes |
+|-------|------|----------|--------|
+| `status` | string | No | `scheduled`, `completed`, `cancelled`, or `rescheduled`. Omit to return every status. |
+| ~~`startDate`~~ | — | — | **Removed** — no longer filters `meetingTime` |
+| ~~`endDate`~~ | — | — | **Removed** |
+
+### Request body
+
+None.
+
+### Response body
+
+#### Previous (`data`)
+
+Only meetings with `status !== "completed"`. `leadId` was an ObjectId string (not populated). Date range applied when `startDate` / `endDate` were sent.
+
+```json
+{
+  "meetings": [
+    {
+      "_id": "...",
+      "title": "Project discussion",
+      "meetingTime": "2024-03-15T14:00:00.000Z",
+      "duration": 60,
+      "mode": "online",
+      "meetingLink": "https://meet.google.com/abc",
+      "notes": "Review warehouse specs",
+      "status": "scheduled",
+      "completedAt": null,
+      "leadId": "64f...",
+      "customerId": { "_id": "...", "customerId": "CUS-00042", "firstName": "Jane", "email": "jane@example.com" },
+      "assignedTo": { "_id": "...", "name": "Sales Rep", "email": "sales@example.com", "role": "sales" },
+      "createdBy": { "_id": "...", "name": "Admin", "email": "admin@example.com", "role": "admin" },
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ]
+}
+```
+
+Completed meetings were **excluded** from this list.
+
+#### Current (`data`)
+
+All statuses unless `?status=` is set. Sorted ascending by `meetingTime`. `customerId`, `leadId`, `assignedTo`, and `createdBy` are populated documents (or `leadId: null`).
+
+```json
+{
+  "meetings": [
+    {
+      "_id": "...",
+      "title": "Project discussion",
+      "meetingTime": "2024-03-15T14:00:00.000Z",
+      "duration": 60,
+      "mode": "online",
+      "meetingLink": "https://meet.google.com/abc",
+      "notes": "Review warehouse specs",
+      "status": "completed",
+      "completedAt": "2024-03-16T10:00:00.000Z",
+      "leadId": { "_id": "...", "leadId": "LEAD-00123", "projectName": "Warehouse A" },
+      "customerId": { "_id": "...", "customerId": "CUS-00042", "firstName": "Jane", "email": "jane@example.com" },
+      "assignedTo": { "_id": "...", "name": "Sales Rep", "email": "sales@example.com", "role": "sales" },
+      "createdBy": { "_id": "...", "name": "Admin", "email": "admin@example.com", "role": "admin" },
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ]
+}
+```
+
+**Examples**
+
+| Request | Result |
+|---------|--------|
+| `GET /api/admin/meetings` | All meetings (scheduled, completed, cancelled, rescheduled) |
+| `GET /api/admin/meetings?status=scheduled` | Only scheduled |
+| `GET /api/admin/meetings?status=completed` | Only completed |
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid `status` value (validation) |
+
+---
+
+## 14. `GET /api/admin/meetings/:meetingId`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Meeting detail drawer / page |
+| **Change** | **New endpoint** — single meeting with full populated relations |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `meetingId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Request body
+
+None.
+
+### Response body
+
+#### Previous
+
+`N/A` — endpoint did not exist. Frontend may have used list payload only.
+
+#### Current (`data`)
+
+```json
+{
+  "meeting": {
+    "_id": "...",
+    "title": "Project discussion",
+    "meetingTime": "2024-03-15T14:00:00.000Z",
+    "duration": 60,
+    "mode": "online",
+    "meetingLink": "https://meet.google.com/abc",
+    "notes": "Review warehouse specs",
+    "status": "scheduled",
+    "completedAt": null,
+    "customerId": {
+      "_id": "...",
+      "customerId": "CUS-00042",
+      "firstName": "Jane Doe",
+      "email": "jane.doe@example.com",
+      "phone": { "number": "9876543210", "countryCode": "+1" },
+      "isActive": true
+    },
+    "leadId": {
+      "_id": "...",
+      "leadId": "LEAD-00123",
+      "projectName": "Warehouse A",
+      "lifecycleStatus": "negotiation"
+    },
+    "assignedTo": {
+      "_id": "...",
+      "name": "Sales Rep",
+      "email": "sales@example.com",
+      "role": "sales",
+      "isActive": true
+    },
+    "createdBy": {
+      "_id": "...",
+      "name": "Admin User",
+      "email": "admin@example.com",
+      "role": "admin",
+      "isActive": true
+    },
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+`leadId` is `null` when the meeting is not tied to a project.
+
+Populated fields: `customerId`, `leadId`, `assignedTo`, `createdBy` (full Mongoose documents; passwords omitted on nested users).
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 404 | Meeting not found |
+
+---
+
+## 15. `GET /api/admin/leads/export/excel`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Leads list → Export (download link from S3) |
+| **Change** | **New endpoint** — builds `.xlsx` from all matching leads, uploads to S3, returns public file URL |
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+Same filters as `GET /api/admin/leads` (list). Omit all to export every lead in the system.
+
+| Param | Type | Required | Notes |
+|-------|------|----------|--------|
+| `search` | string | No | Project name or customer name / email / `customerId` |
+| `buildingType` | string | No | Case-insensitive substring |
+| `assignedSales` | MongoId | No | Filter by assigned rep |
+| `lifecycleStatus` | string | No | See lifecycle enum above |
+| `source` | string | No | `chat`, `manual`, `import`, `customer_portal` |
+| `isQuoteReady` | boolean string | No | `true` / `false` |
+| `isHandedToSales` | boolean string | No | `true` / `false` |
+| `isTerminated` | boolean string | No | `true` / `false` |
+| `quoteValueMin` | number | No | Min `quoteValue` |
+| `quoteValueMax` | number | No | Max `quoteValue` |
+| `startDate` | ISO date | No | Filter on lead `createdAt` |
+| `endDate` | ISO date | No | Filter on lead `createdAt` |
+
+No `page` / `limit` — export is not paginated.
+
+### Request body
+
+None.
+
+### Response body
+
+#### Previous
+
+`N/A`
+
+#### Current (`data`)
+
+```json
+{
+  "fileUrl": "https://<bucket>.s3.<region>.amazonaws.com/exports/admin/<userId>/leads-1716729600000-<uuid>.xlsx",
+  "key": "exports/admin/<userId>/leads-1716729600000-<uuid>.xlsx",
+  "exportedCount": 128,
+  "generatedAt": "2026-05-26T08:00:00.000Z"
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `fileUrl` | Direct HTTPS URL to the uploaded workbook — open or download in browser |
+| `key` | S3 object key (for support/debug) |
+| `exportedCount` | Number of lead rows written |
+| `generatedAt` | ISO timestamp when file was generated |
+
+**Excel columns (one row per lead):** Lead ID, Job ID, Project Name, Building Type, Location, Roof Style, Width, Length, Height, Sqft, Doors, Windows, Insulation, Source, Quote Value, Lifecycle Status, Lead Score, Quote Ready, Handed To Sales, Raised To PO, PO Status, Terminated, Termination Reason, Terminated At, Buildings Count, Notes, Customer Code, Customer Name, Customer Email, Customer Phone, Customer Active, Assigned Sales, Assigned Sales Email, Document Count, Has Contract, Created At, Updated At.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 503 | S3 is not configured (missing AWS env vars) |
+| 401 | Unauthorized |
+
+---
+
+## 16. `GET /api/sales/leads/export/excel`
+
+| | |
+|---|---|
+| **Role** | `sales` |
+| **UI** | Leads list → Export (download link from S3) |
+| **Change** | **New endpoint** — same as admin §15 but scoped to **current sales user’s assigned leads only** |
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+Same filters as `GET /api/sales/leads` (list). Server always adds `assignedSales = current user`.
+
+| Param | Type | Required | Notes |
+|-------|------|----------|--------|
+| `search` | string | No | Project / building / location / customer |
+| `buildingType` | string | No | Case-insensitive substring |
+| `lifecycleStatus` | string | No | See lifecycle enum above |
+| `isQuoteReady` | boolean string | No | `true` / `false` |
+| `startDate` | ISO date | No | Filter on lead `createdAt` |
+| `endDate` | ISO date | No | Filter on lead `createdAt` |
+
+No `page` / `limit`.
+
+### Request body
+
+None.
+
+### Response body
+
+#### Previous
+
+`N/A`
+
+#### Current (`data`)
+
+Same shape as admin §15; S3 path uses `exports/sales/<userId>/...`:
+
+```json
+{
+  "fileUrl": "https://<bucket>.s3.<region>.amazonaws.com/exports/sales/<userId>/leads-1716729600000-<uuid>.xlsx",
+  "key": "exports/sales/<userId>/leads-1716729600000-<uuid>.xlsx",
+  "exportedCount": 24,
+  "generatedAt": "2026-05-26T08:00:00.000Z"
+}
+```
+
+Excel column set is identical to §15.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 503 | S3 is not configured |
+| 401 | Unauthorized |
+
+### Frontend notes
+
+- Call export, then use `data.fileUrl` for download (new tab or `<a download>`). No file bytes in the JSON response.
+- **Legacy:** `GET /api/sales/leads/export` still returns inline **CSV** in the response body (unchanged). Prefer `/export/excel` for full detail + S3 link.
+
+---
+
+## 17. `GET /api/admin/leads/by-score`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Leads by score table |
+| **Change** | **New endpoint** — paginated list sorted by `updatedAt` desc |
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+| Param | Type | Required | Notes |
+|-------|------|----------|--------|
+| `startDate` | ISO date | No | Filters `Lead.updatedAt` (inclusive start) |
+| `endDate` | ISO date | No | Filters `Lead.updatedAt` (inclusive end of day) |
+| `temperature` | string | No | `hot`, `warm`, or `cold` |
+| `status` | string | No | **Alias** for `temperature` (same values) |
+| `search` | string | No | Customer name / email / customer code / project name / job id |
+| `page` | number | No | Default `1` |
+| `limit` | number | No | Default `20`, max `200` |
+
+### Request body
+
+None.
+
+### Response body
+
+#### Previous
+
+`N/A`
+
+#### Current (`data`)
+
+```json
+{
+  "leads": [
+    {
+      "leadId": "665a1b2c3d4e5f6789012345",
+      "projectId": "PRO-042",
+      "customerName": "Jane Doe",
+      "projectName": "Warehouse A",
+      "location": "Austin, TX",
+      "lifecycleStatus": "negotiation",
+      "status": "hot",
+      "score": 78,
+      "quoteValue": 175000,
+      "temperature": "hot",
+      "updatedAt": "2026-05-26T10:30:00.000Z"
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "limit": 20
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `projectId` | Auto-generated `jobId` (e.g. `PRO-042`) |
+| `status` | Same as `temperature` (hot / warm / cold) for UI columns |
+| `score` | AI score 0–100 from `leadScoring.score` |
+| `quoteValue` | Project / quote value on the lead |
+
+Sorted by **`updatedAt` descending** (most recently updated first).
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid `temperature` / `status` |
+
+---
+
+## 18. `PUT /api/admin/leads/:leadId/temperature`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Override lead temperature on score board |
+| **Change** | **New endpoint** — manual hot / warm / cold; persists until next AI re-score |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `leadId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Request body
+
+#### Previous
+
+`N/A`
+
+#### Current
+
+```json
+{
+  "temperature": "warm"
+}
+```
+
+Required. One of: `hot`, `warm`, `cold`.
+
+### Response body
+
+#### Previous
+
+`N/A`
+
+#### Current (`data`)
+
+```json
+{
+  "lead": {
+    "leadId": "665a1b2c3d4e5f6789012345",
+    "projectId": "PRO-042",
+    "temperature": "warm",
+    "temperatureManual": true
+  }
+}
+```
+
+Manual temperature is kept on save. When **AI chat re-scores** the lead, temperature is recalculated from score and `temperatureManual` is cleared.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid or missing `temperature` |
+| 404 | Lead not found |
+
+---
+
+## 19. `GET /api/admin/employees/audit-log`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Employees → audit / activity roster |
+| **Change** | **New endpoint** — each employee with formatted last activity from `AuditLog` |
+
+### Path parameters
+
+None.
+
+### Query parameters
+
+| Param | Type | Required | Notes |
+|-------|------|----------|--------|
+| `role` | string | No | `admin`, `sales`, `construction`, `plant`, `account` |
+| `isActive` | boolean string | No | `true` / `false` |
+| `search` | string | No | Name or email (case-insensitive) |
+| `page` | number | No | Default `1` |
+| `limit` | number | No | Default `20` |
+
+### Request body
+
+None.
+
+### Response body
+
+#### Previous
+
+`N/A`
+
+#### Current (`data`)
+
+Sorted by **`lastActivityAt` descending** (employees with no activity last, then by name).
+
+```json
+{
+  "employees": [
+    {
+      "userId": "...",
+      "name": "Aadith",
+      "email": "aadith@example.com",
+      "role": "sales",
+      "panel": "Sales",
+      "status": "active",
+      "isActive": true,
+      "lastActivity": "Quotation created for Jane for Warehouse A",
+      "lastActivityAt": "2026-05-26T14:22:00.000Z"
+    },
+    {
+      "userId": "...",
+      "name": "New Hire",
+      "email": "new@example.com",
+      "role": "plant",
+      "panel": "Plant",
+      "status": "active",
+      "isActive": true,
+      "lastActivity": null,
+      "lastActivityAt": null
+    }
+  ],
+  "total": 12,
+  "page": 1,
+  "limit": 20
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `panel` | Derived from `role` (Sales, Plant, Accounts, etc.) |
+| `status` | `active` or `inactive` from `User.isActive` |
+| `lastActivity` | Human-readable sentence from latest `AuditLog` where `performedBy` = this user |
+| `lastActivityAt` | ISO timestamp of that log (separate field for date/time UI) |
+
+**Also updated:** `GET /api/admin/employees/:userId/timeline` — each entry now includes `displayMessage` (same formatter).
+
+### Errors
+
+None specific (401 if unauthorized).
+
+---
+
+## §20 — Customer panel: PO-only visibility (admin + sales)
+
+**Scope:** Customer **section** list and **projects inside a customer** only. Lead list endpoints (`GET /api/admin/leads`, `GET /api/sales/leads`, etc.) are unchanged.
+
+### Rule
+
+1. **Customer list** — A customer is returned only if they have **at least one** lead with `isRaisedToPO: true`.
+2. **Customer → projects** — Only leads with `isRaisedToPO: true` are returned. `totalProjects` on the customer list counts PO-raised projects only.
+
+### Affected endpoints
+
+| Method | Endpoint | Change |
+|--------|----------|--------|
+| GET | `/api/admin/customers` | Filtered to customers with ≥1 PO-raised project; `totalProjects` = PO projects only |
+| GET | `/api/admin/customers/:customerId/projects` | Only `isRaisedToPO: true` leads |
+| GET | `/api/admin/customers/:customerId/projects/:leadId` | 404 unless that lead has `isRaisedToPO: true` |
+| GET | `/api/sales/customers` | Same PO rule, scoped to `assignedSales` = current user |
+| GET | `/api/sales/customers/:customerId/projects` | Only PO-raised leads assigned to current user |
+
+### Frontend impact
+
+- Chat-only or pre-PO customers **will not** appear in the customer section until sales raises a PO (`POST /api/sales/leads/:leadId/po-order` sets `isRaisedToPO`).
+- Pre-PO work stays in the **leads** section (and AI-handled where applicable).
+
+---
+
+## §21 — Admin lead documents list
+
+### `GET /api/admin/leads/:leadId/documents`
+
+Returns all documents attached to the lead (embedded `lead.documents`), with project context and uploader details.
+
+**Auth:** Admin JWT.
+
+**Query (optional):**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `type` | string | Filter: `drawing`, `approval`, `general`, `contract`, `photo`, `other` |
+
+**Response `data`:**
+
+```json
+{
+  "project": {
+    "_id": "<leadObjectId>",
+    "projectName": "Warehouse Expansion",
+    "jobId": "PRO-042"
+  },
+  "documents": [
+    {
+      "_id": "<docSubdocId>",
+      "url": "https://bucket.s3.region.amazonaws.com/documents/uuid.pdf",
+      "name": "site-plan.pdf",
+      "type": "drawing",
+      "uploadedAt": "2026-05-20T10:00:00.000Z",
+      "uploadedBy": {
+        "_id": "<userId>",
+        "name": "Jane Sales",
+        "email": "jane@example.com",
+        "role": "sales"
+      }
+    }
+  ],
+  "total": 1
+}
+```
+
+- Sorted newest `uploadedAt` first.
+- `uploadedBy` is `null` when the document has no uploader (e.g. legacy rows).
+- Upload/remove still uses `POST` / `DELETE` on `/api/upload/leads/:leadId/documents` (unchanged).
+
+---
+
+## §22 — Customer deactivate/activate toggle (admin)
+
+**Endpoint:** `PATCH /api/admin/customers/:customerId/deactivate` (path unchanged; behavior is a toggle).
+
+### Summary
+
+- **Previous:** Deactivate only; `400` if already inactive.
+- **Current:** Toggles `isActive`. Inactive → active on repeat call.
+- **Audit:** `customer.deactivated` or `customer.activated` (`AUDIT_ACTIONS.CUSTOMER_ACTIVATED` in `src/config/constants.js`).
+- **FE:** Use response `message` and `data.customer.isActive` to update UI label (Deactivate vs Activate). Do not treat `400` for “already inactive” anymore.
+
+Full contract delta is in **§6** above.
+
+---
+
+## §23 — Admin follow-up activity log
+
+### `GET /api/admin/followups/activity-log`
+
+Paginated follow-up activity across **all employees** (not scoped to one rep).
+
+**Auth:** Admin JWT.
+
+**Query parameters:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `employeeId` | MongoId | Filter by `assignedTo` (sales user) |
+| `type` | string | Contact mode: `call`, `email`, `meeting` (`modeOfContact`) |
+| `status` | string | `pending`, `completed`, or `overdue` (computed: pending + `followUpDate` in the past) |
+| `startDate` | ISO date | Filter on `followUpDate` (inclusive start of day) |
+| `endDate` | ISO date | Filter on `followUpDate` (inclusive end of day) |
+| `page` | number | Default `1` |
+| `limit` | number | Default `20`, max `200` |
+
+**Response `data`:**
+
+```json
+{
+  "activities": [
+    {
+      "_id": "<followUpId>",
+      "leadId": "<leadId>",
+      "projectName": "Warehouse Expansion",
+      "jobId": "PRO-042",
+      "clientName": "Jane Doe",
+      "followUpDate": "2026-05-22T10:00:00.000Z",
+      "type": "call",
+      "followedBy": {
+        "_id": "<userId>",
+        "name": "Rahul Sales",
+        "email": "rahul@example.com",
+        "role": "sales"
+      },
+      "status": "overdue",
+      "nextFollowUpDate": "2026-05-28T14:00:00.000Z",
+      "notes": "Discuss quote revision",
+      "priority": "high",
+      "completedAt": null,
+      "createdAt": "2026-05-20T09:00:00.000Z"
+    }
+  ],
+  "total": 48,
+  "page": 1,
+  "limit": 20
+}
+```
+
+- **`followedBy`** — assigned sales user (`assignedTo`).
+- **`type`** — `modeOfContact` on the follow-up record.
+- **`status`** — `completed`, `pending`, or `overdue` (display value; `overdue` is not stored in DB).
+- **`nextFollowUpDate`** — earliest **pending** follow-up on the same lead with `followUpDate` after this row’s date; `null` if none.
+- Sorted by `followUpDate` descending (newest first).
+
+---
+
+## Related unchanged endpoints (reference)
+
+| Method | Endpoint | Notes |
+|--------|----------|--------|
+| PUT | `/api/admin/leads/:leadId/assign` | `{ "employeeId": "<userId>" }` — still the only way to change `assignedSales` on admin |
+| PUT | `/api/sales/leads/:leadId/lifecycle` | Still works; `lifecycleStatus` can also be sent on `PUT /api/sales/leads/:leadId` now |
+| GET | `/api/admin/customers/:customerId` | Customer detail + financial summary (not paginated invoices — use §7) |
+| POST | `/api/admin/meetings` | Create meeting (unchanged) |
+| PUT | `/api/admin/meetings/:meetingId` | Edit meeting (unchanged) |
+| PUT | `/api/admin/meetings/:meetingId/complete` | Mark complete (unchanged) |
+| GET | `/api/sales/leads/export` | Legacy CSV download in response body (not S3) |
+
+---
+
+## Maintenance
+
+**Last updated:** 2026-05-26 (§23 admin follow-up activity log)
+
+When the API changes again, update the matching section with **Previous** = last published contract, **Current** = new contract, and bump **Last updated**. New changes after a frontend handoff should be appended as the next section number (do not renumber sections already shared).

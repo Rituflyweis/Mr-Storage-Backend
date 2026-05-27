@@ -1,5 +1,14 @@
 const USER_ROLES = ['admin', 'sales', 'construction', 'plant', 'account']
 const LEAD_SOURCES = ['chat', 'manual', 'import', 'customer_portal']
+const LEAD_TEMPERATURES = ['hot', 'warm', 'cold']
+
+/** Score 0–100 → hot (≥70), warm (40–69), cold (<40). */
+const resolveLeadTemperatureFromScore = (score = 0) => {
+  const n = Math.min(100, Math.max(0, Number(score) || 0))
+  if (n >= 70) return 'hot'
+  if (n >= 40) return 'warm'
+  return 'cold'
+}
 
 const LIFECYCLE_STAGES = [
   'initial_contact',
@@ -44,6 +53,7 @@ const AUDIT_ACTIONS = {
   LEAD_PO_APPROVED:         'lead.po_approved',
   LEAD_PO_REJECTED:         'lead.po_rejected',
   LEAD_EDITED:              'lead.edited',
+  LEAD_TEMPERATURE_UPDATED: 'lead.temperature_updated',
   LEAD_TERMINATED:          'lead.terminated',
   BUILDINGS_CREATED:        'lead.buildings_created',
   BOM_APPROVED:             'bom.approved',
@@ -71,6 +81,9 @@ const AUDIT_ACTIONS = {
   DOCUMENT_REMOVED:         'lead.document_removed',
   BUDGET_SET:               'lead.budget_set',
   CUSTOMER_CREATED:         'customer.created',
+  CUSTOMER_UPDATED:         'customer.updated',
+  CUSTOMER_DEACTIVATED:     'customer.deactivated',
+  CUSTOMER_ACTIVATED:       'customer.activated',
   CUSTOMER_PROJECT_CREATED: 'customer.project_created',
   ACTIVITY_LOGGED:          'activity.logged',
 
@@ -90,6 +103,8 @@ const PAYMENT_ITEM_STATUSES = PAYMENT_STAGE_STATUSES
 module.exports = {
   USER_ROLES,
   LEAD_SOURCES,
+  LEAD_TEMPERATURES,
+  resolveLeadTemperatureFromScore,
   LIFECYCLE_STAGES,
   CLOSED_STAGES,
   PRIORITY_LEVELS,

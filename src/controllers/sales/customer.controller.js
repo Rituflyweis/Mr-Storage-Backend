@@ -9,18 +9,15 @@ const bcrypt = require('bcryptjs')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
+const { buildLeadCreatePayload, escapeRegex } = require('../../utils/leadPayload')
+const {
+  PO_PROJECT_MATCH,
+  getSalesCustomerIdsWithRaisedPO,
+} = require('../../utils/customerPoFilter')
 const { startOfMonth, endOfMonth } = require('date-fns')
 
 const getOwnCustomerIds = async (salesId) => {
   return Lead.find({ assignedSales: salesId }).distinct('customerId')
-}
-
-const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const normalizeProjectName = (value = '') => value.trim()
-const toNumberOrNull = (value) => {
-  if (value === undefined || value === null || value === '') return null
-  const num = Number(value)
-  return Number.isFinite(num) ? num : null
 }
 
 exports.getCustomerStats = asyncHandler(async (req, res) => {
@@ -56,9 +53,9 @@ exports.getCustomers = asyncHandler(async (req, res) => {
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
 
-  const ownCustomerIds = await getOwnCustomerIds(req.user._id)
+  const poCustomerIds = await getSalesCustomerIdsWithRaisedPO(req.user._id)
 
-  const filter = { _id: { $in: ownCustomerIds } }
+  const filter = { _id: { $in: poCustomerIds } }
   if (search && search.trim()) {
     const regex = new RegExp(search.trim(), 'i')
     filter.$or = [{ firstName: regex }, { email: regex }, { customerId: regex }]
@@ -79,7 +76,7 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
   const customerIds = customers.map(c => c._id)
   const projectCounts = await Lead.aggregate([
-    { $match: { customerId: { $in: customerIds }, assignedSales: req.user._id } },
+    { $match: { customerId: { $in: customerIds }, assignedSales: req.user._id, ...PO_PROJECT_MATCH } },
     { $group: { _id: '$customerId', count: { $sum: 1 } } },
   ])
   const countMap = new Map(projectCounts.map(p => [String(p._id), p.count]))
@@ -109,14 +106,73 @@ exports.getCustomerDetail = asyncHandler(async (req, res) => {
   })
 })
 
-exports.getCustomerProjects = asyncHandler(async (req, res) => {
+exports.updateCustomer = asyncHandler(async (req, res) => {
   const { customerId } = req.params
+  const { firstName, email, phone, countryCode } = req.body
+
+  if (firstName === undefined && email === undefined && phone === undefined) {
+    return badRequest(res, 'At least one of firstName, email, or phone is required')
+  }
 
   const ownCustomerIds = await getOwnCustomerIds(req.user._id)
   const isOwn = ownCustomerIds.some(id => String(id) === customerId)
   if (!isOwn) return forbidden(res, 'Access denied')
 
-  const leads = await Lead.find({ customerId, assignedSales: req.user._id })
+  const customer = await Customer.findById(customerId)
+  if (!customer) return notFound(res, 'Customer not found')
+
+  if (firstName !== undefined) {
+    const trimmed = String(firstName).trim()
+    if (!trimmed) return badRequest(res, 'firstName cannot be empty')
+    customer.firstName = trimmed
+  }
+
+  if (email !== undefined) {
+    const normalizedEmail = String(email).toLowerCase().trim()
+    if (!normalizedEmail) return badRequest(res, 'email cannot be empty')
+    const emailTaken = await Customer.findOne({
+      email: normalizedEmail,
+      _id: { $ne: customer._id },
+    }).lean()
+    if (emailTaken) return badRequest(res, 'Customer with this email already exists')
+    customer.email = normalizedEmail
+  }
+
+  if (phone !== undefined) {
+    const trimmedPhone = String(phone).trim()
+    if (!trimmedPhone) return badRequest(res, 'phone cannot be empty')
+    customer.phone = {
+      number: trimmedPhone,
+      countryCode: countryCode !== undefined ? String(countryCode).trim() : (customer.phone?.countryCode || ''),
+    }
+  } else if (countryCode !== undefined) {
+    customer.phone = {
+      number: customer.phone?.number || '',
+      countryCode: String(countryCode).trim(),
+    }
+  }
+
+  await customer.save()
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.CUSTOMER_UPDATED,
+    customerId: customer._id,
+    performedBy: req.user._id,
+    metadata: { firstName: customer.firstName, email: customer.email },
+  })
+
+  return success(res, { customer: customer.toJSON() })
+})
+
+exports.getCustomerProjects = asyncHandler(async (req, res) => {
+  const { customerId } = req.params
+
+  const poCustomerIds = await getSalesCustomerIdsWithRaisedPO(req.user._id)
+  const isOwn = poCustomerIds.some(id => String(id) === customerId)
+  if (!isOwn) return forbidden(res, 'Access denied')
+
+  const leads = await Lead.find({ customerId, assignedSales: req.user._id, ...PO_PROJECT_MATCH })
     .sort({ createdAt: -1 })
     .lean()
 
@@ -145,44 +201,44 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
 
 exports.createProject = asyncHandler(async (req, res) => {
   const { customerId } = req.params
-  const { projectName, buildingType, location, roofStyle, width, length, height } = req.body
+
+  const customer = await Customer.findById(customerId).lean()
+  if (!customer) return notFound(res, 'Customer not found')
 
   const ownCustomerIds = await getOwnCustomerIds(req.user._id)
   const isOwn = ownCustomerIds.some(id => String(id) === customerId)
   if (!isOwn) return forbidden(res, 'Access denied — customer not in your portfolio')
 
-  if (!projectName || !buildingType || !location) {
-    return badRequest(res, 'projectName, buildingType, location are required')
-  }
-
-  const normalizedProjectName = normalizeProjectName(projectName)
-  const existingLead = await Lead.findOne({
+  const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
     customerId,
-    projectName: { $regex: new RegExp(`^${escapeRegex(normalizedProjectName)}$`, 'i') },
+    assignedBy: req.user._id,
+    defaultSource: 'manual',
+    acceptSource: false,
+    forceAssignedSales: req.user._id,
   })
-    .select('_id projectName lifecycleStatus assignedSales isTerminated')
-    .lean()
-  if (existingLead) {
-    return badRequest(
-      res,
-      'A project with this name already exists for this customer. Please edit the existing lead instead.',
-      { existingLead }
-    )
+  if (leadError) return badRequest(res, leadError)
+
+  if (leadPayload.projectName) {
+    const existingLead = await Lead.findOne({
+      customerId,
+      projectName: { $regex: new RegExp(`^${escapeRegex(leadPayload.projectName)}$`, 'i') },
+    })
+      .select('_id projectName')
+      .lean()
+    if (existingLead) {
+      return badRequest(
+        res,
+        'A project with this name already exists for this customer. Please edit the existing lead instead.',
+        { existingLead }
+      )
+    }
   }
 
   const lead = await Lead.create({
-    customerId,
-    projectName: normalizedProjectName,
-    buildingType: buildingType.trim(),
-    location: location.trim(),
-    roofStyle: roofStyle || '',
-    width: toNumberOrNull(width),
-    length: toNumberOrNull(length),
-    height: toNumberOrNull(height),
-    source: 'manual',
-    assignedSales: req.user._id,
-    isHandedToSales: true,
-    assigningHistory: [{ employeeId: req.user._id, method: 'manual', assignedBy: req.user._id, assignedAt: new Date() }],
+    ...leadPayload,
+    lifecycleHistory: [
+      { stage: 'initial_contact', changedAt: new Date(), changedBy: req.user._id },
+    ],
   })
 
   await auditService.log({
@@ -191,7 +247,7 @@ exports.createProject = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId,
     performedBy: req.user._id,
-    metadata: { source: 'manual', projectName },
+    metadata: { source: lead.source, projectName: lead.projectName },
   })
 
   return created(res, { lead })

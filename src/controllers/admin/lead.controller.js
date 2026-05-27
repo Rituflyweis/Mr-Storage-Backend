@@ -16,18 +16,24 @@ const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../../config/constants')
+const {
+  AUDIT_ACTIONS,
+  LIFECYCLE_STAGES,
+  LEAD_TEMPERATURES,
+  resolveLeadTemperatureFromScore,
+} = require('../../config/constants')
+const {
+  escapeRegex,
+  normalizeProjectName,
+  toNumberOrNull,
+  buildLeadCreatePayload,
+  applyLeadUpdateFromBody,
+} = require('../../utils/leadPayload')
 const { parse } = require('csv-parse/sync')
 const bcrypt = require('bcryptjs')
 const { startOfDay, endOfDay } = require('date-fns')
-
-const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const normalizeProjectName = (value = '') => value.trim()
-const toNumberOrNull = (value) => {
-  if (value === undefined || value === null || value === '') return null
-  const num = Number(value)
-  return Number.isFinite(num) ? num : null
-}
+const { buildAdminLeadFilter, buildAdminLeadsByScoreFilter } = require('../../utils/leadQueryFilter')
+const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 
 exports.getLeadStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
@@ -40,6 +46,90 @@ exports.getLeadStats = asyncHandler(async (req, res) => {
   ])
 
   return success(res, { total, assigned, unassigned, unreadMessages: unread })
+})
+
+const mapLeadByScoreRow = (lead) => {
+  const score = lead.leadScoring?.score ?? 0
+  const temperature = lead.leadScoring?.temperature
+    ?? resolveLeadTemperatureFromScore(score)
+
+  return {
+    leadId: lead._id,
+    projectId: lead.jobId || '',
+    customerName: lead.customerId?.firstName || '',
+    projectName: lead.projectName || '',
+    location: lead.location || '',
+    lifecycleStatus: lead.lifecycleStatus,
+    status: temperature,
+    score,
+    quoteValue: lead.quoteValue ?? 0,
+    temperature,
+    updatedAt: lead.updatedAt,
+  }
+}
+
+exports.getLeadsByScore = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20 } = req.query
+  const { filter, error } = await buildAdminLeadsByScoreFilter(req.query)
+  if (error) return badRequest(res, error)
+
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+  const skip = (parsedPage - 1) * parsedLimit
+
+  const [leads, total] = await Promise.all([
+    Lead.find(filter)
+      .populate({ path: 'customerId', select: 'firstName email customerId' })
+      .select('_id jobId projectName location lifecycleStatus quoteValue leadScoring updatedAt')
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    Lead.countDocuments(filter),
+  ])
+
+  return success(res, {
+    leads: leads.map(mapLeadByScoreRow),
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
+})
+
+exports.updateLeadTemperature = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const { temperature } = req.body
+
+  if (!temperature || !LEAD_TEMPERATURES.includes(temperature)) {
+    return badRequest(res, 'temperature is required and must be hot, warm, or cold')
+  }
+
+  const lead = await Lead.findById(leadId)
+  if (!lead) return notFound(res, 'Lead not found')
+
+  const previous = lead.leadScoring?.temperature || 'cold'
+  if (!lead.leadScoring) lead.leadScoring = {}
+  lead.leadScoring.temperature = temperature
+  lead.leadScoring.temperatureManual = true
+  await lead.save()
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_TEMPERATURE_UPDATED,
+    leadId: lead._id,
+    customerId: lead.customerId,
+    performedBy: req.user._id,
+    metadata: { previous, temperature },
+  })
+
+  return success(res, {
+    lead: {
+      leadId: lead._id,
+      projectId: lead.jobId || '',
+      temperature: lead.leadScoring.temperature,
+      temperatureManual: true,
+    },
+  })
 })
 
 exports.getScoringToday = asyncHandler(async (req, res) => {
@@ -58,34 +148,18 @@ exports.getScoringToday = asyncHandler(async (req, res) => {
   return success(res, { leads })
 })
 
-exports.getAllLeads = asyncHandler(async (req, res) => {
-  const {
-    search, buildingType, quoteValueMin, quoteValueMax,
-    assignedSales, lifecycleStatus, source, isQuoteReady,
-    isHandedToSales, isTerminated, page = 1, limit = 20,
-  } = req.query
-  const dateFilter = buildDateFilter(req.query)
+exports.exportLeadsExcel = asyncHandler(async (req, res) => {
+  const filter = await buildAdminLeadFilter(req.query)
+  const result = await exportLeadsToExcelAndS3({
+    filter,
+    s3KeyPrefix: `exports/admin/${req.user._id}`,
+  })
+  return success(res, result)
+})
 
-  const filter = { ...dateFilter }
-  if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
-  if (assignedSales) filter.assignedSales = assignedSales
-  if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
-  if (source) filter.source = source
-  if (isQuoteReady !== undefined) filter.isQuoteReady = isQuoteReady === 'true'
-  if (isHandedToSales !== undefined) filter.isHandedToSales = isHandedToSales === 'true'
-  if (isTerminated !== undefined) filter.isTerminated = isTerminated === 'true'
-  if (quoteValueMin || quoteValueMax) {
-    filter.quoteValue = {}
-    if (quoteValueMin) filter.quoteValue.$gte = Number(quoteValueMin)
-    if (quoteValueMax) filter.quoteValue.$lte = Number(quoteValueMax)
-  }
-  if (search && search.trim()) {
-    const regex = new RegExp(search.trim(), 'i')
-    const matchingCustomerIds = await Customer.find({
-      $or: [{ firstName: regex }, { email: regex }, { customerId: regex }],
-    }).distinct('_id')
-    filter.$or = [{ projectName: regex }, { customerId: { $in: matchingCustomerIds } }]
-  }
+exports.getAllLeads = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20 } = req.query
+  const filter = await buildAdminLeadFilter(req.query)
 
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
@@ -196,16 +270,23 @@ exports.getTerminatedLeads = asyncHandler(async (req, res) => {
 })
 
 exports.createLead = asyncHandler(async (req, res) => {
-  const { customerId, projectName, buildingType, location, assignedSales, roofStyle, width, length, height } = req.body
+  const { customerId } = req.body
 
   const customer = await Customer.findById(customerId)
   if (!customer) return notFound(res, 'Customer not found')
 
-  const normalizedProjectName = projectName ? normalizeProjectName(projectName) : ''
-  if (normalizedProjectName) {
+  const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
+    customerId,
+    assignedBy: req.user._id,
+    defaultSource: 'manual',
+    acceptSource: true,
+  })
+  if (leadError) return badRequest(res, leadError)
+
+  if (leadPayload.projectName) {
     const existingLead = await Lead.findOne({
       customerId,
-      projectName: { $regex: new RegExp(`^${escapeRegex(normalizedProjectName)}$`, 'i') },
+      projectName: { $regex: new RegExp(`^${escapeRegex(leadPayload.projectName)}$`, 'i') },
     })
       .select('_id projectName lifecycleStatus assignedSales isTerminated')
       .lean()
@@ -218,22 +299,7 @@ exports.createLead = asyncHandler(async (req, res) => {
     }
   }
 
-  const lead = await Lead.create({
-    customerId,
-    projectName: normalizedProjectName,
-    buildingType: buildingType ? buildingType.trim() : '',
-    location: location ? location.trim() : '',
-    roofStyle: roofStyle || '',
-    width: toNumberOrNull(width),
-    length: toNumberOrNull(length),
-    height: toNumberOrNull(height),
-    source: 'manual',
-    assignedSales: assignedSales || null,
-    isHandedToSales: !!assignedSales,
-    assigningHistory: assignedSales
-      ? [{ employeeId: assignedSales, method: 'manual', assignedBy: req.user._id, assignedAt: new Date() }]
-      : [],
-  })
+  const lead = await Lead.create(leadPayload)
 
   await auditService.log({
     type: 'lead',
@@ -241,7 +307,7 @@ exports.createLead = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId,
     performedBy: req.user._id,
-    metadata: { source: 'manual', assignedSales },
+    metadata: { source: lead.source, projectName: lead.projectName, assignedSales: lead.assignedSales },
   })
 
   return created(res, { lead })
@@ -294,14 +360,30 @@ exports.importLeads = asyncHandler(async (req, res) => {
 
 exports.editLead = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { buildingType, location, quoteValue, lifecycleStatus } = req.body
 
   const lead = await Lead.findById(leadId)
   if (!lead) return notFound(res, 'Lead not found')
 
-  if (buildingType !== undefined) lead.buildingType = buildingType
-  if (location !== undefined) lead.location = location
-  if (quoteValue !== undefined) lead.quoteValue = quoteValue
+  const { error: updateError, lifecycleStatus } = applyLeadUpdateFromBody(lead, req.body)
+  if (updateError) return badRequest(res, updateError)
+
+  if (req.body.projectName !== undefined && lead.projectName) {
+    const duplicate = await Lead.findOne({
+      customerId: lead.customerId,
+      _id: { $ne: lead._id },
+      projectName: { $regex: new RegExp(`^${escapeRegex(lead.projectName)}$`, 'i') },
+    })
+      .select('_id projectName')
+      .lean()
+    if (duplicate) {
+      return badRequest(
+        res,
+        'A project with this name already exists for this customer. Please use a different project name.',
+        { existingLead: duplicate }
+      )
+    }
+  }
+
   if (lifecycleStatus && LIFECYCLE_STAGES.includes(lifecycleStatus)) {
     lead.lifecycleStatus = lifecycleStatus
     lead.lifecycleHistory.push({
@@ -319,7 +401,7 @@ exports.editLead = asyncHandler(async (req, res) => {
     leadId,
     customerId: lead.customerId,
     performedBy: req.user._id,
-    metadata: { buildingType, location, quoteValue, lifecycleStatus },
+    metadata: req.body,
   })
 
   return success(res, { lead })
@@ -426,6 +508,50 @@ exports.getLeadTimeline = asyncHandler(async (req, res) => {
     .lean()
 
   return success(res, { timeline })
+})
+
+exports.getLeadDocuments = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const { type } = req.query
+
+  const lead = await Lead.findById(leadId)
+    .select('jobId projectName documents')
+    .lean()
+  if (!lead) return notFound(res, 'Lead not found')
+
+  let documents = lead.documents || []
+  if (type) documents = documents.filter((d) => d.type === type)
+
+  const uploaderIds = [
+    ...new Set(documents.map((d) => d.uploadedBy).filter(Boolean).map(String)),
+  ]
+  const uploaders = uploaderIds.length
+    ? await User.find({ _id: { $in: uploaderIds } }).select('_id name email role').lean()
+    : []
+  const uploaderMap = new Map(uploaders.map((u) => [String(u._id), u]))
+
+  const formattedDocuments = [...documents]
+    .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
+    .map((doc) => ({
+      _id: doc._id,
+      url: doc.url,
+      name: doc.name,
+      type: doc.type,
+      uploadedAt: doc.uploadedAt,
+      uploadedBy: doc.uploadedBy
+        ? uploaderMap.get(String(doc.uploadedBy)) || { _id: doc.uploadedBy }
+        : null,
+    }))
+
+  return success(res, {
+    project: {
+      _id: lead._id,
+      projectName: lead.projectName || '',
+      jobId: lead.jobId,
+    },
+    documents: formattedDocuments,
+    total: formattedDocuments.length,
+  })
 })
 
 exports.setLeadBudget = asyncHandler(async (req, res) => {
@@ -541,31 +667,35 @@ exports.terminateLead = asyncHandler(async (req, res) => {
 
 exports.createProjectForCustomer = asyncHandler(async (req, res) => {
   const { customerId } = req.params
-  const { projectName, buildingType, location, assignedSales, roofStyle, width, length, height } = req.body
 
   const customer = await Customer.findById(customerId)
   if (!customer) return notFound(res, 'Customer not found')
 
-  if (!projectName || !buildingType || !location) {
-    return badRequest(res, 'projectName, buildingType, location are required')
-  }
-
-  const normalizedProjectName = normalizeProjectName(projectName)
-  const existingLead = await Lead.findOne({
+  const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
     customerId,
-    projectName: { $regex: new RegExp(`^${escapeRegex(normalizedProjectName)}$`, 'i') },
+    assignedBy: req.user._id,
+    defaultSource: 'manual',
+    acceptSource: false,
   })
-    .select('_id projectName lifecycleStatus assignedSales isTerminated')
-    .lean()
-  if (existingLead) {
-    return badRequest(
-      res,
-      'A project with this name already exists for this customer. Please edit the existing lead instead.',
-      { existingLead }
-    )
+  if (leadError) return badRequest(res, leadError)
+
+  if (leadPayload.projectName) {
+    const existingLead = await Lead.findOne({
+      customerId,
+      projectName: { $regex: new RegExp(`^${escapeRegex(leadPayload.projectName)}$`, 'i') },
+    })
+      .select('_id projectName lifecycleStatus assignedSales isTerminated')
+      .lean()
+    if (existingLead) {
+      return badRequest(
+        res,
+        'A project with this name already exists for this customer. Please edit the existing lead instead.',
+        { existingLead }
+      )
+    }
   }
 
-  let salesEmployeeId = assignedSales || null
+  let salesEmployeeId = leadPayload.assignedSales
   if (!salesEmployeeId) {
     const lastLead = await Lead.findOne({ customerId }).sort({ createdAt: -1 }).lean()
     if (lastLead?.assignedSales) {
@@ -575,15 +705,7 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
   }
 
   const lead = await Lead.create({
-    customerId,
-    projectName: normalizedProjectName,
-    buildingType: buildingType.trim(),
-    location: location.trim(),
-    roofStyle: roofStyle || '',
-    width: toNumberOrNull(width),
-    length: toNumberOrNull(length),
-    height: toNumberOrNull(height),
-    source: 'manual',
+    ...leadPayload,
     assignedSales: salesEmployeeId,
     isHandedToSales: !!salesEmployeeId,
     assigningHistory: salesEmployeeId
@@ -597,7 +719,7 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId,
     performedBy: req.user._id,
-    metadata: { source: 'manual_for_customer', assignedSales: salesEmployeeId },
+    metadata: { source: lead.source, projectName: lead.projectName, assignedSales: salesEmployeeId },
   })
 
   return created(res, { lead })

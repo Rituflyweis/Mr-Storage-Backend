@@ -16,6 +16,9 @@ const { success, created, notFound, forbidden, badRequest } = require('../../uti
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES } = require('../../config/constants')
+const { buildLeadCreatePayload, applyLeadUpdateFromBody, escapeRegex } = require('../../utils/leadPayload')
+const { buildSalesLeadFilter } = require('../../utils/leadQueryFilter')
+const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { parse } = require('csv-parse/sync')
 const bcrypt = require('bcryptjs')
 
@@ -26,45 +29,21 @@ const guardLead = async (leadId, salesId) => {
   return { lead }
 }
 
-const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const normalizeProjectName = (value = '') => value.trim()
-const toNumberOrNull = (value) => {
-  if (value === undefined || value === null || value === '') return null
-  const num = Number(value)
-  return Number.isFinite(num) ? num : null
-}
-const pickNonEmpty = (...values) => {
-  for (const value of values) {
-    if (typeof value === 'string' && value.trim()) return value.trim()
-    if (value !== undefined && value !== null && typeof value !== 'string') return value
-  }
-  return ''
-}
-const isValidEmail = (email = '') => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+exports.exportLeadsExcel = asyncHandler(async (req, res) => {
+  const filter = await buildSalesLeadFilter(req.query, req.user._id)
+  const result = await exportLeadsToExcelAndS3({
+    filter,
+    s3KeyPrefix: `exports/sales/${req.user._id}`,
+  })
+  return success(res, result)
+})
 
 exports.getLeads = asyncHandler(async (req, res) => {
-  const { search, buildingType, lifecycleStatus, isQuoteReady, page = 1, limit = 20 } = req.query
-  const dateFilter = buildDateFilter(req.query)
+  const { page = 1, limit = 20 } = req.query
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
 
-  const filter = { assignedSales: req.user._id, ...dateFilter }
-  if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
-  if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
-  if (isQuoteReady !== undefined) filter.isQuoteReady = isQuoteReady === 'true'
-  if (search && search.trim()) {
-    const term = search.trim()
-    const regex = new RegExp(term, 'i')
-    const matchingCustomerIds = await Customer.find({
-      $or: [{ firstName: regex }, { email: regex }, { customerId: regex }],
-    }).distinct('_id')
-    filter.$or = [
-      { projectName: regex },
-      { buildingType: regex },
-      { location: regex },
-      { customerId: { $in: matchingCustomerIds } },
-    ]
-  }
+  const filter = await buildSalesLeadFilter(req.query, req.user._id)
 
   const skip = (parsedPage - 1) * parsedLimit
   const [leads, total] = await Promise.all([
@@ -123,104 +102,27 @@ exports.getLeadsStats = asyncHandler(async (req, res) => {
 })
 
 exports.createLead = asyncHandler(async (req, res) => {
-  const {
-    projectName, customerEmail, buildingType, location,
-    customerName, customerPhone, customerCountryCode,
-    roofStyle, width, length, height, notes,
-    firstName, lastName, email, emailAddress, phone, phoneNumber,
-    countryCode, phoneCountryCode,
-    companyName, company,
-    city, projectLocation, siteLocation, companyLocation,
-    projectType, structureType,
-    estimatedValue, leadStatus,
-    doors, windows, insulation,
-  } = req.body
+  const { customerId, leadStatus, notes } = req.body
 
-  const mergedName = `${pickNonEmpty(firstName)} ${pickNonEmpty(lastName)}`.trim()
-  const normalizedCustomerName = pickNonEmpty(customerName, mergedName, firstName)
-  const rawEmail = pickNonEmpty(customerEmail, email, emailAddress)
-  const normalizedEmail = rawEmail.toLowerCase()
-  const normalizedCustomerPhone = pickNonEmpty(customerPhone, phone, phoneNumber)
-  const normalizedCountryCode = pickNonEmpty(customerCountryCode, countryCode, phoneCountryCode, '+91')
-  const normalizedBuildingType = pickNonEmpty(buildingType, projectType, structureType)
-  const normalizedLocation = pickNonEmpty(location, city, projectLocation, siteLocation, companyLocation, 'TBD')
+  const customer = await Customer.findById(customerId).lean()
+  if (!customer) return notFound(res, 'Customer not found')
+  if (customer.isActive === false) return badRequest(res, 'Customer is inactive')
 
-  const providedProjectName = pickNonEmpty(projectName)
-  const generatedProjectBase = pickNonEmpty(companyName, company, normalizedCustomerName, 'Project')
-  const generatedProjectName = `${generatedProjectBase} ${normalizedBuildingType || 'Project'} ${new Date().toISOString().replace(/[:.]/g, '-')}`
-  const normalizedProjectName = normalizeProjectName(
-    pickNonEmpty(providedProjectName, generatedProjectName)
-  )
-
-  if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
-    return badRequest(res, 'A valid customer email is required')
-  }
-  if (!normalizedBuildingType) {
-    return badRequest(res, 'buildingType is required')
-  }
-
-  // ── Strict customer check — Add Lead form does not reuse existing customers ──
-  const existingByEmail = await Customer.findOne({ email: normalizedEmail }).lean()
-  if (existingByEmail) {
-    return badRequest(res, 'A customer with this email already exists.', {
-      existingCustomer: {
-        _id: existingByEmail._id,
-        customerId: existingByEmail.customerId,
-        firstName: existingByEmail.firstName,
-        lastName: existingByEmail.lastName || '',
-        email: existingByEmail.email,
-      },
-    })
-  }
-  const incomingFirstName = pickNonEmpty(firstName, normalizedCustomerName)
-  const incomingLastName = (lastName || '').trim()
-  if (incomingFirstName && incomingLastName) {
-    const existingByName = await Customer.findOne({
-      firstName: { $regex: new RegExp(`^${escapeRegex(incomingFirstName)}$`, 'i') },
-      lastName: { $regex: new RegExp(`^${escapeRegex(incomingLastName)}$`, 'i') },
-    }).lean()
-    if (existingByName) {
-      return badRequest(res, 'A customer with this name already exists.', {
-        existingCustomer: {
-          _id: existingByName._id,
-          customerId: existingByName.customerId,
-          firstName: existingByName.firstName,
-          lastName: existingByName.lastName || '',
-          email: existingByName.email,
-        },
-      })
-    }
-  }
-  // ── Create new customer ──
-  if (!incomingFirstName || !normalizedCustomerPhone) {
-    return badRequest(res, 'First name and phone number are required for new customer')
-  }
-  const custId = await generateCustomerId()
-  const hashed = await bcrypt.hash(normalizedCustomerPhone, 12)
-  const customer = await Customer.create({
-    customerId: custId,
-    firstName: incomingFirstName,
-    lastName: incomingLastName || '',
-    email: normalizedEmail,
-    phone: { number: normalizedCustomerPhone, countryCode: normalizedCountryCode },
-    password: hashed,
-    source: 'manual',
+  const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
+    customerId,
+    assignedBy: req.user._id,
+    defaultSource: 'manual',
+    acceptSource: true,
+    forceAssignedSales: req.user._id,
   })
-  const isNewCustomer = true
-  await auditService.log({
-    type: 'lead',
-    action: AUDIT_ACTIONS.CUSTOMER_CREATED,
-    customerId: customer._id,
-    performedBy: req.user._id,
-    metadata: { email: customer.email },
-  })
+  if (leadError) return badRequest(res, leadError)
 
-  if (providedProjectName) {
+  if (leadPayload.projectName) {
     const existingLead = await Lead.findOne({
-      customerId: customer._id,
-      projectName: { $regex: new RegExp(`^${escapeRegex(normalizedProjectName)}$`, 'i') },
+      customerId,
+      projectName: { $regex: new RegExp(`^${escapeRegex(leadPayload.projectName)}$`, 'i') },
     })
-      .select('_id projectName lifecycleStatus assignedSales isTerminated')
+      .select('_id projectName')
       .lean()
     if (existingLead) {
       return badRequest(
@@ -232,35 +134,11 @@ exports.createLead = asyncHandler(async (req, res) => {
   }
 
   const lead = await Lead.create({
-    customerId: customer._id,
-    projectName: normalizedProjectName,
-    buildingType: normalizedBuildingType,
-    location: normalizedLocation,
-    roofStyle: roofStyle || '',
-    width: toNumberOrNull(width),
-    length: toNumberOrNull(length),
-    height: toNumberOrNull(height),
-    numDoors: toNumberOrNull(doors),
-    numWindows: toNumberOrNull(windows),
-    numInsulation: toNumberOrNull(insulation),
-    notes: pickNonEmpty(notes),
-    quoteValue: toNumberOrNull(estimatedValue) || 0,
-    source: 'manual',
-    assignedSales: req.user._id,
-    isHandedToSales: true,
+    ...leadPayload,
+    notes: notes ? String(notes).trim() : '',
     lifecycleHistory: [
       { stage: 'initial_contact', changedAt: new Date(), changedBy: req.user._id },
     ],
-    assigningHistory: [{ employeeId: req.user._id, method: 'manual', assignedBy: req.user._id, assignedAt: new Date() }],
-  })
-
-  await auditService.log({
-    type: 'lead',
-    action: AUDIT_ACTIONS.LEAD_CREATED,
-    leadId: lead._id,
-    customerId: customer._id,
-    performedBy: req.user._id,
-    metadata: { source: 'manual', projectName: normalizedProjectName },
   })
 
   if (leadStatus && LIFECYCLE_STAGES.includes(leadStatus)) {
@@ -273,7 +151,16 @@ exports.createLead = asyncHandler(async (req, res) => {
     await lead.save()
   }
 
-  return created(res, { lead, customer, isNewCustomer })
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_CREATED,
+    leadId: lead._id,
+    customerId,
+    performedBy: req.user._id,
+    metadata: { source: lead.source, projectName: lead.projectName },
+  })
+
+  return created(res, { lead })
 })
 
 exports.importLeads = asyncHandler(async (req, res) => {
@@ -335,18 +222,7 @@ exports.importLeads = asyncHandler(async (req, res) => {
 })
 
 exports.exportLeads = asyncHandler(async (req, res) => {
-  const { search, lifecycleStatus, buildingType, isQuoteReady } = req.query
-  const dateFilter = buildDateFilter(req.query)
-
-  const filter = { assignedSales: req.user._id, ...dateFilter }
-  if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
-  if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
-  if (isQuoteReady !== undefined) filter.isQuoteReady = isQuoteReady === 'true'
-  if (search && search.trim()) {
-    const regex = new RegExp(search.trim(), 'i')
-    const ids = await Customer.find({ $or: [{ firstName: regex }, { email: regex }] }).distinct('_id')
-    filter.$or = [{ projectName: regex }, { customerId: { $in: ids } }]
-  }
+  const filter = await buildSalesLeadFilter(req.query, req.user._id)
 
   const leads = await Lead.find(filter)
     .populate({ path: 'customerId', select: 'firstName email customerId' })
@@ -501,8 +377,35 @@ exports.editLead = asyncHandler(async (req, res) => {
   const { lead, error, status } = await guardLead(leadId, req.user._id)
   if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
 
-  const ALLOWED = ['projectName', 'buildingType', 'location', 'roofStyle', 'width', 'length', 'height', 'notes']
-  ALLOWED.forEach(k => { if (req.body[k] !== undefined) lead[k] = req.body[k] })
+  const { error: updateError, lifecycleStatus } = applyLeadUpdateFromBody(lead, req.body)
+  if (updateError) return badRequest(res, updateError)
+
+  if (req.body.projectName !== undefined && lead.projectName) {
+    const duplicate = await Lead.findOne({
+      customerId: lead.customerId,
+      _id: { $ne: lead._id },
+      projectName: { $regex: new RegExp(`^${escapeRegex(lead.projectName)}$`, 'i') },
+    })
+      .select('_id projectName')
+      .lean()
+    if (duplicate) {
+      return badRequest(
+        res,
+        'A project with this name already exists for this customer. Please use a different project name.',
+        { existingLead: duplicate }
+      )
+    }
+  }
+
+  if (lifecycleStatus && LIFECYCLE_STAGES.includes(lifecycleStatus)) {
+    lead.lifecycleStatus = lifecycleStatus
+    lead.lifecycleHistory.push({
+      stage: lifecycleStatus,
+      changedAt: new Date(),
+      changedBy: req.user._id,
+    })
+  }
+
   await lead.save()
 
   await auditService.log({

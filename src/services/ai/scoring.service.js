@@ -1,7 +1,7 @@
 const Anthropic = require('@anthropic-ai/sdk')
 const Lead = require('../../models/Lead')
 const env = require('../../config/env')
-const { LIFECYCLE_STAGES } = require('../../config/constants')
+const { LIFECYCLE_STAGES, resolveLeadTemperatureFromScore } = require('../../config/constants')
 
 const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
 
@@ -83,6 +83,8 @@ const applyScoreToLead = (lead, scoreData) => {
     lead.leadScoring.requirements = scoreData.requirements
   }
   lead.leadScoring.lastScoredAt = new Date()
+  lead.leadScoring.temperatureManual = false
+  lead.leadScoring.temperature = resolveLeadTemperatureFromScore(lead.leadScoring.score)
 
   // Only advance lifecycle — never regress a stage the sales team has already reached
   if (scoreData.projectLifecycleStage && LIFECYCLE_STAGES.includes(scoreData.projectLifecycleStage)) {
@@ -114,6 +116,7 @@ const updateLeadScore = async (leadId, messages, leadName = '') => {
       global.io.of('/admin').to('admin_room').emit('lead_score_updated', {
         leadId,
         score: scoreData.score,
+        temperature: lead.leadScoring.temperature,
         breakdown: scoreData.scoreBreakdown,
         requirements: scoreData.requirements,
       })

@@ -10,6 +10,7 @@ const { success, created, notFound, badRequest } = require('../../utils/apiRespo
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
+const { formatLog, getEmployeesAuditLog } = require('../../services/auditActivity.service')
 
 exports.getStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
@@ -52,6 +53,11 @@ exports.getPerformance = asyncHandler(async (req, res) => {
   )
 
   return success(res, { performance })
+})
+
+exports.getEmployeesAuditLog = asyncHandler(async (req, res) => {
+  const result = await getEmployeesAuditLog(req.query)
+  return success(res, result)
 })
 
 exports.getAllEmployees = asyncHandler(async (req, res) => {
@@ -204,12 +210,17 @@ exports.getEmployeeTimeline = asyncHandler(async (req, res) => {
     performedBy: userId,
     ...dateFilter,
   })
-    .populate('leadId')
-    .populate('customerId')
+    .populate({ path: 'leadId', select: 'projectName jobId' })
+    .populate({ path: 'customerId', select: 'firstName email customerId' })
     .sort({ createdAt: -1 })
     .lean()
 
-  return success(res, { employee, timeline })
+  const entries = timeline.map((log) => ({
+    ...log,
+    displayMessage: formatLog(log),
+  }))
+
+  return success(res, { employee, timeline: entries })
 })
 
 exports.toggleStatus = asyncHandler(async (req, res) => {

@@ -18,5 +18,6 @@ const AuditLogSchema = new mongoose.Schema(
 AuditLogSchema.index({ leadId: 1, createdAt: -1 })
 AuditLogSchema.index({ type: 1, createdAt: -1 })
 AuditLogSchema.index({ customerId: 1, createdAt: -1 })
+AuditLogSchema.index({ performedBy: 1, createdAt: -1 })
 
 module.exports = mongoose.model('AuditLog', AuditLogSchema)

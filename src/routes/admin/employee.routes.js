@@ -6,6 +6,7 @@ const validate = require('../../middleware/validate')
 // Special routes before /:userId
 router.get('/stats', ctrl.getStats)
 router.get('/performance', ctrl.getPerformance)
+router.get('/audit-log', ctrl.getEmployeesAuditLog)
 
 router.get('/', ctrl.getAllEmployees)
 router.post('/',

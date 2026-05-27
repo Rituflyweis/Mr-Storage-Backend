@@ -19,12 +19,22 @@ exports.getAllPOOrders = asyncHandler(async (req, res) => {
     .populate('customerId')
     .populate('raisedBy')
     .populate('assignedTo', 'name email role')
-    .populate('invoiceId')
+    .populate('invoiceId', 'invoiceNumber status poNumber paidAt')
     .populate('quotationId')
     .sort({ createdAt: -1 })
     .lean()
 
-  return success(res, { orders })
+  const ordersWithPayment = orders.map((o) => ({
+    ...o,
+    invoicePayment: o.invoiceId
+      ? {
+          status: o.invoiceId.status,
+          isPaid: o.invoiceId.status === 'paid',
+        }
+      : null,
+  }))
+
+  return success(res, { orders: ordersWithPayment })
 })
 
 exports.assignPOOrder = asyncHandler(async (req, res) => {
