@@ -55,6 +55,7 @@ const AUDIT_ACTIONS = {
   LEAD_EDITED:              'lead.edited',
   LEAD_TEMPERATURE_UPDATED: 'lead.temperature_updated',
   LEAD_TERMINATED:          'lead.terminated',
+  LEAD_NOTE_ADDED:          'lead.note_added',
   BUILDINGS_CREATED:        'lead.buildings_created',
   BOM_APPROVED:             'bom.approved',
   BOM_REJECTED:             'bom.rejected',

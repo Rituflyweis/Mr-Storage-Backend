@@ -15,25 +15,27 @@ const {
   PO_PROJECT_MATCH,
   getCustomerIdsWithRaisedPO,
 } = require('../../utils/customerPoFilter')
-const { startOfMonth, endOfMonth } = require('date-fns')
-
 exports.getCustomerStats = asyncHandler(async (req, res) => {
-  const now = new Date()
-  const monthStart = startOfMonth(now)
-  const monthEnd = endOfMonth(now)
+  const poCustomerIds = await getCustomerIdsWithRaisedPO()
 
-  const [totalCustomers, activeCustomers, totalProjects, inExecution, notAssigned, completed, returningAgg] = await Promise.all([
-    Customer.countDocuments(),
-    Customer.countDocuments({ isActive: true }),
-    Lead.countDocuments(),
-    Lead.countDocuments({ lifecycleStatus: { $nin: [...CLOSED_STAGES, 'initial_contact'] }, isTerminated: false }),
-    Lead.countDocuments({ assignedSales: null, isTerminated: false }),
-    Lead.countDocuments({ lifecycleStatus: { $in: CLOSED_STAGES } }),
-    Lead.aggregate([
-      { $group: { _id: '$customerId', count: { $sum: 1 } } },
-      { $match: { count: { $gt: 1 } } },
-      { $count: 'total' },
-    ]),
+  const [totalCustomers, activeCustomers, totalProjects, inExecution, notAssigned, completed] = await Promise.all([
+    Customer.countDocuments({ _id: { $in: poCustomerIds } }),
+    Customer.countDocuments({ _id: { $in: poCustomerIds }, isActive: true }),
+    Lead.countDocuments(PO_PROJECT_MATCH),
+    Lead.countDocuments({
+      ...PO_PROJECT_MATCH,
+      lifecycleStatus: { $nin: [...CLOSED_STAGES, 'initial_contact'] },
+      isTerminated: false,
+    }),
+    Lead.countDocuments({
+      ...PO_PROJECT_MATCH,
+      assignedSales: null,
+      isTerminated: false,
+    }),
+    Lead.countDocuments({
+      ...PO_PROJECT_MATCH,
+      lifecycleStatus: { $in: CLOSED_STAGES },
+    }),
   ])
 
   return success(res, {

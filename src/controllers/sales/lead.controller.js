@@ -15,10 +15,16 @@ const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES } = require('../../config/constants')
+const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES, LEAD_TEMPERATURES } = require('../../config/constants')
 const { buildLeadCreatePayload, applyLeadUpdateFromBody, escapeRegex } = require('../../utils/leadPayload')
-const { buildSalesLeadFilter } = require('../../utils/leadQueryFilter')
+const {
+  buildSalesLeadFilter,
+  buildSalesLeadsByScoreFilter,
+  mapLeadByScoreRow,
+} = require('../../utils/leadQueryFilter')
+const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
+const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const { parse } = require('csv-parse/sync')
 const bcrypt = require('bcryptjs')
 
@@ -38,6 +44,49 @@ exports.exportLeadsExcel = asyncHandler(async (req, res) => {
   return success(res, result)
 })
 
+exports.getLeadsByScore = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20 } = req.query
+  const { filter, error } = await buildSalesLeadsByScoreFilter(req.query, req.user._id)
+  if (error) return badRequest(res, error)
+
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+  const skip = (parsedPage - 1) * parsedLimit
+
+  const [leads, total] = await Promise.all([
+    Lead.find(filter)
+      .populate({ path: 'customerId', select: 'firstName email customerId' })
+      .select('_id jobId projectName location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt')
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    Lead.countDocuments(filter),
+  ])
+
+  return success(res, {
+    leads: leads.map(mapLeadByScoreRow),
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
+})
+
+exports.updateLeadTemperature = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const { temperature } = req.body
+
+  if (!temperature || !LEAD_TEMPERATURES.includes(temperature)) {
+    return badRequest(res, 'temperature is required and must be hot, warm, or cold')
+  }
+
+  const { lead, error, status } = await guardLead(leadId, req.user._id)
+  if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
+
+  const result = await setLeadTemperatureManual(lead, temperature, req.user._id)
+  return success(res, { lead: result })
+})
+
 exports.getLeads = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20 } = req.query
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
@@ -48,7 +97,7 @@ exports.getLeads = asyncHandler(async (req, res) => {
   const skip = (parsedPage - 1) * parsedLimit
   const [leads, total] = await Promise.all([
     Lead.find(filter)
-      .select('_id projectName customerId lifecycleStatus quoteValue leadScoring buildingType location')
+      .select('_id projectName customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO')
       .populate({ path: 'customerId', select: 'firstName email' })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -81,6 +130,7 @@ exports.getLeads = asyncHandler(async (req, res) => {
     leadScoring: { score: lead.leadScoring?.score || 0 },
     buildingType: lead.buildingType || '',
     location: lead.location || '',
+    isRaisedToPO: lead.isRaisedToPO === true,
     nextFollowUp: nextFollowUpByLeadId.get(String(lead._id)) || null,
   }))
 
@@ -356,6 +406,8 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     expectedProfit: (lead.quoteValue || 0) - (budget.totalBudget || 0),
   } : null
 
+  const leadNotes = await formatLeadNotes(lead)
+
   return success(res, {
     lead,
     customer,
@@ -368,8 +420,42 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     buildings,
     budget: budgetOut,
     recentMessages,
+    leadNotes,
     shipments: [],
   })
+})
+
+exports.getLeadNotes = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const { error, status } = await guardLead(leadId, req.user._id)
+  if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
+
+  const lead = await Lead.findById(leadId).select('leadNotes projectName jobId').lean()
+  const notes = await formatLeadNotes(lead)
+
+  return success(res, {
+    leadId: lead._id,
+    projectName: lead.projectName || '',
+    jobId: lead.jobId || null,
+    notes,
+    total: notes.length,
+  })
+})
+
+exports.createLeadNote = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const { note } = req.body
+
+  const { lead, error, status } = await guardLead(leadId, req.user._id)
+  if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
+
+  try {
+    const entry = await appendLeadNote(lead, note, req.user._id)
+    return success(res, { note: entry }, 'Note added')
+  } catch (err) {
+    if (err.code === 'NOTE_REQUIRED') return badRequest(res, err.message)
+    throw err
+  }
 })
 
 exports.editLead = asyncHandler(async (req, res) => {

@@ -98,6 +98,10 @@ const formatAuditActivityMessage = (log, context = {}) => {
         : `Lead temperature updated${forProject}`
     case AUDIT_ACTIONS.LEAD_TERMINATED:
       return `Lead terminated${forProject}`
+    case AUDIT_ACTIONS.LEAD_NOTE_ADDED:
+      return meta.notePreview
+        ? `Note added${forProject}: ${meta.notePreview}`
+        : `Note added${forProject}`
     case AUDIT_ACTIONS.LEAD_ESCALATED:
       return `Lead escalated${forProject}`
     case AUDIT_ACTIONS.LEAD_PO_RAISED:

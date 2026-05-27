@@ -54,6 +54,15 @@ const DocumentSchema = new mongoose.Schema(
   { _id: true }
 )
 
+const LeadNoteSchema = new mongoose.Schema(
+  {
+    note:    { type: String, required: true },
+    addedAt: { type: Date, default: Date.now },
+    addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  },
+  { _id: true }
+)
+
 const LeadSchema = new mongoose.Schema(
   {
     customerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
@@ -99,6 +108,7 @@ const LeadSchema = new mongoose.Schema(
     poStatus:        { type: String, enum: PO_STATUSES, default: null },
 
     notes:     { type: String, default: '' },
+    leadNotes: { type: [LeadNoteSchema], default: [] },
     documents: { type: [DocumentSchema], default: [] },
 
     aiQuoteData:               { type: mongoose.Schema.Types.Mixed, default: null },

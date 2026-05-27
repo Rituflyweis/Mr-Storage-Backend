@@ -55,7 +55,7 @@ Authorization: Bearer <access_token>
 | `warm` | Score 40–69 (auto) or set manually |
 | `cold` | Score &lt; 40 (auto) or set manually |
 
-Query filter `status` on `GET /api/admin/leads/by-score` is an alias for `temperature`.
+Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/leads/by-score` is an alias for **`temperature`** (not lifecycle status).
 
 ### Door / window / insulation (request → DB)
 
@@ -79,12 +79,13 @@ Query filter `status` on `GET /api/admin/leads/by-score` is an alias for `temper
 | Create customer + first project | `POST /api/admin/customers` | — |
 | Customer detail → add project | `POST /api/admin/customers/:customerId/leads` | `POST /api/sales/customers/:customerId/projects` |
 | Lead section → add lead | `POST /api/admin/leads` | `POST /api/sales/leads` |
+| Lead section → list leads | `GET /api/admin/leads` | `GET /api/sales/leads` |
 | Edit customer | `PUT /api/admin/customers/:customerId` | `PUT /api/sales/customers/:customerId` |
 | Edit lead / project | `PUT /api/admin/leads/:leadId` | `PUT /api/sales/leads/:leadId` |
 | Assign sales rep (admin only) | `PUT /api/admin/leads/:leadId/assign` | — (sales auto-assigned on create) |
 | Export leads (Excel → S3 URL) | `GET /api/admin/leads/export/excel` | `GET /api/sales/leads/export/excel` |
-| Leads by score (admin) | `GET /api/admin/leads/by-score` | — |
-| Set lead temperature (admin) | `PUT /api/admin/leads/:leadId/temperature` | — |
+| Leads by score | `GET /api/admin/leads/by-score` | `GET /api/sales/leads/by-score` |
+| Set lead temperature | `PUT /api/admin/leads/:leadId/temperature` | `PUT /api/sales/leads/:leadId/temperature` |
 | Employee audit / last activity | `GET /api/admin/employees/audit-log` | — |
 
 ---
@@ -112,6 +113,9 @@ Query filter `status` on `GET /api/admin/leads/by-score` is an alias for `temper
 | 17 | GET | `/api/admin/leads/by-score` | admin |
 | 18 | PUT | `/api/admin/leads/:leadId/temperature` | admin |
 | 19 | GET | `/api/admin/employees/audit-log` | admin |
+| 24 | GET | `/api/sales/leads` | sales |
+| 25 | GET | `/api/sales/leads/by-score` | sales |
+| 26 | PUT | `/api/sales/leads/:leadId/temperature` | sales |
 
 ---
 
@@ -1323,7 +1327,7 @@ At least one of `firstName`, `email`, `phone` required.
 |---|---|
 | **Role** | `admin` |
 | **UI** | Meetings list / calendar |
-| **Change** | Returns **all** meetings by default (including completed); optional `status` filter; **removed** `startDate` / `endDate`; list now populates `leadId` |
+| **Change** | **Default list** excludes `completed` and `cancelled` (active/upcoming only); pass `?status=` for history; optional `search` on title; `leadId` populated |
 
 ### Path parameters
 
@@ -1333,7 +1337,8 @@ None.
 
 | Param | Type | Required | Notes |
 |-------|------|----------|--------|
-| `status` | string | No | `scheduled`, `completed`, `cancelled`, or `rescheduled`. Omit to return every status. |
+| `status` | string | No | `scheduled`, `completed`, `cancelled`, or `rescheduled`. Omit for default (see **Current**). |
+| `search` | string | No | Case-insensitive partial match on **meeting `title`** (e.g. `?search=Site`) |
 | ~~`startDate`~~ | — | — | **Removed** — no longer filters `meetingTime` |
 | ~~`endDate`~~ | — | — | **Removed** |
 
@@ -1345,7 +1350,15 @@ None.
 
 #### Previous (`data`)
 
-Only meetings with `status !== "completed"`. `leadId` was an ObjectId string (not populated). Date range applied when `startDate` / `endDate` were sent.
+No `status` query → returned **all** meetings (including `completed` and `cancelled`). Same populated shape as below.
+
+#### Current (`data`)
+
+**Default (no `status`):** `status` is **`scheduled` or `rescheduled` only** (`completed` and `cancelled` excluded).
+
+**Explicit `?status=`:** Returns only that status (e.g. `?status=completed` for history).
+
+Sorted ascending by `meetingTime`. `customerId`, `leadId`, `assignedTo`, and `createdBy` are populated documents (or `leadId: null`).
 
 ```json
 {
@@ -1360,37 +1373,7 @@ Only meetings with `status !== "completed"`. `leadId` was an ObjectId string (no
       "notes": "Review warehouse specs",
       "status": "scheduled",
       "completedAt": null,
-      "leadId": "64f...",
-      "customerId": { "_id": "...", "customerId": "CUS-00042", "firstName": "Jane", "email": "jane@example.com" },
-      "assignedTo": { "_id": "...", "name": "Sales Rep", "email": "sales@example.com", "role": "sales" },
-      "createdBy": { "_id": "...", "name": "Admin", "email": "admin@example.com", "role": "admin" },
-      "createdAt": "...",
-      "updatedAt": "..."
-    }
-  ]
-}
-```
-
-Completed meetings were **excluded** from this list.
-
-#### Current (`data`)
-
-All statuses unless `?status=` is set. Sorted ascending by `meetingTime`. `customerId`, `leadId`, `assignedTo`, and `createdBy` are populated documents (or `leadId: null`).
-
-```json
-{
-  "meetings": [
-    {
-      "_id": "...",
-      "title": "Project discussion",
-      "meetingTime": "2024-03-15T14:00:00.000Z",
-      "duration": 60,
-      "mode": "online",
-      "meetingLink": "https://meet.google.com/abc",
-      "notes": "Review warehouse specs",
-      "status": "completed",
-      "completedAt": "2024-03-16T10:00:00.000Z",
-      "leadId": { "_id": "...", "leadId": "LEAD-00123", "projectName": "Warehouse A" },
+      "leadId": { "_id": "...", "jobId": "PRO-042", "projectName": "Warehouse A" },
       "customerId": { "_id": "...", "customerId": "CUS-00042", "firstName": "Jane", "email": "jane@example.com" },
       "assignedTo": { "_id": "...", "name": "Sales Rep", "email": "sales@example.com", "role": "sales" },
       "createdBy": { "_id": "...", "name": "Admin", "email": "admin@example.com", "role": "admin" },
@@ -1405,9 +1388,12 @@ All statuses unless `?status=` is set. Sorted ascending by `meetingTime`. `custo
 
 | Request | Result |
 |---------|--------|
-| `GET /api/admin/meetings` | All meetings (scheduled, completed, cancelled, rescheduled) |
+| `GET /api/admin/meetings` | **Scheduled + rescheduled** only (default) |
 | `GET /api/admin/meetings?status=scheduled` | Only scheduled |
-| `GET /api/admin/meetings?status=completed` | Only completed |
+| `GET /api/admin/meetings?status=completed` | Only completed (history) |
+| `GET /api/admin/meetings?status=cancelled` | Only cancelled (history) |
+| `GET /api/admin/meetings?search=Site` | Default status filter + title contains `Site` |
+| `GET /api/admin/meetings?status=scheduled&search=visit` | Scheduled + title match |
 
 ### Errors
 
@@ -1649,7 +1635,7 @@ Excel column set is identical to §15.
 |---|---|
 | **Role** | `admin` |
 | **UI** | Leads by score table |
-| **Change** | **New endpoint** — paginated list sorted by `updatedAt` desc |
+| **Change** | Paginated list by `updatedAt` desc; optional date range on `updatedAt`; each row includes full **`lifecycleHistory`** |
 
 ### Path parameters
 
@@ -1673,9 +1659,9 @@ None.
 
 ### Response body
 
-#### Previous
+#### Previous (`data`)
 
-`N/A`
+Rows did **not** include `lifecycleHistory` (only `lifecycleStatus`).
 
 #### Current (`data`)
 
@@ -1689,6 +1675,18 @@ None.
       "projectName": "Warehouse A",
       "location": "Austin, TX",
       "lifecycleStatus": "negotiation",
+      "lifecycleHistory": [
+        {
+          "stage": "initial_contact",
+          "changedAt": "2026-04-15T08:00:00.000Z",
+          "changedBy": "664c1a2b3d4e5f6789012001"
+        },
+        {
+          "stage": "proposal_sent",
+          "changedAt": "2026-05-20T14:30:00.000Z",
+          "changedBy": "664c1a2b3d4e5f6789012002"
+        }
+      ],
       "status": "hot",
       "score": 78,
       "quoteValue": 175000,
@@ -1705,17 +1703,28 @@ None.
 | Field | Notes |
 |-------|--------|
 | `projectId` | Auto-generated `jobId` (e.g. `PRO-042`) |
+| `lifecycleStatus` | Current stage on the lead |
+| `lifecycleHistory` | Full array from `Lead.lifecycleHistory` (`stage`, `changedAt`, `changedBy` as ObjectId — not populated) |
 | `status` | Same as `temperature` (hot / warm / cold) for UI columns |
 | `score` | AI score 0–100 from `leadScoring.score` |
 | `quoteValue` | Project / quote value on the lead |
 
 Sorted by **`updatedAt` descending** (most recently updated first).
 
+**Example (date range + pagination only — no temperature / search):**
+
+```http
+GET /api/admin/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&limit=20
+```
+
+`startDate` / `endDate` filter **`Lead.updatedAt`** (end date includes full calendar day). Either date may be omitted.
+
 ### Errors
 
 | HTTP | Message |
 |------|---------|
 | 400 | Invalid `temperature` / `status` |
+| 400 | Invalid `startDate` / `endDate` (must be ISO 8601 when provided) |
 
 ---
 
@@ -1774,11 +1783,56 @@ Required. One of: `hot`, `warm`, `cold`.
 
 Manual temperature is kept on save. When **AI chat re-scores** the lead, temperature is recalculated from score and `temperatureManual` is cleared.
 
+**Implementation:** Shared helper `setLeadTemperatureManual` in `src/utils/leadTemperature.js` (used by admin and sales).
+
 ### Errors
 
 | HTTP | Message |
 |------|---------|
 | 400 | Invalid or missing `temperature` |
+| 404 | Lead not found |
+
+---
+
+## §26 — Sales manual lead temperature
+
+### `PUT /api/sales/leads/:leadId/temperature`
+
+Same contract as admin **§18**. Sales may only update leads **assigned to them** (`assignedSales` = current user).
+
+**Auth:** Sales JWT.
+
+**Request body:**
+
+```json
+{
+  "temperature": "hot"
+}
+```
+
+Required. One of: `hot`, `warm`, `cold`.
+
+**Response `data`:** Same as §18:
+
+```json
+{
+  "lead": {
+    "leadId": "...",
+    "projectId": "PRO-042",
+    "temperature": "hot",
+    "temperatureManual": true
+  }
+}
+```
+
+After update, `GET /api/sales/leads/by-score` reflects the new `temperature` / `status` on the row (filter by `?temperature=` also uses stored `leadScoring.temperature`).
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid or missing `temperature` |
+| 403 | Lead not assigned to you |
 | 404 | Lead not found |
 
 ---
@@ -1884,6 +1938,8 @@ None specific (401 if unauthorized).
 | GET | `/api/admin/customers/:customerId/projects/:leadId` | 404 unless that lead has `isRaisedToPO: true` |
 | GET | `/api/sales/customers` | Same PO rule, scoped to `assignedSales` = current user |
 | GET | `/api/sales/customers/:customerId/projects` | Only PO-raised leads assigned to current user |
+| GET | `/api/admin/customers/stats` | All counts scoped to PO-raised projects / PO customers (aligned with list + projects) |
+| GET | `/api/sales/customers/stats` | `total`, `active`, `newThisMonth`, `returning` — PO customers assigned to current user; `returning` = &gt;1 PO project per customer |
 
 ### Frontend impact
 
@@ -2016,10 +2072,116 @@ Paginated follow-up activity across **all employees** (not scoped to one rep).
 
 ---
 
+## §24 — Sales leads list: `isRaisedToPO` on each row
+
+### `GET /api/sales/leads`
+
+**Auth:** Sales JWT. Scoped to `assignedSales = current user` (unchanged).
+
+**Change:** Each item in `data.leads` now includes **`isRaisedToPO`** (boolean).
+
+#### Previous (`data.leads[]`)
+
+```json
+{
+  "_id": "...",
+  "projectName": "...",
+  "customerId": { "_id": "...", "firstName": "...", "email": "..." },
+  "lifecycleStatus": "initial_contact",
+  "quoteValue": 0,
+  "leadScoring": { "score": 0 },
+  "buildingType": "",
+  "location": "",
+  "nextFollowUp": null
+}
+```
+
+`isRaisedToPO` was **omitted** (not selected / not mapped in the response).
+
+#### Current (`data.leads[]`)
+
+Same fields as above, plus:
+
+```json
+{
+  "isRaisedToPO": false
+}
+```
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `isRaisedToPO` | boolean | `true` after `POST /api/sales/leads/:leadId/po-order`; otherwise `false` |
+
+**Query / pagination:** Unchanged (`page`, `limit`, plus existing list filters via `buildSalesLeadFilter`).
+
+**Admin note:** `GET /api/admin/leads` already returned the full lead document (including `isRaisedToPO`); no admin list change required.
+
+**FE:** Use `isRaisedToPO` on the sales lead table (e.g. PO badge, disable “Raise PO” when already `true`). Customer panel PO-only rules (§20) are separate from this list field.
+
+---
+
+## §25 — Sales leads by score (assigned leads only)
+
+### `GET /api/sales/leads/by-score`
+
+Same contract as admin **§17** (`GET /api/admin/leads/by-score`), but results are limited to leads where **`assignedSales` = logged-in sales user**.
+
+**Auth:** Sales JWT.
+
+**Query parameters:** Same as §17 — `startDate`, `endDate` (on `updatedAt`), `temperature`, `status` (alias for `temperature`), `search`, `page`, `limit`.
+
+**Response `data`:** Same row shape as §17 (includes **`lifecycleHistory`**).
+
+```json
+{
+  "leads": [
+    {
+      "leadId": "...",
+      "projectId": "PRO-042",
+      "customerName": "Jane",
+      "projectName": "Warehouse A",
+      "location": "Austin, TX",
+      "lifecycleStatus": "negotiation",
+      "lifecycleHistory": [
+        { "stage": "initial_contact", "changedAt": "2026-04-15T08:00:00.000Z", "changedBy": "..." }
+      ],
+      "status": "hot",
+      "score": 78,
+      "quoteValue": 175000,
+      "temperature": "hot",
+      "updatedAt": "2026-05-26T10:30:00.000Z"
+    }
+  ],
+  "total": 12,
+  "page": 1,
+  "limit": 20
+}
+```
+
+Sorted by **`updatedAt` descending**.
+
+**Example (date range + pagination only):**
+
+```http
+GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&limit=20
+```
+
+**Note:** `GET /api/sales/leads/scored` (existing) is a different endpoint — sorted by `leadScoring.score`, different response shape. Use `/by-score` for parity with the admin leads-by-score table.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid `temperature` / `status` |
+| 400 | Invalid `startDate` / `endDate` (ISO 8601) |
+
+---
+
 ## Related unchanged endpoints (reference)
 
 | Method | Endpoint | Notes |
 |--------|----------|--------|
+| GET | `/api/admin/leads` | Full lead objects — includes `isRaisedToPO` |
 | PUT | `/api/admin/leads/:leadId/assign` | `{ "employeeId": "<userId>" }` — still the only way to change `assignedSales` on admin |
 | PUT | `/api/sales/leads/:leadId/lifecycle` | Still works; `lifecycleStatus` can also be sent on `PUT /api/sales/leads/:leadId` now |
 | GET | `/api/admin/customers/:customerId` | Customer detail + financial summary (not paginated invoices — use §7) |
@@ -2032,6 +2194,75 @@ Paginated follow-up activity across **all employees** (not scoped to one rep).
 
 ## Maintenance
 
-**Last updated:** 2026-05-26 (§23 admin follow-up activity log)
+**Last updated:** 2026-05-26 — §13 meetings default status filter; §17 / §25 `lifecycleHistory` + `updatedAt` date range on by-score
+
+---
+
+## §27 — Lead notes log (admin + sales)
+
+### Data model (`Lead.leadNotes[]`)
+
+Each entry:
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `_id` | ObjectId | Subdocument id |
+| `note` | string | Note text |
+| `addedAt` | Date | Timestamp (ISO in API) |
+| `addedBy` | ObjectId → User | Who added the note |
+
+Legacy string field **`Lead.notes`** (single line on create/edit lead) is unchanged.
+
+### Endpoints
+
+| Method | Admin | Sales |
+|--------|-------|-------|
+| GET notes | `GET /api/admin/leads/:leadId/notes` | `GET /api/sales/leads/:leadId/notes` |
+| POST note | `POST /api/admin/leads/:leadId/notes` | `POST /api/sales/leads/:leadId/notes` |
+
+**Auth:** Admin JWT / Sales JWT. Sales: lead must be **assigned** to current user.
+
+**POST body:**
+
+```json
+{
+  "note": "Customer asked for revised quote by Friday."
+}
+```
+
+**GET / POST response `data` (list):**
+
+```json
+{
+  "leadId": "...",
+  "projectName": "Warehouse A",
+  "jobId": "PRO-042",
+  "notes": [
+    {
+      "_id": "...",
+      "note": "Customer asked for revised quote by Friday.",
+      "addedAt": "2026-05-28T10:00:00.000Z",
+      "addedBy": {
+        "_id": "...",
+        "name": "Sales One",
+        "email": "sales1@example.com",
+        "role": "sales"
+      }
+    }
+  ],
+  "total": 1
+}
+```
+
+**POST success** also returns `data.note` (single new entry, same shape as one array item).
+
+Sorted **newest `addedAt` first**.
+
+**Also on lead detail:** `GET .../leads/:leadId/detail` includes `leadNotes` (same array shape) for admin and sales.
+
+### Audit
+
+- Action: `lead.note_added` (`AUDIT_ACTIONS.LEAD_NOTE_ADDED`)
+- Shown in employee audit log / timeline as e.g. “Note added for Warehouse A: …”
 
 When the API changes again, update the matching section with **Previous** = last published contract, **Current** = new contract, and bump **Last updated**. New changes after a frontend handoff should be appended as the next section number (do not renumber sections already shared).

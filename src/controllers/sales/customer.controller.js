@@ -26,14 +26,14 @@ exports.getCustomerStats = asyncHandler(async (req, res) => {
   const monthStart = startOfMonth(now)
   const monthEnd = endOfMonth(now)
 
-  const ownCustomerIds = await getOwnCustomerIds(salesId)
+  const poCustomerIds = await getSalesCustomerIdsWithRaisedPO(salesId)
 
   const [total, active, newThisMonth, returningAgg] = await Promise.all([
-    Customer.countDocuments({ _id: { $in: ownCustomerIds } }),
-    Customer.countDocuments({ _id: { $in: ownCustomerIds }, isActive: true }),
-    Customer.countDocuments({ _id: { $in: ownCustomerIds }, createdAt: { $gte: monthStart, $lte: monthEnd } }),
+    Customer.countDocuments({ _id: { $in: poCustomerIds } }),
+    Customer.countDocuments({ _id: { $in: poCustomerIds }, isActive: true }),
+    Customer.countDocuments({ _id: { $in: poCustomerIds }, createdAt: { $gte: monthStart, $lte: monthEnd } }),
     Lead.aggregate([
-      { $match: { assignedSales: salesId } },
+      { $match: { assignedSales: salesId, ...PO_PROJECT_MATCH } },
       { $group: { _id: '$customerId', count: { $sum: 1 } } },
       { $match: { count: { $gt: 1 } } },
       { $count: 'total' },

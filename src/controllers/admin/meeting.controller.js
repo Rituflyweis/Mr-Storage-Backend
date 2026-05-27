@@ -1,11 +1,13 @@
 const Meeting = require('../../models/Meeting')
+const Customer = require('../../models/Customer')
+const Lead = require('../../models/Lead')
 const auditService = require('../../services/audit.service')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, MEETING_STATUSES } = require('../../config/constants')
 
 exports.getMeetings = asyncHandler(async (req, res) => {
-  const { status } = req.query
+  const { status, search } = req.query
   const filter = {}
 
   if (status) {
@@ -13,6 +15,13 @@ exports.getMeetings = asyncHandler(async (req, res) => {
       return badRequest(res, 'Invalid status. Use scheduled, completed, cancelled, or rescheduled')
     }
     filter.status = status
+  } else {
+    filter.status = { $nin: ['completed', 'cancelled'] }
+  }
+
+  if (search && search.trim()) {
+    const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    filter.title = { $regex: escaped, $options: 'i' }
   }
 
   const meetings = await Meeting.find(filter)
@@ -80,12 +89,48 @@ exports.editMeeting = asyncHandler(async (req, res) => {
   const meeting = await Meeting.findById(meetingId)
   if (!meeting) return notFound(res, 'Meeting not found')
 
-  if (updates.mode === 'online' && !updates.meetingLink && !meeting.meetingLink) {
+  const effectiveMode = updates.mode !== undefined ? updates.mode : meeting.mode
+  const effectiveLink = updates.meetingLink !== undefined ? updates.meetingLink : meeting.meetingLink
+  if (effectiveMode === 'online' && !effectiveLink) {
     return badRequest(res, 'Meeting link required for online meetings')
   }
 
-  const ALLOWED = ['title','meetingTime','duration','mode','meetingLink','notes','assignedTo','leadId','status']
-  ALLOWED.forEach(k => { if (updates[k] !== undefined) meeting[k] = updates[k] })
+  if (updates.status !== undefined && !MEETING_STATUSES.includes(updates.status)) {
+    return badRequest(res, 'Invalid status. Use scheduled, completed, cancelled, or rescheduled')
+  }
+
+  const nextCustomerId = updates.customerId !== undefined ? updates.customerId : meeting.customerId
+  const nextLeadId = updates.leadId !== undefined ? updates.leadId : meeting.leadId
+
+  if (updates.customerId !== undefined) {
+    const customer = await Customer.findById(updates.customerId).select('_id').lean()
+    if (!customer) return notFound(res, 'Customer not found')
+  }
+
+  if (nextLeadId) {
+    const lead = await Lead.findById(nextLeadId).select('customerId').lean()
+    if (!lead) return notFound(res, 'Lead not found')
+    if (String(lead.customerId) !== String(nextCustomerId)) {
+      return badRequest(res, 'Lead does not belong to this customer')
+    }
+  }
+
+  const ALLOWED = [
+    'title', 'meetingTime', 'duration', 'mode', 'meetingLink', 'notes',
+    'assignedTo', 'leadId', 'customerId', 'status',
+  ]
+  ALLOWED.forEach((k) => {
+    if (updates[k] === undefined) return
+    if (k === 'meetingTime') {
+      meeting.meetingTime = new Date(updates.meetingTime)
+      return
+    }
+    if (k === 'leadId' && (updates.leadId === null || updates.leadId === '')) {
+      meeting.leadId = null
+      return
+    }
+    meeting[k] = updates[k]
+  })
   await meeting.save()
 
   await auditService.log({

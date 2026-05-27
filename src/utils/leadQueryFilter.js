@@ -1,6 +1,6 @@
 const Customer = require('../models/Customer')
 const { buildDateFilter } = require('./dateRange')
-const { LEAD_TEMPERATURES } = require('../config/constants')
+const { LEAD_TEMPERATURES, resolveLeadTemperatureFromScore } = require('../config/constants')
 
 const buildAdminLeadFilter = async (query = {}) => {
   const {
@@ -66,11 +66,12 @@ const buildSalesLeadFilter = async (query = {}, salesId) => {
 }
 
 /**
- * Admin "leads by score" list — filters on Lead.updatedAt, optional temperature + search.
+ * Leads by score list — filters on Lead.updatedAt, optional temperature + search.
  * Query `status` is accepted as an alias for `temperature` (hot | warm | cold).
  */
-const buildAdminLeadsByScoreFilter = async (query = {}) => {
+const buildLeadsByScoreFilter = async (query = {}, { assignedSales } = {}) => {
   const filter = buildDateFilter(query, 'updatedAt')
+  if (assignedSales) filter.assignedSales = assignedSales
 
   const temperature = query.temperature || query.status
   if (temperature) {
@@ -95,8 +96,36 @@ const buildAdminLeadsByScoreFilter = async (query = {}) => {
   return { filter }
 }
 
+const buildAdminLeadsByScoreFilter = async (query = {}) => buildLeadsByScoreFilter(query)
+
+const buildSalesLeadsByScoreFilter = async (query = {}, salesId) =>
+  buildLeadsByScoreFilter(query, { assignedSales: salesId })
+
+const mapLeadByScoreRow = (lead) => {
+  const score = lead.leadScoring?.score ?? 0
+  const temperature = lead.leadScoring?.temperature
+    ?? resolveLeadTemperatureFromScore(score)
+
+  return {
+    leadId: lead._id,
+    projectId: lead.jobId || '',
+    customerName: lead.customerId?.firstName || '',
+    projectName: lead.projectName || '',
+    location: lead.location || '',
+    lifecycleStatus: lead.lifecycleStatus,
+    lifecycleHistory: Array.isArray(lead.lifecycleHistory) ? lead.lifecycleHistory : [],
+    status: temperature,
+    score,
+    quoteValue: lead.quoteValue ?? 0,
+    temperature,
+    updatedAt: lead.updatedAt,
+  }
+}
+
 module.exports = {
   buildAdminLeadFilter,
   buildSalesLeadFilter,
   buildAdminLeadsByScoreFilter,
+  buildSalesLeadsByScoreFilter,
+  mapLeadByScoreRow,
 }

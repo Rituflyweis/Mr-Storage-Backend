@@ -13,6 +13,8 @@ router.get('/terminated', ctrl.getTerminatedLeads)
 router.get('/scoring/today', ctrl.getScoringToday)
 router.get('/by-score',
   [
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
     query('temperature').optional().isIn(LEAD_TEMPERATURES),
     query('status').optional().isIn(LEAD_TEMPERATURES),
     query('search').optional().trim(),
@@ -43,6 +45,12 @@ router.get('/:leadId/documents',
   [query('type').optional().isIn(['drawing', 'approval', 'general', 'contract', 'photo', 'other'])],
   validate,
   ctrl.getLeadDocuments
+)
+router.get('/:leadId/notes', ctrl.getLeadNotes)
+router.post('/:leadId/notes',
+  [body('note').notEmpty().trim()],
+  validate,
+  ctrl.createLeadNote
 )
 router.get('/:leadId/budget', ctrl.getLeadBudget)
 
