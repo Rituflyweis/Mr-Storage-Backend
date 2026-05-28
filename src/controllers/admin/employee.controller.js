@@ -196,6 +196,48 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   return success(res, { employee })
 })
 
+exports.getEmployeeAssignedLeads = asyncHandler(async (req, res) => {
+  const { userId } = req.params
+  const { page = 1, limit = 20 } = req.query
+
+  const employee = await User.findById(userId).select('_id name email role isActive').lean()
+  if (!employee) return notFound(res, 'Employee not found')
+
+  const dateFilter = buildDateFilter(req.query)
+  const filter = { assignedSales: userId, ...dateFilter }
+
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+  const skip = (parsedPage - 1) * parsedLimit
+
+  const [leads, total] = await Promise.all([
+    Lead.find(filter)
+      .populate({ path: 'customerId', select: 'firstName lastName email customerId' })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    Lead.countDocuments(filter),
+  ])
+
+  const rows = leads.map((lead) => ({
+    clientName: lead.customerId?.firstName || '',
+    projectId: lead.jobId || '',
+    location: lead.location || '',
+    status: lead.lifecycleStatus,
+    quoteValue: lead.quoteValue ?? 0,
+    lead,
+  }))
+
+  return success(res, {
+    employee,
+    leads: rows,
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
+})
+
 exports.getEmployeeTimeline = asyncHandler(async (req, res) => {
   const { userId } = req.params
   const dateFilter = buildDateFilter(req.query, 'createdAt')

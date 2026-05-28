@@ -87,6 +87,7 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | Leads by score | `GET /api/admin/leads/by-score` | `GET /api/sales/leads/by-score` |
 | Set lead temperature | `PUT /api/admin/leads/:leadId/temperature` | `PUT /api/sales/leads/:leadId/temperature` |
 | Employee audit / last activity | `GET /api/admin/employees/audit-log` | — |
+| Employee assigned leads | `GET /api/admin/employees/:userId/assigned-leads` | — |
 
 ---
 
@@ -2194,7 +2195,116 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 
 ## Maintenance
 
-**Last updated:** 2026-05-26 — §13 meetings default status filter; §17 / §25 `lifecycleHistory` + `updatedAt` date range on by-score
+**Last updated:** 2026-05-26 — §28 employee assigned leads; §13 meetings default status filter; §17 / §25 by-score updates
+
+---
+
+## §28 — Admin employee assigned leads
+
+### `GET /api/admin/employees/:userId/assigned-leads`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Employees → employee detail → assigned leads list |
+| **Change** | **New endpoint** — paginated leads assigned to a specific employee |
+
+### Path parameters
+
+| Param | Type | Required | Notes |
+|-------|------|----------|--------|
+| `userId` | MongoId | Yes | Employee / user `_id` (`assignedSales` on leads) |
+
+### Query parameters
+
+| Param | Type | Required | Notes |
+|-------|------|----------|--------|
+| `startDate` | ISO date | No | Filters `Lead.createdAt` (inclusive start) |
+| `endDate` | ISO date | No | Filters `Lead.createdAt` (inclusive end of day) |
+| `page` | number | No | Default `1` |
+| `limit` | number | No | Default `20`, max `200` |
+
+### Request body
+
+None.
+
+### Response body
+
+#### Previous
+
+`N/A`
+
+#### Current (`data`)
+
+```json
+{
+  "employee": {
+    "_id": "664c1a2b3d4e5f6789012001",
+    "name": "Sales One",
+    "email": "sales1@example.com",
+    "role": "sales",
+    "isActive": true
+  },
+  "leads": [
+    {
+      "clientName": "Jane Doe",
+      "projectId": "PRO-042",
+      "location": "Austin, TX",
+      "status": "negotiation",
+      "quoteValue": 175000,
+      "lead": {
+        "_id": "665a1b2c3d4e5f6789012345",
+        "jobId": "PRO-042",
+        "projectName": "Warehouse A",
+        "location": "Austin, TX",
+        "lifecycleStatus": "negotiation",
+        "quoteValue": 175000,
+        "customerId": {
+          "_id": "...",
+          "firstName": "Jane Doe",
+          "lastName": "",
+          "email": "jane@example.com",
+          "customerId": "CUS-00042"
+        },
+        "assignedSales": "664c1a2b3d4e5f6789012001",
+        "leadScoring": { "score": 78 },
+        "isRaisedToPO": false,
+        "createdAt": "2026-04-15T08:00:00.000Z",
+        "updatedAt": "2026-05-26T10:30:00.000Z"
+      }
+    }
+  ],
+  "total": 12,
+  "page": 1,
+  "limit": 20
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `clientName` | Customer `firstName` (from populated `customerId`) |
+| `projectId` | Lead `jobId` (e.g. `PRO-042`) |
+| `location` | Lead `location` |
+| `status` | Lead `lifecycleStatus` (pipeline stage) |
+| `quoteValue` | Lead `quoteValue` |
+| `lead` | **Full** lead document (lean) with populated `customerId` |
+
+Sorted by **`createdAt` descending**.
+
+**Example (date range + pagination):**
+
+```http
+GET /api/admin/employees/664c1a2b3d4e5f6789012001/assigned-leads?startDate=2026-05-01&endDate=2026-05-26&page=1&limit=20
+```
+
+Omit `startDate` / `endDate` to return all assigned leads for that employee (still paginated).
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid `startDate` / `endDate` (ISO 8601) |
+| 404 | Employee not found |
 
 ---
 
