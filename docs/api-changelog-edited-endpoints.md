@@ -35,9 +35,19 @@ Authorization: Bearer <access_token>
 
 `chat` | `manual` | `import` | `customer_portal`
 
-### Invoice `status` (query filter)
+### Invoice `status` (workflow — do not send on create)
 
 `draft` | `sent` | `paid` | `overdue` | `cancelled`
+
+Set by server: `draft` on create; `sent` after `POST .../send`; `paid` after `PUT .../mark-paid`.
+
+### Payment schedule `amountType` (stage)
+
+`percentage` | `fixed`
+
+### Payment schedule stage `status`
+
+`pending` | `invoiced` | `paid` | `overdue`
 
 ### PO `status` (query filter)
 
@@ -88,6 +98,12 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | Set lead temperature | `PUT /api/admin/leads/:leadId/temperature` | `PUT /api/sales/leads/:leadId/temperature` |
 | Employee audit / last activity | `GET /api/admin/employees/audit-log` | — |
 | Employee assigned leads | `GET /api/admin/employees/:userId/assigned-leads` | — |
+| Create invoice (project in URL) | `POST /api/leads/:leadId/invoices` | `POST /api/leads/:leadId/invoices` |
+| Get / edit / send / mark paid invoice | `GET/PUT/POST /api/invoices/:invoiceId` (+ actions) | same |
+| List invoices for project | `GET /api/leads/:leadId/invoices` | same |
+| Payment schedule (per lead) | `POST/GET /api/payment-schedules` | same |
+
+**Auth:** All common invoice + payment-schedule routes require JWT role **`admin`** or **`sales`**. Sales must own the lead (`assignedSales` = current user) for create and mark-paid.
 
 ---
 
@@ -114,6 +130,15 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | 17 | GET | `/api/admin/leads/by-score` | admin |
 | 18 | PUT | `/api/admin/leads/:leadId/temperature` | admin |
 | 19 | GET | `/api/admin/employees/audit-log` | admin |
+| 28 | GET | `/api/admin/employees/:userId/assigned-leads` | admin |
+| 29 | POST | `/api/leads/:leadId/invoices` | admin, sales |
+| 30 | GET | `/api/invoices/:invoiceId` | admin, sales |
+| 31 | PUT | `/api/invoices/:invoiceId` | admin, sales |
+| 32 | POST | `/api/invoices/:invoiceId/send` | admin, sales |
+| 33 | PUT | `/api/invoices/:invoiceId/mark-paid` | admin, sales |
+| 34 | GET | `/api/leads/:leadId/invoices` | admin, sales |
+| 35 | POST | `/api/payment-schedules` | admin, sales |
+| 36 | GET | `/api/payment-schedules/lead/:leadId` | admin, sales |
 | 24 | GET | `/api/sales/leads` | sales |
 | 25 | GET | `/api/sales/leads/by-score` | sales |
 | 26 | PUT | `/api/sales/leads/:leadId/temperature` | sales |
@@ -2190,12 +2215,14 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 | PUT | `/api/admin/meetings/:meetingId` | Edit meeting (unchanged) |
 | PUT | `/api/admin/meetings/:meetingId/complete` | Mark complete (unchanged) |
 | GET | `/api/sales/leads/export` | Legacy CSV download in response body (not S3) |
+| GET | `/api/account/invoices` | Account panel invoice list (role `account`) |
+| PUT | `/api/account/invoices/:invoiceId/mark-paid` | Account mark paid (no payment-stage sync) |
 
 ---
 
 ## Maintenance
 
-**Last updated:** 2026-05-26 — §28 employee assigned leads; §13 meetings default status filter; §17 / §25 by-score updates
+**Last updated:** 2026-05-27 — §29–§36 common invoices + payment schedules
 
 ---
 
@@ -2374,5 +2401,410 @@ Sorted **newest `addedAt` first**.
 
 - Action: `lead.note_added` (`AUDIT_ACTIONS.LEAD_NOTE_ADDED`)
 - Shown in employee audit log / timeline as e.g. “Note added for Warehouse A: …”
+
+---
+
+## §29 — Common invoices (admin + sales)
+
+Shared module: `/api/invoices` and `/api/leads/:leadId/invoices`.  
+**Roles:** `admin`, `sales` (sales: lead access check on create / mark-paid).
+
+### Server-owned fields (never send on create)
+
+| Field | Set by |
+|-------|--------|
+| `leadId` | URL path `:leadId` on create |
+| `customerId` | From lead |
+| `quotationId` | Always `null` on create |
+| `invoiceNumber` | Auto `INV-0001`, … |
+| `poNumber` | Auto on **first** invoice per lead (`PO-0001`, …); reused on later invoices for same lead |
+| `createdBy` | Logged-in user |
+| `status` | `draft` on create |
+| `sentAt`, `paidBy`, `paidAt` | Workflow endpoints only |
+| `dueDate` | **Computed and stored:** `date + (daysToPay × 1 day)`. Do **not** send in body. Recomputed on save when `date` or `daysToPay` changes. |
+
+### Line item shape (`lineItems[]`)
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `images` | string[] | S3 URLs; **max 4** per line |
+| `items` | string[] | Catalog labels / item list selections |
+| `rate` | number | Unit rate |
+| `markup` | number | Per-line markup |
+| `quantity` | number | Default `1` |
+| `tax` | number | Tax amount for the line |
+| `total` | number | Line total (FE sends calculated value) |
+
+---
+
+### 29a. `POST /api/leads/:leadId/invoices` — Create draft
+
+| | |
+|---|---|
+| **Change** | **Create moved** from `POST /api/invoices` → path includes project. Body no longer accepts `leadId`, `customerId`, or `quotationId`. |
+
+#### Previous
+
+```http
+POST /api/invoices
+```
+
+```json
+{
+  "leadId": "...",
+  "customerId": "...",
+  "quotationId": "...",
+  "totalAmount": 280000
+}
+```
+
+#### Current
+
+```http
+POST /api/leads/:leadId/invoices
+```
+
+**Path:** `leadId` = project Mongo `_id`.
+
+**Request body**
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `totalAmount` | Yes | Invoice grand total |
+| `date` | No | ISO date; default now |
+| `daysToPay` | No | Used with `date` → stored `dueDate` |
+| `lineItems` | No | Array — see line item shape |
+| `subtotal` | No | |
+| `markupTotal` | No | Invoice-level markup total |
+| `discount` | No | |
+| `depositAmount` | No | |
+| `paymentScheduleStageId` | No | Optional — links one payment stage (see §30) |
+
+```json
+{
+  "date": "2026-05-27T00:00:00.000Z",
+  "daysToPay": 30,
+  "lineItems": [
+    {
+      "images": [],
+      "items": ["Steel frame package"],
+      "rate": 75000,
+      "markup": 5000,
+      "quantity": 1,
+      "tax": 0,
+      "total": 80000
+    }
+  ],
+  "subtotal": 1917952,
+  "markupTotal": 0,
+  "discount": 0,
+  "depositAmount": 0,
+  "totalAmount": 1917952,
+  "paymentScheduleStageId": "665b00000000000000000001"
+}
+```
+
+**Response `201` — `data`**
+
+```json
+{
+  "invoice": {
+    "_id": "64f...",
+    "invoiceNumber": "INV-0001",
+    "poNumber": "PO-0001",
+    "leadId": "665a...",
+    "customerId": "664c...",
+    "quotationId": null,
+    "date": "2026-05-27T00:00:00.000Z",
+    "daysToPay": 30,
+    "dueDate": "2026-06-26T00:00:00.000Z",
+    "paymentScheduleId": "665b...",
+    "paymentScheduleStageId": "665b...01",
+    "lineItems": [],
+    "subtotal": 1917952,
+    "markupTotal": 0,
+    "discount": 0,
+    "depositAmount": 0,
+    "totalAmount": 1917952,
+    "status": "draft",
+    "sentAt": null,
+    "paidBy": null,
+    "paidAt": null,
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+**Side effect:** If `paymentScheduleStageId` is set, that stage → `status: invoiced`, `invoiceId` set on the stage.
+
+| HTTP | Message |
+|------|---------|
+| 400 | Validation / stage not found for this project |
+| 403 | Sales — lead not assigned to you |
+| 404 | Lead not found |
+
+---
+
+### 29b. `GET /api/invoices/:invoiceId` — Get one
+
+**Request:** No body.
+
+**Response `200` — `data`**
+
+```json
+{
+  "invoice": {
+    "_id": "64f...",
+    "invoiceNumber": "INV-0001",
+    "poNumber": "PO-0001",
+    "leadId": "665a...",
+    "customerId": "664c...",
+    "date": "2026-05-27T00:00:00.000Z",
+    "daysToPay": 30,
+    "dueDate": "2026-06-26T00:00:00.000Z",
+    "lineItems": [],
+    "subtotal": 1917952,
+    "markupTotal": 0,
+    "discount": 0,
+    "depositAmount": 0,
+    "totalAmount": 1917952,
+    "status": "draft",
+    "paymentScheduleStageId": "665b...01",
+    "createdBy": { "_id": "...", "name": "...", "email": "..." },
+    "paidBy": null
+  },
+  "paymentSchedule": {
+    "_id": "665b...",
+    "leadId": "665a...",
+    "customerId": "664c...",
+    "totalAmount": 1917952,
+    "stages": [
+      {
+        "_id": "665b...01",
+        "stageName": "Deposit",
+        "amount": 30,
+        "amountType": "percentage",
+        "dueDate": "2026-06-01T00:00:00.000Z",
+        "status": "invoiced",
+        "invoiceId": "64f..."
+      }
+    ]
+  }
+}
+```
+
+| Change | Notes |
+|--------|--------|
+| **Previous** | `paymentSchedule` often `null` (queried by wrong field) |
+| **Current** | Schedule loaded by invoice’s **`leadId`** (one schedule per lead) |
+
+`paymentSchedule` is `null` if no schedule exists for the lead.
+
+---
+
+### 29c. `PUT /api/invoices/:invoiceId` — Edit draft
+
+**Only `status === "draft"`** can be edited.
+
+**Request body** (any subset):
+
+| Field | Notes |
+|-------|--------|
+| `date`, `daysToPay` | Triggers `dueDate` recalculation on save |
+| `lineItems`, `subtotal`, `markupTotal`, `discount`, `depositAmount`, `totalAmount` | |
+
+Do **not** send `leadId`, `customerId`, `quotationId`, `status`, `dueDate`, `invoiceNumber`, `poNumber`.
+
+**Response `200`:** `{ "invoice": { ... } }`
+
+| HTTP | Message |
+|------|---------|
+| 400 | Only draft invoices can be edited |
+
+---
+
+### 29d. `POST /api/invoices/:invoiceId/send` — Email customer
+
+**Request:** No body.
+
+**Response `200`:** `{ "invoice": { ..., "status": "sent", "sentAt": "..." } }`
+
+Sends Nodemailer email to customer. Audit: `invoice.sent`.
+
+---
+
+### 29e. `PUT /api/invoices/:invoiceId/mark-paid` — Mark paid
+
+**Request:** No body.
+
+**Rules**
+
+| Current status | Allowed? |
+|----------------|----------|
+| `sent`, `overdue` | Yes |
+| `draft`, `cancelled` | No — 400 |
+| `paid` | No — 400 |
+
+Sales: lead must be assigned to current user.
+
+**Response `200`:** `{ "invoice": { ..., "status": "paid", "paidBy", "paidAt" } }`
+
+**Side effect:** If `paymentScheduleStageId` is set, linked stage → `status: paid`, `paidAt`, `paidBy`. Audit: `invoice.paid` + `payment.stage_paid`.
+
+---
+
+### 29f. `GET /api/leads/:leadId/invoices` — List for project
+
+**Query:** optional `startDate`, `endDate` (filters invoice **`createdAt`**).
+
+**Response `200` — `data`**
+
+```json
+{
+  "invoices": [
+    {
+      "_id": "64f...",
+      "invoiceNumber": "INV-0001",
+      "totalAmount": 1917952,
+      "status": "draft",
+      "dueDate": "2026-06-26T00:00:00.000Z",
+      "createdBy": { "name": "..." },
+      "paidBy": null
+    }
+  ]
+}
+```
+
+Sorted **`createdAt` descending**. `createdBy` and `paidBy` populated.
+
+---
+
+## §30 — Common payment schedules (admin + sales)
+
+**One `PaymentSchedule` document per lead** (`leadId` unique). Invoices link to **one stage** via `paymentScheduleStageId` (optional).
+
+There is **no update** endpoint yet — create once per lead; stage status changes when invoices are created / marked paid.
+
+---
+
+### 30a. `POST /api/payment-schedules` — Create schedule
+
+| | |
+|---|---|
+| **Change** | Documented current contract (`stages[]`, not legacy `payments[]`) |
+
+**Request body**
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `leadId` | Yes | Project |
+| `stages` | Yes | Array, min 1 |
+| `totalAmount` | No | Defaults to `lead.quoteValue` |
+
+**Stage object**
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `stageName` | Yes | e.g. `Deposit` |
+| `amount` | Yes | Percentage value or fixed currency amount |
+| `amountType` | Yes | `percentage` or `fixed` — **all stages must match** |
+| `dueDate` | No | ISO date |
+
+```json
+{
+  "leadId": "665a1b2c3d4e5f6789012345",
+  "totalAmount": 1917952,
+  "stages": [
+    {
+      "stageName": "Deposit",
+      "amount": 30,
+      "amountType": "percentage",
+      "dueDate": "2026-06-01T00:00:00.000Z"
+    },
+    {
+      "stageName": "On delivery",
+      "amount": 70,
+      "amountType": "percentage",
+      "dueDate": "2026-07-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Validation**
+
+| Rule | Error if failed |
+|------|-----------------|
+| No existing schedule for `leadId` | 400 — already exists |
+| All `amountType` same | 400 — mixed types |
+| Percentages sum to **100** | 400 |
+| Fixed amounts sum to **`totalAmount`** | 400 |
+
+**Response `201` — `data`**
+
+```json
+{
+  "schedule": {
+    "_id": "665b...",
+    "leadId": "665a...",
+    "customerId": "664c...",
+    "totalAmount": 1917952,
+    "createdBy": "664c...",
+    "stages": [
+      {
+        "_id": "665b...01",
+        "stageName": "Deposit",
+        "amount": 30,
+        "amountType": "percentage",
+        "dueDate": "2026-06-01T00:00:00.000Z",
+        "status": "pending",
+        "invoiceId": null,
+        "paidAt": null,
+        "paidBy": null
+      }
+    ],
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+`customerId` and `createdBy` are set server-side from lead + user.
+
+---
+
+### 30b. `GET /api/payment-schedules/lead/:leadId` — Get by project
+
+**Path:** `leadId`
+
+**Response `200` — `data`**
+
+```json
+{
+  "schedule": { /* same shape as create response */ }
+}
+```
+
+Or `{ "schedule": null }` if none.
+
+---
+
+### Invoice ↔ payment schedule flow (FE)
+
+1. `POST /api/payment-schedules` with `leadId` + `stages` → note each stage `_id`.
+2. `POST /api/leads/:leadId/invoices` with optional `paymentScheduleStageId` = one stage `_id`.
+3. `GET /api/invoices/:invoiceId` → invoice + full lead schedule.
+4. `POST .../send` → customer email.
+5. `PUT .../mark-paid` → invoice paid + linked stage paid.
+
+---
+
+### Removed / deprecated
+
+| Endpoint | Notes |
+|----------|--------|
+| `POST /api/invoices` | **Removed** — use `POST /api/leads/:leadId/invoices` |
+| `GET /api/payment-schedules/invoice/:invoiceId` | **Not implemented** — use `GET .../lead/:leadId` |
 
 When the API changes again, update the matching section with **Previous** = last published contract, **Current** = new contract, and bump **Last updated**. New changes after a frontend handoff should be appended as the next section number (do not renumber sections already shared).

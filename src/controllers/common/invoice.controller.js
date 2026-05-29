@@ -21,7 +21,9 @@ const checkLeadAccess = async (leadId, user) => {
 }
 
 exports.createInvoice = asyncHandler(async (req, res) => {
-  const { leadId } = req.body
+  const leadId = req.params.leadId
+  if (!leadId) return badRequest(res, 'leadId is required in the URL path')
+
   const { lead, error, code } = await checkLeadAccess(leadId, req.user)
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
 
@@ -39,13 +41,24 @@ exports.createInvoice = asyncHandler(async (req, res) => {
   }
 
   const ALLOWED_CREATE = [
-    'quotationId','date','daysToPay','lineItems',
-    'subtotal','markupTotal','discount','depositAmount','totalAmount',
+    'date', 'daysToPay', 'lineItems',
+    'subtotal', 'markupTotal', 'discount', 'depositAmount', 'totalAmount',
   ]
   const invoiceData = {}
   ALLOWED_CREATE.forEach(k => { if (req.body[k] !== undefined) invoiceData[k] = req.body[k] })
 
   const { paymentScheduleStageId } = req.body
+  let paymentScheduleId = null
+
+  if (paymentScheduleStageId) {
+    const schedule = await PaymentSchedule.findOne({ leadId, 'stages._id': paymentScheduleStageId })
+      .select('_id')
+      .lean()
+    if (!schedule) {
+      return badRequest(res, 'Payment schedule stage not found for this project')
+    }
+    paymentScheduleId = schedule._id
+  }
 
   const invoice = await Invoice.create({
     ...invoiceData,
@@ -54,14 +67,14 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
     leadId,
     customerId: lead.customerId,
+    quotationId: null,
+    paymentScheduleId,
     paymentScheduleStageId: paymentScheduleStageId || null,
   })
 
-  // If linked to a payment schedule stage, mark that stage as invoiced
   if (paymentScheduleStageId) {
-    const PaymentSchedule = require('../../models/PaymentSchedule')
     await PaymentSchedule.findOneAndUpdate(
-      { 'stages._id': paymentScheduleStageId },
+      { leadId, 'stages._id': paymentScheduleStageId },
       { $set: { 'stages.$.invoiceId': invoice._id, 'stages.$.status': 'invoiced' } }
     )
   }
@@ -85,7 +98,7 @@ exports.getInvoice = asyncHandler(async (req, res) => {
     .lean()
   if (!invoice) return notFound(res, 'Invoice not found')
 
-  const paymentSchedule = await PaymentSchedule.findOne({ invoiceId: invoice._id }).lean()
+  const paymentSchedule = await PaymentSchedule.findOne({ leadId: invoice.leadId }).lean()
   return success(res, { invoice, paymentSchedule })
 })
 
@@ -95,8 +108,8 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
   if (invoice.status !== 'draft') return badRequest(res, 'Only draft invoices can be edited')
 
   const ALLOWED_UPDATE = [
-    'quotationId','date','daysToPay','lineItems',
-    'subtotal','markupTotal','discount','depositAmount','totalAmount',
+    'date', 'daysToPay', 'lineItems',
+    'subtotal', 'markupTotal', 'discount', 'depositAmount', 'totalAmount',
   ]
   ALLOWED_UPDATE.forEach(k => { if (req.body[k] !== undefined) invoice[k] = req.body[k] })
   await invoice.save()

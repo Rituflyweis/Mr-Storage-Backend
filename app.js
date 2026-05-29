@@ -40,6 +40,7 @@ app.use('/api/public',        require('./src/routes/public.routes'))
 app.use('/api/admin',   require('./src/routes/admin/index'))
 app.use('/api/sales',   require('./src/routes/sales/index'))
 app.use('/api/account', require('./src/routes/account/index'))
+app.use('/api/plant',   require('./src/routes/plant/index'))
 app.use('/api',         require('./src/routes/common/index'))
 
 // ── 404 ───────────────────────────────────────────────────────────────────────

@@ -9,9 +9,11 @@ const { success, notFound, badRequest, forbidden } = require('../../utils/apiRes
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 
+const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
+
 const computeDueDate = (inv) => {
-  if (!inv.daysToPay || !inv.date) return null
-  return new Date(new Date(inv.date).getTime() + inv.daysToPay * 24 * 60 * 60 * 1000)
+  if (inv.dueDate) return new Date(inv.dueDate)
+  return computeInvoiceDueDate(inv.date, inv.daysToPay)
 }
 
 exports.getInvoices = asyncHandler(async (req, res) => {

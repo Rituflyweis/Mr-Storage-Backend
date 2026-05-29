@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const { BUILDING_STATUSES } = require('../config/constants')
+const { BUILDING_STATUSES, DRAWING_STATUSES } = require('../config/constants')
 
 const BuildingSchema = new mongoose.Schema(
   {
@@ -8,6 +8,22 @@ const BuildingSchema = new mongoose.Schema(
     quotationId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation', default: null },
     buildingNumber: { type: Number, required: true },
     status:         { type: String, enum: BUILDING_STATUSES, default: 'pending' },
+    drawings: [
+      {
+        versionNumber:   { type: Number, required: true },
+        fileUrl:         { type: String, required: true },
+        fileName:        { type: String, required: true },
+        status: {
+          type: String,
+          enum: DRAWING_STATUSES,
+          default: 'pending_review',
+        },
+        rejectionReason: { type: String, default: '' },
+        uploadedBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        uploadedAt:      { type: Date, default: Date.now },
+        reviewedAt:      { type: Date, default: null },
+      },
+    ],
     createdBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true }

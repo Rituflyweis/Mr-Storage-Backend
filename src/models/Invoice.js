@@ -1,5 +1,6 @@
 const mongoose = require('mongoose')
 const { INVOICE_STATUSES } = require('../config/constants')
+const { computeInvoiceDueDate } = require('../utils/invoiceDueDate')
 
 const LineItemSchema = new mongoose.Schema(
   {
@@ -28,6 +29,7 @@ const InvoiceSchema = new mongoose.Schema(
     // Null if invoice was not created against a payment schedule stage.
     paymentScheduleStageId: { type: mongoose.Schema.Types.ObjectId, default: null },
     daysToPay:         { type: Number, default: null },
+    dueDate:           { type: Date, default: null },
     poNumber:          { type: String, default: '' },
 
     lineItems:    { type: [LineItemSchema], default: [] },
@@ -49,5 +51,10 @@ const InvoiceSchema = new mongoose.Schema(
 
 InvoiceSchema.index({ leadId: 1, createdAt: -1 })
 InvoiceSchema.index({ customerId: 1 })
+
+InvoiceSchema.pre('save', function setDueDate(next) {
+  this.dueDate = computeInvoiceDueDate(this.date, this.daysToPay)
+  next()
+})
 
 module.exports = mongoose.model('Invoice', InvoiceSchema)

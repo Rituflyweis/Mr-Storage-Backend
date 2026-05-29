@@ -39,6 +39,7 @@ const ASSIGN_METHODS = ['auto', 'manual']
 const AUDIT_TYPES = [
   'lead', 'invoice', 'quotation', 'meeting',
   'followup', 'user', 'escalation', 'po', 'chat', 'activity',
+  'plant',
 ]
 
 const AUDIT_ACTIONS = {
@@ -57,6 +58,8 @@ const AUDIT_ACTIONS = {
   LEAD_TERMINATED:          'lead.terminated',
   LEAD_NOTE_ADDED:          'lead.note_added',
   BUILDINGS_CREATED:        'lead.buildings_created',
+  DRAWING_UPLOADED:         'drawing.uploaded',
+  DRAWING_REVIEWED:         'drawing.reviewed',
   BOM_APPROVED:             'bom.approved',
   BOM_REJECTED:             'bom.rejected',
   QUOTATION_CREATED:        'quotation.created',
@@ -88,6 +91,11 @@ const AUDIT_ACTIONS = {
   CUSTOMER_PROJECT_CREATED: 'customer.project_created',
   ACTIVITY_LOGGED:          'activity.logged',
 
+  VENDOR_CREATED:            'vendor.created',
+  VENDOR_UPDATED:            'vendor.updated',
+  CARRIER_CREATED:           'carrier.created',
+  CARRIER_UPDATED:           'carrier.updated',
+
   // Backward-compatible alias; remove after payment schedule migration is complete.
   PAYMENT_MARKED_PAID:      'payment.stage_paid',
 }
@@ -95,7 +103,31 @@ const AUDIT_ACTIONS = {
 const BUILDING_STATUSES = [
   'pending', 'drawing_pending', 'drawing_uploaded',
   'drawing_approved', 'drawing_rejected',
-  'bom_pending', 'bom_approved', 'completed',
+  'bom_pending', 'bom_approved', 'bom_confirmed',
+  'completed',
+]
+
+const DRAWING_STATUSES = ['pending_review', 'approved', 'rejected']
+
+const VENDOR_STATUSES = ['active', 'inactive']
+const VENDOR_TYPES = ['steel', 'insulation', 'panels', 'trim', 'hardware', 'other']
+const SHIPPER_REQUEST_STATUSES = [
+  'sent', 'submitted',
+  'comparison_processing', 'comparison_completed', 'comparison_failed',
+  'approved', 'rejected', 'resubmit_requested',
+]
+const ACTIVE_SHIPPER_REQUEST_STATUSES = [
+  'sent', 'submitted',
+  'comparison_processing', 'comparison_completed', 'comparison_failed',
+  'resubmit_requested',
+]
+
+const CARRIER_STATUSES = ['active', 'inactive']
+const FREIGHT_BID_STATUSES = ['sent', 'submitted', 'selected', 'rejected', 'expired']
+const ACTIVE_FREIGHT_BID_STATUSES = ['sent', 'submitted']
+const DELIVERY_STATUSES = [
+  'draft', 'bidding_sent', 'carrier_selected', 'scheduled',
+  'in_transit', 'delivered', 'cancelled',
 ]
 
 // Backward-compatible alias for old model/controller usage during migration.
@@ -124,4 +156,13 @@ module.exports = {
   AUDIT_TYPES,
   AUDIT_ACTIONS,
   BUILDING_STATUSES,
+  DRAWING_STATUSES,
+  VENDOR_STATUSES,
+  VENDOR_TYPES,
+  SHIPPER_REQUEST_STATUSES,
+  ACTIVE_SHIPPER_REQUEST_STATUSES,
+  CARRIER_STATUSES,
+  FREIGHT_BID_STATUSES,
+  ACTIVE_FREIGHT_BID_STATUSES,
+  DELIVERY_STATUSES,
 }

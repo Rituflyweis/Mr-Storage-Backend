@@ -24,9 +24,11 @@ const s3 = new S3Client({
 
 const CLOSED_STAGES = ['payment_done', 'delivered']
 
+const { computeInvoiceDueDate } = require('../utils/invoiceDueDate')
+
 const computeDueDate = (invoice) => {
-  if (!invoice.daysToPay || !invoice.date) return null
-  return new Date(new Date(invoice.date).getTime() + invoice.daysToPay * 24 * 60 * 60 * 1000)
+  if (invoice.dueDate) return new Date(invoice.dueDate)
+  return computeInvoiceDueDate(invoice.date, invoice.daysToPay)
 }
 
 // ── Profile ───────────────────────────────────────────────────────────────────
