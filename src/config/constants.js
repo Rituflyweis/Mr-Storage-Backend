@@ -10,7 +10,7 @@ const resolveLeadTemperatureFromScore = (score = 0) => {
   return 'cold'
 }
 
-const LIFECYCLE_STAGES = [
+const SALES_LIFECYCLE_STAGES = [
   'initial_contact',
   'requirements_gathered',
   'proposal_sent',
@@ -21,7 +21,26 @@ const LIFECYCLE_STAGES = [
   'sent_to_admin',
 ]
 
-const CLOSED_STAGES = ['deal_closed', 'payment_done', 'converted_to_po', 'sent_to_admin']
+/** Plant panel stages — set after PO assign; forward-only updates via plant API */
+const PLANT_LIFECYCLE_STAGES = [
+  'released_to_plant',
+  'drawings_received',
+  'bom_received',
+  'bom_review',
+  'material_check',
+  'production_planning',
+  'fabrication_started',
+  'quality_inspection',
+  'packing_bundling',
+  'shipper_prepared',
+  'ready_for_delivery',
+  'dispatched',
+  'delivered',
+]
+
+const LIFECYCLE_STAGES = [...SALES_LIFECYCLE_STAGES, ...PLANT_LIFECYCLE_STAGES]
+
+const CLOSED_STAGES = ['deal_closed', 'payment_done', 'converted_to_po', 'sent_to_admin', 'delivered']
 
 const PRIORITY_LEVELS = ['low', 'medium', 'high', 'urgent']
 const QUOTATION_STATUSES = ['draft', 'sent', 'accepted', 'rejected']
@@ -49,6 +68,7 @@ const AUDIT_ACTIONS = {
   LEAD_QUOTE_READY:         'lead.quote_ready',
   LEAD_HANDED_TO_SALES:     'lead.handed_to_sales',
   LEAD_LIFECYCLE_UPDATED:   'lead.lifecycle_updated',
+  LEAD_RELEASED_TO_PLANT:   'lead.released_to_plant',
   LEAD_ESCALATED:           'lead.escalated',
   LEAD_PO_RAISED:           'lead.po_raised',
   LEAD_PO_APPROVED:         'lead.po_approved',
@@ -138,6 +158,8 @@ module.exports = {
   LEAD_SOURCES,
   LEAD_TEMPERATURES,
   resolveLeadTemperatureFromScore,
+  SALES_LIFECYCLE_STAGES,
+  PLANT_LIFECYCLE_STAGES,
   LIFECYCLE_STAGES,
   CLOSED_STAGES,
   PRIORITY_LEVELS,

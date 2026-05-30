@@ -3,6 +3,8 @@
 Frontend integration guide for the **Plant Panel** (`role: "plant"`).
 
 > **Maintenance:** Add or update a section here whenever a plant panel endpoint is implemented or changed. Only document **completed** endpoints — no placeholders for work in progress.
+>
+> **Last updated:** 2026-05-28 — Building list + drawing upload (S3 URL registration), plant presigned URL access.
 
 ---
 
@@ -47,6 +49,63 @@ Content-Type: application/json
 ```
 
 Use `accessToken` on all `/api/plant/*` requests. Refresh with `POST /api/auth/refresh` when expired.
+
+---
+
+## File uploads (S3)
+
+Plant users upload files **directly to S3** using a presigned URL, then register the returned `fileUrl` on the relevant plant endpoint (drawings, BOM, etc.). The backend never receives file bytes.
+
+### Step 1 — Get presigned URL
+
+```http
+POST /api/upload/presigned-url
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request body**
+
+```json
+{
+  "fileName": "building1-v2.pdf",
+  "fileType": "application/pdf",
+  "folder": "drawings"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `fileName` | Yes | Original filename (used for extension) |
+| `fileType` | Yes | MIME type sent with the S3 PUT |
+| `folder` | No | Use `"drawings"` for building drawings. Also: `"bom"`, `"smdt"`, `"vendor-files"`, `"documents"` |
+
+**Response `data`**
+
+```json
+{
+  "uploadUrl": "https://bucket.s3.region.amazonaws.com/drawings/uuid.pdf?X-Amz-...",
+  "fileUrl": "https://bucket.s3.region.amazonaws.com/drawings/uuid.pdf",
+  "key": "drawings/uuid.pdf"
+}
+```
+
+### Step 2 — Upload file to S3
+
+```http
+PUT <uploadUrl>
+Content-Type: <same fileType as step 1>
+
+<binary file body>
+```
+
+Use the exact `uploadUrl` from step 1. Do **not** send the plant JWT on the S3 PUT unless your S3 setup requires it (default presigned flow does not).
+
+### Step 3 — Register URL on backend
+
+Call the plant endpoint for that feature (e.g. `POST /api/plant/projects/:leadId/drawings` with `fileUrl` + `fileName` + `buildingId`). See [§9 Upload drawings](#9-post-apiplantprojectsleadiddrawings).
+
+**Role:** `plant` users are allowed on `POST /api/upload/presigned-url` (same route as admin/sales).
 
 ---
 
@@ -98,6 +157,29 @@ Optional `startDate` / `endDate` filters apply to the PO order’s `createdAt` (
 
 `bomStatus` is returned on each project row for display only (`none` \| `partial` \| `all_confirmed`) — it is **not** a query filter.
 
+### Building `status` (per building, upload screen)
+
+| Value | Meaning |
+|-------|---------|
+| `drawing_pending` | Awaiting first drawing (set when PO assigned to plant) |
+| `drawing_uploaded` | Latest version uploaded, awaiting customer review |
+| `drawing_approved` | Customer approved latest version |
+| `drawing_rejected` | Customer rejected latest version — plant should re-upload |
+| `bom_pending` … | Later BOM/production stages |
+
+After each successful drawing upload, building `status` → `drawing_uploaded`.
+
+### Plant `lifecycleStatus` (project detail + `PUT .../lifecycle`)
+
+Ordered pipeline after admin assigns PO to plant:
+
+`released_to_plant` → `drawings_received` → `bom_received` → `bom_review` → `material_check` → `production_planning` → `fabrication_started` → `quality_inspection` → `packing_bundling` → `shipper_prepared` → `ready_for_delivery` → `dispatched` → `delivered`
+
+| Stage | Set by |
+|-------|--------|
+| `released_to_plant` | **Auto** when admin assigns approved PO to plant user |
+| All others | Plant user via `PUT /api/plant/projects/:leadId/lifecycle` (forward-only) |
+
 ### Vendor `status`
 
 `active` | `inactive`
@@ -118,16 +200,27 @@ Optional `startDate` / `endDate` filters apply to the PO order’s `createdAt` (
 |---|--------|----------|-------------|
 | 1 | GET | `/api/plant/projects/stats` | Project KPI counts |
 | 2 | GET | `/api/plant/projects` | Paginated project list |
-| 3 | GET | `/api/plant/vendors` | List vendors / shippers |
-| 4 | POST | `/api/plant/vendors` | Add vendor / shipper |
-| 5 | GET | `/api/plant/vendors/:vendorId` | Vendor detail + stats + order history |
-| 6 | PUT | `/api/plant/vendors/:vendorId` | Update vendor |
-| 7 | PATCH | `/api/plant/vendors/:vendorId/toggle-status` | Toggle active / inactive |
-| 8 | GET | `/api/plant/carriers` | List freight carriers |
-| 9 | POST | `/api/plant/carriers` | Add freight carrier |
-| 10 | GET | `/api/plant/carriers/:carrierId` | Carrier detail + stats + freight history |
-| 11 | PUT | `/api/plant/carriers/:carrierId` | Update carrier |
-| 12 | PATCH | `/api/plant/carriers/:carrierId/toggle-status` | Toggle active / inactive |
+| 3 | GET | `/api/plant/projects/:leadId/detail` | Project detail + audit log |
+| 4 | PUT | `/api/plant/projects/:leadId/lifecycle` | Update plant lifecycle stage |
+| 5 | GET | `/api/plant/projects/:leadId/notes` | List project notes |
+| 6 | POST | `/api/plant/projects/:leadId/notes` | Add project note |
+| 7 | GET | `/api/plant/projects/:leadId/invoices` | Invoice summary list |
+| 8 | GET | `/api/plant/projects/:leadId/buildings` | Buildings list (upload screen) |
+| 9 | POST | `/api/plant/projects/:leadId/drawings` | Register drawing URL(s) after S3 upload |
+| 10 | GET | `/api/plant/projects/:leadId/drawings` | Full drawing history by building |
+| 11 | GET | `/api/plant/projects/:leadId/bom-files` | BOM upload jobs (when model exists) |
+| 12 | GET | `/api/plant/projects/:leadId/delivery` | Deliveries for project |
+| 13 | GET | `/api/plant/projects/:leadId/shipper-files` | Vendor shipper submissions |
+| 14 | GET | `/api/plant/vendors` | List vendors / shippers |
+| 15 | POST | `/api/plant/vendors` | Add vendor / shipper |
+| 16 | GET | `/api/plant/vendors/:vendorId` | Vendor detail + stats + order history |
+| 17 | PUT | `/api/plant/vendors/:vendorId` | Update vendor |
+| 18 | PATCH | `/api/plant/vendors/:vendorId/toggle-status` | Toggle active / inactive |
+| 19 | GET | `/api/plant/carriers` | List freight carriers |
+| 20 | POST | `/api/plant/carriers` | Add freight carrier |
+| 21 | GET | `/api/plant/carriers/:carrierId` | Carrier detail + stats + freight history |
+| 22 | PUT | `/api/plant/carriers/:carrierId` | Update carrier |
+| 23 | PATCH | `/api/plant/carriers/:carrierId/toggle-status` | Toggle active / inactive |
 
 ---
 
@@ -295,7 +388,449 @@ Use `total` and `limit` to compute total pages: `Math.ceil(total / limit)`.
 
 ---
 
-## 3. `GET /api/plant/vendors`
+## 3. `GET /api/plant/projects/:leadId/detail`
+
+Full project detail for the plant project screen.
+
+| | |
+|---|---|
+| **Role** | `plant` |
+| **Guard** | Approved `POOrder` with `assignedTo` = current user |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `leadId` | MongoId | Yes — project / lead `_id` |
+
+### Response `data` (summary)
+
+| Block | Contents |
+|-------|----------|
+| `lead` | Full lead document (lean) |
+| `projectName`, `jobId`, `buildingType`, `quoteValue`, `location`, `createdAt` | Top-level mirrors for UI |
+| `lifecycleStatus` | Current stage |
+| `lifecycleHistory` | Array with `stage`, `changedAt`, populated `changedBy` |
+| `client` | `customerId`, `firstName`, `lastName`, `email`, `phone`, `address` |
+| `assignedSales` | `{ _id, name, email, role }` |
+| `agreement` | Contract doc `{ url, fileName, uploadedAt }` or `null` |
+| `poOrder` | `{ _id, poNumber, status, createdAt }` |
+| `leadNotes` | Same shape as sales/admin lead notes |
+| `activityLog` | Audit entries with `displayMessage` (newest first, max 200) |
+
+Tab data (invoices, drawings, BOM, delivery, shipper) use the dedicated endpoints below — not embedded in detail.
+
+### Errors
+
+| HTTP | When |
+|------|---------|
+| 403 | PO not assigned to you |
+| 404 | Project not found |
+
+---
+
+## 4. `PUT /api/plant/projects/:leadId/lifecycle`
+
+Update plant pipeline stage (forward-only within plant stages).
+
+### Request body
+
+```json
+{
+  "lifecycleStatus": "fabrication_started",
+  "note": "Optional note (also creates a lead note)"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `lifecycleStatus` | Yes | One of plant lifecycle enum values |
+| `note` | No | Appended to `leadNotes` + audit |
+
+### Response `data`
+
+```json
+{
+  "leadId": "...",
+  "lifecycleStatus": "fabrication_started",
+  "lifecycleHistory": []
+}
+```
+
+---
+
+## 5. `GET /api/plant/projects/:leadId/notes`
+
+### Response `data`
+
+```json
+{
+  "leadId": "...",
+  "projectName": "Warehouse A",
+  "jobId": "PRO-042",
+  "notes": [{ "_id": "...", "note": "...", "addedAt": "...", "addedBy": {} }],
+  "total": 1
+}
+```
+
+---
+
+## 6. `POST /api/plant/projects/:leadId/notes`
+
+### Request body
+
+```json
+{ "note": "Waiting on vendor shipper file." }
+```
+
+### Response `data`
+
+```json
+{ "note": { "_id": "...", "note": "...", "addedAt": "...", "addedBy": {} } }
+```
+
+---
+
+## 7. `GET /api/plant/projects/:leadId/invoices`
+
+### Response `data`
+
+```json
+{
+  "invoices": [
+    {
+      "_id": "...",
+      "invoiceNumber": "INV-0001",
+      "dueDate": "2026-06-26T00:00:00.000Z",
+      "amount": 1917952,
+      "status": "sent"
+    }
+  ]
+}
+```
+
+---
+
+## 8. `GET /api/plant/projects/:leadId/buildings`
+
+Lightweight building list for the **drawing upload screen**. Does not include full version history — use [§10](#10-get-apiplantprojectsleadiddrawings) for the Drawings tab.
+
+| | |
+|---|---|
+| **Role** | `plant` |
+| **Guard** | Approved `POOrder` with `assignedTo` = current user |
+
+### Example request
+
+```http
+GET /api/plant/projects/665a00000000000000000002/buildings
+Authorization: Bearer <access_token>
+```
+
+### Response `data`
+
+```json
+{
+  "leadId": "665a00000000000000000002",
+  "projectName": "ABC Warehouse",
+  "numberOfBuildings": 3,
+  "buildings": [
+    {
+      "buildingId": "665a00000000000000000011",
+      "buildingNumber": 1,
+      "status": "drawing_rejected",
+      "latestDrawing": {
+        "versionNumber": 2,
+        "fileName": "building1-v2.pdf",
+        "fileUrl": "https://bucket.s3.region.amazonaws.com/drawings/uuid.pdf",
+        "status": "rejected",
+        "uploadedAt": "2026-05-20T10:00:00.000Z",
+        "reviewedAt": "2026-05-21T08:00:00.000Z",
+        "rejectionReason": "Column heights don't match spec"
+      },
+      "latestDrawingStatus": "rejected",
+      "drawingCount": 2,
+      "hasDrawing": true
+    },
+    {
+      "buildingId": "665a00000000000000000012",
+      "buildingNumber": 2,
+      "status": "drawing_pending",
+      "latestDrawing": null,
+      "latestDrawingStatus": null,
+      "drawingCount": 0,
+      "hasDrawing": false
+    }
+  ]
+}
+```
+
+| Field | Type | UI usage |
+|-------|------|----------|
+| `buildingId` | string | Send in upload request body |
+| `buildingNumber` | number | Display label ("Building 1") |
+| `status` | string | Building workflow badge — see enum above |
+| `latestDrawing` | object \| null | Current file summary (highest `versionNumber`) |
+| `latestDrawingStatus` | string \| null | `pending_review` \| `approved` \| `rejected` |
+| `drawingCount` | number | Total versions uploaded |
+| `hasDrawing` | boolean | `false` = never uploaded |
+
+Buildings sorted by `buildingNumber` ascending.
+
+### Errors
+
+| HTTP | When |
+|------|------|
+| 403 | PO not assigned to you |
+| 404 | Project not found |
+
+---
+
+## 9. `POST /api/plant/projects/:leadId/drawings`
+
+Register one or more drawing URLs **after** S3 upload completes. Does not accept file bytes.
+
+| | |
+|---|---|
+| **Role** | `plant` |
+| **Guard** | Approved `POOrder` with `assignedTo` = current user |
+| **HTTP status** | `201` on success |
+
+### Frontend workflow (checklist)
+
+1. `GET .../buildings` — load building rows and show upload slots.
+2. For **each file** the user selects:
+   - `POST /api/upload/presigned-url` with `folder: "drawings"`.
+   - `PUT` file to `uploadUrl`.
+   - Keep `fileUrl` from presigned response.
+3. `POST .../drawings` with one object per building being updated (1 building = array length 1).
+4. Refresh `GET .../buildings` and/or `GET .../drawings`.
+5. Lifecycle (`drawings_received`, etc.) is **manual** via `PUT .../lifecycle` — not auto-set on upload.
+
+### Request body
+
+**Upload all buildings at once (3 buildings):**
+
+```json
+{
+  "drawings": [
+    {
+      "buildingId": "665a00000000000000000011",
+      "fileUrl": "https://bucket.s3.region.amazonaws.com/drawings/uuid-b1.pdf",
+      "fileName": "building1-v1.pdf"
+    },
+    {
+      "buildingId": "665a00000000000000000012",
+      "fileUrl": "https://bucket.s3.region.amazonaws.com/drawings/uuid-b2.pdf",
+      "fileName": "building2-v1.pdf"
+    },
+    {
+      "buildingId": "665a00000000000000000013",
+      "fileUrl": "https://bucket.s3.region.amazonaws.com/drawings/uuid-b3.pdf",
+      "fileName": "building3-v1.pdf"
+    }
+  ]
+}
+```
+
+**Re-upload one building only (after rejection or correction):**
+
+```json
+{
+  "drawings": [
+    {
+      "buildingId": "665a00000000000000000011",
+      "fileUrl": "https://bucket.s3.region.amazonaws.com/drawings/uuid-b1-v3.pdf",
+      "fileName": "building1-v3.pdf"
+    }
+  ]
+}
+```
+
+| Field | Required | Rules |
+|-------|----------|--------|
+| `drawings` | Yes | Array, min length **1** |
+| `drawings[].buildingId` | Yes | MongoId; must belong to this project |
+| `drawings[].fileUrl` | Yes | HTTPS URL from presigned-url `fileUrl` |
+| `drawings[].fileName` | Yes | Display / download name |
+
+**Validation rules**
+
+- No duplicate `buildingId` in the same request.
+- Unknown or wrong-project `buildingId` → entire request fails (**all-or-nothing**).
+- Customer email / notification is **not** sent from this endpoint (customer panel handles review separately).
+
+### Versioning
+
+| Scenario | Server behavior |
+|----------|-----------------|
+| First upload for a building | Creates version **1**, status `pending_review` |
+| Re-upload after customer rejected | Appends version **N+1**, status `pending_review` |
+| Re-upload after approved | Appends new version, back to `pending_review` |
+| Re-upload while still `pending_review` | **Allowed** — appends new version; customer reviews latest |
+| Replace / delete old version | **Not supported** — append-only history |
+
+Each success sets building `status` → `drawing_uploaded`.
+
+### Response `data`
+
+```json
+{
+  "leadId": "665a00000000000000000002",
+  "uploaded": [
+    {
+      "buildingId": "665a00000000000000000011",
+      "buildingNumber": 1,
+      "drawing": {
+        "versionNumber": 3,
+        "fileUrl": "https://bucket.s3.region.amazonaws.com/drawings/uuid-b1-v3.pdf",
+        "fileName": "building1-v3.pdf",
+        "status": "pending_review",
+        "uploadedAt": "2026-05-28T12:00:00.000Z",
+        "uploadedBy": "665a00000000000000000001"
+      },
+      "buildingStatus": "drawing_uploaded"
+    }
+  ],
+  "projectDrawingStatus": "pending"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `uploaded` | array | One entry per item in request |
+| `uploaded[].drawing.versionNumber` | number | New version number assigned |
+| `projectDrawingStatus` | string | Project-level badge: `none` \| `pending` \| `rejected` \| `all_approved` (same as list filter) |
+
+### Errors
+
+| HTTP | When |
+|------|------|
+| 400 | Duplicate `buildingId`, or building not in this project |
+| 403 | PO not assigned to you |
+| 404 | Project not found |
+| 422 | Missing/invalid body (`drawings` empty, bad MongoId, missing `fileUrl` / `fileName`) |
+
+---
+
+## 10. `GET /api/plant/projects/:leadId/drawings`
+
+Full drawing **history** per building (Drawings tab). For upload UI state, prefer [§8](#8-get-apiplantprojectsleadidbuildings).
+
+### Response `data`
+
+```json
+{
+  "buildings": [
+    {
+      "buildingId": "...",
+      "buildingNumber": 1,
+      "drawings": [
+        {
+          "versionNumber": 1,
+          "fileUrl": "https://...",
+          "fileName": "b1-v1.pdf",
+          "status": "pending_review",
+          "uploadedAt": "...",
+          "reviewedAt": null,
+          "rejectionReason": ""
+        }
+      ],
+      "latestDrawingStatus": "pending_review"
+    }
+  ]
+}
+```
+
+---
+
+## 11. `GET /api/plant/projects/:leadId/bom-files`
+
+Returns BOM job rows when `BOMJob` model is available; otherwise `{ "bomFiles": [] }`.
+
+### Response `data`
+
+```json
+{
+  "bomFiles": [
+    {
+      "buildingId": "...",
+      "buildingNumber": 1,
+      "bomJobId": "...",
+      "fileName": "bom-b1.ods",
+      "fileUrl": "https://...",
+      "status": "completed",
+      "uploadedAt": "...",
+      "totalItems": 120,
+      "isConfirmed": false
+    }
+  ]
+}
+```
+
+---
+
+## 12. `GET /api/plant/projects/:leadId/delivery`
+
+### Response `data`
+
+```json
+{
+  "deliveries": [
+    {
+      "_id": "...",
+      "deliveryNumber": "DEL-0001",
+      "status": "draft",
+      "pickupLocation": "",
+      "deliveryLocation": "",
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ]
+}
+```
+
+---
+
+## 13. `GET /api/plant/projects/:leadId/shipper-files`
+
+Vendor shipper submissions for the project.
+
+### Response `data`
+
+```json
+{
+  "shipperFiles": [
+    {
+      "_id": "...",
+      "vendorId": "...",
+      "vendorName": "ABC Steel",
+      "status": "submitted",
+      "submittedFileUrl": "https://...",
+      "submittedFileName": "shipper.xlsx",
+      "submittedAt": "...",
+      "quoteValue": 50000,
+      "sentAt": "..."
+    }
+  ]
+}
+```
+
+---
+
+## Admin side effect — PO assign
+
+When admin calls `PUT /api/admin/po-orders/:poOrderId/assign`:
+
+- Lead `lifecycleStatus` → `released_to_plant`
+- `lifecycleHistory` entry pushed
+- Buildings → `drawing_pending` (unchanged)
+- Audit: `lead.released_to_plant`
+- Socket: `project_assigned` to plant user
+
+---
+
+## 14. `GET /api/plant/vendors`
 
 List all material vendors / shippers.
 
@@ -368,7 +903,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-## 4. `POST /api/plant/vendors`
+## 15. `POST /api/plant/vendors`
 
 Create a new vendor / shipper.
 
@@ -450,7 +985,7 @@ Create a new vendor / shipper.
 
 ---
 
-## 5. `GET /api/plant/vendors/:vendorId`
+## 16. `GET /api/plant/vendors/:vendorId`
 
 Full vendor detail with performance stats and approved order history.
 
@@ -533,7 +1068,7 @@ Full vendor detail with performance stats and approved order history.
 
 ---
 
-## 6. `PUT /api/plant/vendors/:vendorId`
+## 17. `PUT /api/plant/vendors/:vendorId`
 
 Update vendor fields. Send only fields to change. `vendorCode` is editable but must remain unique.
 
@@ -543,7 +1078,7 @@ Same body fields as create (all optional on update).
 
 ---
 
-## 7. `PATCH /api/plant/vendors/:vendorId/toggle-status`
+## 18. `PATCH /api/plant/vendors/:vendorId/toggle-status`
 
 Toggle between `active` and `inactive`.
 
@@ -564,7 +1099,7 @@ Toggle between `active` and `inactive`.
 
 ---
 
-## 8. `GET /api/plant/carriers`
+## 19. `GET /api/plant/carriers`
 
 List freight carriers.
 
@@ -638,7 +1173,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-## 9. `POST /api/plant/carriers`
+## 20. `POST /api/plant/carriers`
 
 Create a freight carrier.
 
@@ -691,7 +1226,7 @@ Create a freight carrier.
 
 ---
 
-## 10. `GET /api/plant/carriers/:carrierId`
+## 21. `GET /api/plant/carriers/:carrierId`
 
 Full carrier document + performance stats + freight history.
 
@@ -760,7 +1295,7 @@ Full carrier document + performance stats + freight history.
 
 ---
 
-## 11. `PUT /api/plant/carriers/:carrierId`
+## 22. `PUT /api/plant/carriers/:carrierId`
 
 Update carrier — **all fields editable** (same body as create, all optional). `carrierCode` must stay unique.
 
@@ -768,7 +1303,7 @@ Update carrier — **all fields editable** (same body as create, all optional). 
 
 ---
 
-## 12. `PATCH /api/plant/carriers/:carrierId/toggle-status`
+## 23. `PATCH /api/plant/carriers/:carrierId/toggle-status`
 
 Toggle `active` ↔ `inactive`.
 
@@ -798,6 +1333,11 @@ Toggle `active` ↔ `inactive`.
 | Filter: customer | `customerId` on list |
 | Filter: building type | `buildingType` on list |
 | Filter: drawing status | `drawingStatus` on list |
+| Project detail | `GET /api/plant/projects/:leadId/detail` |
+| Drawing upload screen | `GET /api/plant/projects/:leadId/buildings` |
+| S3 presigned URL | `POST /api/upload/presigned-url` (`folder: "drawings"`) |
+| Register drawing(s) | `POST /api/plant/projects/:leadId/drawings` |
+| Drawings tab (history) | `GET /api/plant/projects/:leadId/drawings` |
 | Vendors table | `GET /api/plant/vendors` |
 | Add vendor | `POST /api/plant/vendors` |
 | Vendor detail | `GET /api/plant/vendors/:vendorId` |
@@ -815,4 +1355,4 @@ Toggle `active` ↔ `inactive`.
 
 ---
 
-*Last updated: Projects (2) + Vendors (5) + Carriers (5 endpoints).*
+*Last updated: Projects (13) + Vendors (5) + Carriers (5 endpoints).*

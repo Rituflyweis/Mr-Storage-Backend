@@ -9,7 +9,13 @@ const generatePONumber = require('../../utils/generatePONumber')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { AUDIT_ACTIONS } = require('../../config/constants')
+const { isInvoiceOverdue, resolveInvoiceLeadIds, getScopedLeadIds } = require('../../utils/invoiceScope')
+const { AUDIT_ACTIONS, INVOICE_STATUSES } = require('../../config/constants')
+
+const INVOICE_BODY_FIELDS = [
+  'date', 'daysToPay', 'lineItems',
+  'subtotal', 'markupTotal', 'discount', 'depositAmount', 'totalAmount',
+]
 
 const checkLeadAccess = async (leadId, user) => {
   const lead = await Lead.findById(leadId)
@@ -18,6 +24,27 @@ const checkLeadAccess = async (leadId, user) => {
     return { error: 'Access denied', code: 403 }
   }
   return { lead }
+}
+
+const applyInvoiceBodyFields = (target, body) => {
+  INVOICE_BODY_FIELDS.forEach(k => {
+    if (body[k] !== undefined) target[k] = body[k]
+  })
+}
+
+const resolvePaymentScheduleStage = async (leadId, paymentScheduleStageId) => {
+  const schedule = await PaymentSchedule.findOne({ leadId, 'stages._id': paymentScheduleStageId })
+    .select('_id')
+    .lean()
+  if (!schedule) return { error: 'Payment schedule stage not found for this project' }
+  return { paymentScheduleId: schedule._id, paymentScheduleStageId }
+}
+
+const setPaymentScheduleStageInvoiced = async (leadId, paymentScheduleStageId, invoiceId) => {
+  await PaymentSchedule.findOneAndUpdate(
+    { leadId, 'stages._id': paymentScheduleStageId },
+    { $set: { 'stages.$.invoiceId': invoiceId, 'stages.$.status': 'invoiced' } }
+  )
 }
 
 exports.createInvoice = asyncHandler(async (req, res) => {
@@ -40,24 +67,16 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     poNumber = await generatePONumber()
   }
 
-  const ALLOWED_CREATE = [
-    'date', 'daysToPay', 'lineItems',
-    'subtotal', 'markupTotal', 'discount', 'depositAmount', 'totalAmount',
-  ]
   const invoiceData = {}
-  ALLOWED_CREATE.forEach(k => { if (req.body[k] !== undefined) invoiceData[k] = req.body[k] })
+  applyInvoiceBodyFields(invoiceData, req.body)
 
   const { paymentScheduleStageId } = req.body
   let paymentScheduleId = null
 
   if (paymentScheduleStageId) {
-    const schedule = await PaymentSchedule.findOne({ leadId, 'stages._id': paymentScheduleStageId })
-      .select('_id')
-      .lean()
-    if (!schedule) {
-      return badRequest(res, 'Payment schedule stage not found for this project')
-    }
-    paymentScheduleId = schedule._id
+    const resolved = await resolvePaymentScheduleStage(leadId, paymentScheduleStageId)
+    if (resolved.error) return badRequest(res, resolved.error)
+    paymentScheduleId = resolved.paymentScheduleId
   }
 
   const invoice = await Invoice.create({
@@ -73,10 +92,7 @@ exports.createInvoice = asyncHandler(async (req, res) => {
   })
 
   if (paymentScheduleStageId) {
-    await PaymentSchedule.findOneAndUpdate(
-      { leadId, 'stages._id': paymentScheduleStageId },
-      { $set: { 'stages.$.invoiceId': invoice._id, 'stages.$.status': 'invoiced' } }
-    )
+    await setPaymentScheduleStageInvoiced(leadId, paymentScheduleStageId, invoice._id)
   }
 
   await auditService.log({
@@ -107,11 +123,25 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
   if (!invoice) return notFound(res, 'Invoice not found')
   if (invoice.status !== 'draft') return badRequest(res, 'Only draft invoices can be edited')
 
-  const ALLOWED_UPDATE = [
-    'date', 'daysToPay', 'lineItems',
-    'subtotal', 'markupTotal', 'discount', 'depositAmount', 'totalAmount',
-  ]
-  ALLOWED_UPDATE.forEach(k => { if (req.body[k] !== undefined) invoice[k] = req.body[k] })
+  const { error, code } = await checkLeadAccess(invoice.leadId, req.user)
+  if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
+
+  applyInvoiceBodyFields(invoice, req.body)
+
+  if (req.body.paymentScheduleStageId !== undefined) {
+    const { paymentScheduleStageId } = req.body
+    if (paymentScheduleStageId) {
+      const resolved = await resolvePaymentScheduleStage(invoice.leadId, paymentScheduleStageId)
+      if (resolved.error) return badRequest(res, resolved.error)
+      invoice.paymentScheduleId = resolved.paymentScheduleId
+      invoice.paymentScheduleStageId = resolved.paymentScheduleStageId
+      await setPaymentScheduleStageInvoiced(invoice.leadId, paymentScheduleStageId, invoice._id)
+    } else {
+      invoice.paymentScheduleId = null
+      invoice.paymentScheduleStageId = null
+    }
+  }
+
   await invoice.save()
 
   await auditService.log({
@@ -221,4 +251,91 @@ exports.getLeadInvoices = asyncHandler(async (req, res) => {
     .lean()
 
   return success(res, { invoices })
+})
+
+exports.getInvoiceStats = asyncHandler(async (req, res) => {
+  const scopedLeadIds = await getScopedLeadIds(req.user)
+  const filter = { status: { $ne: 'cancelled' } }
+  if (scopedLeadIds !== null) {
+    filter.leadId = { $in: scopedLeadIds }
+  }
+
+  const invoices = await Invoice.find(filter)
+    .select('status totalAmount dueDate date daysToPay')
+    .lean()
+
+  const now = new Date()
+  let totalAmount = 0
+  let totalPaid = 0
+  let totalUnpaid = 0
+  let overdue = 0
+
+  for (const inv of invoices) {
+    const amt = inv.totalAmount || 0
+    totalAmount += amt
+    if (inv.status === 'paid') {
+      totalPaid += amt
+    } else if (isInvoiceOverdue(inv, now)) {
+      overdue += amt
+    } else if (['draft', 'sent'].includes(inv.status)) {
+      totalUnpaid += amt
+    }
+  }
+
+  return success(res, { totalAmount, totalPaid, totalUnpaid, overdue })
+})
+
+exports.listInvoices = asyncHandler(async (req, res) => {
+  const { status, leadId, search, page = 1, limit = 20 } = req.query
+  const parsedPage = Math.max(1, Number(page) || 1)
+  const parsedLimit = Math.min(Math.max(1, Number(limit) || 20), 100)
+  const skip = (parsedPage - 1) * parsedLimit
+
+  if (status && !INVOICE_STATUSES.includes(status)) {
+    return badRequest(res, `Invalid status. Use: ${INVOICE_STATUSES.join(', ')}`)
+  }
+
+  const { leadIds } = await resolveInvoiceLeadIds(req.user, { search, leadId })
+  const filter = { ...buildDateFilter(req.query, 'createdAt') }
+  if (status) filter.status = status
+
+  if (leadIds !== null) {
+    if (leadIds.length === 0) {
+      return success(res, { invoices: [], total: 0, page: parsedPage, limit: parsedLimit })
+    }
+    filter.leadId = { $in: leadIds }
+  }
+
+  const [invoices, total] = await Promise.all([
+    Invoice.find(filter)
+      .populate('createdBy', 'name email')
+      .populate('paidBy', 'name email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    Invoice.countDocuments(filter),
+  ])
+
+  const leadIdSet = new Set(invoices.map(i => String(i.leadId)))
+  const leadRows = leadIdSet.size
+    ? await Lead.find({ _id: { $in: [...leadIdSet] } }).select('_id projectName').lean()
+    : []
+  const projectNameByLead = Object.fromEntries(leadRows.map(l => [String(l._id), l.projectName || '']))
+
+  const rows = invoices.map(inv => ({
+    invoiceNumber: inv.invoiceNumber,
+    projectName: projectNameByLead[String(inv.leadId)] || '',
+    dueDate: inv.dueDate,
+    amount: inv.totalAmount,
+    status: inv.status,
+    invoice: inv,
+  }))
+
+  return success(res, {
+    invoices: rows,
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
 })

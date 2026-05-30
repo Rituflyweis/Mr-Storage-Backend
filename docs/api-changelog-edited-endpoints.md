@@ -100,10 +100,15 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | Employee assigned leads | `GET /api/admin/employees/:userId/assigned-leads` | — |
 | Create invoice (project in URL) | `POST /api/leads/:leadId/invoices` | `POST /api/leads/:leadId/invoices` |
 | Get / edit / send / mark paid invoice | `GET/PUT/POST /api/invoices/:invoiceId` (+ actions) | same |
+| Edit draft invoice (full body) | `PUT /api/invoices/:invoiceId` | same — body now matches create (§38) |
 | List invoices for project | `GET /api/leads/:leadId/invoices` | same |
+| **Global invoice stats** | `GET /api/invoices/stats` | **same URL** — admin sees all, sales sees assigned leads only |
+| **Global invoice list** | `GET /api/invoices` | **same URL** — dynamic scope by JWT role |
+| **Customer lookup (filters)** | `GET /api/customers` | **same URL** — admin all, sales customers on assigned leads |
+| **Lead / project lookup (filters)** | `GET /api/leads` | **same URL** — admin all leads, sales assigned only |
 | Payment schedule (per lead) | `POST/GET /api/payment-schedules` | same |
 
-**Auth:** All common invoice + payment-schedule routes require JWT role **`admin`** or **`sales`**. Sales must own the lead (`assignedSales` = current user) for create and mark-paid.
+**Auth:** All common invoice + payment-schedule routes require JWT role **`admin`** or **`sales`**. Sales must own the lead (`assignedSales` = current user) for create, **update draft**, and mark-paid.
 
 ---
 
@@ -137,6 +142,11 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | 32 | POST | `/api/invoices/:invoiceId/send` | admin, sales |
 | 33 | PUT | `/api/invoices/:invoiceId/mark-paid` | admin, sales |
 | 34 | GET | `/api/leads/:leadId/invoices` | admin, sales |
+| 37a | GET | `/api/invoices/stats` | admin, sales |
+| 37b | GET | `/api/invoices` | admin, sales |
+| 38 | PUT | `/api/invoices/:invoiceId` | admin, sales |
+| 39a | GET | `/api/customers` | admin, sales |
+| 39b | GET | `/api/leads` | admin, sales |
 | 35 | POST | `/api/payment-schedules` | admin, sales |
 | 36 | GET | `/api/payment-schedules/lead/:leadId` | admin, sales |
 | 24 | GET | `/api/sales/leads` | sales |
@@ -2215,6 +2225,11 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 | PUT | `/api/admin/meetings/:meetingId` | Edit meeting (unchanged) |
 | PUT | `/api/admin/meetings/:meetingId/complete` | Mark complete (unchanged) |
 | GET | `/api/sales/leads/export` | Legacy CSV download in response body (not S3) |
+| GET | `/api/invoices/stats` | Global invoice KPIs — **admin + sales** (§37a) |
+| GET | `/api/invoices` | Global invoice list — **admin + sales** (§37b) |
+| PUT | `/api/invoices/:invoiceId` | Edit draft — full body per §38 |
+| GET | `/api/customers` | Common customer lookup — §39a |
+| GET | `/api/leads` | Common lead lookup — §39b |
 | GET | `/api/account/invoices` | Account panel invoice list (role `account`) |
 | PUT | `/api/account/invoices/:invoiceId/mark-paid` | Account mark paid (no payment-stage sync) |
 
@@ -2222,7 +2237,7 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 
 ## Maintenance
 
-**Last updated:** 2026-05-27 — §29–§36 common invoices + payment schedules
+**Last updated:** 2026-05-26 — §39 common customer & lead lookups (filters)
 
 ---
 
@@ -2605,22 +2620,7 @@ POST /api/leads/:leadId/invoices
 
 ### 29c. `PUT /api/invoices/:invoiceId` — Edit draft
 
-**Only `status === "draft"`** can be edited.
-
-**Request body** (any subset):
-
-| Field | Notes |
-|-------|--------|
-| `date`, `daysToPay` | Triggers `dueDate` recalculation on save |
-| `lineItems`, `subtotal`, `markupTotal`, `discount`, `depositAmount`, `totalAmount` | |
-
-Do **not** send `leadId`, `customerId`, `quotationId`, `status`, `dueDate`, `invoiceNumber`, `poNumber`.
-
-**Response `200`:** `{ "invoice": { ... } }`
-
-| HTTP | Message |
-|------|---------|
-| 400 | Only draft invoices can be edited |
+See **§38** for the current request/response contract (body now matches create §29a, including `paymentScheduleStageId`).
 
 ---
 
@@ -2808,3 +2808,387 @@ Or `{ "schedule": null }` if none.
 | `GET /api/payment-schedules/invoice/:invoiceId` | **Not implemented** — use `GET .../lead/:leadId` |
 
 When the API changes again, update the matching section with **Previous** = last published contract, **Current** = new contract, and bump **Last updated**. New changes after a frontend handoff should be appended as the next section number (do not renumber sections already shared).
+
+---
+
+## §37 — Global invoice list & stats (admin + sales, single API)
+
+**Admin panel and Sales panel use the same endpoints.** Scope is determined by JWT `role`:
+
+| Role | Scope |
+|------|--------|
+| `admin` | All invoices |
+| `sales` | Invoices for leads where `assignedSales` = current user |
+
+Do **not** add `/api/admin/invoices` or `/api/sales/invoices`. Per-project tab list remains `GET /api/leads/:leadId/invoices` (§34).
+
+---
+
+### 37a. `GET /api/invoices/stats` — KPI totals
+
+| | |
+|---|---|
+| **Roles** | `admin`, `sales` |
+| **Change** | **New** — no query parameters |
+| **UI** | Invoices dashboard header / summary cards |
+
+**Query params:** none.
+
+**Amount definitions** (sums of `totalAmount`, excluding `cancelled`):
+
+| Field | Rule |
+|-------|------|
+| `totalAmount` | All in-scope invoices |
+| `totalPaid` | `status === "paid"` |
+| `totalUnpaid` | `status` is `draft` or `sent`, and **not** overdue |
+| `overdue` | `status` is `sent` or `overdue`, and `dueDate < now` (uses stored `dueDate`, or `date` + `daysToPay`) |
+
+**Response `200` — `data`**
+
+```json
+{
+  "totalAmount": 500000,
+  "totalPaid": 200000,
+  "totalUnpaid": 150000,
+  "overdue": 50000
+}
+```
+
+---
+
+### 37b. `GET /api/invoices` — Paginated list
+
+| | |
+|---|---|
+| **Roles** | `admin`, `sales` (same scope rules as 37a) |
+| **Change** | **New** |
+
+**Query params**
+
+| Param | Required | Notes |
+|-------|----------|--------|
+| `startDate` | No | Filters invoice `createdAt` (inclusive start) |
+| `endDate` | No | Filters invoice `createdAt` (inclusive end of day) |
+| `status` | No | `draft` \| `sent` \| `paid` \| `overdue` \| `cancelled` |
+| `leadId` | No | Single project / lead |
+| `search` | No | Case-insensitive: customer `firstName`, `lastName`, `email`, `customerId`, or lead `projectName` |
+| `page` | No | Default `1` |
+| `limit` | No | Default `20`, max `100` |
+
+**Response `200` — `data`**
+
+```json
+{
+  "invoices": [
+    {
+      "invoiceNumber": "INV-0001",
+      "projectName": "Warehouse Phase 2",
+      "dueDate": "2026-06-15T00:00:00.000Z",
+      "amount": 45000,
+      "status": "sent",
+      "invoice": {
+        "_id": "665a...",
+        "leadId": "665b...",
+        "customerId": "664c...",
+        "invoiceNumber": "INV-0001",
+        "totalAmount": 45000,
+        "status": "sent",
+        "dueDate": "2026-06-15T00:00:00.000Z",
+        "lineItems": [],
+        "createdBy": { "name": "Jane", "email": "jane@example.com" },
+        "paidBy": null
+      }
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "limit": 20
+}
+```
+
+| Row field | Notes |
+|-----------|--------|
+| `amount` | Same as `invoice.totalAmount` |
+| `invoice` | Full invoice document (with `createdBy` / `paidBy` populated) |
+
+Sorted by `createdAt` descending.
+
+---
+
+## §38 — `PUT /api/invoices/:invoiceId` — Edit draft invoice (body parity with create)
+
+| | |
+|---|---|
+| **Roles** | `admin`, `sales` |
+| **UI** | Invoice edit form (admin + sales panels) |
+| **Change** | **Request body expanded** — update accepts the same fields as `POST /api/leads/:leadId/invoices` (§29a), including `paymentScheduleStageId`. Sales access check added on update. |
+
+**Rules**
+
+| Rule | Notes |
+|------|--------|
+| Draft only | Only `status === "draft"` can be edited |
+| Sales scope | Sales user must own the lead (`assignedSales` = current user) |
+| Partial update | Send any subset of fields; all body fields optional (unlike create, `totalAmount` is not required) |
+| Payment stage | If `paymentScheduleStageId` is sent, stage is linked (`invoiced`, `invoiceId` set) — same side effect as create |
+
+Do **not** send: `leadId`, `customerId`, `quotationId`, `status`, `dueDate`, `invoiceNumber`, `poNumber` (server-owned).
+
+---
+
+### Path parameters
+
+| Param | Type | Required | Notes |
+|-------|------|----------|--------|
+| `invoiceId` | MongoId | Yes | Invoice `_id` |
+
+---
+
+### Request body
+
+#### Previous
+
+Only these fields were applied on update (no `paymentScheduleStageId`, no route validators):
+
+```json
+{
+  "date": "2026-05-27T00:00:00.000Z",
+  "daysToPay": 30,
+  "lineItems": [],
+  "subtotal": 1917952,
+  "markupTotal": 0,
+  "discount": 0,
+  "depositAmount": 0,
+  "totalAmount": 1917952
+}
+```
+
+`paymentScheduleStageId` in the body was **ignored**. No sales `assignedSales` check on update.
+
+#### Current
+
+Same shape as **create** (§29a). Any subset allowed:
+
+```json
+{
+  "date": "2026-05-27T00:00:00.000Z",
+  "daysToPay": 30,
+  "lineItems": [
+    {
+      "images": [],
+      "items": ["Steel frame package"],
+      "rate": 75000,
+      "markup": 5000,
+      "quantity": 1,
+      "tax": 0,
+      "total": 80000
+    }
+  ],
+  "subtotal": 1917952,
+  "markupTotal": 0,
+  "discount": 0,
+  "depositAmount": 0,
+  "totalAmount": 1917952,
+  "paymentScheduleStageId": "665b00000000000000000001"
+}
+```
+
+| Field | Required on update | Notes |
+|-------|-------------------|--------|
+| `date` | No | ISO date |
+| `daysToPay` | No | Recalculates stored `dueDate` on save |
+| `lineItems` | No | Same line-item shape as §29a |
+| `subtotal` | No | |
+| `markupTotal` | No | |
+| `discount` | No | |
+| `depositAmount` | No | |
+| `totalAmount` | No | Optional (create still requires it) |
+| `paymentScheduleStageId` | No | Links one payment schedule stage for this project |
+
+**Route validation:** `totalAmount` optional numeric; `date` optional ISO; `daysToPay` optional numeric; `paymentScheduleStageId` optional MongoId.
+
+---
+
+### Response body
+
+#### Previous
+
+```json
+{
+  "invoice": { "_id": "...", "status": "draft", "totalAmount": 1917952 }
+}
+```
+
+(Unchanged envelope — full invoice document returned.)
+
+#### Current (`200` — `data`)
+
+```json
+{
+  "invoice": {
+    "_id": "64f...",
+    "invoiceNumber": "INV-0001",
+    "poNumber": "PO-0001",
+    "leadId": "665a...",
+    "customerId": "664c...",
+    "date": "2026-05-27T00:00:00.000Z",
+    "daysToPay": 30,
+    "dueDate": "2026-06-26T00:00:00.000Z",
+    "paymentScheduleId": "665b...",
+    "paymentScheduleStageId": "665b...01",
+    "lineItems": [],
+    "subtotal": 1917952,
+    "markupTotal": 0,
+    "discount": 0,
+    "depositAmount": 0,
+    "totalAmount": 1917952,
+    "status": "draft",
+    "sentAt": null,
+    "paidBy": null,
+    "paidAt": null,
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+---
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Only draft invoices can be edited |
+| 400 | Payment schedule stage not found for this project |
+| 400 | Validation failed (`totalAmount`, `date`, `daysToPay`, `paymentScheduleStageId`) |
+| 403 | Sales — lead not assigned to you |
+| 404 | Invoice / lead not found |
+
+---
+
+### FE notes
+
+- Use the **same JSON payload** for create and edit; only the HTTP method and URL differ (`POST .../leads/:leadId/invoices` vs `PUT .../invoices/:invoiceId`).
+- After save, `dueDate` is always derived from `date` + `daysToPay` — do not send `dueDate` in the body.
+
+---
+
+## §39 — Common customer & lead lookups (admin + sales, filter dropdowns)
+
+Use these for **filter pickers** and autocomplete anywhere in admin or sales UI. Same URLs for both panels; scope follows JWT `role`.
+
+| Role | `GET /api/customers` | `GET /api/leads` |
+|------|----------------------|------------------|
+| `admin` | All customers | All leads |
+| `sales` | Customers on leads assigned to you | Leads where `assignedSales` = you |
+
+Not a replacement for `GET /api/admin/customers` (PO-gated customer panel) or full lead list pages — lightweight paginated search only.
+
+---
+
+### 39a. `GET /api/customers` — Customer lookup
+
+| | |
+|---|---|
+| **Roles** | `admin`, `sales` |
+| **Change** | **New** |
+
+**Query params**
+
+| Param | Required | Notes |
+|-------|----------|--------|
+| `search` | No | Matches `firstName`, `lastName`, `email`, `customerId`, `phone.number` (case-insensitive) |
+| `page` | No | Default `1` |
+| `limit` | No | Default `20`, max `100` |
+
+**Response `200` — `data`**
+
+```json
+{
+  "customers": [
+    {
+      "_id": "664c...",
+      "customerId": "CUS-00042",
+      "firstName": "Jane",
+      "lastName": "Doe",
+      "email": "jane@example.com",
+      "phone": { "number": "5551234567", "countryCode": "+1" },
+      "isActive": true,
+      "source": "manual",
+      "company": "",
+      "location": "Austin, TX",
+      "createdAt": "2026-04-01T08:00:00.000Z",
+      "updatedAt": "2026-05-20T10:00:00.000Z"
+    }
+  ],
+  "total": 120,
+  "page": 1,
+  "limit": 20
+}
+```
+
+Password is never returned. Sorted by `createdAt` descending.
+
+---
+
+### 39b. `GET /api/leads` — Lead / project lookup
+
+| | |
+|---|---|
+| **Roles** | `admin`, `sales` |
+| **Change** | **New** |
+
+**Query params**
+
+| Param | Required | Notes |
+|-------|----------|--------|
+| `search` | No | Matches lead `projectName`, `jobId`, `location`, `buildingType`, or linked customer `firstName`, `lastName`, `email`, `customerId`, `phone.number` |
+| `page` | No | Default `1` |
+| `limit` | No | Default `20`, max `100` |
+
+**Response `200` — `data`**
+
+```json
+{
+  "leads": [
+    {
+      "_id": "665a...",
+      "customerId": {
+        "_id": "664c...",
+        "customerId": "CUS-00042",
+        "firstName": "Jane",
+        "lastName": "Doe",
+        "email": "jane@example.com",
+        "phone": { "number": "5551234567", "countryCode": "+1" }
+      },
+      "projectName": "Warehouse Phase 2",
+      "jobId": "PRO-042",
+      "location": "Austin, TX",
+      "buildingType": "Warehouse",
+      "lifecycleStatus": "negotiation",
+      "quoteValue": 175000,
+      "assignedSales": {
+        "_id": "664c1a...",
+        "name": "Sales One",
+        "email": "sales1@example.com"
+      },
+      "isRaisedToPO": false,
+      "createdAt": "2026-04-15T08:00:00.000Z",
+      "updatedAt": "2026-05-26T10:30:00.000Z"
+    }
+  ],
+  "total": 85,
+  "page": 1,
+  "limit": 20
+}
+```
+
+Full lead document fields are returned (minus customer password). `customerId` and `assignedSales` are populated. Sorted by `createdAt` descending.
+
+---
+
+### FE notes
+
+- **Admin and sales** use the same paths: `GET /api/customers` and `GET /api/leads`.
+- For invoice filters, meeting filters, reports, etc., prefer these over role-specific list endpoints when you only need search + pagination.
+- `GET /api/leads/:leadId/invoices` and other `:leadId` routes are unchanged — register lookups before those in the router (already done).

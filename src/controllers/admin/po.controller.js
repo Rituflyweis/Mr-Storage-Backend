@@ -1,5 +1,6 @@
 const POOrder = require('../../models/POOrder')
 const Lead = require('../../models/Lead')
+const User = require('../../models/User')
 const Building = require('../../models/Building')
 const auditService = require('../../services/audit.service')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
@@ -48,16 +49,42 @@ exports.assignPOOrder = asyncHandler(async (req, res) => {
   order.assignedTo = assignedTo
   await order.save()
 
+  const lead = await Lead.findById(order.leadId)
+  const plantUser = await User.findById(assignedTo).select('name').lean()
+  if (lead) {
+    lead.lifecycleStatus = 'released_to_plant'
+    lead.lifecycleHistory.push({
+      stage: 'released_to_plant',
+      changedAt: new Date(),
+      changedBy: req.user._id,
+    })
+    await lead.save()
+
+    await auditService.log({
+      type: 'plant',
+      action: AUDIT_ACTIONS.LEAD_RELEASED_TO_PLANT,
+      leadId: order.leadId,
+      customerId: order.customerId,
+      performedBy: req.user._id,
+      metadata: {
+        poOrderId: order._id,
+        assignedTo,
+        assignedToName: plantUser?.name || '',
+        projectName: lead.projectName || '',
+      },
+    })
+  }
+
   // Transition all buildings for this project to drawing_pending
   await Building.updateMany({ leadId: order.leadId }, { status: 'drawing_pending' })
 
   // Notify the assigned plant user via socket
   if (global.io) {
-    const lead = await Lead.findById(order.leadId).select('projectName').lean()
+    const leadDoc = lead || await Lead.findById(order.leadId).select('projectName').lean()
     global.io.of('/admin').to(`user:${assignedTo}`).emit('project_assigned', {
       leadId: order.leadId,
       poOrderId: order._id,
-      projectName: lead?.projectName || '',
+      projectName: leadDoc?.projectName || '',
     })
   }
 

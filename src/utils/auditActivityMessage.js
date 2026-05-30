@@ -92,6 +92,10 @@ const formatAuditActivityMessage = (log, context = {}) => {
       return meta.lifecycleStatus
         ? `Lifecycle updated to ${meta.lifecycleStatus}${forProject}`
         : `Lifecycle updated${forProject}`
+    case AUDIT_ACTIONS.LEAD_RELEASED_TO_PLANT:
+      return meta.assignedToName
+        ? `Project released to plant (${meta.assignedToName})${forProject}`
+        : `Project released to plant${forProject}`
     case AUDIT_ACTIONS.LEAD_TEMPERATURE_UPDATED:
       return meta.temperature
         ? `Lead temperature set to ${meta.temperature}${forProject}`
