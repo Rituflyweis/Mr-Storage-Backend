@@ -9,10 +9,11 @@ const asyncHandler = require('../utils/asyncHandler')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../config/constants')
 
 exports.chatInit = asyncHandler(async (req, res) => {
-  const { firstName, email, phone, countryCode } = req.body
+  const { firstName, email, phone } = req.body
+  const countryCode = String(req.body.countryCode || '+1').trim() || '+1'
 
   const normalizedEmail = email.toLowerCase().trim()
-  const normalizedPhone = phone.trim()
+  const normalizedPhone = phone.replace(/\D/g, '').trim() || phone.trim()
 
   // 1. Try to find existing customer by email or phone
   let customer = await Customer.findOne({
@@ -33,7 +34,7 @@ exports.chatInit = asyncHandler(async (req, res) => {
       customerId,
       firstName: firstName.trim(),
       email: normalizedEmail,
-      phone: { number: normalizedPhone, countryCode: countryCode.trim() },
+      phone: { number: normalizedPhone, countryCode },
       password: hashedPassword,
       source: 'chat',
     })
@@ -84,6 +85,8 @@ exports.chatInit = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerName: customer.firstName,
     isReturning: !isNewCustomer,
+    isHandedToSales: lead.isHandedToSales || false,
+    isQuoteReady: lead.isQuoteReady || false,
   })
 })
 
@@ -92,8 +95,17 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
 
   const messages = await Message.find({ leadId })
     .sort({ createdAt: 1 })
-    .select('senderType content createdAt isRead')
+    .populate('senderId', 'name')
+    .select('senderType senderId content createdAt isRead')
     .lean()
 
-  return success(res, { messages })
+  const rows = messages.map((m) => ({
+    senderType: m.senderType,
+    content: m.content,
+    createdAt: m.createdAt,
+    isRead: m.isRead,
+    senderName: m.senderType === 'sales' ? m.senderId?.name || 'Sales' : undefined,
+  }))
+
+  return success(res, { messages: rows })
 })

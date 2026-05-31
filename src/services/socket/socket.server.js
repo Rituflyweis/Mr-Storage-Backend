@@ -7,7 +7,6 @@ const aiScriptHandler = require('./aiScript.handler')
 const initSocket = (io) => {
   global.io = io
 
-  // ── /chat namespace — public, customers only ──────────────────────────────────
   const chatNS = io.of('/chat')
 
   chatNS.on('connection', (socket) => {
@@ -20,10 +19,8 @@ const initSocket = (io) => {
     })
   })
 
-  // ── /admin namespace — authenticated admin, sales, and plant ─────────────────
   const adminNS = io.of('/admin')
 
-  // Auth middleware on /admin namespace
   adminNS.use((socket, next) => {
     const token = socket.handshake.auth?.token
     if (!token) return next(new Error('Authentication required'))
@@ -39,10 +36,8 @@ const initSocket = (io) => {
   adminNS.on('connection', (socket) => {
     console.log(`[Socket /admin] Connected: ${socket.id} | user: ${socket.user._id} | role: ${socket.user.role}`)
 
-    // All authenticated users join their personal room
     socket.join(`user:${socket.user._id}`)
 
-    // Admins also join the admin broadcast room
     if (socket.user.role === 'admin') {
       socket.join('admin_room')
     }

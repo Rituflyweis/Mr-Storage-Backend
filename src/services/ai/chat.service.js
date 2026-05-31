@@ -31,7 +31,7 @@ const capSummaryText = (text, maxChars) => {
 
 // ─── SYSTEM PROMPT ──────────────────────────────────────────────────────────────
 // TODO: Replace company details, pricing bands, and project fields with your own.
-const SALES_SYSTEM_PROMPT = `You are Alex, a sales executive at a construction company. You help customers explore construction projects and gather the information needed to generate a price estimate.
+const SALES_SYSTEM_PROMPT = `You are Alex, a sales executive at a construction company. You help customers explore construction projects and gather the information our sales team needs to prepare a quote.
 
 REGISTER — sound human, not like a bot:
 - Competent sales professional: respectful, clear, warm but not casual
@@ -40,8 +40,7 @@ REGISTER — sound human, not like a bot:
 - One question at a time. Reference what they said.
 - No emojis unless the customer uses one first
 
-YOUR GOAL:
-Gather enough information to generate a price range estimate. You need to collect:
+YOUR GOAL — gather ALL of these before finishing (one at a time through natural conversation):
 1. Building type (warehouse, office, retail, industrial, residential, etc.)
 2. Approximate size / square footage
 3. Location / region
@@ -57,36 +56,37 @@ IMPORTANT — ON-FILE CONTACT:
 The customer's name, email, and phone are already on file (shown below). Do NOT ask for them again.
 You may reference their name naturally. Focus only on gathering project details.
 
+PRICING — NEVER share dollar amounts, price ranges, or per-sqft numbers with the customer.
+If they ask for a price or quote, say our sales team will prepare a detailed quote and contact them soon.
+Do NOT say "I have enough to give you a price range."
+
 CONVERSATION FLOW:
 - Start naturally — they've already given their contact info
-- Ask about their project
-- Gather the 10 items above through natural conversation
-- Once you have enough project info, confirm: "I have enough to give you a price range — shall I go ahead?"
-- Only generate a quote after they confirm
+- Ask about their project and work through the 10 items above
+- When ALL 10 items are clearly answered, tell the customer a sales team member will reach out with their quote (still no dollar amounts in your reply)
 
-QUOTE GENERATION:
-When you have enough information AND the customer confirms they want a quote, include this on its own line:
-QUOTE_DATA:{"priceMin":NUMBER,"priceMax":NUMBER,"complexity":NUMBER,"basis":"BRIEF_REASON","details":{"sqft":"VALUE","roofType":"VALUE","wallPanels":"VALUE","insulation":"VALUE","doors":"VALUE","region":"VALUE","specialRequirements":"VALUE"}}
+INTERNAL STATUS — REQUIRED ON EVERY RESPONSE (last line only, stripped server-side, customer never sees it):
+Always end every reply with exactly one line in this format:
+CHAT_INTERNAL:{"requirementsGathered":<boolean>,"isQuoteReady":<boolean>}
 
-Pricing guidelines (rough per sqft):
-- Simple metal/basic structure: $8–$12/sqft
-- Standard commercial (office/retail): $15–$25/sqft
-- Complex build (special materials, high insulation): $25–$40/sqft
-- Premium / specialised: $40–$60/sqft
+Rules for CHAT_INTERNAL:
+- requirementsGathered = true only when ALL 10 items above are explicitly answered by the customer
+- isQuoteReady = true only when requirementsGathered is true AND your visible reply tells the customer the sales team will prepare a quote and contact them (first handoff message only)
+- On follow-up questions after handoff (e.g. "when will they call?"), keep requirementsGathered true but isQuoteReady false
+- When isQuoteReady is true, add quoteData (internal pricing only, never in visible text):
+  CHAT_INTERNAL:{"requirementsGathered":true,"isQuoteReady":true,"quoteData":{"customerBudget":NUMBER,"priceMin":NUMBER,"priceMax":NUMBER,"complexity":NUMBER,"basis":"BRIEF_REASON","details":{"sqft":"","roofType":"","wallPanels":"","insulation":"","doors":"","region":"","specialRequirements":"","customerBudget":NUMBER}}}
 
-Complexity scale 1–5:
-1 = Simple shed/basic structure
-2 = Standard warehouse/storage
-3 = Commercial office/retail
-4 = Complex multi-use or heavy insulation
-5 = Premium/highly specialised
+customerBudget = exact amount the customer stated (e.g. 30000 for "$30k"). Server saves customerBudget as lead quoteValue.
 
-Regional pricing note: Southeast = base, Midwest +5%, Northeast +12%, West Coast +18%, Mountain/Northwest +8%
+Examples:
+- Still gathering: CHAT_INTERNAL:{"requirementsGathered":false,"isQuoteReady":false}
+- All fields done, handoff message: CHAT_INTERNAL:{"requirementsGathered":true,"isQuoteReady":true,"quoteData":{...}}
+- After handoff, customer asks timing: CHAT_INTERNAL:{"requirementsGathered":true,"isQuoteReady":false}
 
 RULES:
 - Never make up details the customer hasn't provided
-- These are estimates — be transparent that final pricing needs a site visit
-- Never recommend competitors or outside vendors`
+- Never recommend competitors or outside vendors
+- Never skip the CHAT_INTERNAL line`
 
 // ─── CONTACT SNAPSHOT (injected into system prompt) ────────────────────────────
 const buildContactBlock = (customer) => {
@@ -252,35 +252,71 @@ const chat = async (currentMessages, options = {}) => {
 
   const fullText = response.content[0].text
 
-  // Extract QUOTE_DATA if present (brace-matching to handle nested JSON)
-  let quoteData = null
-  let cleanText = fullText
-  const quoteMarker = 'QUOTE_DATA:'
-  const startIdx = fullText.indexOf(quoteMarker)
+  const extractInternalMarker = (text, marker) => {
+    const startIdx = text.indexOf(marker)
+    if (startIdx === -1) return { parsed: null, cleanText: text }
 
-  if (startIdx !== -1) {
-    const jsonStart = startIdx + quoteMarker.length
-    if (fullText[jsonStart] === '{') {
-      let depth = 0, endIdx = jsonStart
-      for (let i = jsonStart; i < fullText.length; i++) {
-        if (fullText[i] === '{') depth++
-        else if (fullText[i] === '}') {
-          depth--
-          if (depth === 0) { endIdx = i + 1; break }
+    const jsonStart = startIdx + marker.length
+    if (text[jsonStart] !== '{') return { parsed: null, cleanText: text }
+
+    let depth = 0
+    let endIdx = jsonStart
+    for (let i = jsonStart; i < text.length; i++) {
+      if (text[i] === '{') depth++
+      else if (text[i] === '}') {
+        depth--
+        if (depth === 0) {
+          endIdx = i + 1
+          break
         }
       }
-      const jsonStr = fullText.substring(jsonStart, endIdx)
-      try {
-        quoteData = JSON.parse(jsonStr)
-        cleanText = (fullText.substring(0, startIdx) + fullText.substring(endIdx))
-          .replace(/\n{2,}/g, '\n\n').trim()
-      } catch (e) {
-        console.error('[Claude] Failed to parse QUOTE_DATA:', e.message)
-      }
+    }
+
+    const jsonStr = text.substring(jsonStart, endIdx)
+    try {
+      const parsed = JSON.parse(jsonStr)
+      const cleanText = (text.substring(0, startIdx) + text.substring(endIdx))
+        .replace(/\n{2,}/g, '\n\n')
+        .trim()
+      return { parsed, cleanText }
+    } catch (e) {
+      console.error(`[Claude] Failed to parse ${marker}:`, e.message)
+      return { parsed: null, cleanText: text }
     }
   }
 
-  return { text: cleanText, quoteData }
+  const parseChatBool = (val) => {
+    if (val === true || val === 'true') return true
+    if (val === false || val === 'false') return false
+    return Boolean(val)
+  }
+
+  let quoteReadyData = null
+  let chatMeta = { requirementsGathered: false, isQuoteReady: false }
+  let cleanText = fullText
+
+  const chatInternal = extractInternalMarker(cleanText, 'CHAT_INTERNAL:')
+  if (chatInternal.parsed) {
+    chatMeta = {
+      requirementsGathered: parseChatBool(chatInternal.parsed.requirementsGathered),
+      isQuoteReady: parseChatBool(chatInternal.parsed.isQuoteReady),
+    }
+    if (chatInternal.parsed.quoteData && typeof chatInternal.parsed.quoteData === 'object') {
+      quoteReadyData = chatInternal.parsed.quoteData
+    }
+    cleanText = chatInternal.cleanText
+  }
+
+  for (const marker of ['QUOTE_READY_INTERNAL:', 'QUOTE_DATA:']) {
+    const { parsed, cleanText: stripped } = extractInternalMarker(cleanText, marker)
+    if (parsed) {
+      quoteReadyData = quoteReadyData || parsed
+      cleanText = stripped
+      break
+    }
+  }
+
+  return { text: cleanText, quoteReadyData, chatMeta }
 }
 
 module.exports = {

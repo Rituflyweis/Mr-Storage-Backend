@@ -16,7 +16,7 @@ router.post('/chat/init',
     body('firstName').notEmpty().trim(),
     body('email').isEmail().normalizeEmail(),
     body('phone').notEmpty().trim(),
-    body('countryCode').notEmpty().trim(),
+    body('countryCode').optional().trim(),
   ],
   validate,
   ctrl.chatInit

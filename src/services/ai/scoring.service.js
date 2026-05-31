@@ -1,16 +1,24 @@
 const Anthropic = require('@anthropic-ai/sdk')
 const Lead = require('../../models/Lead')
 const env = require('../../config/env')
-const { LIFECYCLE_STAGES, resolveLeadTemperatureFromScore } = require('../../config/constants')
+const { resolveLeadTemperatureFromScore } = require('../../config/constants')
 
 const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+
+const SALES_LIFECYCLE_FOR_SCORING = [
+  'initial_contact',
+  'requirements_gathered',
+  'proposal_sent',
+  'negotiation',
+  'deal_closed',
+  'payment_done',
+]
 
 const parseCharLimit = (val, fallback) => {
   const n = parseInt(String(val != null ? val : fallback), 10)
   return Number.isNaN(n) ? fallback : n
 }
 
-// ─── SCORE A LEAD FROM ITS MESSAGES ────────────────────────────────────────────
 const scoreLead = async (messages, leadName = '') => {
   const maxChars = parseCharLimit(env.CLAUDE_MAX_SCORE_LIVE_CHARS, 18000)
 
@@ -37,7 +45,8 @@ const scoreLead = async (messages, leadName = '') => {
     "projectClarity": { "points": <0-15>, "reason": "<brief>" }
   },
   "requirements": "<one sentence project summary>",
-  "projectLifecycleStage": "<EXACTLY one of: ${LIFECYCLE_STAGES.join(' | ')} | null>"
+  "requirementsComplete": <true ONLY if ALL 10 are explicitly stated by the customer: (1) building type, (2) sqft/size, (3) location, (4) roof type, (5) wall type, (6) insulation, (7) doors/windows count or size, (8) timeline, (9) budget amount or range, (10) decision-maker confirmation OR explicit "no special requirements"; otherwise false>,
+  "projectLifecycleStage": "<EXACTLY one of: ${SALES_LIFECYCLE_FOR_SCORING.join(' | ')} | null>"
 }
 
 Scoring guide:
@@ -45,9 +54,10 @@ Scoring guide:
 - budgetSignals (0-25): Budget approved=25, mentioned range=15, asking estimate=8, price shopping=3
 - timeline (0-20): Within 1 month=20, 1-3 months=15, 3-6 months=10, just exploring=3
 - decisionMaker (0-15): Confirmed=15, influencer=8, unclear=3
-- projectClarity (0-15): All details=15, most=10, some=5, vague=0
+- projectClarity (0-15): All 10 required fields explicitly provided=15, most=10, some=5, vague=0
 
-Lifecycle: initial_contact=first touch; requirements_collected=scope discussed; proposal_sent=quote shared; negotiation=revising terms; deal_closed=committed; payment_done=deposit confirmed; delivered=handoff done
+requirementsComplete MUST be false if budget OR decision-maker OR any of the 10 fields is still missing or only asked by Alex but not answered by the customer.
+projectClarity points must be 0-15 (never exceed 15).
 
 TRANSCRIPT:
 ${transcript}`,
@@ -64,12 +74,12 @@ ${transcript}`,
       score: 0,
       scoreBreakdown: {},
       requirements: '',
+      requirementsComplete: false,
       projectLifecycleStage: null,
     }
   }
 }
 
-// ─── APPLY SCORE DATA TO LEAD DOCUMENT ────────────────────────────────────────
 const applyScoreToLead = (lead, scoreData) => {
   if (!scoreData || typeof scoreData !== 'object') return
 
@@ -85,23 +95,8 @@ const applyScoreToLead = (lead, scoreData) => {
   lead.leadScoring.lastScoredAt = new Date()
   lead.leadScoring.temperatureManual = false
   lead.leadScoring.temperature = resolveLeadTemperatureFromScore(lead.leadScoring.score)
-
-  // Only advance lifecycle — never regress a stage the sales team has already reached
-  if (scoreData.projectLifecycleStage && LIFECYCLE_STAGES.includes(scoreData.projectLifecycleStage)) {
-    const newIdx     = LIFECYCLE_STAGES.indexOf(scoreData.projectLifecycleStage)
-    const currentIdx = LIFECYCLE_STAGES.indexOf(lead.lifecycleStatus)
-    if (newIdx > currentIdx) {
-      lead.lifecycleStatus = scoreData.projectLifecycleStage
-      lead.lifecycleHistory.push({
-        stage: scoreData.projectLifecycleStage,
-        changedAt: new Date(),
-        changedBy: null,
-      })
-    }
-  }
 }
 
-// ─── FIRE-AND-FORGET WRAPPER ───────────────────────────────────────────────────
 const updateLeadScore = async (leadId, messages, leadName = '') => {
   try {
     const scoreData = await scoreLead(messages, leadName)
@@ -111,7 +106,6 @@ const updateLeadScore = async (leadId, messages, leadName = '') => {
     applyScoreToLead(lead, scoreData)
     await lead.save()
 
-    // Emit to admin panel
     if (global.io) {
       global.io.of('/admin').to('admin_room').emit('lead_score_updated', {
         leadId,
@@ -119,11 +113,11 @@ const updateLeadScore = async (leadId, messages, leadName = '') => {
         temperature: lead.leadScoring.temperature,
         breakdown: scoreData.scoreBreakdown,
         requirements: scoreData.requirements,
+        lifecycleStatus: lead.lifecycleStatus,
       })
     }
   } catch (err) {
     console.error('[Scoring] updateLeadScore failed:', err.message)
-    // Fail silently — not on critical path
   }
 }
 
