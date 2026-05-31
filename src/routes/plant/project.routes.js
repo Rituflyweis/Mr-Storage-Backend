@@ -2,7 +2,7 @@ const router = require('express').Router()
 const { body, query } = require('express-validator')
 const ctrl = require('../../controllers/plant/project.controller')
 const validate = require('../../middleware/validate')
-const { PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
+const { PLANT_LIFECYCLE_STAGES, BOM_FILE_FORMATS } = require('../../config/constants')
 
 router.get('/stats',
   [
@@ -56,7 +56,20 @@ router.post('/:leadId/drawings',
   ctrl.uploadProjectDrawings
 )
 router.get('/:leadId/drawings', ctrl.getProjectDrawings)
+router.post('/:leadId/bom',
+  [
+    body('bomFiles').isArray({ min: 1 }),
+    body('bomFiles.*.buildingId').isMongoId(),
+    body('bomFiles.*.fileUrl').notEmpty().trim(),
+    body('bomFiles.*.fileName').notEmpty().trim(),
+    body('bomFiles.*.fileFormat').optional().isIn(BOM_FILE_FORMATS),
+  ],
+  validate,
+  ctrl.uploadProjectBom
+)
 router.get('/:leadId/bom-files', ctrl.getProjectBomFiles)
+router.post('/:leadId/consolidated-bom/generate', ctrl.generateConsolidatedBOM)
+router.get('/:leadId/consolidated-bom', ctrl.getConsolidatedBOM)
 router.get('/:leadId/delivery', ctrl.getProjectDelivery)
 router.get('/:leadId/shipper-files', ctrl.getProjectShipperFiles)
 

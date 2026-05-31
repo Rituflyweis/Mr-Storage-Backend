@@ -5,12 +5,24 @@ const Building = require('../../models/Building')
 const Invoice = require('../../models/Invoice')
 const Delivery = require('../../models/Delivery')
 const ShipperRequest = require('../../models/ShipperRequest')
+const BOMJob = require('../../models/BOMJob')
+const BOMItem = require('../../models/BOMItem')
+const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const AuditLog = require('../../models/AuditLog')
 const auditService = require('../../services/audit.service')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const { formatLog } = require('../../services/auditActivity.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { validatePlantLifecycleTransition } = require('../../utils/plantLifecycle')
+const { getLatestBomJobsByBuilding, formatBomJobSummary } = require('../../utils/plantBomAccess')
+const { getActiveCostVersion } = require('../../services/plant/smdt.service')
+const { processBOMJob, inferFileFormat } = require('../../services/plant/bom.service')
+const {
+  generateConsolidatedExcel,
+  groupItemsForConsolidation,
+  uploadConsolidatedExcelToS3,
+  loadPricedBomItemsForBuildings,
+} = require('../../services/plant/consolidator.service')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -440,12 +452,15 @@ exports.getProjectBuildings = asyncHandler(async (req, res) => {
     .sort({ buildingNumber: 1 })
     .lean()
 
+  const bomJobMap = await getLatestBomJobsByBuilding(leadId)
+
   return success(res, {
     leadId,
     projectName: lead.projectName || '',
     numberOfBuildings: lead.numberOfBuildings ?? buildings.length,
     buildings: buildings.map((b) => {
       const latest = getLatestDrawing(b.drawings)
+      const latestBomJob = formatBomJobSummary(bomJobMap.get(String(b._id)))
       return {
         buildingId: b._id,
         buildingNumber: b.buildingNumber,
@@ -454,6 +469,9 @@ exports.getProjectBuildings = asyncHandler(async (req, res) => {
         latestDrawingStatus: latest?.status || null,
         drawingCount: (b.drawings || []).length,
         hasDrawing: (b.drawings || []).length > 0,
+        latestBomJob,
+        hasBomJob: !!latestBomJob,
+        bomJobStatus: latestBomJob?.status || null,
       }
     }),
   })
@@ -548,6 +566,104 @@ exports.uploadProjectDrawings = asyncHandler(async (req, res) => {
   }, 'Drawing(s) uploaded')
 })
 
+exports.uploadProjectBom = asyncHandler(async (req, res) => {
+  const access = await guardProject(req, res)
+  if (!access) return
+  const { lead } = access
+  const leadId = lead._id
+  const { bomFiles: bomEntries } = req.body
+
+  const activeVersion = await getActiveCostVersion()
+  if (!activeVersion) {
+    return badRequest(res, 'No active SMDT cost version. Upload SMDT cost list first.')
+  }
+
+  const buildingIds = bomEntries.map((d) => String(d.buildingId))
+  const uniqueIds = new Set(buildingIds)
+  if (uniqueIds.size !== buildingIds.length) {
+    return badRequest(res, 'Duplicate buildingId in bomFiles array')
+  }
+
+  const buildings = await Building.find({
+    leadId,
+    _id: { $in: [...uniqueIds] },
+  })
+
+  if (buildings.length !== uniqueIds.size) {
+    const found = new Set(buildings.map((b) => String(b._id)))
+    const missing = [...uniqueIds].filter((id) => !found.has(id))
+    return badRequest(res, `Building(s) not found for this project: ${missing.join(', ')}`)
+  }
+
+  const buildingMap = new Map(buildings.map((b) => [String(b._id), b]))
+  const jobs = []
+
+  for (const entry of bomEntries) {
+    const building = buildingMap.get(String(entry.buildingId))
+    const fileName = entry.fileName.trim()
+    const fileFormat = inferFileFormat(fileName, entry.fileFormat)
+
+    await BOMItem.deleteMany({ buildingId: building._id })
+    await BOMJob.deleteMany({ buildingId: building._id })
+
+    const job = await BOMJob.create({
+      leadId,
+      buildingId: building._id,
+      buildingNumber: building.buildingNumber,
+      uploadedBy: req.user._id,
+      fileName,
+      fileUrl: entry.fileUrl.trim(),
+      fileFormat,
+      status: 'queued',
+      isConfirmed: false,
+    })
+
+    if (building.status !== 'bom_confirmed') {
+      building.status = 'bom_pending'
+      await building.save()
+    }
+
+    processBOMJob(
+      job._id,
+      job.fileUrl,
+      job.fileName,
+      job.fileFormat,
+      leadId,
+      building._id,
+      building.buildingNumber,
+      req.user._id
+    ).catch((err) => console.error('[BOMJob] Background processing error:', err.message))
+
+    await auditService.log({
+      type: 'plant',
+      action: AUDIT_ACTIONS.BOM_JOB_STARTED,
+      leadId,
+      customerId: lead.customerId,
+      performedBy: req.user._id,
+      metadata: {
+        bomJobId: job._id,
+        buildingId: building._id,
+        buildingNumber: building.buildingNumber,
+        fileName,
+      },
+    })
+
+    jobs.push({
+      buildingId: building._id,
+      buildingNumber: building.buildingNumber,
+      bomJobId: job._id,
+      status: job.status,
+      fileName: job.fileName,
+    })
+  }
+
+  return created(res, {
+    leadId,
+    jobs,
+    message: `BOM extraction started for ${jobs.length} building(s). Poll job status until completed.`,
+  }, 'BOM upload registered')
+})
+
 exports.getProjectDrawings = asyncHandler(async (req, res) => {
   const access = await guardProject(req, res)
   if (!access) return
@@ -573,27 +689,26 @@ exports.getProjectBomFiles = asyncHandler(async (req, res) => {
   if (!access) return
   const leadId = access.lead._id
 
-  let bomFiles = []
-  try {
-    const BOMJob = require('../../models/BOMJob')
-    const jobs = await BOMJob.find({ leadId })
-      .select('buildingId buildingNumber fileName fileUrl status uploadedAt totalItems isConfirmed createdAt')
-      .sort({ createdAt: -1 })
-      .lean()
-    bomFiles = jobs.map((j) => ({
-      buildingId: j.buildingId,
-      buildingNumber: j.buildingNumber,
-      bomJobId: j._id,
-      fileName: j.fileName || '',
-      fileUrl: j.fileUrl || '',
-      status: j.status,
-      uploadedAt: j.uploadedAt || j.createdAt,
-      totalItems: j.totalItems ?? 0,
-      isConfirmed: j.isConfirmed === true,
-    }))
-  } catch {
-    bomFiles = []
-  }
+  const bomJobMap = await getLatestBomJobsByBuilding(leadId)
+
+  const bomFiles = [...bomJobMap.values()].map((j) => ({
+    buildingId: j.buildingId,
+    buildingNumber: j.buildingNumber,
+    bomJobId: j._id,
+    fileName: j.fileName || '',
+    fileUrl: j.fileUrl || '',
+    fileFormat: j.fileFormat,
+    status: j.status,
+    uploadedAt: j.createdAt,
+    totalItems: j.totalItems ?? 0,
+    matchedItems: j.matchedItems ?? 0,
+    unmatchedItems: j.unmatchedItems ?? 0,
+    frameItems: j.frameItems ?? 0,
+    isConfirmed: j.isConfirmed === true,
+    extractionMethod: j.extractionMethod || 'exceljs',
+    skippedSheets: j.skippedSheets || [],
+    errorMessage: j.errorMessage || null,
+  })).sort((a, b) => a.buildingNumber - b.buildingNumber)
 
   return success(res, { bomFiles })
 })
@@ -642,5 +757,136 @@ exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
       quoteValue: r.quoteValue,
       sentAt: r.sentAt,
     })),
+  })
+})
+
+const formatConsolidatedBOMResponse = (doc) => ({
+  _id: doc._id,
+  leadId: doc.leadId,
+  status: doc.status,
+  fileUrl: doc.fileUrl,
+  totalCost: doc.totalCost,
+  itemCount: doc.items?.length ?? 0,
+  items: (doc.items || []).map((item) => ({
+    _id: item._id,
+    partCode: item.partCode,
+    partColor: item.partColor,
+    description: item.description,
+    category: item.category,
+    costUnit: item.costUnit,
+    totalQty: item.totalQty,
+    totalLengthFeet: item.totalLengthFeet,
+    totalWeight: item.totalWeight,
+    totalCost: item.totalCost,
+    buildings: item.buildings,
+    markIds: item.markIds,
+  })),
+  sentToVendors: (doc.sentToVendors || []).map((entry) => ({
+    _id: entry._id,
+    vendorId: entry.vendorId?._id || entry.vendorId,
+    vendorName: entry.vendorId?.vendorName || '',
+    sentAt: entry.sentAt,
+  })),
+  createdAt: doc.createdAt,
+  updatedAt: doc.updatedAt,
+})
+
+exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
+  const access = await guardProject(req, res)
+  if (!access) return
+  const { lead } = access
+  const leadId = lead._id
+
+  const buildings = await Building.find({ leadId }).sort({ buildingNumber: 1 }).lean()
+  if (!buildings.length) {
+    return badRequest(res, 'No buildings on this project')
+  }
+
+  const bomJobMap = await getLatestBomJobsByBuilding(leadId)
+  const unconfirmedBuildings = []
+
+  for (const building of buildings) {
+    const job = bomJobMap.get(String(building._id))
+    if (!job || job.status !== 'completed' || job.isConfirmed !== true) {
+      unconfirmedBuildings.push(building.buildingNumber)
+    }
+  }
+
+  if (unconfirmedBuildings.length) {
+    return badRequest(
+      res,
+      'All buildings must have confirmed BOM before consolidation',
+      { unconfirmedBuildings }
+    )
+  }
+
+  const buildingIds = buildings.map((b) => b._id)
+  const allItems = await loadPricedBomItemsForBuildings(buildingIds)
+  if (!allItems.length) {
+    return badRequest(res, 'No priced BOM items found for this project')
+  }
+
+  const buildingMap = {}
+  buildings.forEach((b) => { buildingMap[String(b._id)] = b.buildingNumber })
+
+  const { buffer, totalCost } = await generateConsolidatedExcel(lead, buildings, allItems)
+  const groupedItems = groupItemsForConsolidation(allItems, buildingMap)
+  const { fileUrl } = await uploadConsolidatedExcelToS3(buffer, leadId)
+
+  const existing = await ConsolidatedBOM.findOne({ leadId })
+  const consolidatedBOM = await ConsolidatedBOM.findOneAndReplace(
+    { leadId },
+    {
+      leadId,
+      createdBy: existing?.createdBy || req.user._id,
+      status: 'draft',
+      fileUrl,
+      totalCost,
+      items: groupedItems,
+      sentToVendors: [],
+    },
+    { upsert: true, new: true, runValidators: true }
+  )
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.CONSOLIDATED_BOM_GENERATED,
+    leadId,
+    customerId: lead.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      consolidatedBOMId: consolidatedBOM._id,
+      totalCost,
+      itemCount: groupedItems.length,
+      lineItemCount: allItems.length,
+    },
+  })
+
+  return success(res, {
+    consolidatedBOM: {
+      _id: consolidatedBOM._id,
+      status: consolidatedBOM.status,
+      fileUrl: consolidatedBOM.fileUrl,
+      totalCost: consolidatedBOM.totalCost,
+      itemCount: groupedItems.length,
+    },
+  })
+})
+
+exports.getConsolidatedBOM = asyncHandler(async (req, res) => {
+  const access = await guardProject(req, res)
+  if (!access) return
+  const leadId = access.lead._id
+
+  const consolidatedBOM = await ConsolidatedBOM.findOne({ leadId })
+    .populate('sentToVendors.vendorId', 'vendorName vendorCode')
+    .lean()
+
+  if (!consolidatedBOM) {
+    return notFound(res, 'Consolidated BOM not found. Generate one first.')
+  }
+
+  return success(res, {
+    consolidatedBOM: formatConsolidatedBOMResponse(consolidatedBOM),
   })
 })

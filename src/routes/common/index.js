@@ -6,6 +6,7 @@ const validate = require('../../middleware/validate')
 
 const guard = [verifyToken, roleGuard(['admin', 'sales'])]
 const uploadGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant'])]
+const smdtGuard = [verifyToken, roleGuard(['admin', 'plant'])]
 
 const lookupValidators = [
   query('search').optional().isString(),
@@ -42,5 +43,6 @@ router.use('/invoices', ...guard, require('./invoice.routes'))
 router.use('/payment-schedules', ...guard, require('./payment.routes'))
 router.use('/upload', uploadGuard, require('./upload.routes'))
 router.use('/uploads', uploadGuard, require('./upload.routes'))
+router.use('/smdt', smdtGuard, require('./smdt.routes'))
 
 module.exports = router

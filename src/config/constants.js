@@ -58,7 +58,7 @@ const ASSIGN_METHODS = ['auto', 'manual']
 const AUDIT_TYPES = [
   'lead', 'invoice', 'quotation', 'meeting',
   'followup', 'user', 'escalation', 'po', 'chat', 'activity',
-  'plant',
+  'plant', 'smdt',
 ]
 
 const AUDIT_ACTIONS = {
@@ -82,6 +82,11 @@ const AUDIT_ACTIONS = {
   DRAWING_REVIEWED:         'drawing.reviewed',
   BOM_APPROVED:             'bom.approved',
   BOM_REJECTED:             'bom.rejected',
+  BOM_JOB_STARTED:          'bom.job_started',
+  BOM_JOB_COMPLETED:        'bom.job_completed',
+  BOM_JOB_FAILED:           'bom.job_failed',
+  BOM_CONFIRMED:            'bom.confirmed',
+  CONSOLIDATED_BOM_GENERATED: 'consolidated_bom.generated',
   QUOTATION_CREATED:        'quotation.created',
   QUOTATION_SENT:           'quotation.sent',
   QUOTATION_ACCEPTED:       'quotation.accepted',
@@ -116,6 +121,11 @@ const AUDIT_ACTIONS = {
   CARRIER_CREATED:           'carrier.created',
   CARRIER_UPDATED:           'carrier.updated',
 
+  SMDT_BULK_UPLOADED:        'smdt.bulk_uploaded',
+  SMDT_ITEM_ADDED:           'smdt.item_added',
+  SMDT_ITEM_UPDATED:         'smdt.item_updated',
+  SMDT_ITEM_DELETED:         'smdt.item_deleted',
+
   // Backward-compatible alias; remove after payment schedule migration is complete.
   PAYMENT_MARKED_PAID:      'payment.stage_paid',
 }
@@ -149,6 +159,23 @@ const DELIVERY_STATUSES = [
   'draft', 'bidding_sent', 'carrier_selected', 'scheduled',
   'in_transit', 'delivered', 'cancelled',
 ]
+
+const SMDT_COST_UNITS = ['FT', 'LB', 'EA']
+
+const SMDT_CATEGORIES = [
+  'Insulation', 'Joist', 'Panels', 'TRIM', 'Mastic', 'Screws',
+  'ABolts', 'CLIPS', 'Cable', 'Flange_Brace', 'Jambs', 'DCOL',
+  'ZGIRT', 'OPEN CHANNEL', 'EaveStruts', 'ACCESSORIES', 'SKTLIGHT',
+  'ANGL1', 'TS_PANEL', 'frames',
+]
+
+const BOM_JOB_STATUSES = ['queued', 'processing', 'completed', 'failed']
+const BOM_FILE_FORMATS = ['ods', 'xlsx', 'xls']
+const BOM_MATCH_STATUSES = ['matched', 'unmatched', 'ambiguous', 'skipped']
+const BOM_MATCH_CONFIDENCE = ['exact', 'part_alias', 'color_fallback', 'part_only', 'none']
+const BOM_ITEM_FILTERS = ['all', 'unpriced', 'frames', 'matched']
+
+const CONSOLIDATED_BOM_STATUSES = ['draft', 'sent_to_vendor', 'vendor_submitted', 'approved']
 
 // Backward-compatible alias for old model/controller usage during migration.
 const PAYMENT_ITEM_STATUSES = PAYMENT_STAGE_STATUSES
@@ -187,4 +214,12 @@ module.exports = {
   FREIGHT_BID_STATUSES,
   ACTIVE_FREIGHT_BID_STATUSES,
   DELIVERY_STATUSES,
+  SMDT_COST_UNITS,
+  SMDT_CATEGORIES,
+  BOM_JOB_STATUSES,
+  BOM_FILE_FORMATS,
+  BOM_MATCH_STATUSES,
+  BOM_MATCH_CONFIDENCE,
+  BOM_ITEM_FILTERS,
+  CONSOLIDATED_BOM_STATUSES,
 }

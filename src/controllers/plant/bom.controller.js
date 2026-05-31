@@ -1,1 +1,285 @@
-module.exports = {}
+const BOMJob = require('../../models/BOMJob')
+const BOMItem = require('../../models/BOMItem')
+const Building = require('../../models/Building')
+const SMDTItem = require('../../models/SMDTItem')
+const auditService = require('../../services/audit.service')
+const { processBOMJob, calculateTotalCost, inferFileFormat } = require('../../services/plant/bom.service')
+const { getActiveCostVersion, normalizeCode } = require('../../services/plant/smdt.service')
+const { assertBomJobAccess } = require('../../utils/plantBomAccess')
+const { success, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
+const asyncHandler = require('../../utils/asyncHandler')
+const { AUDIT_ACTIONS, BOM_ITEM_FILTERS } = require('../../config/constants')
+
+const buildItemFilter = (filter) => {
+  switch (filter) {
+    case 'unpriced':
+      return { isPriced: false }
+    case 'frames':
+      return { isFrameType: true }
+    case 'matched':
+      return { matchStatus: 'matched' }
+    default:
+      return {}
+  }
+}
+
+exports.getJobStatus = asyncHandler(async (req, res) => {
+  const result = await assertBomJobAccess(req.params.jobId, req.user._id)
+  if (result.error) {
+    if (result.code === 404) return notFound(res, result.error)
+    return forbidden(res, result.error)
+  }
+
+  const { job } = result
+  return success(res, {
+    jobId: job._id,
+    status: job.status,
+    buildingId: job.buildingId,
+    buildingNumber: job.buildingNumber,
+    fileName: job.fileName,
+    totalSheets: job.totalSheets ?? 0,
+    totalItems: job.totalItems ?? 0,
+    matchedItems: job.matchedItems ?? 0,
+    unmatchedItems: job.unmatchedItems ?? 0,
+    frameItems: job.frameItems ?? 0,
+    skippedRows: job.skippedRows ?? 0,
+    skippedSheets: job.skippedSheets || [],
+    extractionMethod: job.extractionMethod || 'exceljs',
+    isConfirmed: job.isConfirmed === true,
+    errorMessage: job.errorMessage,
+    processingStartedAt: job.processingStartedAt,
+    processingEndedAt: job.processingEndedAt,
+  })
+})
+
+exports.getJobsStatusBatch = asyncHandler(async (req, res) => {
+  const { jobIds } = req.body
+  if (!Array.isArray(jobIds) || !jobIds.length) {
+    return badRequest(res, 'jobIds array is required')
+  }
+
+  const jobs = await BOMJob.find({ _id: { $in: jobIds } }).lean()
+  const results = []
+
+  for (const jobId of jobIds) {
+    const job = jobs.find((j) => String(j._id) === String(jobId))
+    if (!job) {
+      results.push({ jobId, error: 'Not found' })
+      continue
+    }
+    const access = await assertBomJobAccess(job._id, req.user._id)
+    if (access.error) {
+      results.push({ jobId, error: access.error })
+      continue
+    }
+    results.push({
+      jobId: job._id,
+      status: job.status,
+      buildingId: job.buildingId,
+      buildingNumber: job.buildingNumber,
+      totalItems: job.totalItems ?? 0,
+      matchedItems: job.matchedItems ?? 0,
+      unmatchedItems: job.unmatchedItems ?? 0,
+      errorMessage: job.errorMessage,
+      processingEndedAt: job.processingEndedAt,
+    })
+  }
+
+  return success(res, { jobs: results })
+})
+
+exports.getBOMJob = asyncHandler(async (req, res) => {
+  const result = await assertBomJobAccess(req.params.jobId, req.user._id)
+  if (result.error) {
+    if (result.code === 404) return notFound(res, result.error)
+    return forbidden(res, result.error)
+  }
+
+  const { job } = result
+  const filter = req.query.filter || 'all'
+  if (!BOM_ITEM_FILTERS.includes(filter)) {
+    return badRequest(res, `Invalid filter. Use one of: ${BOM_ITEM_FILTERS.join(', ')}`)
+  }
+
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50))
+  const skip = (page - 1) * limit
+
+  const itemFilter = { bomJobId: job._id, ...buildItemFilter(filter) }
+  const [items, total] = await Promise.all([
+    BOMItem.find(itemFilter).sort({ category: 1, rowNumber: 1 }).skip(skip).limit(limit).lean(),
+    BOMItem.countDocuments(itemFilter),
+  ])
+
+  const allItems = await BOMItem.find({ bomJobId: job._id }).select('isPriced isFrameType finalTotalCost').lean()
+  const pricedItems = allItems.filter((i) => i.isPriced).length
+  const totalCost = allItems.reduce((sum, i) => sum + (i.finalTotalCost || 0), 0)
+
+  const itemsByCategory = items.reduce((acc, item) => {
+    const key = item.category || 'Unknown'
+    if (!acc[key]) acc[key] = []
+    acc[key].push(item)
+    return acc
+  }, {})
+
+  return success(res, {
+    bomJob: {
+      _id: job._id,
+      buildingId: job.buildingId,
+      buildingNumber: job.buildingNumber,
+      fileName: job.fileName,
+      status: job.status,
+      isConfirmed: job.isConfirmed === true,
+      totalItems: job.totalItems ?? 0,
+      matchedItems: job.matchedItems ?? 0,
+      unmatchedItems: job.unmatchedItems ?? 0,
+      frameItems: job.frameItems ?? 0,
+      extractionMethod: job.extractionMethod,
+      skippedSheets: job.skippedSheets || [],
+    },
+    itemsByCategory,
+    summary: {
+      totalItems: allItems.length,
+      pricedItems,
+      unpricedItems: allItems.length - pricedItems,
+      frameItems: allItems.filter((i) => i.isFrameType).length,
+      totalCost,
+      isFullyPriced: allItems.length > 0 && pricedItems === allItems.length,
+    },
+    total,
+    page,
+    limit,
+  })
+})
+
+exports.priceBOMItem = asyncHandler(async (req, res) => {
+  const item = await BOMItem.findById(req.params.bomItemId)
+  if (!item) return notFound(res, 'BOM item not found')
+
+  const access = await assertBomJobAccess(item.bomJobId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const { manualUnitCost, saveToSMDT } = req.body
+  if (manualUnitCost == null || Number.isNaN(Number(manualUnitCost))) {
+    return badRequest(res, 'manualUnitCost is required and must be numeric')
+  }
+
+  const unitCost = Number(manualUnitCost)
+  const costUnit = item.costUnit || (item.isFrameType ? 'LB' : 'EA')
+
+  const manualTotalCost = calculateTotalCost({
+    costUnit,
+    unitCost,
+    quantity: item.quantity,
+    lengthFeet: item.lengthFeet,
+    weight: item.weight,
+  })
+
+  if (manualTotalCost == null) {
+    return badRequest(res, `Cannot calculate total for cost unit ${costUnit} — missing length/weight/qty`)
+  }
+
+  item.isManuallyPriced = true
+  item.manualUnitCost = unitCost
+  item.manualTotalCost = manualTotalCost
+  item.isPriced = true
+  item.finalUnitCost = unitCost
+  item.finalTotalCost = manualTotalCost
+  item.costUnit = costUnit
+
+  if (saveToSMDT === true && item.partCode && item.category) {
+    const activeVersion = await getActiveCostVersion()
+    if (activeVersion) {
+      const partNameNormalized = normalizeCode(item.partCode)
+      const partColorNormalized = item.partColor ? normalizeCode(item.partColor) : normalizeCode('--')
+      await SMDTItem.findOneAndUpdate(
+        {
+          costVersionId: activeVersion._id,
+          category: item.category,
+          partNameNormalized,
+          partColorNormalized,
+        },
+        {
+          $set: {
+            partName: item.partCode,
+            partColor: item.partColor || '--',
+            costUnit,
+            mbsCost: unitCost,
+            isActive: true,
+            isFrameType: item.isFrameType === true,
+            addedBy: req.user._id,
+          },
+          $setOnInsert: {
+            costVersionId: activeVersion._id,
+            category: item.category,
+            partNameNormalized,
+            partColorNormalized,
+          },
+        },
+        { upsert: true }
+      )
+      item.manualPriceSavedToSMDT = true
+    }
+  }
+
+  await item.save()
+
+  return success(res, { bomItem: item })
+})
+
+exports.confirmBuildingBOM = asyncHandler(async (req, res) => {
+  const { buildingId } = req.params
+  const building = await Building.findById(buildingId)
+  if (!building) return notFound(res, 'Building not found')
+
+  const job = await BOMJob.findOne({ buildingId, leadId: building.leadId }).sort({ createdAt: -1 })
+  if (!job) return notFound(res, 'No BOM job for this building')
+
+  const jobAccess = await assertBomJobAccess(job._id, req.user._id)
+  if (jobAccess.error) {
+    if (jobAccess.code === 404) return notFound(res, jobAccess.error)
+    return forbidden(res, jobAccess.error)
+  }
+
+  if (job.status !== 'completed') {
+    return badRequest(res, 'BOM extraction must complete before confirmation')
+  }
+
+  const unpriced = await BOMItem.find({ bomJobId: job._id, isPriced: false }).select('markId').lean()
+  if (unpriced.length) {
+    return badRequest(
+      res,
+      `${unpriced.length} items still need pricing`,
+      { unpricedMarkIds: unpriced.map((i) => i.markId).filter(Boolean) }
+    )
+  }
+
+  const allItems = await BOMItem.find({ bomJobId: job._id }).select('finalTotalCost').lean()
+  const totalCost = allItems.reduce((sum, i) => sum + (i.finalTotalCost || 0), 0)
+
+  job.isConfirmed = true
+  job.confirmedBy = req.user._id
+  job.confirmedAt = new Date()
+  await job.save()
+
+  building.status = 'bom_confirmed'
+  await building.save()
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.BOM_CONFIRMED,
+    leadId: job.leadId,
+    performedBy: req.user._id,
+    metadata: { buildingId, buildingNumber: job.buildingNumber, totalCost },
+  })
+
+  return success(res, {
+    buildingId: building._id,
+    buildingNumber: job.buildingNumber,
+    isConfirmed: true,
+    totalCost,
+  })
+})

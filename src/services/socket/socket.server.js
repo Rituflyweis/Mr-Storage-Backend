@@ -20,7 +20,7 @@ const initSocket = (io) => {
     })
   })
 
-  // ── /admin namespace — authenticated admin + sales ────────────────────────────
+  // ── /admin namespace — authenticated admin, sales, and plant ─────────────────
   const adminNS = io.of('/admin')
 
   // Auth middleware on /admin namespace

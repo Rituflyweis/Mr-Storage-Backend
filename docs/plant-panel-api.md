@@ -4,7 +4,7 @@ Frontend integration guide for the **Plant Panel** (`role: "plant"`).
 
 > **Maintenance:** Add or update a section here whenever a plant panel endpoint is implemented or changed. Only document **completed** endpoints — no placeholders for work in progress.
 >
-> **Last updated:** 2026-05-28 — Building list + drawing upload (S3 URL registration), plant presigned URL access.
+> **Last updated:** 2026-05-28 — Consolidated BOM generate/get; BOM socket + audit; SMDT + drawings.
 
 ---
 
@@ -103,7 +103,7 @@ Use the exact `uploadUrl` from step 1. Do **not** send the plant JWT on the S3 P
 
 ### Step 3 — Register URL on backend
 
-Call the plant endpoint for that feature (e.g. `POST /api/plant/projects/:leadId/drawings` with `fileUrl` + `fileName` + `buildingId`). See [§9 Upload drawings](#9-post-apiplantprojectsleadiddrawings).
+Call the backend endpoint for that feature — drawings: [§9](#9-post-apiplantprojectsleadiddrawings); BOM: [§11](#11-post-apiplantprojectsleadidbom); SMDT: [§30](#30-post-apismdtupload).
 
 **Role:** `plant` users are allowed on `POST /api/upload/presigned-url` (same route as admin/sales).
 
@@ -192,6 +192,14 @@ Ordered pipeline after admin assigns PO to plant:
 
 `active` | `inactive`
 
+### SMDT `costUnit`
+
+`FT` | `LB` | `EA`
+
+### SMDT `category` (Excel sheet names)
+
+`Insulation` | `Joist` | `Panels` | `TRIM` | `Mastic` | `Screws` | `ABolts` | `CLIPS` | `Cable` | `Flange_Brace` | `Jambs` | `DCOL` | `ZGIRT` | `OPEN CHANNEL` | `EaveStruts` | `ACCESSORIES` | `SKTLIGHT` | `ANGL1` | `TS_PANEL` | `frames`
+
 ---
 
 ## Index
@@ -208,19 +216,35 @@ Ordered pipeline after admin assigns PO to plant:
 | 8 | GET | `/api/plant/projects/:leadId/buildings` | Buildings list (upload screen) |
 | 9 | POST | `/api/plant/projects/:leadId/drawings` | Register drawing URL(s) after S3 upload |
 | 10 | GET | `/api/plant/projects/:leadId/drawings` | Full drawing history by building |
-| 11 | GET | `/api/plant/projects/:leadId/bom-files` | BOM upload jobs (when model exists) |
-| 12 | GET | `/api/plant/projects/:leadId/delivery` | Deliveries for project |
-| 13 | GET | `/api/plant/projects/:leadId/shipper-files` | Vendor shipper submissions |
-| 14 | GET | `/api/plant/vendors` | List vendors / shippers |
-| 15 | POST | `/api/plant/vendors` | Add vendor / shipper |
-| 16 | GET | `/api/plant/vendors/:vendorId` | Vendor detail + stats + order history |
-| 17 | PUT | `/api/plant/vendors/:vendorId` | Update vendor |
-| 18 | PATCH | `/api/plant/vendors/:vendorId/toggle-status` | Toggle active / inactive |
-| 19 | GET | `/api/plant/carriers` | List freight carriers |
-| 20 | POST | `/api/plant/carriers` | Add freight carrier |
-| 21 | GET | `/api/plant/carriers/:carrierId` | Carrier detail + stats + freight history |
-| 22 | PUT | `/api/plant/carriers/:carrierId` | Update carrier |
-| 23 | PATCH | `/api/plant/carriers/:carrierId/toggle-status` | Toggle active / inactive |
+| 11 | POST | `/api/plant/projects/:leadId/bom` | Register BOM file(s) after S3 upload |
+| 12 | GET | `/api/plant/projects/:leadId/bom-files` | Latest BOM job per building |
+| 13 | GET | `/api/plant/bom/job/:jobId/status` | Poll BOM extraction status |
+| 14 | POST | `/api/plant/bom/jobs/status` | Batch poll multiple job statuses |
+| 15 | GET | `/api/plant/bom/:jobId` | BOM job detail + line items |
+| 16 | PUT | `/api/plant/bom/items/:bomItemId/price` | Manual price + optional save to SMDT |
+| 17 | POST | `/api/plant/bom/buildings/:buildingId/confirm` | Confirm building BOM (all priced) |
+| 18 | POST | `/api/plant/projects/:leadId/consolidated-bom/generate` | Generate consolidated BOM Excel |
+| 19 | GET | `/api/plant/projects/:leadId/consolidated-bom` | View consolidated BOM + grouped items |
+| 20 | GET | `/api/plant/projects/:leadId/delivery` | Deliveries for project |
+| 21 | GET | `/api/plant/projects/:leadId/shipper-files` | Vendor shipper submissions |
+| 22 | GET | `/api/plant/vendors` | List vendors / shippers |
+| 23 | POST | `/api/plant/vendors` | Add vendor / shipper |
+| 24 | GET | `/api/plant/vendors/:vendorId` | Vendor detail + stats + order history |
+| 25 | PUT | `/api/plant/vendors/:vendorId` | Update vendor |
+| 26 | PATCH | `/api/plant/vendors/:vendorId/toggle-status` | Toggle active / inactive |
+| 27 | GET | `/api/plant/carriers` | List freight carriers |
+| 28 | POST | `/api/plant/carriers` | Add freight carrier |
+| 29 | GET | `/api/plant/carriers/:carrierId` | Carrier detail + stats + freight history |
+| 30 | PUT | `/api/plant/carriers/:carrierId` | Update carrier |
+| 31 | PATCH | `/api/plant/carriers/:carrierId/toggle-status` | Toggle active / inactive |
+| 32 | POST | `/api/smdt/upload` | Bulk SMDT Excel import (S3 URL) |
+| 33 | GET | `/api/smdt` | List SMDT items (active cost version) |
+| 34 | GET | `/api/smdt/:itemId` | Single SMDT item |
+| 35 | POST | `/api/smdt` | Manually add SMDT item |
+| 36 | PUT | `/api/smdt/:itemId` | Edit SMDT item |
+| 37 | DELETE | `/api/smdt/:itemId` | Deactivate SMDT item |
+
+> **SMDT paths** live at `/api/smdt/*` (not under `/api/plant`). Same routes for **`admin`** and **`plant`**.
 
 ---
 
@@ -513,7 +537,7 @@ Update plant pipeline stage (forward-only within plant stages).
 
 ## 8. `GET /api/plant/projects/:leadId/buildings`
 
-Lightweight building list for the **drawing upload screen**. Does not include full version history — use [§10](#10-get-apiplantprojectsleadiddrawings) for the Drawings tab.
+Lightweight building list for **drawing + BOM upload screens**. Drawing history tab: [§10](#10-get-apiplantprojectsleadiddrawings).
 
 | | |
 |---|---|
@@ -550,7 +574,22 @@ Authorization: Bearer <access_token>
       },
       "latestDrawingStatus": "rejected",
       "drawingCount": 2,
-      "hasDrawing": true
+      "hasDrawing": true,
+      "latestBomJob": {
+        "bomJobId": "...",
+        "status": "completed",
+        "fileName": "bom-b1.ods",
+        "fileUrl": "https://...",
+        "totalItems": 320,
+        "matchedItems": 285,
+        "unmatchedItems": 35,
+        "isConfirmed": false,
+        "extractionMethod": "exceljs",
+        "skippedSheets": [],
+        "uploadedAt": "..."
+      },
+      "hasBomJob": true,
+      "bomJobStatus": "completed"
     },
     {
       "buildingId": "665a00000000000000000012",
@@ -574,6 +613,11 @@ Authorization: Bearer <access_token>
 | `latestDrawingStatus` | string \| null | `pending_review` \| `approved` \| `rejected` |
 | `drawingCount` | number | Total versions uploaded |
 | `hasDrawing` | boolean | `false` = never uploaded |
+| `latestBomJob` | object \| null | Latest BOM extraction job for this building |
+| `hasBomJob` | boolean | Whether a BOM file was ever uploaded |
+| `bomJobStatus` | string \| null | `queued` \| `processing` \| `completed` \| `failed` |
+
+**Prerequisite for BOM upload:** active SMDT cost version must exist ([§30](#30-post-apismdtupload)).
 
 Buildings sorted by `buildingNumber` ascending.
 
@@ -744,9 +788,87 @@ Full drawing **history** per building (Drawings tab). For upload UI state, prefe
 
 ---
 
-## 11. `GET /api/plant/projects/:leadId/bom-files`
+## 11. `POST /api/plant/projects/:leadId/bom`
 
-Returns BOM job rows when `BOMJob` model is available; otherwise `{ "bomFiles": [] }`.
+Register one or more BOM file URLs **after** S3 upload. Starts **async** extraction jobs (poll status — do not wait on this request).
+
+| | |
+|---|---|
+| **Role** | `plant` |
+| **Guard** | Approved `POOrder` with `assignedTo` = current user |
+| **HTTP status** | `201` |
+
+### Frontend workflow
+
+1. `GET .../buildings` — show per-building BOM slots + current job status.
+2. **Prerequisite:** active SMDT uploaded ([§30](#30-post-apismdtupload)).
+3. For each file:
+   - `POST /api/upload/presigned-url` with `folder: "bom"`.
+   - `PUT` to S3.
+4. `POST .../bom` with 1..N buildings.
+5. Wait for job completion — either:
+   - **Socket (preferred):** listen for `bom_extraction_complete` / `bom_extraction_failed` on `/admin` namespace ([Socket.io](#socketio-plant-panel)), or
+   - **Poll:** `GET /api/plant/bom/job/:jobId/status` every ~2s until `completed` or `failed` (or batch [§14](#14-post-apiplantbomjobsstatus)).
+6. Open pricing UI via [§15](#15-get-apiplantbomjobid).
+
+### Request body
+
+```json
+{
+  "bomFiles": [
+    {
+      "buildingId": "665a00000000000000000011",
+      "fileUrl": "https://bucket.s3.region.amazonaws.com/bom/uuid-b1.ods",
+      "fileName": "bom-building1.ods",
+      "fileFormat": "ods"
+    }
+  ]
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `bomFiles` | Yes | Min 1; one entry per building in this request |
+| `bomFiles[].buildingId` | Yes | Must belong to this project |
+| `bomFiles[].fileUrl` | Yes | From presigned-url |
+| `bomFiles[].fileName` | Yes | Used for format detection + display |
+| `bomFiles[].fileFormat` | No | `ods` \| `xlsx` \| `xls` — inferred from extension if omitted |
+
+**Validation:** duplicate `buildingId` → 400; wrong building → 400 (all-or-nothing). **Re-upload** replaces previous job + items for that building.
+
+**Extraction:** ExcelJS parses standard BOM layouts; if zero rows extracted, **Claude fallback** runs automatically (requires `ANTHROPIC_API_KEY`). Skipped sheets (no header row) are listed on the job as `skippedSheets`.
+
+### Response `data`
+
+```json
+{
+  "leadId": "...",
+  "jobs": [
+    {
+      "buildingId": "...",
+      "buildingNumber": 1,
+      "bomJobId": "...",
+      "status": "queued",
+      "fileName": "bom-building1.ods"
+    }
+  ],
+  "message": "BOM extraction started for 1 building(s). Poll job status until completed."
+}
+```
+
+### Side effects
+
+| Trigger | Audit action | Socket event |
+|---------|--------------|--------------|
+| Upload registered | `bom.job_started` | — |
+| Extraction completed | `bom.job_completed` | `bom_extraction_complete` → `user:{uploadedBy}` |
+| Extraction failed | `bom.job_failed` | `bom_extraction_failed` → `user:{uploadedBy}` |
+
+---
+
+## 12. `GET /api/plant/projects/:leadId/bom-files`
+
+Latest BOM job per building (BOM tab).
 
 ### Response `data`
 
@@ -759,10 +881,17 @@ Returns BOM job rows when `BOMJob` model is available; otherwise `{ "bomFiles": 
       "bomJobId": "...",
       "fileName": "bom-b1.ods",
       "fileUrl": "https://...",
+      "fileFormat": "ods",
       "status": "completed",
       "uploadedAt": "...",
-      "totalItems": 120,
-      "isConfirmed": false
+      "totalItems": 320,
+      "matchedItems": 285,
+      "unmatchedItems": 35,
+      "frameItems": 8,
+      "isConfirmed": false,
+      "extractionMethod": "exceljs",
+      "skippedSheets": [{ "name": "Notes", "reason": "Header row not found" }],
+      "errorMessage": null
     }
   ]
 }
@@ -770,7 +899,237 @@ Returns BOM job rows when `BOMJob` model is available; otherwise `{ "bomFiles": 
 
 ---
 
-## 12. `GET /api/plant/projects/:leadId/delivery`
+## 13. `GET /api/plant/bom/job/:jobId/status`
+
+Poll while `status` is `queued` or `processing`.
+
+### Response `data`
+
+```json
+{
+  "jobId": "...",
+  "status": "completed",
+  "buildingId": "...",
+  "buildingNumber": 1,
+  "fileName": "bom-b1.ods",
+  "totalSheets": 29,
+  "totalItems": 320,
+  "matchedItems": 285,
+  "unmatchedItems": 27,
+  "frameItems": 8,
+  "skippedRows": 12,
+  "skippedSheets": [],
+  "extractionMethod": "exceljs",
+  "isConfirmed": false,
+  "errorMessage": null,
+  "processingStartedAt": "...",
+  "processingEndedAt": "..."
+}
+```
+
+---
+
+## 14. `POST /api/plant/bom/jobs/status`
+
+Batch poll after bulk upload.
+
+### Request body
+
+```json
+{ "jobIds": ["...", "..."] }
+```
+
+### Response `data`
+
+```json
+{
+  "jobs": [
+    { "jobId": "...", "status": "completed", "buildingNumber": 1, "totalItems": 320, "matchedItems": 285, "unmatchedItems": 27 }
+  ]
+}
+```
+
+---
+
+## 15. `GET /api/plant/bom/:jobId`
+
+BOM line items for pricing/review.
+
+**Query:** `filter=all|unpriced|frames|matched`, `page`, `limit` (default 50, max 200)
+
+### Response `data` (summary)
+
+| Block | Contents |
+|-------|----------|
+| `bomJob` | Job metadata + counts |
+| `itemsByCategory` | Paginated items grouped by sheet/category |
+| `summary` | `totalItems`, `pricedItems`, `unpricedItems`, `totalCost`, `isFullyPriced` |
+
+---
+
+## 16. `PUT /api/plant/bom/items/:bomItemId/price`
+
+Manual price for unmatched/frame lines.
+
+### Request body
+
+```json
+{ "manualUnitCost": 1.68, "saveToSMDT": true }
+```
+
+| Field | Notes |
+|-------|--------|
+| `manualUnitCost` | Required number |
+| `saveToSMDT` | Optional — upserts price into active SMDT version when `true` |
+
+Cost formulas: `EA` = qty × unit; `FT` = qty × lengthFeet × unit; `LB` = weight × unit.
+
+---
+
+## 17. `POST /api/plant/bom/buildings/:buildingId/confirm`
+
+Confirm building BOM when **every** line item is priced.
+
+**400** if any unpriced items — returns `errors.unpricedMarkIds`.
+
+**200:** `{ buildingId, buildingNumber, isConfirmed: true, totalCost }` — sets building `status` → `bom_confirmed`.
+
+**Audit:** `bom.confirmed`
+
+---
+
+## 18. `POST /api/plant/projects/:leadId/consolidated-bom/generate`
+
+Merge all confirmed building BOMs into one consolidated Excel + grouped item list. Re-generating replaces the previous consolidated BOM and resets status to `draft`.
+
+| | |
+|---|---|
+| **Role** | `plant` |
+| **Guard** | Approved PO assigned to current user |
+| **HTTP status** | `200` |
+
+### Prerequisites
+
+Every building on the project must have a **completed + confirmed** BOM job (`BOMJob.isConfirmed = true`).
+
+### Request body
+
+None.
+
+### Response `data`
+
+```json
+{
+  "consolidatedBOM": {
+    "_id": "...",
+    "status": "draft",
+    "fileUrl": "https://bucket.s3.region.amazonaws.com/consolidated/.../uuid.xlsx",
+    "totalCost": 87450.25,
+    "itemCount": 48
+  }
+}
+```
+
+`itemCount` = grouped part lines (by partCode + partColor), not raw BOM row count.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | No buildings, unconfirmed buildings (`errors.unconfirmedBuildings`), or no priced items |
+| `503` | S3 not configured |
+
+**Audit:** `consolidated_bom.generated`
+
+---
+
+## 19. `GET /api/plant/projects/:leadId/consolidated-bom`
+
+View the consolidated BOM for the project (grouped items + vendor send history).
+
+### Response `data`
+
+```json
+{
+  "consolidatedBOM": {
+    "_id": "...",
+    "leadId": "...",
+    "status": "draft",
+    "fileUrl": "https://...",
+    "totalCost": 87450.25,
+    "itemCount": 48,
+    "items": [
+      {
+        "_id": "...",
+        "partCode": "C62514",
+        "partColor": "RO",
+        "description": "CEE Stud",
+        "category": "Panels",
+        "costUnit": "FT",
+        "totalQty": 45,
+        "totalLengthFeet": 320.5,
+        "totalWeight": 892.3,
+        "totalCost": 795.64,
+        "buildings": [1, 2],
+        "markIds": ["S6-1", "S6-3"]
+      }
+    ],
+    "sentToVendors": [],
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+**404** if not generated yet.
+
+---
+
+## Socket.io (plant panel)
+
+Plant users connect to the **`/admin`** Socket.io namespace (same as admin/sales internal panels). JWT access token is required in the handshake — on connect the server auto-joins `user:{currentUserId}`.
+
+### Connect
+
+```javascript
+import { io } from 'socket.io-client'
+
+const socket = io('http://localhost:5000/admin', {
+  auth: { token: accessToken },
+})
+
+socket.on('connect', () => {
+  // Ready — personal room user:{userId} is joined automatically
+})
+```
+
+Production: replace host with your API origin (same host as REST API).
+
+### Events to listen for
+
+| Event | Room | When | Payload |
+|-------|------|------|---------|
+| `project_assigned` | `user:{plantUserId}` | Admin assigns PO to plant user | `{ leadId, poOrderId, projectName }` |
+| `bom_extraction_complete` | `user:{uploadedBy}` | BOM async job finished OK | `{ jobId, buildingNumber, totalItems, matchedItems, unmatchedItems, frameItems }` |
+| `bom_extraction_failed` | `user:{uploadedBy}` | BOM async job failed | `{ jobId, buildingNumber, error }` |
+
+### Example — BOM upload screen
+
+```javascript
+socket.on('bom_extraction_complete', (data) => {
+  // data.jobId — refresh job status / open pricing for this building
+})
+
+socket.on('bom_extraction_failed', (data) => {
+  // data.error — show failure toast; job row status is already "failed" in DB
+})
+```
+
+Polling ([§13](#13-get-apiplantbomjobjobidstatus), [§14](#14-post-apiplantbomjobsstatus)) remains a valid fallback when the socket is disconnected.
+
+---
+
+## 20. `GET /api/plant/projects/:leadId/delivery`
 
 ### Response `data`
 
@@ -792,7 +1151,7 @@ Returns BOM job rows when `BOMJob` model is available; otherwise `{ "bomFiles": 
 
 ---
 
-## 13. `GET /api/plant/projects/:leadId/shipper-files`
+## 21. `GET /api/plant/projects/:leadId/shipper-files`
 
 Vendor shipper submissions for the project.
 
@@ -826,7 +1185,7 @@ When admin calls `PUT /api/admin/po-orders/:poOrderId/assign`:
 - `lifecycleHistory` entry pushed
 - Buildings → `drawing_pending` (unchanged)
 - Audit: `lead.released_to_plant`
-- Socket: `project_assigned` to plant user
+- Socket: `project_assigned` to `user:{assignedTo}` on `/admin` namespace — see [Socket.io](#socketio-plant-panel)
 
 ---
 
@@ -1321,6 +1680,239 @@ Toggle `active` ↔ `inactive`.
 
 ---
 
+## SMDT cost master (shared `/api/smdt`)
+
+Material cost database used for BOM pricing. **Admin and plant** use the same endpoints.
+
+All writes store `uploadedBy` / `addedBy` / `lastUpdatedBy` as the logged-in user's `_id` (no extra metadata).
+
+### Bulk upload checklist
+
+1. `POST /api/upload/presigned-url` with `folder: "smdt"` and Excel MIME type.
+2. `PUT` file to `uploadUrl`.
+3. `POST /api/smdt/upload` with `{ "fileUrl": "..." }`.
+4. Wait for response — import is **synchronous** (~1,385 rows, 20 sheets).
+
+---
+
+## 24. `POST /api/smdt/upload`
+
+Bulk import SMDT cost Excel after S3 upload.
+
+| | |
+|---|---|
+| **Roles** | `admin`, `plant` |
+| **HTTP status** | `200` on success |
+
+### Request body
+
+```json
+{
+  "fileUrl": "https://bucket.s3.region.amazonaws.com/smdt/uuid.xlsx",
+  "fileName": "SMDT_March_2026.xlsx",
+  "name": "SMDT Cost March 2026",
+  "effectiveDate": "2026-03-01",
+  "activate": true
+}
+```
+
+| Field | Required | Default | Notes |
+|-------|----------|---------|-------|
+| `fileUrl` | Yes | — | `fileUrl` from presigned-url response |
+| `fileName` | No | `""` | Stored on cost version |
+| `name` | No | Auto date name | Version display name |
+| `effectiveDate` | No | `null` | ISO 8601 date |
+| `activate` | No | `true` | New version active; older versions deactivated |
+
+### Response `data`
+
+```json
+{
+  "costVersionId": "...",
+  "isActive": true,
+  "inserted": 820,
+  "updated": 565,
+  "skipped": 48,
+  "total": 1385,
+  "sheets": [
+    { "name": "TRIM", "inserted": 400, "updated": 155, "skippedRows": 12 }
+  ]
+}
+```
+
+Creates a new cost version and version-linked items. Each sheet name maps to `category`.
+
+### Errors
+
+| HTTP | When |
+|------|------|
+| 400 | Invalid/unreadable Excel URL or parse failure |
+| 401 | Missing or invalid token |
+| 403 | Role is not `admin` or `plant` |
+| 422 | Missing `fileUrl` |
+
+---
+
+## 25. `GET /api/smdt`
+
+Paginated list from the **active** cost version. Empty if no upload yet.
+
+| | |
+|---|---|
+| **Roles** | `admin`, `plant` |
+
+### Query parameters
+
+| Param | Type | Default | Notes |
+|-------|------|---------|-------|
+| `category` | string | — | Exact sheet name (`TRIM`, `frames`, …) |
+| `isFrameType` | boolean string | — | `true` \| `false` |
+| `search` | string | — | Part name or description |
+| `isActive` | string | `true` | `false` = deactivated only; `all` = both |
+| `page` | integer | `1` | Min `1` |
+| `limit` | integer | `50` | Max `200` — TRIM alone has ~555 rows |
+
+### Response `data`
+
+```json
+{
+  "activeVersion": {
+    "_id": "...",
+    "name": "SMDT Cost March 2026",
+    "effectiveDate": "2026-03-01T00:00:00.000Z",
+    "uploadedAt": "2026-03-10T00:00:00.000Z",
+    "isActive": true
+  },
+  "items": [
+    {
+      "_id": "...",
+      "category": "TRIM",
+      "partName": "RLGU6102",
+      "partColor": "M ",
+      "costUnit": "EA",
+      "mbsCost": 26.19,
+      "currentMarketCost": null,
+      "laborCost": 0,
+      "additionalCost": 0,
+      "materialCost": 0,
+      "description": "Standard Gutter",
+      "isFrameType": false,
+      "isActive": true,
+      "addedBy": "...",
+      "lastImportedAt": "2026-03-10T00:00:00.000Z",
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ],
+  "total": 555,
+  "page": 1,
+  "limit": 50,
+  "categories": ["Insulation", "Joist", "Panels", "TRIM", "..."]
+}
+```
+
+---
+
+## 26. `GET /api/smdt/:itemId`
+
+Single item with populated `addedBy`, `lastUpdatedBy`, and `costVersionId` (`name`, `isActive`, `effectiveDate`).
+
+| | |
+|---|---|
+| **Roles** | `admin`, `plant` |
+
+**404** if item not found.
+
+---
+
+## 27. `POST /api/smdt`
+
+Manually add one item to the **active** cost version.
+
+| | |
+|---|---|
+| **Roles** | `admin`, `plant` |
+| **HTTP status** | `201` |
+
+**400** if no active cost version — upload Excel first.
+
+### Request body
+
+```json
+{
+  "category": "TRIM",
+  "partName": "CUSTOM_PART_01",
+  "partColor": "M ",
+  "costUnit": "FT",
+  "mbsCost": 3.50,
+  "currentMarketCost": 4.20,
+  "laborCost": 0,
+  "additionalCost": 0,
+  "materialCost": 0,
+  "description": "Custom trim piece"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `category` | Yes | One of SMDT sheet names — see enum above |
+| `partName` | Yes | |
+| `partColor` | No | Omit/`null` for `frames`; else defaults to `"--"` |
+| `costUnit` | Yes | `FT` \| `LB` \| `EA` |
+| `mbsCost` | Yes | Number ≥ 0 |
+
+Duplicate `{ category, partName, partColor }` in active version → **400**.
+
+### Response `data`
+
+```json
+{ "item": { "_id": "...", "category": "TRIM", "partName": "CUSTOM_PART_01", "addedBy": "665a...", "isActive": true } }
+```
+
+---
+
+## 28. `PUT /api/smdt/:itemId`
+
+Update costs, description, or active flag.
+
+| | |
+|---|---|
+| **Roles** | `admin`, `plant` |
+
+### Immutable fields
+
+`partName`, `partColor`, `category`, `costVersionId` — to change identity, deactivate and create a new item.
+
+### Editable fields (all optional)
+
+`mbsCost`, `currentMarketCost`, `costUnit`, `laborCost`, `additionalCost`, `materialCost`, `extraMinCost`, `extraMaxCost`, `description`, `isActive`
+
+Sets `lastUpdatedBy` to current user `_id`.
+
+### Response `data`
+
+```json
+{ "item": { "_id": "...", "mbsCost": 3.75, "lastUpdatedBy": "665a...", "updatedAt": "..." } }
+```
+
+---
+
+## 29. `DELETE /api/smdt/:itemId`
+
+Soft-deactivate — **never** hard-deletes SMDT data.
+
+| | |
+|---|---|
+| **Roles** | `admin`, `plant` |
+
+### Response `data`
+
+```json
+{ "message": "Item deactivated", "itemId": "..." }
+```
+
+---
+
 ## Frontend quick reference
 
 | Screen | Endpoint(s) |
@@ -1338,6 +1930,11 @@ Toggle `active` ↔ `inactive`.
 | S3 presigned URL | `POST /api/upload/presigned-url` (`folder: "drawings"`) |
 | Register drawing(s) | `POST /api/plant/projects/:leadId/drawings` |
 | Drawings tab (history) | `GET /api/plant/projects/:leadId/drawings` |
+| BOM upload | `POST /api/upload/presigned-url` (`folder: "bom"`) → `POST /api/plant/projects/:leadId/bom` |
+| Poll BOM jobs | `GET /api/plant/bom/job/:jobId/status` or `POST /api/plant/bom/jobs/status` |
+| BOM pricing | `GET /api/plant/bom/:jobId`, `PUT /api/plant/bom/items/:bomItemId/price` |
+| Confirm building BOM | `POST /api/plant/bom/buildings/:buildingId/confirm` |
+| BOM tab list | `GET /api/plant/projects/:leadId/bom-files` |
 | Vendors table | `GET /api/plant/vendors` |
 | Add vendor | `POST /api/plant/vendors` |
 | Vendor detail | `GET /api/plant/vendors/:vendorId` |
@@ -1352,7 +1949,11 @@ Toggle `active` ↔ `inactive`.
 | Toggle carrier status | `PATCH /api/plant/carriers/:carrierId/toggle-status` |
 | Carrier search | `search` (name, contact, email) |
 | Carrier filters | `serviceType`, `serviceArea`, `equipmentType` |
+| SMDT bulk upload | `POST /api/upload/presigned-url` (`folder: "smdt"`) → `POST /api/smdt/upload` |
+| SMDT list / search | `GET /api/smdt` (`category`, `search`, paginate) |
+| SMDT add / edit | `POST /api/smdt`, `PUT /api/smdt/:itemId` |
+| SMDT deactivate | `DELETE /api/smdt/:itemId` |
 
 ---
 
-*Last updated: Projects (13) + Vendors (5) + Carriers (5 endpoints).*
+*Last updated: Projects (19) + SMDT (6 at `/api/smdt`).*
