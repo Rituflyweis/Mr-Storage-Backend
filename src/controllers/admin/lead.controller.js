@@ -38,6 +38,7 @@ const {
 const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
+const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
 
 exports.getLeadStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
@@ -143,7 +144,7 @@ exports.getAllLeads = asyncHandler(async (req, res) => {
   const budgets = await ProjectBudget.find({ leadId: { $in: leadIds } }).lean()
   const budgetMap = new Map(budgets.map(b => [String(b.leadId), b]))
 
-  const result = leads.map(l => ({
+  const result = leads.map(l => enrichLeadDocument({
     ...l,
     budget: (() => {
       const b = budgetMap.get(String(l._id))
@@ -165,7 +166,7 @@ exports.getAiHandledLeads = asyncHandler(async (req, res) => {
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName email' })
-      .select('_id customerId buildingType location lifecycleStatus leadScoring createdAt')
+      .select('_id jobId customerId buildingType location lifecycleStatus leadScoring createdAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -173,7 +174,7 @@ exports.getAiHandledLeads = asyncHandler(async (req, res) => {
     Lead.countDocuments(filter),
   ])
 
-  return success(res, { leads, total })
+  return success(res, { leads: leads.map(enrichLeadDocument), total })
 })
 
 exports.getSignedContracts = asyncHandler(async (req, res) => {
@@ -187,7 +188,7 @@ exports.getSignedContracts = asyncHandler(async (req, res) => {
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName' })
       .populate({ path: 'assignedSales', select: 'name' })
-      .select('_id projectName customerId assignedSales documents lifecycleStatus')
+      .select('_id jobId projectName customerId assignedSales documents lifecycleStatus')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -197,14 +198,14 @@ exports.getSignedContracts = asyncHandler(async (req, res) => {
 
   const contracts = leads.map(l => {
     const contractDoc = l.documents?.find(d => d.type === 'contract')
-    return {
+    return withProjectIdFields({
       _id: l._id,
       projectName: l.projectName || '',
       customerId: l.customerId,
       agreementUploadedAt: contractDoc?.uploadedAt || null,
       assignedSales: l.assignedSales,
       lifecycleStatus: l.lifecycleStatus,
-    }
+    }, l.jobId)
   })
 
   return success(res, { contracts, total })
@@ -221,7 +222,7 @@ exports.getTerminatedLeads = asyncHandler(async (req, res) => {
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName' })
       .populate({ path: 'assignedSales', select: 'name' })
-      .select('_id projectName customerId assignedSales terminatedAt terminationReason lifecycleStatus')
+      .select('_id jobId projectName customerId assignedSales terminatedAt terminationReason lifecycleStatus')
       .sort({ terminatedAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -229,7 +230,7 @@ exports.getTerminatedLeads = asyncHandler(async (req, res) => {
     Lead.countDocuments(filter),
   ])
 
-  return success(res, { projects: leads, total })
+  return success(res, { projects: leads.map(enrichLeadDocument), total })
 })
 
 exports.createLead = asyncHandler(async (req, res) => {
@@ -273,7 +274,7 @@ exports.createLead = asyncHandler(async (req, res) => {
     metadata: { source: lead.source, projectName: lead.projectName, assignedSales: lead.assignedSales },
   })
 
-  return created(res, { lead })
+  return created(res, { lead: enrichLeadDocument(lead) })
 })
 
 exports.importLeads = asyncHandler(async (req, res) => {
@@ -367,7 +368,7 @@ exports.editLead = asyncHandler(async (req, res) => {
     metadata: req.body,
   })
 
-  return success(res, { lead })
+  return success(res, { lead: enrichLeadDocument(lead) })
 })
 
 exports.assignLead = asyncHandler(async (req, res) => {
@@ -398,7 +399,7 @@ exports.assignLead = asyncHandler(async (req, res) => {
     global.io.of('/admin').to(`user:${employeeId}`).emit('lead_assigned', { leadId, lead: fullLead })
   }
 
-  return success(res, { lead: fullLead }, 'Lead assigned successfully')
+  return success(res, { lead: enrichLeadDocument(fullLead) }, 'Lead assigned successfully')
 })
 
 exports.getLeadDetail = asyncHandler(async (req, res) => {
@@ -439,7 +440,7 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
   const leadNotes = await formatLeadNotes(lead)
 
   return success(res, {
-    lead,
+    lead: enrichLeadDocument(lead),
     customer,
     rfq: { aiQuoteData: lead.aiQuoteData, aiContextSummary: lead.aiContextSummary },
     quotations: flaggedQuotations,
@@ -652,7 +653,7 @@ exports.terminateLead = asyncHandler(async (req, res) => {
     metadata: { reason },
   })
 
-  return success(res, { lead })
+  return success(res, { lead: enrichLeadDocument(lead) })
 })
 
 exports.createProjectForCustomer = asyncHandler(async (req, res) => {
@@ -712,5 +713,5 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
     metadata: { source: lead.source, projectName: lead.projectName, assignedSales: salesEmployeeId },
   })
 
-  return created(res, { lead })
+  return created(res, { lead: enrichLeadDocument(lead) })
 })

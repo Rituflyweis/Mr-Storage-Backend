@@ -11,6 +11,7 @@ const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const AuditLog = require('../../models/AuditLog')
 const auditService = require('../../services/audit.service')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
+const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog } = require('../../services/auditActivity.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { validatePlantLifecycleTransition } = require('../../utils/plantLifecycle')
@@ -129,6 +130,7 @@ const mapProjectRow = (lead, buildings = []) => {
     _id: lead._id,
     projectName: lead.projectName || '',
     jobId: lead.jobId || '',
+    projectId: lead.jobId || '',
     location: lead.location || '',
     clientName,
     customer: customer
@@ -310,10 +312,13 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
     createdAt: log.createdAt,
   }))
 
+  const jobId = leadLean.jobId || ''
+
   return success(res, {
-    lead: leadLean,
+    lead: enrichLeadDocument(leadLean),
     projectName: leadLean.projectName || '',
-    jobId: leadLean.jobId || '',
+    jobId,
+    projectId: jobId,
     buildingType: leadLean.buildingType || '',
     quoteValue: leadLean.quoteValue ?? 0,
     location: leadLean.location || '',
@@ -396,10 +401,13 @@ exports.getProjectNotes = asyncHandler(async (req, res) => {
 
   const notes = await formatLeadNotes(lead)
 
+  const jobId = lead.jobId || ''
+
   return success(res, {
     leadId: lead._id,
     projectName: lead.projectName || '',
-    jobId: lead.jobId || '',
+    jobId,
+    projectId: jobId,
     notes,
     total: notes.length,
   })

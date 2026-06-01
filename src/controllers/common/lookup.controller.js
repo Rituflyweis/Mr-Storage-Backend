@@ -1,6 +1,7 @@
 const Customer = require('../../models/Customer')
 const Lead = require('../../models/Lead')
 const { success } = require('../../utils/apiResponse')
+const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const asyncHandler = require('../../utils/asyncHandler')
 
 const buildCustomerSearchFilter = (search) => {
@@ -97,5 +98,10 @@ exports.listLeads = asyncHandler(async (req, res) => {
     Lead.countDocuments(filter),
   ])
 
-  return success(res, { leads, total, page: parsedPage, limit: parsedLimit })
+  return success(res, {
+    leads: leads.map(enrichLeadDocument),
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
 })

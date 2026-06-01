@@ -13,6 +13,7 @@ const bcrypt = require('bcryptjs')
 const env = require('../config/env')
 const auditService = require('../services/audit.service')
 const { AUDIT_ACTIONS } = require('../config/constants')
+const { enrichLeadDocument } = require('../utils/leadProjectId')
 
 const s3 = new S3Client({
   region: env.AWS_REGION,
@@ -117,7 +118,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
 
   const [projects, total] = await Promise.all([
     Lead.find(filter)
-      .select('buildingType location lifecycleStatus quoteValue isQuoteReady source documents assignedSales')
+      .select('jobId projectName buildingType location lifecycleStatus quoteValue isQuoteReady source documents assignedSales')
       .populate('assignedSales', 'name email')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -126,7 +127,12 @@ exports.getProjects = asyncHandler(async (req, res) => {
     Lead.countDocuments(filter),
   ])
 
-  return success(res, { projects, total, page: Number(page), limit: Number(limit) })
+  return success(res, {
+    projects: projects.map(enrichLeadDocument),
+    total,
+    page: Number(page),
+    limit: Number(limit),
+  })
 })
 
 exports.getProject = asyncHandler(async (req, res) => {
@@ -173,7 +179,7 @@ exports.getProject = asyncHandler(async (req, res) => {
     : null
 
   return success(res, {
-    lead,
+    lead: enrichLeadDocument(lead),
     quotation,
     quoteSummary,
     invoices: invoicesWithSchedule,

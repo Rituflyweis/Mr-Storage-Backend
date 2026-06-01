@@ -4,6 +4,7 @@ const ProjectBudget = require('../../models/ProjectBudget')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
+const { withProjectIdFields } = require('../../utils/leadProjectId')
 
 exports.getOverview = asyncHandler(async (req, res) => {
   const base = buildDateFilter(req.query)
@@ -54,13 +55,13 @@ exports.getPerProject = asyncHandler(async (req, res) => {
     const netMargin = totalPaid - totalCost
     const marginPct = totalPaid > 0 ? Math.round((netMargin / totalPaid) * 100) : 0
 
-    return {
+    return withProjectIdFields({
       leadId: lead._id,
       projectName: lead.projectName,
       customerName: `${lead.customerId?.firstName || ''} ${lead.customerId?.lastName || ''}`.trim(),
       quoteValue: lead.quoteValue,
-      totalInvoiced, totalPaid, materialBudget, freightBudget, totalCost, netMargin, marginPct
-    }
+      totalInvoiced, totalPaid, materialBudget, freightBudget, totalCost, netMargin, marginPct,
+    }, lead.jobId)
   }))
 
   const total = await Lead.countDocuments({ ...base, quoteValue: { $gt: 0 } })

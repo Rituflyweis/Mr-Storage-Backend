@@ -10,6 +10,7 @@ const { success, created, notFound, badRequest } = require('../../utils/apiRespo
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
+const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog, getEmployeesAuditLog } = require('../../services/auditActivity.service')
 
 exports.getStats = asyncHandler(async (req, res) => {
@@ -220,14 +221,18 @@ exports.getEmployeeAssignedLeads = asyncHandler(async (req, res) => {
     Lead.countDocuments(filter),
   ])
 
-  const rows = leads.map((lead) => ({
-    clientName: lead.customerId?.firstName || '',
-    projectId: lead.jobId || '',
-    location: lead.location || '',
-    status: lead.lifecycleStatus,
-    quoteValue: lead.quoteValue ?? 0,
-    lead,
-  }))
+  const rows = leads.map((lead) => {
+    const jobId = lead.jobId || ''
+    return {
+      clientName: lead.customerId?.firstName || '',
+      jobId,
+      projectId: jobId,
+      location: lead.location || '',
+      status: lead.lifecycleStatus,
+      quoteValue: lead.quoteValue ?? 0,
+      lead: enrichLeadDocument(lead),
+    }
+  })
 
   return success(res, {
     employee,

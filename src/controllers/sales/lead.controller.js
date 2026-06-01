@@ -23,6 +23,7 @@ const {
   mapLeadByScoreRow,
 } = require('../../utils/leadQueryFilter')
 const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
+const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const { parse } = require('csv-parse/sync')
@@ -97,7 +98,7 @@ exports.getLeads = asyncHandler(async (req, res) => {
   const skip = (parsedPage - 1) * parsedLimit
   const [leads, total] = await Promise.all([
     Lead.find(filter)
-      .select('_id projectName customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO')
+      .select('_id jobId projectName customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO')
       .populate({ path: 'customerId', select: 'firstName email' })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -121,7 +122,7 @@ exports.getLeads = asyncHandler(async (req, res) => {
     }
   }
 
-  const normalizedLeads = leads.map(lead => ({
+  const normalizedLeads = leads.map(lead => withProjectIdFields({
     _id: lead._id,
     projectName: lead.projectName || '',
     customerId: lead.customerId ? { _id: lead.customerId._id, firstName: lead.customerId.firstName || '', email: lead.customerId.email || '' } : null,
@@ -132,7 +133,7 @@ exports.getLeads = asyncHandler(async (req, res) => {
     location: lead.location || '',
     isRaisedToPO: lead.isRaisedToPO === true,
     nextFollowUp: nextFollowUpByLeadId.get(String(lead._id)) || null,
-  }))
+  }, lead.jobId))
 
   return success(res, { leads: normalizedLeads, total, page: parsedPage, limit: parsedLimit })
 })
@@ -210,7 +211,7 @@ exports.createLead = asyncHandler(async (req, res) => {
     metadata: { source: lead.source, projectName: lead.projectName },
   })
 
-  return created(res, { lead })
+  return created(res, { lead: enrichLeadDocument(lead) })
 })
 
 exports.importLeads = asyncHandler(async (req, res) => {
@@ -308,7 +309,7 @@ exports.getScoredLeads = asyncHandler(async (req, res) => {
 
   const [leads, total] = await Promise.all([
     Lead.find(filter)
-      .select('_id projectName customerId lifecycleStatus quoteValue leadScoring')
+      .select('_id jobId projectName customerId lifecycleStatus quoteValue leadScoring')
       .populate({ path: 'customerId', select: 'firstName' })
       .sort({ 'leadScoring.score': -1 })
       .skip(skip)
@@ -317,7 +318,7 @@ exports.getScoredLeads = asyncHandler(async (req, res) => {
     Lead.countDocuments(filter),
   ])
 
-  const result = leads.map(l => ({
+  const result = leads.map(l => withProjectIdFields({
     _id: l._id,
     projectName: l.projectName || '',
     customerId: l.customerId ? { _id: l.customerId._id, firstName: l.customerId.firstName } : null,
@@ -331,7 +332,7 @@ exports.getScoredLeads = asyncHandler(async (req, res) => {
       decisionMaker: l.leadScoring?.scoreBreakdown?.decisionMaker || null,
       projectClarity: l.leadScoring?.scoreBreakdown?.projectClarity || null,
     },
-  }))
+  }, l.jobId))
 
   return success(res, { leads: result, total })
 })
@@ -349,7 +350,7 @@ exports.getEscalatedLeads = asyncHandler(async (req, res) => {
 
   const [escalations, total] = await Promise.all([
     Escalation.find(escalationFilter)
-      .populate({ path: 'leadId', select: '_id projectName lifecycleStatus quoteValue customerId' })
+      .populate({ path: 'leadId', select: '_id jobId projectName lifecycleStatus quoteValue customerId' })
       .populate({ path: 'customerId', select: 'firstName email' })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -358,14 +359,14 @@ exports.getEscalatedLeads = asyncHandler(async (req, res) => {
     Escalation.countDocuments(escalationFilter),
   ])
 
-  const result = escalations.map(e => ({
+  const result = escalations.map(e => withProjectIdFields({
     _id: e.leadId?._id,
     projectName: e.leadId?.projectName || '',
     lifecycleStatus: e.leadId?.lifecycleStatus || '',
     quoteValue: e.leadId?.quoteValue || 0,
     customerId: e.customerId ? { _id: e.customerId._id, firstName: e.customerId.firstName, email: e.customerId.email } : null,
     escalation: { _id: e._id, note: e.note, status: e.status, createdAt: e.createdAt },
-  }))
+  }, e.leadId?.jobId))
 
   return success(res, { leads: result, total })
 })
@@ -409,7 +410,7 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
   const leadNotes = await formatLeadNotes(lead)
 
   return success(res, {
-    lead,
+    lead: enrichLeadDocument(lead),
     customer,
     rfq: { aiQuoteData: lead.aiQuoteData, aiContextSummary: lead.aiContextSummary },
     quotations: flaggedQuotations,
@@ -503,7 +504,7 @@ exports.editLead = asyncHandler(async (req, res) => {
     metadata: req.body,
   })
 
-  return success(res, { lead })
+  return success(res, { lead: enrichLeadDocument(lead) })
 })
 
 exports.logActivity = asyncHandler(async (req, res) => {
@@ -609,7 +610,7 @@ exports.updateLifecycle = asyncHandler(async (req, res) => {
     metadata: { lifecycleStatus },
   })
 
-  return success(res, { lead })
+  return success(res, { lead: enrichLeadDocument(lead) })
 })
 
 exports.escalateLead = asyncHandler(async (req, res) => {

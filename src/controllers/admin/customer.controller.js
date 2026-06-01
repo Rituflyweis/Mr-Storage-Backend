@@ -10,6 +10,7 @@ const { success, created, notFound, badRequest } = require('../../utils/apiRespo
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, CLOSED_STAGES, INVOICE_STATUSES } = require('../../config/constants')
+const { withProjectIdFields, enrichLeadDocument } = require('../../utils/leadProjectId')
 const { buildLeadCreatePayload } = require('../../utils/leadPayload')
 const {
   PO_PROJECT_MATCH,
@@ -140,7 +141,7 @@ exports.createCustomerWithLead = asyncHandler(async (req, res) => {
     metadata: { source: lead.source, projectName: lead.projectName },
   })
 
-  return created(res, { customer, lead })
+  return created(res, { customer, lead: enrichLeadDocument(lead) })
 })
 
 exports.updateCustomer = asyncHandler(async (req, res) => {
@@ -302,7 +303,7 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
 
   const projects = leads.map(l => {
     const b = budgetMap.get(String(l._id))
-    return {
+    return withProjectIdFields({
       _id: l._id,
       projectName: l.projectName || '',
       numberOfBuildings: l.numberOfBuildings,
@@ -312,7 +313,7 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
       isTerminated: l.isTerminated,
       budget: b ? { totalBudget: b.totalBudget, expectedProfit: (l.quoteValue || 0) - (b.totalBudget || 0) } : null,
       createdAt: l.createdAt,
-    }
+    }, l.jobId)
   })
 
   return success(res, { projects, total: projects.length })
@@ -329,5 +330,5 @@ exports.getCustomerProject = asyncHandler(async (req, res) => {
     Invoice.find({ leadId }).sort({ createdAt: -1 }).lean(),
   ])
 
-  return success(res, { lead, quotation, invoices })
+  return success(res, { lead: enrichLeadDocument(lead), quotation, invoices })
 })

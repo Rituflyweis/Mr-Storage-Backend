@@ -118,6 +118,7 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | # | Method | Endpoint | Role |
 |---|--------|----------|------|
 | 1 | GET | `/api/admin/po-orders` | admin |
+| 1b | GET | `/api/admin/po-orders/:poOrderId` | admin |
 | 2 | POST | `/api/admin/customers` | admin |
 | 3 | PUT | `/api/admin/customers/:customerId` | admin |
 | 4 | POST | `/api/admin/leads` | admin |
@@ -272,6 +273,97 @@ None.
 |------|------|
 | 401 | Missing/invalid token |
 | 403 | Not admin role |
+
+---
+
+## 1b. `GET /api/admin/po-orders/:poOrderId` — PO detail
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Admin PO detail / review screen |
+| **Change** | **New** — full lead, quotation, customer, audit trail |
+
+### Path parameters
+
+| Param | Type | Required |
+|-------|------|----------|
+| `poOrderId` | MongoId | Yes |
+
+### Query parameters
+
+None.
+
+### Response `200` — `data`
+
+```json
+{
+  "order": {
+    "_id": "...",
+    "leadId": "...",
+    "customerId": "...",
+    "raisedBy": { "name": "...", "email": "...", "role": "sales" },
+    "assignedTo": { "name": "...", "email": "...", "role": "plant" },
+    "invoiceId": { },
+    "quotationId": "...",
+    "poNumber": "PO-0042",
+    "status": "pending",
+    "adminNotes": "",
+    "createdAt": "...",
+    "updatedAt": "..."
+  },
+  "lead": {
+    "_id": "...",
+    "customerId": {
+      "_id": "...",
+      "customerId": "CUS-00042",
+      "firstName": "Jane",
+      "email": "jane@example.com",
+      "phone": { "number": "...", "countryCode": "+1" }
+    },
+    "assignedSales": { "name": "...", "email": "...", "role": "sales" },
+    "projectName": "Warehouse A",
+    "lifecycleStatus": "sent_to_admin",
+    "quoteValue": 175000,
+    "lineItems": [],
+    "documents": []
+  },
+  "quotation": {
+    "_id": "...",
+    "quoteNumber": "QUO-0001",
+    "leadId": "...",
+    "lineItems": [],
+    "createdBy": { "name": "...", "email": "..." },
+    "assignedSalesperson": { "name": "...", "email": "..." }
+  },
+  "customer": { },
+  "auditLog": [
+    {
+      "_id": "...",
+      "type": "po",
+      "action": "lead.po_approved",
+      "leadId": "...",
+      "performedBy": { "name": "Admin", "email": "..." },
+      "metadata": {},
+      "createdAt": "..."
+    }
+  ]
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `lead` | Full lead document; `customerId` and `assignedSales` populated |
+| `quotation` | Full quotation document; `createdBy` and `assignedSalesperson` populated |
+| `customer` | Same object as `lead.customerId` (convenience for FE) |
+| `auditLog` | All audit entries for the lead, oldest first |
+| `order.invoiceId` | Full invoice document |
+
+### Errors
+
+| HTTP | When |
+|------|------|
+| 404 | PO order, lead, or quotation not found |
 
 ---
 
@@ -2240,7 +2332,7 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 
 ## Maintenance
 
-**Last updated:** 2026-05-26 — §41 chat senderType admin
+**Last updated:** 2026-05-26 — §42 jobId + projectId on all lead/project responses
 
 ---
 
@@ -3323,3 +3415,20 @@ When a **sales** user sends, `senderType` is `"sales"` (same shape).
 
 - Render `admin` messages with a distinct label/avatar vs `sales`.
 - Admin panel: still `emit('sales_message', …)` — no new socket event required.
+
+---
+
+## §42 — `jobId` + `projectId` on lead/project responses (backward compatible)
+
+| | |
+|---|---|
+| **Change** | All lead/project list and detail APIs now return **both** `jobId` and `projectId` (same value, e.g. `PRO-042`). Existing FE using `projectId` is unchanged. |
+
+| Field | Meaning |
+|-------|---------|
+| `jobId` | Stored on `Lead.jobId` |
+| `projectId` | **Alias** of `jobId` for legacy FE |
+
+**Applies to (non-exhaustive):** `GET /api/admin/leads`, `GET /api/sales/leads`, `GET .../detail`, `GET .../by-score`, customer `.../projects`, common `GET /api/leads`, plant projects, PO detail `lead`, assigned-leads rows, etc.
+
+Full lead documents from `.lean()` also include both fields via `enrichLeadDocument`.

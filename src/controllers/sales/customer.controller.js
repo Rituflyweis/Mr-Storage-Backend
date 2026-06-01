@@ -9,6 +9,7 @@ const bcrypt = require('bcryptjs')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
+const { withProjectIdFields, enrichLeadDocument } = require('../../utils/leadProjectId')
 const { buildLeadCreatePayload, escapeRegex } = require('../../utils/leadPayload')
 const {
   PO_PROJECT_MATCH,
@@ -182,7 +183,7 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
 
   const projects = leads.map(l => {
     const budget = budgetMap.get(String(l._id))
-    return {
+    return withProjectIdFields({
       _id: l._id,
       projectName: l.projectName || '',
       numberOfBuildings: l.numberOfBuildings,
@@ -193,7 +194,7 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
         expectedProfit: (l.quoteValue || 0) - (budget.totalBudget || 0),
       } : null,
       createdAt: l.createdAt,
-    }
+    }, l.jobId)
   })
 
   return success(res, { projects, total: projects.length })
@@ -250,5 +251,5 @@ exports.createProject = asyncHandler(async (req, res) => {
     metadata: { source: lead.source, projectName: lead.projectName },
   })
 
-  return created(res, { lead })
+  return created(res, { lead: enrichLeadDocument(lead) })
 })

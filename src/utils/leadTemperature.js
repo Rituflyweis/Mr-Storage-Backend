@@ -23,9 +23,11 @@ const setLeadTemperatureManual = async (lead, temperature, performedBy) => {
     metadata: { previous, temperature },
   })
 
+  const jobId = lead.jobId || ''
   return {
     leadId: lead._id,
-    projectId: lead.jobId || '',
+    jobId,
+    projectId: jobId,
     temperature: lead.leadScoring.temperature,
     temperatureManual: true,
   }

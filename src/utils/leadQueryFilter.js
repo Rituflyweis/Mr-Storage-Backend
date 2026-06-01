@@ -106,9 +106,11 @@ const mapLeadByScoreRow = (lead) => {
   const temperature = lead.leadScoring?.temperature
     ?? resolveLeadTemperatureFromScore(score)
 
+  const jobId = lead.jobId || ''
   return {
     leadId: lead._id,
-    projectId: lead.jobId || '',
+    jobId,
+    projectId: jobId,
     customerName: lead.customerId?.firstName || '',
     projectName: lead.projectName || '',
     location: lead.location || '',
