@@ -99,6 +99,8 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | Employee audit / last activity | `GET /api/admin/employees/audit-log` | — |
 | Employee assigned leads | `GET /api/admin/employees/:userId/assigned-leads` | — |
 | Reports & analytics | `GET /api/admin/reports/analytics` | admin only |
+| Project invoice stats | `GET /api/admin/customers/:customerId/projects/:leadId/invoices/stats` | admin |
+| Project payments list | `GET /api/admin/customers/:customerId/projects/:leadId/invoices` | admin |
 | Create invoice (project in URL) | `POST /api/leads/:leadId/invoices` | `POST /api/leads/:leadId/invoices` |
 | Get / edit / send / mark paid invoice | `GET/PUT/POST /api/invoices/:invoiceId` (+ actions) | same |
 | Edit draft invoice (full body) | `PUT /api/invoices/:invoiceId` | same — body now matches create (§38) |
@@ -2332,7 +2334,7 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 
 ## Maintenance
 
-**Last updated:** 2026-05-26 — §42 jobId + projectId on all lead/project responses
+**Last updated:** 2026-05-26 — §43 admin project invoice stats & payments
 
 ---
 
@@ -3432,3 +3434,93 @@ When a **sales** user sends, `senderType` is `"sales"` (same shape).
 **Applies to (non-exhaustive):** `GET /api/admin/leads`, `GET /api/sales/leads`, `GET .../detail`, `GET .../by-score`, customer `.../projects`, common `GET /api/leads`, plant projects, PO detail `lead`, assigned-leads rows, etc.
 
 Full lead documents from `.lean()` also include both fields via `enrichLeadDocument`.
+
+---
+
+## §43 — Admin project payments (customer panel)
+
+Project = lead with `isRaisedToPO: true`. Path uses `customerId` + `leadId` (project Mongo `_id`).
+
+### 43a. `GET /api/admin/customers/:customerId/projects/:leadId/invoices/stats`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Customer → project detail — payment summary cards |
+| **Change** | **New** |
+
+**Path:** `customerId`, `leadId` (project)
+
+**Query:** none
+
+**Response `200` — `data`**
+
+```json
+{
+  "leadId": "665a...",
+  "customerId": "664c...",
+  "projectName": "Warehouse A",
+  "jobId": "PRO-042",
+  "projectId": "PRO-042",
+  "totalPaymentsReceived": 980000,
+  "paymentCompletion": 82,
+  "pendingAmount": 150000,
+  "overdueAmount": 70000
+}
+```
+
+| Field | Rule |
+|-------|------|
+| `totalPaymentsReceived` | Sum of `totalAmount` where `status === "paid"` |
+| `pendingAmount` | `draft` or `sent`, not overdue |
+| `overdueAmount` | `sent`/`overdue` with `dueDate < now` |
+| `paymentCompletion` | `totalPaymentsReceived / (totalPaymentsReceived + pending + overdue) × 100` (1 decimal) |
+
+---
+
+### 43b. `GET /api/admin/customers/:customerId/projects/:leadId/invoices`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Customer → project detail — Payments table |
+| **Change** | **New** |
+
+**Query params**
+
+| Param | Notes |
+|-------|--------|
+| `status` | Optional — `draft` \| `sent` \| `paid` \| `overdue` \| `cancelled` |
+| `startDate`, `endDate` | Optional — filter invoice `createdAt` |
+
+**Response `200` — `data`**
+
+```json
+{
+  "leadId": "665a...",
+  "customerId": "664c...",
+  "projectName": "Warehouse A",
+  "jobId": "PRO-042",
+  "projectId": "PRO-042",
+  "payments": [
+    {
+      "invoiceId": "64f...",
+      "invoiceNumber": "INV-0001",
+      "date": "2024-04-02T00:00:00.000Z",
+      "amount": 500,
+      "status": "Received",
+      "invoiceStatus": "paid"
+    }
+  ],
+  "total": 1
+}
+```
+
+| Row field | Notes |
+|-----------|--------|
+| `date` | `paidAt` if paid; else `dueDate` → `date` → `createdAt` |
+| `status` | Display label: `Received` (paid), `Pending`, `Overdue`, `Draft` |
+| `invoiceStatus` | Raw DB status |
+| `invoiceId` | Use with `GET /api/invoices/:invoiceId` for download/detail |
+
+Sorted by `createdAt` descending.

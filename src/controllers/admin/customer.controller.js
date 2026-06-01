@@ -16,6 +16,22 @@ const {
   PO_PROJECT_MATCH,
   getCustomerIdsWithRaisedPO,
 } = require('../../utils/customerPoFilter')
+const {
+  computeProjectInvoiceStats,
+  mapProjectInvoiceRow,
+} = require('../../utils/projectInvoiceMetrics')
+
+const loadCustomerProject = async (customerId, leadId) => {
+  const customer = await Customer.findById(customerId).select('_id').lean()
+  if (!customer) return { error: 'Customer not found', code: 404 }
+
+  const lead = await Lead.findOne({ _id: leadId, customerId, ...PO_PROJECT_MATCH })
+    .select('_id jobId projectName quoteValue customerId')
+    .lean()
+  if (!lead) return { error: 'Project not found', code: 404 }
+
+  return { customer, lead }
+}
 exports.getCustomerStats = asyncHandler(async (req, res) => {
   const poCustomerIds = await getCustomerIdsWithRaisedPO()
 
@@ -317,6 +333,60 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
   })
 
   return success(res, { projects, total: projects.length })
+})
+
+exports.getProjectInvoiceStats = asyncHandler(async (req, res) => {
+  const { customerId, leadId } = req.params
+  const loaded = await loadCustomerProject(customerId, leadId)
+  if (loaded.error) return notFound(res, loaded.error)
+
+  const invoices = await Invoice.find({ leadId, status: { $ne: 'cancelled' } })
+    .select('status totalAmount dueDate date daysToPay paidAt')
+    .lean()
+
+  const stats = computeProjectInvoiceStats(invoices)
+
+  return success(res, {
+    leadId,
+    customerId,
+    projectName: loaded.lead.projectName || '',
+    jobId: loaded.lead.jobId || '',
+    projectId: loaded.lead.jobId || '',
+    ...stats,
+  })
+})
+
+exports.getProjectInvoices = asyncHandler(async (req, res) => {
+  const { customerId, leadId } = req.params
+  const loaded = await loadCustomerProject(customerId, leadId)
+  if (loaded.error) return notFound(res, loaded.error)
+
+  const dateFilter = buildDateFilter(req.query, 'createdAt')
+  const { status } = req.query
+  if (status && !INVOICE_STATUSES.includes(status)) {
+    return badRequest(res, 'Invalid invoice status')
+  }
+
+  const filter = { leadId, ...dateFilter }
+  if (status) filter.status = status
+
+  const invoices = await Invoice.find(filter)
+    .select('invoiceNumber status totalAmount date dueDate daysToPay paidAt createdAt')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const now = new Date()
+  const payments = invoices.map(inv => mapProjectInvoiceRow(inv, now))
+
+  return success(res, {
+    leadId,
+    customerId,
+    projectName: loaded.lead.projectName || '',
+    jobId: loaded.lead.jobId || '',
+    projectId: loaded.lead.jobId || '',
+    payments,
+    total: payments.length,
+  })
 })
 
 exports.getCustomerProject = asyncHandler(async (req, res) => {

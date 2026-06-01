@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body } = require('express-validator')
+const { body, param, query } = require('express-validator')
 const ctrl = require('../../controllers/admin/customer.controller')
 const leadCtrl = require('../../controllers/admin/lead.controller')
 const validate = require('../../middleware/validate')
@@ -40,6 +40,30 @@ router.patch('/:customerId/deactivate', ctrl.deactivateCustomer)
 router.get('/:customerId/invoices', ctrl.getCustomerInvoices)
 
 router.get('/:customerId', ctrl.getCustomerDetail)
+
+const projectInvoiceValidators = [
+  param('customerId').isMongoId(),
+  param('leadId').isMongoId(),
+]
+
+router.get(
+  '/:customerId/projects/:leadId/invoices/stats',
+  projectInvoiceValidators,
+  validate,
+  ctrl.getProjectInvoiceStats
+)
+router.get(
+  '/:customerId/projects/:leadId/invoices',
+  [
+    ...projectInvoiceValidators,
+    query('status').optional().isIn(['draft', 'sent', 'paid', 'overdue', 'cancelled']),
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getProjectInvoices
+)
+
 router.get('/:customerId/projects', ctrl.getCustomerProjects)
 router.get('/:customerId/projects/:leadId', ctrl.getCustomerProject)
 
