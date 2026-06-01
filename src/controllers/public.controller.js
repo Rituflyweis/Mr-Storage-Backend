@@ -104,7 +104,11 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
     content: m.content,
     createdAt: m.createdAt,
     isRead: m.isRead,
-    senderName: m.senderType === 'sales' ? m.senderId?.name || 'Sales' : undefined,
+    senderName: m.senderType === 'sales'
+      ? m.senderId?.name || 'Sales'
+      : m.senderType === 'admin'
+        ? m.senderId?.name || 'Admin'
+        : undefined,
   }))
 
   return success(res, { messages: rows })

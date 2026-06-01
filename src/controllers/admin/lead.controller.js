@@ -9,7 +9,6 @@ const User = require('../../models/User')
 const Building = require('../../models/Building')
 const POOrder = require('../../models/POOrder')
 const ProjectBudget = require('../../models/ProjectBudget')
-const Meeting = require('../../models/Meeting')
 const FollowUp = require('../../models/FollowUp')
 const auditService = require('../../services/audit.service')
 const generateCustomerId = require('../../utils/generateCustomerId')
@@ -409,18 +408,16 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
   if (!lead) return notFound(res, 'Lead not found')
 
   const [
-    customer, assignedSales, quotations, auditLogs, activityLogs, followUps,
-    invoices, buildings, meetings, budget, recentMessages,
+    customer, quotations, auditLogs, activityLogs, followUps,
+    invoices, buildings, budget, recentMessages,
   ] = await Promise.all([
-    Customer.findById(lead.customerId).lean(),
-    lead.assignedSales ? User.findById(lead.assignedSales).lean() : null,
+    Customer.findById(lead.customerId).select('_id customerId firstName email phone company location').lean(),
     Quotation.find({ leadId }).sort({ versionNumber: -1, createdAt: -1 }).lean(),
     AuditLog.find({ leadId, type: { $ne: 'activity' } }).sort({ createdAt: 1 }).lean(),
     AuditLog.find({ leadId, type: 'activity' }).sort({ createdAt: 1 }).lean(),
     FollowUp.find({ leadId }).sort({ followUpDate: 1 }).lean(),
-    Invoice.find({ leadId }).populate('createdBy').populate('paidBy').sort({ createdAt: -1 }).lean(),
+    Invoice.find({ leadId }).populate('paidBy').sort({ createdAt: -1 }).lean(),
     Building.find({ leadId }).sort({ buildingNumber: 1 }).lean(),
-    Meeting.find({ leadId }).sort({ meetingTime: 1 }).lean(),
     ProjectBudget.findOne({ leadId }).lean(),
     Message.find({ leadId }).sort({ createdAt: -1 }).limit(20).lean().then(m => m.reverse()),
   ])
@@ -439,27 +436,21 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     expectedProfit: (lead.quoteValue || 0) - (budget.totalBudget || 0),
   } : null
 
-  const agreementDoc = lead.documents?.find(d => d.type === 'contract')
   const leadNotes = await formatLeadNotes(lead)
 
   return success(res, {
     lead,
     customer,
-    assignedSales,
+    rfq: { aiQuoteData: lead.aiQuoteData, aiContextSummary: lead.aiContextSummary },
     quotations: flaggedQuotations,
     auditLog: auditLogs,
     activityLog: activityLogs,
     followUps,
     payments: { invoices, totalPaid, totalPending, totalInvoices: invoices.length },
     buildings,
-    meetings,
-    agreement: agreementDoc?.url || null,
     budget: budgetOut,
     recentMessages,
     leadNotes,
-    bom: [],
-    drawings: [],
-    shopperFiles: [],
     shipments: [],
   })
 })

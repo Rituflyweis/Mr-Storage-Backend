@@ -15,12 +15,11 @@ const adminHandler = (socket, adminNS) => {
     socket.leave(`lead:${leadId}`)
   })
 
-  // ── sales_message — sales employee sends message to customer ───────────────
+  // ── sales_message — staff (sales or admin) sends message to customer ─────────
   socket.on('sales_message', async ({ leadId, content }) => {
     if (!leadId || !content?.trim()) return
 
     try {
-      // Verify this lead is assigned to the connected sales user
       const lead = await Lead.findById(leadId).lean()
       if (!lead) return
 
@@ -30,11 +29,12 @@ const adminHandler = (socket, adminNS) => {
         return
       }
 
-      // Save message
+      const senderType = socket.user.role === 'admin' ? 'admin' : 'sales'
+
       const msg = await Message.create({
         leadId,
         customerId: lead.customerId,
-        senderType: 'sales',
+        senderType,
         senderId: socket.user._id,
         content: content.trim(),
         isRead: false,
@@ -42,7 +42,7 @@ const adminHandler = (socket, adminNS) => {
 
       const payload = {
         _id: msg._id,
-        senderType: 'sales',
+        senderType,
         senderId: socket.user._id,
         senderName: socket.user.name,
         content: msg.content,

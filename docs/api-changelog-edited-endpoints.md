@@ -98,6 +98,7 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | Set lead temperature | `PUT /api/admin/leads/:leadId/temperature` | `PUT /api/sales/leads/:leadId/temperature` |
 | Employee audit / last activity | `GET /api/admin/employees/audit-log` | — |
 | Employee assigned leads | `GET /api/admin/employees/:userId/assigned-leads` | — |
+| Reports & analytics | `GET /api/admin/reports/analytics` | admin only |
 | Create invoice (project in URL) | `POST /api/leads/:leadId/invoices` | `POST /api/leads/:leadId/invoices` |
 | Get / edit / send / mark paid invoice | `GET/PUT/POST /api/invoices/:invoiceId` (+ actions) | same |
 | Edit draft invoice (full body) | `PUT /api/invoices/:invoiceId` | same — body now matches create (§38) |
@@ -147,6 +148,7 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | 38 | PUT | `/api/invoices/:invoiceId` | admin, sales |
 | 39a | GET | `/api/customers` | admin, sales |
 | 39b | GET | `/api/leads` | admin, sales |
+| 40 | GET | `/api/admin/reports/analytics` | admin |
 | 35 | POST | `/api/payment-schedules` | admin, sales |
 | 36 | GET | `/api/payment-schedules/lead/:leadId` | admin, sales |
 | 24 | GET | `/api/sales/leads` | sales |
@@ -2230,6 +2232,7 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 | PUT | `/api/invoices/:invoiceId` | Edit draft — full body per §38 |
 | GET | `/api/customers` | Common customer lookup — §39a |
 | GET | `/api/leads` | Common lead lookup — §39b |
+| GET | `/api/admin/reports/analytics` | Admin Sales Analytics — §40 |
 | GET | `/api/account/invoices` | Account panel invoice list (role `account`) |
 | PUT | `/api/account/invoices/:invoiceId/mark-paid` | Account mark paid (no payment-stage sync) |
 
@@ -2237,7 +2240,7 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 
 ## Maintenance
 
-**Last updated:** 2026-05-26 — §39 common customer & lead lookups (filters)
+**Last updated:** 2026-05-26 — §41 chat senderType admin
 
 ---
 
@@ -3192,3 +3195,131 @@ Full lead document fields are returned (minus customer password). `customerId` a
 - **Admin and sales** use the same paths: `GET /api/customers` and `GET /api/leads`.
 - For invoice filters, meeting filters, reports, etc., prefer these over role-specific list endpoints when you only need search + pagination.
 - `GET /api/leads/:leadId/invoices` and other `:leadId` routes are unchanged — register lookups before those in the router (already done).
+
+---
+
+## §40 — Admin reports & analytics (`GET /api/admin/reports/analytics`)
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Admin → Reports & Analytics (Sales Analytics screen) |
+| **Change** | **New** — single endpoint for Quick Overview + detailed monthly table |
+
+### Query params
+
+| Param | Required | Default | Notes |
+|-------|----------|---------|--------|
+| `lifecycleStatus` | No | `all` | Filter leads by `lifecycleStatus`; omit or `all` for every stage |
+| `timeframe` | No | `monthly` | Only `monthly` supported |
+| `months` | No | `6` | Number of calendar months in the table (1–24) |
+
+### Metric definitions
+
+| Metric | Rule |
+|--------|------|
+| **Revenue** | Sum of `Invoice.totalAmount` where `status === paid` and `paidAt` in the month, for leads matching the status filter |
+| **New leads** | `Lead` count where `createdAt` in the month |
+| **Conversions** | `Lead` count where `lifecycleStatus` is in closed stages (`deal_closed`, `payment_done`, `converted_to_po`, `sent_to_admin`, `delivered`) and `updatedAt` in the month |
+| **Conversion rate** | `(conversions / new leads) × 100`, one decimal (e.g. `26.6`) |
+
+### Response `200` — `data`
+
+```json
+{
+  "quickOverview": {
+    "revenue": 67000,
+    "newLeads": 158,
+    "conversions": 42,
+    "conversionRate": 26.6
+  },
+  "detailedSummary": {
+    "totalRevenue": 331000,
+    "totalLeads": 828,
+    "conversions": 205,
+    "conversionRate": 24.8
+  },
+  "monthlyBreakdown": [
+    {
+      "month": "Jan",
+      "monthKey": "2026-01",
+      "revenue": 45000,
+      "leads": 120,
+      "conversions": 28,
+      "conversionRate": 23.3
+    }
+  ],
+  "filters": {
+    "lifecycleStatus": "all",
+    "timeframe": "monthly",
+    "months": 6
+  }
+}
+```
+
+| Block | FE mapping |
+|-------|------------|
+| `quickOverview` | Top cards: This month Revenue, New Leads, Conversions, Conversion Rate |
+| `detailedSummary` | Totals row: Total Revenue, Total Leads, Conversions |
+| `monthlyBreakdown` | Table columns: MONTH, REVENUE, LEADS, CONVERSIONS, CONVERSION RATE |
+
+### Example
+
+```http
+GET /api/admin/reports/analytics?lifecycleStatus=all&timeframe=monthly&months=6
+GET /api/admin/reports/analytics?lifecycleStatus=negotiation&months=12
+```
+
+---
+
+## §41 — Chat `senderType: "admin"` (Socket.io)
+
+| | |
+|---|---|
+| **Change** | Staff messages from an **admin** user are stored and emitted with `senderType: "admin"` (was always `"sales"`). |
+
+### What `senderType` means
+
+| Value | Who sent it | Where it appears |
+|-------|-------------|------------------|
+| `customer` | Customer widget | Customer / staff transcript |
+| `ai` | Claude (pre handoff) | Customer / staff transcript |
+| `sales` | Sales user via `/admin` socket | Customer + admin/sales panels |
+| `admin` | Admin user via `/admin` socket | Customer + admin/sales panels |
+
+### Socket (unchanged event names)
+
+Connect: `/admin` namespace with JWT in `handshake.auth.token`.
+
+| Emit | Payload | Who |
+|------|---------|-----|
+| `join_lead_chat` | `{ leadId }` | admin, sales |
+| `sales_message` | `{ leadId, content }` | **admin and sales** (same event) |
+| `sales_typing_start` / `sales_typing_stop` | `{ leadId }` | admin, sales |
+
+**Access:** Sales must own the lead (`assignedSales`). **Admin can message any lead** (no assignment check).
+
+### `new_message` payload (staff → customer)
+
+```json
+{
+  "_id": "...",
+  "senderType": "admin",
+  "senderId": "...",
+  "senderName": "Admin User",
+  "content": "Hello",
+  "createdAt": "...",
+  "leadId": "..."
+}
+```
+
+When a **sales** user sends, `senderType` is `"sales"` (same shape).
+
+### REST history
+
+`GET /api/public/chat/:leadId/history` — `senderName` is set for `senderType` `sales` or `admin`.
+
+### FE
+
+- Render `admin` messages with a distinct label/avatar vs `sales`.
+- Admin panel: still `emit('sales_message', …)` — no new socket event required.
