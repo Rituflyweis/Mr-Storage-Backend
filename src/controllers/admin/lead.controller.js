@@ -39,6 +39,7 @@ const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
+const leadListSocket = require('../../services/leadListSocket.service')
 
 exports.getLeadStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
@@ -93,6 +94,7 @@ exports.updateLeadTemperature = asyncHandler(async (req, res) => {
   if (!lead) return notFound(res, 'Lead not found')
 
   const result = await setLeadTemperatureManual(lead, temperature, req.user._id)
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'temperature', includeScoreRow: true })
   return success(res, { lead: result })
 })
 
@@ -273,6 +275,7 @@ exports.createLead = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { source: lead.source, projectName: lead.projectName, assignedSales: lead.assignedSales },
   })
+  await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'admin_create_lead' })
 
   return created(res, { lead: enrichLeadDocument(lead) })
 })
@@ -367,6 +370,7 @@ exports.editLead = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: req.body,
   })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'lead_edited', includeScoreRow: true })
 
   return success(res, { lead: enrichLeadDocument(lead) })
 })
@@ -398,6 +402,7 @@ exports.assignLead = asyncHandler(async (req, res) => {
   if (global.io) {
     global.io.of('/admin').to(`user:${employeeId}`).emit('lead_assigned', { leadId, lead: fullLead })
   }
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'assigned' })
 
   return success(res, { lead: enrichLeadDocument(fullLead) }, 'Lead assigned successfully')
 })
@@ -568,6 +573,7 @@ exports.setLeadBudget = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { totalBudget },
   })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'budget' })
 
   return success(res, { budget: { ...budget.toObject(), expectedProfit: (lead.quoteValue || 0) - totalBudget } })
 })
@@ -652,6 +658,7 @@ exports.terminateLead = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { reason },
   })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'terminated' })
 
   return success(res, { lead: enrichLeadDocument(lead) })
 })
@@ -712,6 +719,7 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { source: lead.source, projectName: lead.projectName, assignedSales: salesEmployeeId },
   })
+  await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'admin_create_project' })
 
   return created(res, { lead: enrichLeadDocument(lead) })
 })

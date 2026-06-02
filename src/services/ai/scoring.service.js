@@ -2,6 +2,7 @@ const Anthropic = require('@anthropic-ai/sdk')
 const Lead = require('../../models/Lead')
 const env = require('../../config/env')
 const { resolveLeadTemperatureFromScore } = require('../../config/constants')
+const leadListSocket = require('../leadListSocket.service')
 
 const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
 
@@ -116,6 +117,7 @@ const updateLeadScore = async (leadId, messages, leadName = '') => {
         lifecycleStatus: lead.lifecycleStatus,
       })
     }
+    await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'ai_scoring', includeScoreRow: true })
   } catch (err) {
     console.error('[Scoring] updateLeadScore failed:', err.message)
   }

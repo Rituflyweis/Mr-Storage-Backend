@@ -2,6 +2,7 @@ const Message = require('../../models/Message')
 const Lead = require('../../models/Lead')
 const chatService = require('../ai/chat.service')
 const scoringService = require('../ai/scoring.service')
+const leadListSocket = require('../leadListSocket.service')
 const {
   isRequirementsGatheredFromChat,
   isReadyForSalesHandoff,
@@ -26,6 +27,12 @@ const saveLeadScoring = async (leadId, leadScoring) => {
 }
 
 const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) => {
+  const leadForChat = await Lead.findById(leadId).select('isChatEnded').lean()
+  if (leadForChat?.isChatEnded) {
+    chatNS.to(`lead:${leadId}`).emit('chat_error', { message: 'This chat has been closed' })
+    return
+  }
+
   const customerMsg = await Message.create({
     leadId,
     customerId,
@@ -138,6 +145,7 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
       lifecycleStatus: lifecycleLead?.lifecycleStatus,
     })
   }
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'ai_scoring', includeScoreRow: true })
 
   const readyForHandoff = isReadyForSalesHandoff(chatMeta, text, quoteReadyData, scoreData)
 
@@ -149,6 +157,7 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
       messages: messagesAfterAi,
       scoreData,
     })
+    await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'quote_ready', includeScoreRow: true })
   }
 
   chatService.refreshContextSummary(leadId).catch((err) => {

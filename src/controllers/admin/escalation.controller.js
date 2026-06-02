@@ -2,6 +2,7 @@ const Escalation = require('../../models/Escalation')
 const Lead = require('../../models/Lead')
 const User = require('../../models/User')
 const auditService = require('../../services/audit.service')
+const leadListSocket = require('../../services/leadListSocket.service')
 const { success, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
@@ -100,6 +101,7 @@ exports.assignEscalation = asyncHandler(async (req, res) => {
       lead: fullLead,
     })
   }
+  await leadListSocket.emitLeadListUpdated(escalation.leadId, { trigger: 'escalation_reassign' })
 
   return success(res, { escalation }, 'Escalation resolved and lead reassigned')
 })

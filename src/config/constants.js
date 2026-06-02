@@ -115,6 +115,8 @@ const AUDIT_ACTIONS = {
   CUSTOMER_ACTIVATED:       'customer.activated',
   CUSTOMER_PROJECT_CREATED: 'customer.project_created',
   ACTIVITY_LOGGED:          'activity.logged',
+  CHAT_ENDED:               'chat.ended',
+  CHAT_REOPENED:            'chat.reopened',
 
   VENDOR_CREATED:            'vendor.created',
   VENDOR_UPDATED:            'vendor.updated',

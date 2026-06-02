@@ -26,6 +26,7 @@ const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
+const leadListSocket = require('../../services/leadListSocket.service')
 const { parse } = require('csv-parse/sync')
 const bcrypt = require('bcryptjs')
 
@@ -85,6 +86,7 @@ exports.updateLeadTemperature = asyncHandler(async (req, res) => {
   if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
 
   const result = await setLeadTemperatureManual(lead, temperature, req.user._id)
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'temperature', includeScoreRow: true })
   return success(res, { lead: result })
 })
 
@@ -210,6 +212,7 @@ exports.createLead = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { source: lead.source, projectName: lead.projectName },
   })
+  await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'sales_create_lead' })
 
   return created(res, { lead: enrichLeadDocument(lead) })
 })
@@ -503,6 +506,7 @@ exports.editLead = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: req.body,
   })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'lead_edited', includeScoreRow: true })
 
   return success(res, { lead: enrichLeadDocument(lead) })
 })
@@ -609,6 +613,7 @@ exports.updateLifecycle = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { lifecycleStatus },
   })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'lifecycle', includeScoreRow: true })
 
   return success(res, { lead: enrichLeadDocument(lead) })
 })
@@ -671,6 +676,7 @@ exports.raisePOOrder = asyncHandler(async (req, res) => {
   lead.lifecycleStatus = 'converted_to_po'
   lead.lifecycleHistory.push({ stage: 'converted_to_po', changedAt: new Date(), changedBy: req.user._id })
   await lead.save()
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'po_raised', includeScoreRow: true })
 
   if (global.io) global.io.of('/admin').to('admin_room').emit('new_po_order', { order, leadId })
 

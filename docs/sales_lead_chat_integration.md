@@ -2,6 +2,8 @@
 
 Realtime chat between a customer (lead) and the assigned sales employee. Built on Socket.io with REST endpoints for bootstrap and history.
 
+> **End / reopen chat:** See **[chat-end-lifecycle-frontend-guide.md](./chat-end-lifecycle-frontend-guide.md)** for `isChatEnded`, REST endpoints, and socket events (`chat_ended`, `chat_reopened`, etc.).
+
 ---
 
 ## 1. Architecture Overview
@@ -49,12 +51,15 @@ Response:
     "customerId": "665f...",
     "leadId": "665f...",
     "customerName": "John",
-    "isReturning": false
+    "isReturning": false,
+    "isChatEnded": false
   }
 }
 ```
 
 Persist `customerId` + `leadId` in the widget; they are required for every socket event.
+
+If `isChatEnded` is `true`, disable the message input until chat is reopened (see end-chat guide).
 
 ### 2.2 Chat history (full transcript)
 `GET /api/public/chat/history/:leadId`
@@ -64,6 +69,9 @@ Response:
 {
   "success": true,
   "data": {
+    "isChatEnded": false,
+    "chatEndedAt": null,
+    "canCustomerSend": true,
     "messages": [
       { "senderType": "ai|customer|sales", "content": "...", "createdAt": "...", "isRead": true }
     ]
@@ -124,6 +132,9 @@ chatSocket.emit('typing_stop',  { leadId })
 | `sales_typing` | `{ isTyping: boolean, name }` | Show "Rahul is typing…" |
 | `lead_handed_to_sales` | `{ assignedSales: "Rahul" }` | Show banner: "You are now connected to Rahul." |
 | `chat_error` | `{ message }` | Render inline error/toast. |
+| `chat_status` | `{ leadId, isChatEnded, canCustomerSend, ... }` | Current chat open/closed state (on `join_lead`). |
+| `chat_ended` | same as `chat_status` | Staff ended chat — disable input. |
+| `chat_reopened` | same shape, `isChatEnded: false` | Staff reopened chat — enable input. |
 
 **Important:** the customer's own outgoing message is **not** echoed back. Append it locally in the UI as soon as you emit `customer_message`.
 
@@ -153,6 +164,16 @@ adminSocket.emit('join_lead_chat', { leadId })
 // when closing the chat pane:
 adminSocket.emit('leave_lead_chat', { leadId })
 ```
+
+Server emits `chat_status` after join with `isChatEnded` / `canStaffSend`.
+
+### 4.2b End / reopen chat (staff)
+```js
+adminSocket.emit('end_lead_chat', { leadId })
+adminSocket.emit('reopen_lead_chat', { leadId })
+```
+
+REST equivalents: `PUT /api/admin/leads/:leadId/chat/end` and `.../chat/reopen` (sales: `/api/sales/...`). Full spec: [chat-end-lifecycle-frontend-guide.md](./chat-end-lifecycle-frontend-guide.md).
 
 ### 4.3 Send a message to the customer
 ```js
@@ -188,6 +209,9 @@ This sets `isRead = true` on all `senderType === 'customer'` messages for that l
 | `new_lead` | `{ leadId, customerId, customerName }` | Admin-only. Brand-new lead from chat init. |
 | `customer_typing` | `{ isTyping }` | Customer is typing in the lead room. |
 | `error` | `{ message }` | Server-side validation/guard failure. |
+| `chat_status` | `{ leadId, isChatEnded, canStaffSend, ... }` | After `join_lead_chat`. |
+| `chat_ended` | same | Chat closed — disable composer. |
+| `chat_reopened` | same, `isChatEnded: false` | Chat reopened. |
 
 ---
 
@@ -275,10 +299,10 @@ Socket URL = same origin as REST (no separate host).
 ## 9. Quick Reference
 
 **Customer events (emit):** `join_lead`, `customer_message`, `typing_start`, `typing_stop`
-**Customer events (listen):** `new_message`, `ai_typing`, `sales_typing`, `lead_handed_to_sales`, `chat_error`
+**Customer events (listen):** `new_message`, `ai_typing`, `sales_typing`, `lead_handed_to_sales`, `chat_error`, `chat_status`, `chat_ended`, `chat_reopened`
 
-**Sales events (emit):** `join_lead_chat`, `leave_lead_chat`, `sales_message`, `sales_typing_start`, `sales_typing_stop`, `mark_messages_read`
-**Sales events (listen):** `new_message`, `new_customer_message`, `lead_quote_ready` (admin), `new_lead` (admin), `customer_typing`, `error`
+**Sales events (emit):** `join_lead_chat`, `leave_lead_chat`, `sales_message`, `sales_typing_start`, `sales_typing_stop`, `mark_messages_read`, `end_lead_chat`, `reopen_lead_chat`
+**Sales events (listen):** `new_message`, `new_customer_message`, `lead_quote_ready` (admin), `new_lead` (admin), `customer_typing`, `error`, `chat_status`, `chat_ended`, `chat_reopened`
 
 **REST:**
 - `POST /api/public/chat/init`

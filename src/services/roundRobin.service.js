@@ -2,6 +2,7 @@ const Lead = require('../models/Lead')
 const User = require('../models/User')
 const RoundRobinTracker = require('../models/RoundRobinTracker')
 const auditService = require('./audit.service')
+const leadListSocket = require('./leadListSocket.service')
 const { AUDIT_ACTIONS } = require('../config/constants')
 
 /**
@@ -92,6 +93,7 @@ const assignNextSales = async (leadId, customerId) => {
       lead: fullLead,
     })
   }
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'assigned' })
 
   return employeeId
 }

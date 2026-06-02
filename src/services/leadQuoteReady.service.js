@@ -1,6 +1,7 @@
 const Lead = require('../models/Lead')
 const roundRobinService = require('./roundRobin.service')
 const auditService = require('./audit.service')
+const leadListSocket = require('./leadListSocket.service')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
 
 const advanceLifecycleIfNeeded = async (leadId, stage) => {
@@ -146,8 +147,10 @@ const handleQuoteReady = async (leadId, customerId, quoteData, options = {}) => 
       if (global.io) {
         global.io.of('/admin').to('admin_room').emit('lead_quote_ready', { leadId, customerId })
       }
+      await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'quote_ready', includeScoreRow: true })
     } else if (quoteValue > 0 && !existing.quoteValue) {
       await Lead.findByIdAndUpdate(leadId, { quoteValue, aiQuoteData: quoteData })
+      await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'quote_ready', includeScoreRow: true })
     }
 
     const assignedId = await roundRobinService.assignNextSales(leadId, customerId)
@@ -159,6 +162,7 @@ const handleQuoteReady = async (leadId, customerId, quoteData, options = {}) => 
 
     if (!updatedLead?.isHandedToSales) {
       console.warn('[LeadQuoteReady] Quote ready but sales handoff pending — no active sales user?', leadId)
+      await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'quote_ready', includeScoreRow: true })
       return updatedLead
     }
 

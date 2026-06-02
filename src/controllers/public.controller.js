@@ -3,6 +3,7 @@ const Customer = require('../models/Customer')
 const Lead = require('../models/Lead')
 const Message = require('../models/Message')
 const auditService = require('../services/audit.service')
+const leadListSocket = require('../services/leadListSocket.service')
 const generateCustomerId = require('../utils/generateCustomerId')
 const { success, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
@@ -70,14 +71,7 @@ exports.chatInit = asyncHandler(async (req, res) => {
       metadata: { source: 'chat', isNewCustomer },
     })
 
-    // Notify admin panel of new lead
-    if (global.io) {
-      global.io.of('/admin').to('admin_room').emit('new_lead', {
-        leadId: lead._id,
-        customerId: customer._id,
-        customerName: customer.firstName,
-      })
-    }
+    await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'chat_init' })
   }
 
   return success(res, {
@@ -87,11 +81,15 @@ exports.chatInit = asyncHandler(async (req, res) => {
     isReturning: !isNewCustomer,
     isHandedToSales: lead.isHandedToSales || false,
     isQuoteReady: lead.isQuoteReady || false,
+    isChatEnded: lead.isChatEnded || false,
   })
 })
 
 exports.getChatHistory = asyncHandler(async (req, res) => {
   const { leadId } = req.params
+
+  const lead = await Lead.findById(leadId).select('isChatEnded chatEndedAt').lean()
+  if (!lead) return badRequest(res, 'Lead not found')
 
   const messages = await Message.find({ leadId })
     .sort({ createdAt: 1 })
@@ -111,5 +109,10 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
         : undefined,
   }))
 
-  return success(res, { messages: rows })
+  return success(res, {
+    isChatEnded: lead.isChatEnded || false,
+    chatEndedAt: lead.chatEndedAt || null,
+    canCustomerSend: !lead.isChatEnded,
+    messages: rows,
+  })
 })

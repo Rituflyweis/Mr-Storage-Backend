@@ -1,13 +1,25 @@
 const Message = require('../../models/Message')
 const Lead = require('../../models/Lead')
+const chatLifecycle = require('../chat/chatLifecycle.service')
+
+const assertStaffCanAccessLead = async (socket, lead) => {
+  const isSales = socket.user.role === 'sales'
+  if (isSales && String(lead.assignedSales) !== String(socket.user._id)) {
+    socket.emit('error', { message: 'This lead is not assigned to you' })
+    return false
+  }
+  return true
+}
 
 const adminHandler = (socket, adminNS) => {
 
-  // ── join_lead_chat — sales/admin joins a lead room to chat ─────────────────
-  socket.on('join_lead_chat', ({ leadId }) => {
+  socket.on('join_lead_chat', async ({ leadId }) => {
     if (!leadId) return
     socket.join(`lead:${leadId}`)
     socket.data.activeLead = leadId
+
+    const status = await chatLifecycle.getChatStatusByLeadId(leadId)
+    if (status) socket.emit('chat_status', status)
   })
 
   socket.on('leave_lead_chat', ({ leadId }) => {
@@ -15,17 +27,46 @@ const adminHandler = (socket, adminNS) => {
     socket.leave(`lead:${leadId}`)
   })
 
-  // ── sales_message — staff (sales or admin) sends message to customer ─────────
+  socket.on('end_lead_chat', async ({ leadId }) => {
+    if (!leadId) return
+
+    try {
+      const lead = await Lead.findById(leadId).lean()
+      if (!lead) return
+      if (!(await assertStaffCanAccessLead(socket, lead))) return
+
+      await chatLifecycle.endChat(leadId, socket.user._id)
+    } catch (err) {
+      console.error('[AdminHandler] end_lead_chat error:', err.message)
+      socket.emit('error', { message: 'Failed to end chat' })
+    }
+  })
+
+  socket.on('reopen_lead_chat', async ({ leadId }) => {
+    if (!leadId) return
+
+    try {
+      const lead = await Lead.findById(leadId).lean()
+      if (!lead) return
+      if (!(await assertStaffCanAccessLead(socket, lead))) return
+
+      await chatLifecycle.reopenChat(leadId, socket.user._id)
+    } catch (err) {
+      console.error('[AdminHandler] reopen_lead_chat error:', err.message)
+      socket.emit('error', { message: 'Failed to reopen chat' })
+    }
+  })
+
   socket.on('sales_message', async ({ leadId, content }) => {
     if (!leadId || !content?.trim()) return
 
     try {
       const lead = await Lead.findById(leadId).lean()
       if (!lead) return
+      if (!(await assertStaffCanAccessLead(socket, lead))) return
 
-      const isSales = socket.user.role === 'sales'
-      if (isSales && String(lead.assignedSales) !== String(socket.user._id)) {
-        socket.emit('error', { message: 'This lead is not assigned to you' })
+      if (lead.isChatEnded) {
+        socket.emit('error', { message: 'Chat has ended' })
         return
       }
 
@@ -50,12 +91,10 @@ const adminHandler = (socket, adminNS) => {
         leadId,
       }
 
-      // Send to customer in /chat namespace
       if (global.io) {
         global.io.of('/chat').to(`lead:${leadId}`).emit('new_message', payload)
       }
 
-      // Broadcast within /admin namespace (other admins monitoring can see it)
       adminNS.to(`lead:${leadId}`).emit('new_message', payload)
 
     } catch (err) {
@@ -63,7 +102,6 @@ const adminHandler = (socket, adminNS) => {
     }
   })
 
-  // ── mark_messages_read ─────────────────────────────────────────────────────
   socket.on('mark_messages_read', async ({ leadId }) => {
     if (!leadId) return
     try {
@@ -76,16 +114,17 @@ const adminHandler = (socket, adminNS) => {
     }
   })
 
-  // ── typing indicator from sales ────────────────────────────────────────────
-  socket.on('sales_typing_start', ({ leadId }) => {
+  socket.on('sales_typing_start', async ({ leadId }) => {
     if (!leadId) return
+    if (await chatLifecycle.isLeadChatEnded(leadId)) return
     if (global.io) {
       global.io.of('/chat').to(`lead:${leadId}`).emit('sales_typing', { isTyping: true, name: socket.user.name })
     }
   })
 
-  socket.on('sales_typing_stop', ({ leadId }) => {
+  socket.on('sales_typing_stop', async ({ leadId }) => {
     if (!leadId) return
+    if (await chatLifecycle.isLeadChatEnded(leadId)) return
     if (global.io) {
       global.io.of('/chat').to(`lead:${leadId}`).emit('sales_typing', { isTyping: false })
     }
