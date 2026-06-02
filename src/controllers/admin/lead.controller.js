@@ -410,7 +410,9 @@ exports.assignLead = asyncHandler(async (req, res) => {
 exports.getLeadDetail = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
-  const lead = await Lead.findById(leadId).lean()
+  const lead = await Lead.findById(leadId)
+    .populate({ path: 'assignedSales', select: '_id name email role isActive' })
+    .lean()
   if (!lead) return notFound(res, 'Lead not found')
 
   const [
@@ -446,6 +448,10 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
 
   return success(res, {
     lead: enrichLeadDocument(lead),
+    lifecycle: {
+      status: lead.lifecycleStatus || '',
+      history: Array.isArray(lead.lifecycleHistory) ? lead.lifecycleHistory : [],
+    },
     customer,
     rfq: { aiQuoteData: lead.aiQuoteData, aiContextSummary: lead.aiContextSummary },
     quotations: flaggedQuotations,
