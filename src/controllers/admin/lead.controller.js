@@ -164,7 +164,7 @@ exports.getAiHandledLeads = asyncHandler(async (req, res) => {
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const filter = { isHandedToSales: false, assignedSales: null }
+  const filter = { isHandedToSales: false, assignedSales: null, isStaffChatActive: { $ne: true } }
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName email' })

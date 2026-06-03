@@ -114,4 +114,35 @@ const sendEmployeeCredentials = async ({ toEmail, name, role, tempPassword }) =>
   })
 }
 
-module.exports = { sendQuotation, sendInvoice, sendOtp, sendEmployeeCredentials }
+const sendConsolidatedBOMToVendor = async ({
+  toEmail,
+  vendorName,
+  projectName,
+  jobId,
+  bomFileUrl,
+  uploadUrl,
+}) => {
+  const template = loadTemplate('vendor-consolidated-bom')
+  const html = fillTemplate(template, {
+    VENDOR_NAME: vendorName || 'Vendor',
+    PROJECT_NAME: projectName || '',
+    JOB_ID: jobId || '',
+    BOM_FILE_URL: bomFileUrl || '',
+    UPLOAD_URL: uploadUrl || '',
+  })
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Consolidated BOM for ${projectName || 'Project'}`,
+    html,
+  })
+}
+
+module.exports = {
+  sendQuotation,
+  sendInvoice,
+  sendOtp,
+  sendEmployeeCredentials,
+  sendConsolidatedBOMToVendor,
+}

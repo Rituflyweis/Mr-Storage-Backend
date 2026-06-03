@@ -101,8 +101,9 @@ const LeadSchema = new mongoose.Schema(
 
     leadScoring: { type: LeadScoringSchema, default: () => ({}) },
 
-    isQuoteReady:    { type: Boolean, default: false },
-    isHandedToSales: { type: Boolean, default: false },
+    isQuoteReady:       { type: Boolean, default: false },
+    isHandedToSales:    { type: Boolean, default: false },
+    isStaffChatActive:  { type: Boolean, default: false },
     isChatEnded:     { type: Boolean, default: false },
     chatEndedAt:     { type: Date, default: null },
     chatEndedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

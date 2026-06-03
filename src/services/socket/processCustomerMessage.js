@@ -27,7 +27,9 @@ const saveLeadScoring = async (leadId, leadScoring) => {
 }
 
 const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) => {
-  const leadForChat = await Lead.findById(leadId).select('isChatEnded').lean()
+  const leadForChat = await Lead.findById(leadId)
+    .select('isChatEnded isStaffChatActive isHandedToSales assignedSales')
+    .lean()
   if (leadForChat?.isChatEnded) {
     chatNS.to(`lead:${leadId}`).emit('chat_error', { message: 'This chat has been closed' })
     return
@@ -50,32 +52,10 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
     })
   }
 
-  const lead = await Lead.findById(leadId).populate('customerId')
-  if (!lead) return
-
-  const customer = lead.customerId
-
-  if (lead.isHandedToSales) {
-    notifyAssignedSales(leadId, lead.assignedSales, {
-      senderType: 'customer',
-      content: content.trim(),
-      createdAt: customerMsg.createdAt,
-    })
-    return
-  }
-
-  if (lead.isQuoteReady && !lead.isHandedToSales) {
-    const priorMessages = await Message.find({ leadId })
-      .sort({ createdAt: 1 })
-      .select('senderType content createdAt')
-      .lean()
-    await handleQuoteReady(leadId, customerId, lead.aiQuoteData || {}, {
-      messages: priorMessages,
-      scoreData: lead.leadScoring || {},
-    })
-    const updated = await Lead.findById(leadId).populate('assignedSales').lean()
-    if (updated?.isHandedToSales && updated.assignedSales) {
-      notifyAssignedSales(leadId, updated.assignedSales._id, {
+  // Staff (admin/sales) has taken over — AI stays silent; admin assigns sales manually.
+  if (leadForChat?.isStaffChatActive || leadForChat?.isHandedToSales) {
+    if (leadForChat.isHandedToSales && leadForChat.assignedSales) {
+      notifyAssignedSales(leadId, leadForChat.assignedSales, {
         senderType: 'customer',
         content: content.trim(),
         createdAt: customerMsg.createdAt,
@@ -83,6 +63,11 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
     }
     return
   }
+
+  const lead = await Lead.findById(leadId).populate('customerId')
+  if (!lead) return
+
+  const customer = lead.customerId
 
   const messagesBeforeAi = await Message.find({ leadId })
     .sort({ createdAt: 1 })
@@ -149,9 +134,7 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
 
   const readyForHandoff = isReadyForSalesHandoff(chatMeta, text, quoteReadyData, scoreData)
 
-  const freshLead = await Lead.findById(leadId).select('isQuoteReady isHandedToSales').lean()
-
-  if (readyForHandoff && freshLead && !freshLead.isHandedToSales) {
+  if (readyForHandoff) {
     const quoteData = quoteReadyData || buildFallbackQuoteData(lead, scoreData, messagesAfterAi)
     await handleQuoteReady(leadId, customerId, quoteData, {
       messages: messagesAfterAi,

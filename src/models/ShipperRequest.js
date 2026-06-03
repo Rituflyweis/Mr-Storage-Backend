@@ -17,6 +17,12 @@ const ShipperRequestSchema = new mongoose.Schema(
     quoteValue:        { type: Number, default: null },
     reviewedAt:        { type: Date, default: null },
     reviewedBy:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    exceptions:        { type: [mongoose.Schema.Types.Mixed], default: [] },
+    manualReviewNote:  { type: String, default: '' },
+    comparisonStatus:  { type: String, enum: ['idle', 'processing', 'completed', 'failed'], default: 'idle' },
+    comparisonSummary: { type: mongoose.Schema.Types.Mixed, default: null },
+    comparisonError:   { type: String, default: null },
+    comparisonRanAt:   { type: Date, default: null },
   },
   { timestamps: true }
 )

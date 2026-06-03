@@ -1,9 +1,11 @@
+const crypto = require('crypto')
 const POOrder = require('../../models/POOrder')
 const Lead = require('../../models/Lead')
 const User = require('../../models/User')
 const Building = require('../../models/Building')
 const Invoice = require('../../models/Invoice')
 const Delivery = require('../../models/Delivery')
+const Vendor = require('../../models/Vendor')
 const ShipperRequest = require('../../models/ShipperRequest')
 const BOMJob = require('../../models/BOMJob')
 const BOMItem = require('../../models/BOMItem')
@@ -24,6 +26,8 @@ const {
   uploadConsolidatedExcelToS3,
   loadPricedBomItemsForBuildings,
 } = require('../../services/plant/consolidator.service')
+const { sendConsolidatedBOMToVendor } = require('../../services/email/mailer')
+const { CLIENT_URL } = require('../../config/env')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -896,5 +900,146 @@ exports.getConsolidatedBOM = asyncHandler(async (req, res) => {
 
   return success(res, {
     consolidatedBOM: formatConsolidatedBOMResponse(consolidatedBOM),
+  })
+})
+
+exports.sendConsolidatedBOM = asyncHandler(async (req, res) => {
+  const access = await guardProject(req, res)
+  if (!access) return
+  const { lead } = access
+  const leadId = lead._id
+
+  const { vendorIds } = req.body
+  if (!Array.isArray(vendorIds) || vendorIds.length === 0) {
+    return badRequest(res, 'vendorIds array is required')
+  }
+
+  const uniqueVendorIds = [...new Set(vendorIds.map((id) => String(id)))]
+  const consolidatedBOM = await ConsolidatedBOM.findOne({ leadId })
+  if (!consolidatedBOM) {
+    return notFound(res, 'Consolidated BOM not found. Generate one first.')
+  }
+  if (!consolidatedBOM.fileUrl) {
+    return badRequest(res, 'Consolidated BOM file is missing. Regenerate first.')
+  }
+
+  const vendors = await Vendor.find({
+    _id: { $in: uniqueVendorIds },
+    status: 'active',
+  }).select('_id vendorName email').lean()
+
+  if (vendors.length !== uniqueVendorIds.length) {
+    const found = new Set(vendors.map((v) => String(v._id)))
+    const missing = uniqueVendorIds.filter((id) => !found.has(id))
+    return badRequest(res, 'Some vendorIds are invalid or inactive', { invalidVendorIds: missing })
+  }
+
+  const missingEmail = vendors.filter((v) => !v.email).map((v) => String(v._id))
+  if (missingEmail.length) {
+    return badRequest(res, 'Some vendors do not have email configured', { missingEmailVendorIds: missingEmail })
+  }
+
+  const sent = []
+  const sentRecords = []
+  const failures = []
+  const sentAt = new Date()
+
+  for (const vendor of vendors) {
+    let request = await ShipperRequest.findOne({
+      leadId,
+      consolidatedBOMId: consolidatedBOM._id,
+      vendorId: vendor._id,
+    })
+    const isNewRequest = !request
+
+    if (!request) {
+      request = await ShipperRequest.create({
+        leadId,
+        consolidatedBOMId: consolidatedBOM._id,
+        vendorId: vendor._id,
+        token: crypto.randomBytes(32).toString('hex'),
+        ourFileUrl: consolidatedBOM.fileUrl,
+        sentAt,
+        status: 'sent',
+      })
+    } else {
+      request.ourFileUrl = consolidatedBOM.fileUrl
+      request.sentAt = sentAt
+      await request.save()
+    }
+
+    const uploadUrl = `${CLIENT_URL}/vendor-upload/${request.token}`
+
+    try {
+      await sendConsolidatedBOMToVendor({
+        toEmail: vendor.email,
+        vendorName: vendor.vendorName,
+        projectName: lead.projectName,
+        jobId: lead.jobId,
+        bomFileUrl: consolidatedBOM.fileUrl,
+        uploadUrl,
+      })
+
+      sent.push({
+        _id: request._id,
+        vendorId: vendor._id,
+        vendorName: vendor.vendorName,
+        status: request.status,
+        isNewRequest,
+        tokenReused: !isNewRequest,
+      })
+      sentRecords.push({ vendorId: vendor._id, token: request.token, sentAt: request.sentAt })
+    } catch (err) {
+      failures.push({
+        vendorId: vendor._id,
+        vendorName: vendor.vendorName,
+        email: vendor.email,
+        error: err.message || 'Failed to send email',
+      })
+    }
+  }
+
+  if (!sent.length) {
+    return badRequest(res, 'Failed to send consolidated BOM to selected vendors', { failures })
+  }
+
+  consolidatedBOM.status = 'sent_to_vendor'
+  for (const item of sentRecords) {
+    const idx = consolidatedBOM.sentToVendors.findIndex((v) => String(v.vendorId) === String(item.vendorId))
+    if (idx >= 0) {
+      consolidatedBOM.sentToVendors[idx].token = item.token
+      consolidatedBOM.sentToVendors[idx].sentAt = item.sentAt
+    } else {
+      consolidatedBOM.sentToVendors.push({
+        vendorId: item.vendorId,
+        token: item.token,
+        sentAt: item.sentAt,
+      })
+    }
+  }
+  await consolidatedBOM.save()
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.CONSOLIDATED_BOM_SENT,
+    leadId,
+    customerId: lead.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      consolidatedBOMId: consolidatedBOM._id,
+      vendorCount: sent.length,
+      vendorIds: sent.map((v) => v.vendorId),
+      failedVendorIds: failures.map((f) => f.vendorId),
+    },
+  })
+
+  const message = failures.length
+    ? `Sent to ${sent.length} vendor(s). ${failures.length} failed.`
+    : `Sent to ${sent.length} vendor(s).`
+
+  return success(res, {
+    message,
+    shipperRequests: sent,
+    failures,
   })
 })

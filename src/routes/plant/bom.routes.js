@@ -10,6 +10,23 @@ router.post('/jobs/status',
   ctrl.getJobsStatusBatch
 )
 
+router.get('/stats', ctrl.getBOMStats)
+
+router.get('/projects',
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+  ],
+  validate,
+  ctrl.getBOMProjectList
+)
+
+router.get('/projects/:leadId/consolidated-url',
+  [param('leadId').isMongoId()],
+  validate,
+  ctrl.getConsolidatedBOMUrl
+)
+
 router.get('/job/:jobId/status',
   [param('jobId').isMongoId()],
   validate,

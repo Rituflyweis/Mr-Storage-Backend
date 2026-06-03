@@ -4,7 +4,7 @@ Frontend integration guide for the **Plant Panel** (`role: "plant"`).
 
 > **Maintenance:** Add or update a section here whenever a plant panel endpoint is implemented or changed. Only document **completed** endpoints — no placeholders for work in progress.
 >
-> **Last updated:** 2026-05-28 — Consolidated BOM generate/get; BOM socket + audit; SMDT + drawings.
+> **Last updated:** 2026-06-03 — Vendor upload public APIs, consolidated BOM send, shipper socket + audit events.
 
 ---
 
@@ -220,13 +220,26 @@ Ordered pipeline after admin assigns PO to plant:
 | 12 | GET | `/api/plant/projects/:leadId/bom-files` | Latest BOM job per building |
 | 13 | GET | `/api/plant/bom/job/:jobId/status` | Poll BOM extraction status |
 | 14 | POST | `/api/plant/bom/jobs/status` | Batch poll multiple job statuses |
+| 14A | GET | `/api/plant/bom/stats` | BOM dashboard stats |
+| 14B | GET | `/api/plant/bom/projects` | BOM project list with status per latest upload |
 | 15 | GET | `/api/plant/bom/:jobId` | BOM job detail + line items |
 | 16 | PUT | `/api/plant/bom/items/:bomItemId/price` | Manual price + optional save to SMDT |
 | 17 | POST | `/api/plant/bom/buildings/:buildingId/confirm` | Confirm building BOM (all priced) |
 | 18 | POST | `/api/plant/projects/:leadId/consolidated-bom/generate` | Generate consolidated BOM Excel |
 | 19 | GET | `/api/plant/projects/:leadId/consolidated-bom` | View consolidated BOM + grouped items |
+| 19B | GET | `/api/plant/bom/projects/:leadId/consolidated-url` | Get consolidated BOM URL readiness |
+| 19A | POST | `/api/plant/projects/:leadId/consolidated-bom/send` | Send consolidated BOM to selected vendors |
 | 20 | GET | `/api/plant/projects/:leadId/delivery` | Deliveries for project |
 | 21 | GET | `/api/plant/projects/:leadId/shipper-files` | Vendor shipper submissions |
+| 21A | GET | `/api/public/vendor-upload/:token` | Public upload link details for vendor |
+| 21B | POST | `/api/public/vendor-upload/:token/presigned-url` | Presigned URL for vendor quote file upload |
+| 21C | POST | `/api/public/vendor-upload/:token` | Submit vendor quote file + quote amount |
+| 21D | GET | `/api/plant/shipper-files/projects` | Projects with raised shipper requests + received status |
+| 21E | GET | `/api/plant/shipper-files/projects/:leadId/requests` | Project-wise shipper request list |
+| 21F | GET | `/api/plant/shipper-requests/:requestId/document` | Single shipper document details |
+| 21G | POST | `/api/plant/shipper-requests/:requestId/compare` | Start async comparison job |
+| 21H | GET | `/api/plant/shipper-requests/compare-jobs/:jobId/status` | Poll comparison job status |
+| 21I | POST | `/api/plant/shipper-requests/compare-jobs/status` | Batch poll comparison job statuses |
 | 22 | GET | `/api/plant/vendors` | List vendors / shippers |
 | 23 | POST | `/api/plant/vendors` | Add vendor / shipper |
 | 24 | GET | `/api/plant/vendors/:vendorId` | Vendor detail + stats + order history |
@@ -951,6 +964,72 @@ Batch poll after bulk upload.
 
 ---
 
+## 14A. `GET /api/plant/bom/stats`
+
+BOM summary counters for BOM dashboard cards.
+
+### Response `data`
+
+```json
+{
+  "totalBomFilesUploaded": 12,
+  "pendingUploads": 3,
+  "readyForShipper": 4,
+  "issuesDetected": 1
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `totalBomFilesUploaded` | Count of latest BOM uploads (latest job per building) across assigned projects |
+| `pendingUploads` | Assigned buildings with no BOM upload yet |
+| `readyForShipper` | Projects with consolidated BOM generated (`ConsolidatedBOM.fileUrl` present) |
+| `issuesDetected` | Latest BOM jobs with `failed` status |
+
+---
+
+## 14B. `GET /api/plant/bom/projects`
+
+List latest BOM row per building for assigned projects.
+
+### Query params
+
+| Param | Type | Default |
+|-------|------|---------|
+| `page` | integer | `1` |
+| `limit` | integer (max 200) | `20` |
+
+### Response `data`
+
+```json
+{
+  "projects": [
+    {
+      "leadId": "...",
+      "projectId": "PRO-001",
+      "projectName": "ABC Warehouse",
+      "buildingId": "...",
+      "buildingNumber": 1,
+      "uploadDate": "2026-06-03T05:20:00.000Z",
+      "itemCount": 320,
+      "fileStatus": "extracted",
+      "bomJobId": "..."
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20
+}
+```
+
+`fileStatus` mapping:
+- `uploaded` → job status `queued`
+- `extracting` → job status `processing`
+- `extracted` → job status `completed`
+- `failed` → job status `failed`
+
+---
+
 ## 15. `GET /api/plant/bom/:jobId`
 
 BOM line items for pricing/review.
@@ -1085,6 +1164,93 @@ View the consolidated BOM for the project (grouped items + vendor send history).
 
 ---
 
+## 19B. `GET /api/plant/bom/projects/:leadId/consolidated-url`
+
+Quick readiness endpoint for consolidated BOM URL by project.
+
+### Response `data`
+
+```json
+{
+  "leadId": "...",
+  "isReady": true,
+  "consolidatedBOMId": "...",
+  "status": "draft",
+  "fileUrl": "https://bucket.s3.../consolidated/...xlsx",
+  "updatedAt": "2026-06-03T05:40:00.000Z"
+}
+```
+
+If not ready:
+
+```json
+{
+  "leadId": "...",
+  "isReady": false,
+  "consolidatedBOMId": null,
+  "status": null,
+  "fileUrl": null,
+  "updatedAt": null
+}
+```
+
+---
+
+## 19A. `POST /api/plant/projects/:leadId/consolidated-bom/send`
+
+Send consolidated BOM to one or more selected vendors/shippers.
+
+| | |
+|---|---|
+| **Role** | `plant` |
+| **Guard** | Approved PO assigned to current user |
+| **HTTP status** | `200` |
+
+### Request body
+
+```json
+{
+  "vendorIds": ["665a00000000000000000010", "665a00000000000000000011"]
+}
+```
+
+### Logic
+
+1. Validates consolidated BOM exists for this lead.
+2. Creates (or reuses) a `ShipperRequest` per vendor.
+3. **Token policy:** existing token is reused (old links remain valid for same lead-vendor pair).
+4. Emails each vendor with:
+   - consolidated BOM file URL
+   - public upload link: `{CLIENT_URL}/vendor-upload/{token}`
+5. Marks consolidated BOM status `sent_to_vendor`.
+
+### Response `data`
+
+```json
+{
+  "message": "Sent to 2 vendor(s).",
+  "shipperRequests": [
+    {
+      "_id": "...",
+      "vendorId": "...",
+      "vendorName": "ABC Steel",
+      "status": "sent",
+      "isNewRequest": false,
+      "tokenReused": true
+    }
+  ],
+  "failures": []
+}
+```
+
+### Side effects
+
+- Audit: `consolidated_bom.sent`
+- Inserts/updates `ShipperRequest` rows.
+- Updates `ConsolidatedBOM.sentToVendors`.
+
+---
+
 ## Socket.io (plant panel)
 
 Plant users connect to the **`/admin`** Socket.io namespace (same as admin/sales internal panels). JWT access token is required in the handshake — on connect the server auto-joins `user:{currentUserId}`.
@@ -1112,6 +1278,10 @@ Production: replace host with your API origin (same host as REST API).
 | `project_assigned` | `user:{plantUserId}` | Admin assigns PO to plant user | `{ leadId, poOrderId, projectName }` |
 | `bom_extraction_complete` | `user:{uploadedBy}` | BOM async job finished OK | `{ jobId, buildingNumber, totalItems, matchedItems, unmatchedItems, frameItems }` |
 | `bom_extraction_failed` | `user:{uploadedBy}` | BOM async job failed | `{ jobId, buildingNumber, error }` |
+| `shipper_file_submitted` | `user:{plantUserId}` | Vendor submits quote file for one request | `{ leadId, requestId, vendorId, vendorName, submittedAt, quoteValue }` |
+| `all_shipper_files_submitted` | `user:{plantUserId}` | All requested vendors (from `ConsolidatedBOM.sentToVendors`) have submitted | `{ leadId, consolidatedBOMId, vendorCount }` |
+| `shipper_comparison_complete` | `user:{triggeredBy}` | Comparison job completed | `{ jobId, requestId, leadId, vendorId, summary }` |
+| `shipper_comparison_failed` | `user:{triggeredBy}` | Comparison job failed | `{ jobId, requestId, leadId, vendorId, error }` |
 
 ### Example — BOM upload screen
 
@@ -1122,6 +1292,14 @@ socket.on('bom_extraction_complete', (data) => {
 
 socket.on('bom_extraction_failed', (data) => {
   // data.error — show failure toast; job row status is already "failed" in DB
+})
+
+socket.on('shipper_file_submitted', (data) => {
+  // refresh shipper row for data.requestId / data.vendorId
+})
+
+socket.on('all_shipper_files_submitted', (data) => {
+  // show "all vendor quotes submitted" alert on plant dashboard
 })
 ```
 
@@ -1170,6 +1348,284 @@ Vendor shipper submissions for the project.
       "submittedAt": "...",
       "quoteValue": 50000,
       "sentAt": "..."
+    }
+  ]
+}
+```
+
+---
+
+## 21A. `GET /api/public/vendor-upload/:token`
+
+Public endpoint for vendor upload page bootstrap.
+
+### Response `data`
+
+```json
+{
+  "requestId": "...",
+  "status": "sent",
+  "vendorName": "ABC Steel",
+  "projectName": "ABC Warehouse",
+  "jobId": "PRO-001",
+  "consolidatedBOMFileUrl": "https://...",
+  "submittedFileUrl": null,
+  "submittedFileName": "",
+  "submittedAt": null,
+  "quoteValue": null
+}
+```
+
+---
+
+## 21B. `POST /api/public/vendor-upload/:token/presigned-url`
+
+Get presigned S3 URL for vendor quote file upload.
+
+### Request body
+
+```json
+{
+  "fileName": "ABC-Quote.pdf",
+  "fileType": "application/pdf",
+  "folder": "vendor-uploads"
+}
+```
+
+### Response `data`
+
+```json
+{
+  "uploadUrl": "https://...",
+  "fileUrl": "https://bucket.s3.region.amazonaws.com/vendor-uploads/...pdf",
+  "key": "vendor-uploads/...pdf"
+}
+```
+
+---
+
+## 21C. `POST /api/public/vendor-upload/:token`
+
+Submit uploaded quote file URL + quote amount.
+
+### Request body
+
+```json
+{
+  "submittedFileUrl": "https://bucket.s3.region.amazonaws.com/vendor-uploads/...pdf",
+  "submittedFileName": "ABC-Quote.pdf",
+  "quoteValue": 2100
+}
+```
+
+### Response `data`
+
+```json
+{
+  "requestId": "...",
+  "status": "submitted",
+  "vendorName": "ABC Steel",
+  "projectName": "ABC Warehouse",
+  "jobId": "PRO-001",
+  "consolidatedBOMFileUrl": "https://...",
+  "submittedFileUrl": "https://...",
+  "submittedFileName": "ABC-Quote.pdf",
+  "submittedAt": "...",
+  "quoteValue": 2100,
+  "allVendorsSubmitted": true
+}
+```
+
+### Completion logic (Option A)
+
+`allVendorsSubmitted` is computed against **`ConsolidatedBOM.sentToVendors`** (source-of-truth for requested vendors), not against all historical shipper requests on the lead.
+
+### Side effects
+
+- Audit:
+  - `shipper.file_submitted` on each submission
+  - `shipper.all_submitted` when all requested vendors have submitted
+- Socket:
+  - `shipper_file_submitted`
+  - `all_shipper_files_submitted` (when all complete)
+- Consolidated BOM status auto-updates to `vendor_submitted` once all required vendors submit.
+
+---
+
+## 21D. `GET /api/plant/shipper-files/projects`
+
+Project list for shipper module. Returns only projects where at least one shipper request exists for leads assigned to the current plant user.
+
+### Response `data`
+
+```json
+{
+  "projects": [
+    {
+      "leadId": "...",
+      "projectId": "PRO-001",
+      "jobId": "PRO-001",
+      "projectName": "ABC Warehouse",
+      "totalShipperFiles": 3,
+      "receivedShipperFiles": 2,
+      "fileReceivedStatus": "partial",
+      "latestSubmittedAt": "2026-06-03T04:50:00.000Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+`fileReceivedStatus`: `none | partial | all`
+
+---
+
+## 21E. `GET /api/plant/shipper-files/projects/:leadId/requests`
+
+Project-wise shipper request rows (table view).
+
+### Response `data`
+
+```json
+{
+  "leadId": "...",
+  "projectId": "PRO-001",
+  "projectName": "ABC Warehouse",
+  "shipperRequests": [
+    {
+      "requestId": "...",
+      "vendorId": "...",
+      "vendorName": "ABC Steel",
+      "vendorCode": "VND-0001",
+      "fileName": "ABC-Quote.pdf",
+      "uploadedDate": "2026-06-03T04:50:00.000Z",
+      "rates": 2100,
+      "fileStatus": "submitted"
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+## 21F. `GET /api/plant/shipper-requests/:requestId/document`
+
+Single shipper document payload for preview/download screen.
+
+### Response `data`
+
+```json
+{
+  "requestId": "...",
+  "leadId": "...",
+  "projectId": "PRO-001",
+  "projectName": "ABC Warehouse",
+  "vendorId": "...",
+  "vendorName": "ABC Steel",
+  "vendorCode": "VND-0001",
+  "fileName": "ABC-Quote.pdf",
+  "fileUrl": "https://bucket.s3.../vendor-uploads/...pdf",
+  "uploadedDate": "2026-06-03T04:50:00.000Z",
+  "rates": 2100,
+  "fileStatus": "submitted"
+}
+```
+
+---
+
+## 21G. `POST /api/plant/shipper-requests/:requestId/compare`
+
+Start async comparison between `ConsolidatedBOM.items` and vendor-submitted quote file.
+
+### Request body
+
+None.
+
+### Response `data`
+
+```json
+{
+  "requestId": "...",
+  "compareJobId": "...",
+  "status": "queued",
+  "message": "Comparison started. Poll compare job status until completed."
+}
+```
+
+### Processing behavior
+
+- Job runs in background (no waiting in this API).
+- If another queued/processing job already exists for same request, existing job id is returned.
+- Comparison stores:
+  - extracted vendor lines (`VendorQuoteLine`)
+  - row-level result rows (`QuoteComparisonResult`)
+  - summary + exceptions on `ShipperRequest`
+
+### Internal status updates on `ShipperRequest`
+
+- Start: `status = comparison_processing`, `comparisonStatus = processing`
+- Success: `status = comparison_completed`, `comparisonStatus = completed`
+- Failure: `status = comparison_failed`, `comparisonStatus = failed`, `comparisonError`
+
+---
+
+## 21H. `GET /api/plant/shipper-requests/compare-jobs/:jobId/status`
+
+Poll a single comparison job.
+
+### Response `data`
+
+```json
+{
+  "compareJobId": "...",
+  "requestId": "...",
+  "leadId": "...",
+  "vendorId": "...",
+  "status": "completed",
+  "summary": {
+    "expectedLines": 48,
+    "vendorLines": 47,
+    "matchedLines": 43,
+    "missingItems": 2,
+    "extraItems": 1,
+    "qtyMismatches": 1,
+    "lengthMismatches": 0,
+    "weightMismatches": 0,
+    "priceMismatches": 3,
+    "ambiguousMatches": 0
+  },
+  "resultCount": 7,
+  "errorMessage": null,
+  "processingStartedAt": "...",
+  "processingEndedAt": "..."
+}
+```
+
+---
+
+## 21I. `POST /api/plant/shipper-requests/compare-jobs/status`
+
+Batch poll comparison jobs.
+
+### Request body
+
+```json
+{ "jobIds": ["...", "..."] }
+```
+
+### Response `data`
+
+```json
+{
+  "jobs": [
+    {
+      "compareJobId": "...",
+      "requestId": "...",
+      "status": "completed",
+      "resultCount": 7,
+      "errorMessage": null,
+      "processingEndedAt": "..."
     }
   ]
 }

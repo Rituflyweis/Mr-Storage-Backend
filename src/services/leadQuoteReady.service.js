@@ -1,5 +1,4 @@
 const Lead = require('../models/Lead')
-const roundRobinService = require('./roundRobin.service')
 const auditService = require('./audit.service')
 const leadListSocket = require('./leadListSocket.service')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
@@ -112,17 +111,14 @@ const syncLeadProjectFields = async (leadId, quoteData) => {
 }
 
 /**
- * Mark lead quote-ready, assign sales (round-robin), notify customer + admin.
- * Retries assignment when isQuoteReady is already set but handoff failed earlier.
+ * Mark lead quote-ready and notify admin. Does not assign sales — admin assigns manually.
  */
 const handleQuoteReady = async (leadId, customerId, quoteData, options = {}) => {
   const { messages = [], scoreData = {} } = options
 
   try {
-    const existing = await Lead.findById(leadId).select('isQuoteReady isHandedToSales quoteValue').lean()
-    if (!existing || existing.isHandedToSales) {
-      return null
-    }
+    const existing = await Lead.findById(leadId).select('isQuoteReady quoteValue isStaffChatActive').lean()
+    if (!existing) return null
 
     const quoteValue = extractCustomerBudget(messages, quoteData, scoreData)
 
@@ -153,39 +149,7 @@ const handleQuoteReady = async (leadId, customerId, quoteData, options = {}) => 
       await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'quote_ready', includeScoreRow: true })
     }
 
-    const assignedId = await roundRobinService.assignNextSales(leadId, customerId)
-
-    const updatedLead = await Lead.findById(leadId)
-      .populate('customerId')
-      .populate('assignedSales')
-      .lean()
-
-    if (!updatedLead?.isHandedToSales) {
-      console.warn('[LeadQuoteReady] Quote ready but sales handoff pending — no active sales user?', leadId)
-      await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'quote_ready', includeScoreRow: true })
-      return updatedLead
-    }
-
-    const assignedName = updatedLead?.assignedSales?.name || 'a sales representative'
-
-    if (global.io) {
-      global.io.of('/chat').to(`lead:${leadId}`).emit('lead_handed_to_sales', {
-        assignedSales: assignedName,
-      })
-    }
-
-    if (assignedId) {
-      await auditService.log({
-        type: 'lead',
-        action: AUDIT_ACTIONS.LEAD_HANDED_TO_SALES,
-        leadId,
-        customerId,
-        performedBy: null,
-        metadata: { assignedTo: assignedId },
-      })
-    }
-
-    return updatedLead
+    return Lead.findById(leadId).lean()
   } catch (err) {
     console.error('[LeadQuoteReady] handleQuoteReady error:', err.message)
     return null

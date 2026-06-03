@@ -70,6 +70,14 @@ router.post('/:leadId/bom',
 router.get('/:leadId/bom-files', ctrl.getProjectBomFiles)
 router.post('/:leadId/consolidated-bom/generate', ctrl.generateConsolidatedBOM)
 router.get('/:leadId/consolidated-bom', ctrl.getConsolidatedBOM)
+router.post('/:leadId/consolidated-bom/send',
+  [
+    body('vendorIds').isArray({ min: 1 }),
+    body('vendorIds.*').isMongoId(),
+  ],
+  validate,
+  ctrl.sendConsolidatedBOM
+)
 router.get('/:leadId/delivery', ctrl.getProjectDelivery)
 router.get('/:leadId/shipper-files', ctrl.getProjectShipperFiles)
 

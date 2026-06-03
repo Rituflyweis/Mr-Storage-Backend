@@ -1,11 +1,15 @@
 const BOMJob = require('../../models/BOMJob')
 const BOMItem = require('../../models/BOMItem')
 const Building = require('../../models/Building')
+const Lead = require('../../models/Lead')
+const POOrder = require('../../models/POOrder')
+const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const SMDTItem = require('../../models/SMDTItem')
 const auditService = require('../../services/audit.service')
 const { processBOMJob, calculateTotalCost, inferFileFormat } = require('../../services/plant/bom.service')
 const { getActiveCostVersion, normalizeCode } = require('../../services/plant/smdt.service')
 const { assertBomJobAccess } = require('../../utils/plantBomAccess')
+const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { success, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, BOM_ITEM_FILTERS } = require('../../config/constants')
@@ -22,6 +26,134 @@ const buildItemFilter = (filter) => {
       return {}
   }
 }
+
+const mapJobStatusToFileStatus = (status) => {
+  if (status === 'queued') return 'uploaded'
+  if (status === 'processing') return 'extracting'
+  if (status === 'completed') return 'extracted'
+  if (status === 'failed') return 'failed'
+  return status || 'uploaded'
+}
+
+const getAssignedLeadIds = async (plantUserId) =>
+  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+
+const getLatestJobsForLeadIds = async (leadIds) => {
+  if (!leadIds.length) return []
+  return BOMJob.aggregate([
+    { $match: { leadId: { $in: leadIds } } },
+    { $sort: { createdAt: -1 } },
+    { $group: { _id: '$buildingId', latest: { $first: '$$ROOT' } } },
+    { $replaceRoot: { newRoot: '$latest' } },
+  ])
+}
+
+exports.getBOMStats = asyncHandler(async (req, res) => {
+  const leadIds = await getAssignedLeadIds(req.user._id)
+  if (!leadIds.length) {
+    return success(res, {
+      totalBomFilesUploaded: 0,
+      pendingUploads: 0,
+      readyForShipper: 0,
+      issuesDetected: 0,
+    })
+  }
+
+  const [totalBuildings, latestJobs, consolidatedCount] = await Promise.all([
+    Building.countDocuments({ leadId: { $in: leadIds } }),
+    getLatestJobsForLeadIds(leadIds),
+    ConsolidatedBOM.countDocuments({ leadId: { $in: leadIds }, fileUrl: { $ne: null } }),
+  ])
+
+  const totalBomFilesUploaded = latestJobs.length
+  const issuesDetected = latestJobs.filter((j) => j.status === 'failed').length
+  const pendingUploads = Math.max(0, totalBuildings - totalBomFilesUploaded)
+
+  return success(res, {
+    totalBomFilesUploaded,
+    pendingUploads,
+    readyForShipper: consolidatedCount,
+    issuesDetected,
+  })
+})
+
+exports.getBOMProjectList = asyncHandler(async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))
+  const skip = (page - 1) * limit
+
+  const leadIds = await getAssignedLeadIds(req.user._id)
+  if (!leadIds.length) {
+    return success(res, { projects: [], total: 0, page, limit })
+  }
+
+  const latestJobs = await getLatestJobsForLeadIds(leadIds)
+  if (!latestJobs.length) {
+    return success(res, { projects: [], total: 0, page, limit })
+  }
+
+  const leadIdSet = [...new Set(latestJobs.map((j) => String(j.leadId)))]
+  const leads = await Lead.find({ _id: { $in: leadIdSet } })
+    .select('_id projectName jobId')
+    .lean()
+  const leadMap = new Map(leads.map((l) => [String(l._id), l]))
+
+  const rows = latestJobs
+    .map((job) => {
+      const lead = leadMap.get(String(job.leadId))
+      if (!lead) return null
+      return {
+        leadId: lead._id,
+        projectId: lead.jobId || '',
+        projectName: lead.projectName || '',
+        buildingId: job.buildingId,
+        buildingNumber: job.buildingNumber,
+        uploadDate: job.createdAt,
+        itemCount: job.totalItems ?? 0,
+        fileStatus: mapJobStatusToFileStatus(job.status),
+        bomJobId: job._id,
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime())
+
+  const total = rows.length
+  const projects = rows.slice(skip, skip + limit)
+  return success(res, { projects, total, page, limit })
+})
+
+exports.getConsolidatedBOMUrl = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const consolidated = await ConsolidatedBOM.findOne({ leadId })
+    .select('_id status fileUrl updatedAt')
+    .lean()
+
+  if (!consolidated || !consolidated.fileUrl) {
+    return success(res, {
+      leadId,
+      isReady: false,
+      consolidatedBOMId: consolidated?._id || null,
+      status: consolidated?.status || null,
+      fileUrl: null,
+      updatedAt: consolidated?.updatedAt || null,
+    })
+  }
+
+  return success(res, {
+    leadId,
+    isReady: true,
+    consolidatedBOMId: consolidated._id,
+    status: consolidated.status,
+    fileUrl: consolidated.fileUrl,
+    updatedAt: consolidated.updatedAt,
+  })
+})
 
 exports.getJobStatus = asyncHandler(async (req, res) => {
   const result = await assertBomJobAccess(req.params.jobId, req.user._id)
