@@ -41,9 +41,7 @@ const VendorQuoteLineSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
-VendorQuoteLineSchema.index({ shipperRequestId: 1 })
 VendorQuoteLineSchema.index({ shipperRequestId: 1, partCodeNormalized: 1, lengthFeet: 1 })
 VendorQuoteLineSchema.index({ partCodeNormalized: 1, colorNormalized: 1 })
-VendorQuoteLineSchema.index({ pieceMarkNormalized: 1 })
 
 module.exports = mongoose.model('VendorQuoteLine', VendorQuoteLineSchema)

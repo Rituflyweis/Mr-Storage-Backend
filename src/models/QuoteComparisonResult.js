@@ -57,9 +57,6 @@ const QuoteComparisonResultSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
-QuoteComparisonResultSchema.index({ shipperRequestId: 1 })
-QuoteComparisonResultSchema.index({ status: 1 })
-QuoteComparisonResultSchema.index({ severity: 1 })
 QuoteComparisonResultSchema.index({ consolidatedBOMId: 1, vendorId: 1 })
 
 module.exports = mongoose.model('QuoteComparisonResult', QuoteComparisonResultSchema)

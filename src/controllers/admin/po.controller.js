@@ -57,10 +57,12 @@ exports.getPOOrderDetail = asyncHandler(async (req, res) => {
       .populate({ path: 'customerId', select: '-password' })
       .populate({ path: 'assignedSales', select: 'name email role' })
       .lean(),
-    Quotation.findById(order.quotationId)
-      .populate('createdBy', 'name email role')
-      .populate('assignedSalesperson', 'name email role')
-      .lean(),
+    order.quotationId
+      ? Quotation.findById(order.quotationId)
+        .populate('createdBy', 'name email role')
+        .populate('assignedSalesperson', 'name email role')
+        .lean()
+      : null,
     AuditLog.find({ leadId: order.leadId })
       .populate('performedBy', 'name email role')
       .sort({ createdAt: 1 })
@@ -68,7 +70,6 @@ exports.getPOOrderDetail = asyncHandler(async (req, res) => {
   ])
 
   if (!lead) return notFound(res, 'Lead not found')
-  if (!quotation) return notFound(res, 'Quotation not found')
 
   const enrichedLead = enrichLeadDocument(lead)
 

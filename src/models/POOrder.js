@@ -8,7 +8,7 @@ const POOrderSchema = new mongoose.Schema(
     raisedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     assignedTo:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     invoiceId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', required: true },
-    quotationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation', required: true },
+    quotationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation', default: null },
     poNumber:    { type: String, required: true, trim: true },
     status:      { type: String, enum: PO_STATUSES, default: 'pending' },
     adminNotes:  { type: String, default: '' },

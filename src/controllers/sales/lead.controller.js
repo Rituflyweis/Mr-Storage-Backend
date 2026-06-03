@@ -15,7 +15,7 @@ const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES, LEAD_TEMPERATURES } = require('../../config/constants')
+const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES, LEAD_TEMPERATURES, PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES } = require('../../config/constants')
 const { buildLeadCreatePayload, applyLeadUpdateFromBody, escapeRegex } = require('../../utils/leadPayload')
 const {
   buildSalesLeadFilter,
@@ -658,17 +658,24 @@ exports.raisePOOrder = asyncHandler(async (req, res) => {
   const latestInvoice = await Invoice.findOne({ leadId }).sort({ createdAt: -1 }).lean()
   if (!latestInvoice) return badRequest(res, 'No invoice found. Create an invoice first.')
 
-  const latestQuotation = await Quotation.findOne({
-    leadId, status: { $in: ['sent', 'accepted', 'draft'] }
-  }).sort({ versionNumber: -1 }).lean()
-  if (!latestQuotation) return badRequest(res, 'No quotation found. Create a quotation first.')
+  if (!PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES.includes(lead.lifecycleStatus)) {
+    return badRequest(
+      res,
+      `Lead lifecycle must be one of: ${PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES.join(', ')}`
+    )
+  }
+
+  const latestQuotation = await Quotation.findOne({ leadId })
+    .sort({ versionNumber: -1, createdAt: -1 })
+    .select('_id')
+    .lean()
 
   const order = await POOrder.create({
     leadId,
     customerId: lead.customerId,
     raisedBy: req.user._id,
     invoiceId: latestInvoice._id,
-    quotationId: latestQuotation._id,
+    quotationId: latestQuotation?._id || null,
     poNumber: latestInvoice.poNumber,
   })
 

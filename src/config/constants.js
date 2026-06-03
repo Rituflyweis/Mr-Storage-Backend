@@ -42,6 +42,14 @@ const LIFECYCLE_STAGES = [...SALES_LIFECYCLE_STAGES, ...PLANT_LIFECYCLE_STAGES]
 
 const CLOSED_STAGES = ['deal_closed', 'payment_done', 'converted_to_po', 'sent_to_admin', 'delivered']
 
+/** Lifecycle stages that allow sales to raise a PO order */
+const PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES = [
+  'proposal_sent',
+  'negotiation',
+  'deal_closed',
+  'payment_done',
+]
+
 const PRIORITY_LEVELS = ['low', 'medium', 'high', 'urgent']
 const QUOTATION_STATUSES = ['draft', 'sent', 'accepted', 'rejected']
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
@@ -194,6 +202,7 @@ module.exports = {
   PLANT_LIFECYCLE_STAGES,
   LIFECYCLE_STAGES,
   CLOSED_STAGES,
+  PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES,
   PRIORITY_LEVELS,
   QUOTATION_STATUSES,
   INVOICE_STATUSES,
