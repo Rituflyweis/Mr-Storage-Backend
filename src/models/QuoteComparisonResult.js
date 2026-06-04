@@ -9,6 +9,12 @@ const QuoteComparisonResultSchema = new mongoose.Schema(
 
     consolidatedItemId: { type: mongoose.Schema.Types.ObjectId, default: null },
     vendorQuoteLineId: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorQuoteLine', default: null },
+    vendorQuoteLineIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'VendorQuoteLine',
+      },
+    ],
 
     status: {
       type: String,

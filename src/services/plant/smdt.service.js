@@ -1,4 +1,4 @@
-const ExcelJS = require('exceljs')
+const XLSX = require('xlsx')
 const https = require('https')
 const http = require('http')
 
@@ -188,8 +188,7 @@ const importSMDTFromUrl = async (fileUrl, uploadedBy, options = {}) => {
   try {
     const buffer = await downloadBuffer(fileUrl)
 
-    const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(buffer)
+    const workbook = XLSX.read(buffer, { type: 'buffer' })
 
     version = await SMDTCostVersion.create({
       name: options.name || `SMDT Cost ${new Date().toISOString().slice(0, 10)}`,
@@ -212,24 +211,18 @@ const importSMDTFromUrl = async (fileUrl, uploadedBy, options = {}) => {
     const skipSheets = ['Sheet1', 'Sheet2', 'Sheet3']
     const now = new Date()
 
-    for (const worksheet of workbook.worksheets) {
-      const sheetName = worksheet.name
+    for (const sheetName of workbook.SheetNames) {
 
       if (skipSheets.includes(sheetName)) continue
 
       const config = getSheetConfig(sheetName)
       const isFrameSheet = config.isFrameSheet
 
-      const rows = []
-
-      worksheet.eachRow((row) => {
-        const vals = []
-
-        row.eachCell({ includeEmpty: true }, (cell) => {
-          vals.push(cell.text || cell.value || null)
-        })
-
-        rows.push(vals)
+      const sheet = workbook.Sheets[sheetName]
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: null,
+        raw: false,
       })
 
       const sheetStats = {

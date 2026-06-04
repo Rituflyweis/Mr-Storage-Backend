@@ -204,7 +204,7 @@ const inferFileFormat = (fileName, fileFormat) => {
   return 'xlsx'
 }
 
-const sheetRowsFromXlsBuffer = (buffer) => {
+const sheetRowsFromSheetJsBuffer = (buffer) => {
   const workbook = XLSX.read(buffer, { type: 'buffer' })
 
   return workbook.SheetNames.map((name) => {
@@ -254,11 +254,13 @@ const sheetRowsFromExcelJs = async (buffer, fileFormat) => {
 }
 
 const loadSheetRows = async (buffer, fileFormat) => {
-  if (fileFormat === 'xls') {
-    return sheetRowsFromXlsBuffer(buffer)
+  // Route all spreadsheet formats through SheetJS for consistency and stability.
+  // We keep ExcelJS helpers in file as fallback utilities.
+  if (['xls', 'xlsx', 'ods'].includes(fileFormat)) {
+    return sheetRowsFromSheetJsBuffer(buffer)
   }
 
-  return sheetRowsFromExcelJs(buffer, fileFormat)
+  return sheetRowsFromSheetJsBuffer(buffer)
 }
 
 const findHeaderRow = (rows) => {

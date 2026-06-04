@@ -24,7 +24,7 @@ const {
   generateConsolidatedExcel,
   groupItemsForConsolidation,
   uploadConsolidatedExcelToS3,
-  loadPricedBomItemsForBuildings,
+  loadBomItemsForBuildings,
 } = require('../../services/plant/consolidator.service')
 const { sendConsolidatedBOMToVendor } = require('../../services/email/mailer')
 const { CLIENT_URL } = require('../../config/env')
@@ -806,10 +806,14 @@ const formatConsolidatedBOMResponse = (doc) => ({
 exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
   const access = await guardProject(req, res)
   if (!access) return
+
   const { lead } = access
   const leadId = lead._id
 
-  const buildings = await Building.find({ leadId }).sort({ buildingNumber: 1 }).lean()
+  const buildings = await Building.find({ leadId })
+    .sort({ buildingNumber: 1 })
+    .lean()
+
   if (!buildings.length) {
     return badRequest(res, 'No buildings on this project')
   }
@@ -819,6 +823,7 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
 
   for (const building of buildings) {
     const job = bomJobMap.get(String(building._id))
+
     if (!job || job.status !== 'completed' || job.isConfirmed !== true) {
       unconfirmedBuildings.push(building.buildingNumber)
     }
@@ -832,20 +837,55 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
     )
   }
 
-  const buildingIds = buildings.map((b) => b._id)
-  const allItems = await loadPricedBomItemsForBuildings(buildingIds)
+  const buildingIds = buildings.map((building) => building._id)
+
+  /**
+   * Important:
+   * Load all BOM items first.
+   * Do not silently load only priced items.
+   */
+  const allItems = await loadBomItemsForBuildings(buildingIds)
+
   if (!allItems.length) {
-    return badRequest(res, 'No priced BOM items found for this project')
+    return badRequest(res, 'No BOM items found for this project')
+  }
+
+  const unpricedItems = allItems.filter((item) => item.isPriced !== true)
+
+  if (unpricedItems.length) {
+    return badRequest(res, 'All BOM items must be priced before consolidation', {
+      unpricedCount: unpricedItems.length,
+      sample: unpricedItems.slice(0, 10).map((item) => ({
+        _id: item._id,
+        buildingId: item.buildingId,
+        category: item.category,
+        markId: item.markId,
+        partCode: item.partCode,
+        description: item.description,
+        matchStatus: item.matchStatus,
+        matchReason: item.matchReason,
+      })),
+    })
   }
 
   const buildingMap = {}
-  buildings.forEach((b) => { buildingMap[String(b._id)] = b.buildingNumber })
 
-  const { buffer, totalCost } = await generateConsolidatedExcel(lead, buildings, allItems)
+  buildings.forEach((building) => {
+    buildingMap[String(building._id)] = building.buildingNumber
+  })
+
+  const { buffer, totalCost } = await generateConsolidatedExcel(
+    lead,
+    buildings,
+    allItems
+  )
+
   const groupedItems = groupItemsForConsolidation(allItems, buildingMap)
+
   const { fileUrl } = await uploadConsolidatedExcelToS3(buffer, leadId)
 
-  const existing = await ConsolidatedBOM.findOne({ leadId })
+  const existing = await ConsolidatedBOM.findOne({ leadId }).lean()
+
   const consolidatedBOM = await ConsolidatedBOM.findOneAndReplace(
     { leadId },
     {
@@ -857,7 +897,11 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
       items: groupedItems,
       sentToVendors: [],
     },
-    { upsert: true, new: true, runValidators: true }
+    {
+      upsert: true,
+      new: true,
+      runValidators: true,
+    }
   )
 
   await auditService.log({
@@ -881,6 +925,7 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
       fileUrl: consolidatedBOM.fileUrl,
       totalCost: consolidatedBOM.totalCost,
       itemCount: groupedItems.length,
+      lineItemCount: allItems.length,
     },
   })
 })
