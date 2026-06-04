@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body, param } = require('express-validator')
+const { body, param, query } = require('express-validator')
 const ctrl = require('../../controllers/plant/shipper.controller')
 const validate = require('../../middleware/validate')
 
@@ -33,6 +33,42 @@ router.post('/:requestId/compare',
   [param('requestId').isMongoId()],
   validate,
   ctrl.compareShipperRequest
+)
+
+router.post('/:requestId/approve',
+  [param('requestId').isMongoId()],
+  validate,
+  ctrl.approveShipperRequest
+)
+
+router.post('/:requestId/request-resubmit',
+  [param('requestId').isMongoId(), body('note').notEmpty().trim()],
+  validate,
+  ctrl.requestShipperResubmit
+)
+
+router.get('/:requestId/comparison-summary',
+  [param('requestId').isMongoId()],
+  validate,
+  ctrl.getShipperComparisonSummary
+)
+
+router.get('/:requestId/comparison-results',
+  [
+    param('requestId').isMongoId(),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('status').optional().isString().trim(),
+    query('severity').optional().isIn(['low', 'medium', 'high', 'critical']),
+  ],
+  validate,
+  ctrl.getShipperComparisonResults
+)
+
+router.post('/:requestId/bundle-plan/generate',
+  [param('requestId').isMongoId()],
+  validate,
+  ctrl.generateBundlePlan
 )
 
 module.exports = router

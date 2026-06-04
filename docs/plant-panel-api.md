@@ -240,6 +240,11 @@ Ordered pipeline after admin assigns PO to plant:
 | 21G | POST | `/api/plant/shipper-requests/:requestId/compare` | Start async comparison job |
 | 21H | GET | `/api/plant/shipper-requests/compare-jobs/:jobId/status` | Poll comparison job status |
 | 21I | POST | `/api/plant/shipper-requests/compare-jobs/status` | Batch poll comparison job statuses |
+| 21J | POST | `/api/plant/shipper-requests/:requestId/approve` | Approve selected vendor request and auto-reject others |
+| 21K | POST | `/api/plant/shipper-requests/:requestId/request-resubmit` | Ask vendor to submit corrected quote |
+| 21L | GET | `/api/plant/shipper-requests/:requestId/comparison-summary` | Summary + `canProceedToApproval` decision |
+| 21M | GET | `/api/plant/shipper-requests/:requestId/comparison-results` | Paginated row-level comparison results |
+| 21N | POST | `/api/plant/shipper-requests/:requestId/bundle-plan/generate` | Generate bundle plan from approved vendor lines |
 | 22 | GET | `/api/plant/vendors` | List vendors / shippers |
 | 23 | POST | `/api/plant/vendors` | Add vendor / shipper |
 | 24 | GET | `/api/plant/vendors/:vendorId` | Vendor detail + stats + order history |
@@ -1630,6 +1635,234 @@ Batch poll comparison jobs.
   ]
 }
 ```
+
+---
+
+## 21J. `POST /api/plant/shipper-requests/:requestId/approve`
+
+Approve one shipper request for the project and auto-reject other vendor requests for the same consolidated BOM.
+
+### Request body
+
+None.
+
+### Response `data`
+
+```json
+{
+  "requestId": "...",
+  "status": "approved",
+  "reviewedAt": "2026-06-04T04:45:00.000Z",
+  "approvedVendor": {
+    "vendorId": "...",
+    "vendorName": "ABC Steel"
+  },
+  "rejectedRequests": [
+    {
+      "requestId": "...",
+      "vendorId": "...",
+      "vendorName": "XYZ Metals",
+      "status": "rejected"
+    }
+  ],
+  "emailFailures": []
+}
+```
+
+### Behavior
+
+- Validates plant access for the request lead.
+- Sets selected request status to `approved`.
+- Sets all sibling requests under same `leadId + consolidatedBOMId` to `rejected`.
+- Updates `ConsolidatedBOM.status = approved`.
+- Sends approval email to selected vendor and rejection email to non-selected vendors.
+- Logs audit events:
+  - `shipper.request_approved`
+  - `shipper.request_rejected` (for each rejected vendor request)
+
+---
+
+## 21K. `POST /api/plant/shipper-requests/:requestId/request-resubmit`
+
+Request corrected quote from a vendor using the same public upload token/link.
+
+### Request body
+
+```json
+{ "note": "Please correct qty mismatch on C62514." }
+```
+
+### Response `data`
+
+```json
+{
+  "requestId": "...",
+  "status": "resubmit_requested",
+  "reviewedAt": "2026-06-04T04:50:00.000Z",
+  "uploadUrl": "https://<client>/vendor-upload/<same-token>",
+  "emailFailures": []
+}
+```
+
+### Behavior
+
+- Validates plant access for the request lead.
+- Sets request status to `resubmit_requested`.
+- Saves `manualReviewNote` with provided note.
+- Sends vendor email with note and same upload link (`token` unchanged).
+- Logs audit event `shipper.resubmit_requested`.
+- Public vendor upload remains valid for status `resubmit_requested`.
+
+---
+
+## 21L. `GET /api/plant/shipper-requests/:requestId/comparison-summary`
+
+Returns comparison status, aggregate summary, and approval gate signal for frontend flow.
+
+### Response `data`
+
+```json
+{
+  "requestId": "...",
+  "leadId": "...",
+  "projectId": "PRO-001",
+  "projectName": "ABC Warehouse",
+  "vendorId": "...",
+  "vendorName": "ABC Steel",
+  "vendorCode": "VND-0001",
+  "status": "comparison_completed",
+  "comparisonStatus": "completed",
+  "comparisonRanAt": "2026-06-04T05:10:00.000Z",
+  "comparisonError": null,
+  "summary": {
+    "expectedLines": 48,
+    "vendorLines": 47,
+    "matchedLines": 43,
+    "missingItems": 2,
+    "extraItems": 1,
+    "qtyMismatches": 1,
+    "lengthMismatches": 0,
+    "weightMismatches": 0,
+    "priceMismatches": 3,
+    "ambiguousMatches": 0
+  },
+  "exceptionsCount": 4,
+  "canProceedToApproval": false,
+  "blockers": ["missing_items", "qty_mismatch"]
+}
+```
+
+### `canProceedToApproval` logic
+
+`true` only when:
+
+- `comparisonStatus = completed`
+- and no blockers:
+  - `missing_items`
+  - `qty_mismatch`
+  - `length_mismatch`
+  - `weight_mismatch`
+  - `ambiguous_match`
+
+If comparison has not run yet, blockers includes `comparison_not_run`.
+
+---
+
+## 21M. `GET /api/plant/shipper-requests/:requestId/comparison-results`
+
+Returns paginated row-level mismatch/match rows from `QuoteComparisonResult`.
+
+### Query params
+
+| Param | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `page` | integer | No | `1` | Min `1` |
+| `limit` | integer | No | `20` | Min `1`, max `200` |
+| `status` | string | No | — | Filter by result status |
+| `severity` | string | No | — | `low` \| `medium` \| `high` \| `critical` |
+
+### Response `data`
+
+```json
+{
+  "requestId": "...",
+  "leadId": "...",
+  "projectId": "PRO-001",
+  "projectName": "ABC Warehouse",
+  "vendorId": "...",
+  "vendorName": "ABC Steel",
+  "vendorCode": "VND-0001",
+  "status": "comparison_completed",
+  "comparisonStatus": "completed",
+  "filters": { "status": "missing_in_vendor_quote", "severity": "critical" },
+  "pagination": { "page": 1, "limit": 20, "total": 2, "pages": 1 },
+  "results": [
+    {
+      "resultId": "...",
+      "status": "missing_in_vendor_quote",
+      "severity": "critical",
+      "expected": { "...": "..." },
+      "received": null,
+      "difference": { "...": "..." },
+      "matchMethod": "none",
+      "matchConfidence": null,
+      "reason": "Expected item was not found in vendor quote",
+      "createdAt": "..."
+    }
+  ]
+}
+```
+
+---
+
+## 21N. `POST /api/plant/shipper-requests/:requestId/bundle-plan/generate`
+
+Generate Bundle Plan rows from approved vendor quote lines.
+
+### Preconditions
+
+- `ShipperRequest.status = approved`
+- `VendorQuoteLine` exists for this `shipperRequestId`
+- If existing bundle plan is already `confirmed`, generation is blocked
+
+### Request body
+
+None.
+
+### Response `data`
+
+```json
+{
+  "bundlePlan": {
+    "_id": "...",
+    "planNumber": "BP-0001",
+    "status": "generated",
+    "totalBundles": 12,
+    "totalWeight": 38400,
+    "maxLengthFeet": 48
+  },
+  "bundles": [
+    {
+      "_id": "...",
+      "bundleNo": "B-001",
+      "bundleType": "framing",
+      "totalWeight": 6200,
+      "maxLengthFeet": 48,
+      "stacking": { "stackLevel": "bottom", "loadingPriority": 10 },
+      "warnings": []
+    }
+  ]
+}
+```
+
+### Behavior
+
+- Validates plant access for request lead.
+- Loads vendor lines from `VendorQuoteLine`.
+- Runs deterministic bundling algorithm (`loadPlanning.service`).
+- Creates or regenerates `BundlePlan` + `Bundle` rows.
+- Saves generated stacking defaults, load sequence, and warnings.
+- Logs audit event `bundle_plan.generated`.
 
 ---
 

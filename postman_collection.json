@@ -532,12 +532,74 @@
               ],
               "query": [
                 {
+                  "key": "scope",
+                  "value": "total",
+                  "description": "total | active (matches stats cards)",
+                  "disabled": true
+                },
+                {
                   "key": "search",
                   "value": "",
                   "disabled": true
                 },
                 {
                   "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Projects (Stats Drill-down)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/customers/projects?scope=total",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "customers",
+                "projects"
+              ],
+              "query": [
+                {
+                  "key": "scope",
+                  "value": "total",
+                  "description": "total | active | completed | not-assigned"
+                },
+                {
+                  "key": "search",
                   "value": "",
                   "disabled": true
                 },
@@ -1335,7 +1397,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"leadId\": \"{{leadId}}\",\n  \"title\": \"Project discussion\",\n  \"meetingTime\": \"2024-06-15T14:00:00.000Z\",\n  \"duration\": 60,\n  \"mode\": \"online\",\n  \"meetingLink\": \"https://meet.google.com/abc\",\n  \"notes\": \"Review warehouse specs\",\n  \"assignedTo\": \"{{userId}}\"\n}"
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"leadId\": \"{{leadId}}\",\n  \"title\": \"Project discussion\",\n  \"meetingTime\": \"2024-06-15T14:00:00.000Z\",\n  \"duration\": 60,\n  \"mode\": \"online\",\n  \"meetingLink\": \"https://meet.google.com/abc\",\n  \"notes\": \"Review warehouse specs\"\n}"
             }
           }
         },

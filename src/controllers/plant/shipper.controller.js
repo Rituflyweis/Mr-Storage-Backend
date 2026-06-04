@@ -1,9 +1,23 @@
 const POOrder = require('../../models/POOrder')
 const ShipperRequest = require('../../models/ShipperRequest')
 const ShipperComparisonJob = require('../../models/ShipperComparisonJob')
+const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
+const QuoteComparisonResult = require('../../models/QuoteComparisonResult')
+const VendorQuoteLine = require('../../models/VendorQuoteLine')
+const BundlePlan = require('../../models/BundlePlan')
+const Bundle = require('../../models/Bundle')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { processShipperComparisonJob } = require('../../services/plant/shipperComparison.service')
-const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
+const { generateBundlesFromVendorLines } = require('../../services/plant/loadPlanning.service')
+const {
+  sendShipperApprovalEmail,
+  sendShipperRejectionEmail,
+  sendShipperResubmitRequestEmail,
+} = require('../../services/email/mailer')
+const auditService = require('../../services/audit.service')
+const { CLIENT_URL } = require('../../config/env')
+const { AUDIT_ACTIONS } = require('../../config/constants')
+const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
 const getAssignedLeadIds = async (plantUserId) =>
@@ -14,6 +28,27 @@ const resolveFileReceivedStatus = (total, received) => {
   if (received <= 0) return 'none'
   if (received >= total) return 'all'
   return 'partial'
+}
+
+const getComparisonBlockers = (summary = null) => {
+  if (!summary) return ['comparison_not_run']
+  const blockers = []
+  if ((summary.missingItems || 0) > 0) blockers.push('missing_items')
+  if ((summary.qtyMismatches || 0) > 0) blockers.push('qty_mismatch')
+  if ((summary.lengthMismatches || 0) > 0) blockers.push('length_mismatch')
+  if ((summary.weightMismatches || 0) > 0) blockers.push('weight_mismatch')
+  if ((summary.ambiguousMatches || 0) > 0) blockers.push('ambiguous_match')
+  return blockers
+}
+
+const getNextBundlePlanNumber = async () => {
+  const latest = await BundlePlan.findOne({
+    planNumber: { $regex: /^BP-\d+$/ },
+  }).sort({ createdAt: -1 }).select('planNumber').lean()
+
+  const current = latest?.planNumber ? Number(String(latest.planNumber).replace('BP-', '')) : 0
+  const next = Number.isFinite(current) ? current + 1 : 1
+  return `BP-${String(next).padStart(4, '0')}`
 }
 
 exports.getShipperProjects = asyncHandler(async (req, res) => {
@@ -234,4 +269,409 @@ exports.getComparisonJobsStatusBatch = asyncHandler(async (req, res) => {
   }
 
   return success(res, { jobs: rows })
+})
+
+exports.approveShipperRequest = asyncHandler(async (req, res) => {
+  const { requestId } = req.params
+  const selected = await ShipperRequest.findById(requestId)
+    .populate('vendorId', 'vendorName email')
+    .populate('leadId', 'projectName jobId customerId')
+  if (!selected) return notFound(res, 'Shipper request not found')
+
+  const access = await assertPlantProjectAccess(selected.leadId._id, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const siblings = await ShipperRequest.find({
+    leadId: selected.leadId._id,
+    consolidatedBOMId: selected.consolidatedBOMId,
+  }).populate('vendorId', 'vendorName email')
+
+  const alreadyApproved = siblings.find((r) => r.status === 'approved' && String(r._id) !== String(selected._id))
+  if (alreadyApproved) {
+    return badRequest(res, 'Another vendor is already approved for this consolidated BOM')
+  }
+
+  selected.status = 'approved'
+  selected.reviewedBy = req.user._id
+  selected.reviewedAt = new Date()
+  await selected.save()
+
+  const rejectedRequests = []
+  for (const reqDoc of siblings) {
+    if (String(reqDoc._id) === String(selected._id)) continue
+    if (reqDoc.status !== 'approved') {
+      reqDoc.status = 'rejected'
+      reqDoc.reviewedBy = req.user._id
+      reqDoc.reviewedAt = new Date()
+      reqDoc.manualReviewNote = 'Another vendor was selected for this project.'
+      await reqDoc.save()
+    }
+    rejectedRequests.push(reqDoc)
+  }
+
+  await ConsolidatedBOM.findByIdAndUpdate(selected.consolidatedBOMId, { status: 'approved' })
+
+  const emailFailures = []
+  try {
+    if (selected.vendorId?.email) {
+      await sendShipperApprovalEmail({
+        toEmail: selected.vendorId.email,
+        vendorName: selected.vendorId.vendorName,
+        projectName: selected.leadId.projectName,
+        jobId: selected.leadId.jobId,
+      })
+    }
+  } catch (err) {
+    emailFailures.push({ vendorId: selected.vendorId?._id, type: 'approved', error: err.message })
+  }
+
+  for (const reqDoc of rejectedRequests) {
+    try {
+      if (reqDoc.vendorId?.email) {
+        await sendShipperRejectionEmail({
+          toEmail: reqDoc.vendorId.email,
+          vendorName: reqDoc.vendorId.vendorName,
+          projectName: selected.leadId.projectName,
+          jobId: selected.leadId.jobId,
+        })
+      }
+    } catch (err) {
+      emailFailures.push({ vendorId: reqDoc.vendorId?._id, type: 'rejected', error: err.message })
+    }
+  }
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.SHIPPER_REQUEST_APPROVED,
+    leadId: selected.leadId._id,
+    customerId: selected.leadId.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      shipperRequestId: selected._id,
+      approvedVendorId: selected.vendorId?._id || selected.vendorId,
+      rejectedVendorIds: rejectedRequests.map((r) => r.vendorId?._id || r.vendorId),
+      consolidatedBOMId: selected.consolidatedBOMId,
+    },
+  })
+
+  for (const rejected of rejectedRequests) {
+    await auditService.log({
+      type: 'plant',
+      action: AUDIT_ACTIONS.SHIPPER_REQUEST_REJECTED,
+      leadId: selected.leadId._id,
+      customerId: selected.leadId.customerId,
+      performedBy: req.user._id,
+      metadata: {
+        shipperRequestId: rejected._id,
+        vendorId: rejected.vendorId?._id || rejected.vendorId,
+        reason: 'Another vendor was selected for this project.',
+      },
+    })
+  }
+
+  return success(res, {
+    requestId: selected._id,
+    status: selected.status,
+    reviewedAt: selected.reviewedAt,
+    approvedVendor: {
+      vendorId: selected.vendorId?._id || selected.vendorId,
+      vendorName: selected.vendorId?.vendorName || '',
+    },
+    rejectedRequests: rejectedRequests.map((r) => ({
+      requestId: r._id,
+      vendorId: r.vendorId?._id || r.vendorId,
+      vendorName: r.vendorId?.vendorName || '',
+      status: r.status,
+    })),
+    emailFailures,
+  }, 'Vendor selection finalized')
+})
+
+exports.requestShipperResubmit = asyncHandler(async (req, res) => {
+  const { requestId } = req.params
+  const { note } = req.body
+  const request = await ShipperRequest.findById(requestId)
+    .populate('vendorId', 'vendorName email')
+    .populate('leadId', 'projectName jobId customerId')
+
+  if (!request) return notFound(res, 'Shipper request not found')
+
+  const access = await assertPlantProjectAccess(request.leadId._id, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  request.status = 'resubmit_requested'
+  request.manualReviewNote = String(note || '').trim()
+  request.reviewedBy = req.user._id
+  request.reviewedAt = new Date()
+  await request.save()
+
+  const uploadUrl = `${CLIENT_URL}/vendor-upload/${request.token}`
+  const emailFailures = []
+  try {
+    if (request.vendorId?.email) {
+      await sendShipperResubmitRequestEmail({
+        toEmail: request.vendorId.email,
+        vendorName: request.vendorId.vendorName,
+        projectName: request.leadId.projectName,
+        jobId: request.leadId.jobId,
+        note: request.manualReviewNote,
+        uploadUrl,
+      })
+    }
+  } catch (err) {
+    emailFailures.push({ vendorId: request.vendorId?._id, error: err.message })
+  }
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.SHIPPER_RESUBMIT_REQUESTED,
+    leadId: request.leadId._id,
+    customerId: request.leadId.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      shipperRequestId: request._id,
+      vendorId: request.vendorId?._id || request.vendorId,
+      note: request.manualReviewNote,
+    },
+  })
+
+  return success(res, {
+    requestId: request._id,
+    status: request.status,
+    reviewedAt: request.reviewedAt,
+    uploadUrl,
+    emailFailures,
+  }, 'Resubmit requested')
+})
+
+exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
+  const { requestId } = req.params
+  const request = await ShipperRequest.findById(requestId)
+    .populate('vendorId', 'vendorName vendorCode')
+    .populate('leadId', 'projectName jobId')
+    .lean()
+  if (!request) return notFound(res, 'Shipper request not found')
+
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const summary = request.comparisonSummary || null
+  const blockers = getComparisonBlockers(summary)
+  const canProceedToApproval = request.comparisonStatus === 'completed' && blockers.length === 0
+
+  return success(res, {
+    requestId: request._id,
+    leadId: request.leadId?._id || request.leadId,
+    projectId: request.leadId?.jobId || '',
+    projectName: request.leadId?.projectName || '',
+    vendorId: request.vendorId?._id || request.vendorId,
+    vendorName: request.vendorId?.vendorName || '',
+    vendorCode: request.vendorId?.vendorCode || '',
+    status: request.status,
+    comparisonStatus: request.comparisonStatus,
+    comparisonRanAt: request.comparisonRanAt,
+    comparisonError: request.comparisonError,
+    summary,
+    exceptionsCount: Array.isArray(request.exceptions) ? request.exceptions.length : 0,
+    canProceedToApproval,
+    blockers,
+  })
+})
+
+exports.getShipperComparisonResults = asyncHandler(async (req, res) => {
+  const { requestId } = req.params
+  const page = Math.max(1, Number(req.query.page) || 1)
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20))
+  const status = req.query.status ? String(req.query.status).trim() : null
+  const severity = req.query.severity ? String(req.query.severity).trim() : null
+
+  const request = await ShipperRequest.findById(requestId)
+    .populate('vendorId', 'vendorName vendorCode')
+    .populate('leadId', 'projectName jobId')
+    .lean()
+  if (!request) return notFound(res, 'Shipper request not found')
+
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const filter = { shipperRequestId: request._id }
+  if (status) filter.status = status
+  if (severity) filter.severity = severity
+
+  const [total, rows] = await Promise.all([
+    QuoteComparisonResult.countDocuments(filter),
+    QuoteComparisonResult.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+  ])
+
+  return success(res, {
+    requestId: request._id,
+    leadId: request.leadId?._id || request.leadId,
+    projectId: request.leadId?.jobId || '',
+    projectName: request.leadId?.projectName || '',
+    vendorId: request.vendorId?._id || request.vendorId,
+    vendorName: request.vendorId?.vendorName || '',
+    vendorCode: request.vendorId?.vendorCode || '',
+    status: request.status,
+    comparisonStatus: request.comparisonStatus,
+    filters: { status, severity },
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    },
+    results: rows.map((row) => ({
+      resultId: row._id,
+      status: row.status,
+      severity: row.severity,
+      expected: row.expected,
+      received: row.received,
+      difference: row.difference,
+      matchMethod: row.matchMethod,
+      matchConfidence: row.matchConfidence,
+      reason: row.reason,
+      createdAt: row.createdAt,
+    })),
+  })
+})
+
+exports.generateBundlePlan = asyncHandler(async (req, res) => {
+  const { requestId } = req.params
+  const request = await ShipperRequest.findById(requestId)
+    .populate('leadId', 'projectName customerId')
+    .lean()
+  if (!request) return notFound(res, 'Shipper request not found')
+
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  if (request.status !== 'approved') {
+    return badRequest(res, 'Bundle plan can be generated only for approved shipper request')
+  }
+
+  const existingPlan = await BundlePlan.findOne({ shipperRequestId: request._id }).select('_id status').lean()
+  if (existingPlan?.status === 'confirmed') {
+    return badRequest(res, 'Confirmed bundle plan already exists for this shipper request')
+  }
+
+  const vendorLines = await VendorQuoteLine.find({ shipperRequestId: request._id }).lean()
+  if (!vendorLines.length) {
+    return badRequest(res, 'No vendor quote lines found for this shipper request')
+  }
+
+  const generatedBundles = generateBundlesFromVendorLines(vendorLines)
+  if (!generatedBundles.length) {
+    return badRequest(res, 'No bundles could be generated from vendor lines')
+  }
+
+  const planNumber = existingPlan
+    ? (await BundlePlan.findById(existingPlan._id).select('planNumber').lean())?.planNumber || await getNextBundlePlanNumber()
+    : await getNextBundlePlanNumber()
+  const totalWeight = generatedBundles.reduce((sum, b) => sum + Number(b.totalWeight || 0), 0)
+  const maxLengthFeet = generatedBundles.reduce((max, b) => Math.max(max, Number(b.maxLengthFeet || 0)), 0)
+  const warnings = [...new Set(generatedBundles.flatMap((b) => b.warnings || []))]
+
+  let bundlePlan
+  if (existingPlan) {
+    bundlePlan = await BundlePlan.findByIdAndUpdate(
+      existingPlan._id,
+      {
+        leadId: request.leadId?._id || request.leadId,
+        shipperRequestId: request._id,
+        vendorId: request.vendorId,
+        planNumber,
+        status: 'generated',
+        totalSourceItems: vendorLines.length,
+        totalBundles: generatedBundles.length,
+        totalWeight,
+        maxLengthFeet,
+        warnings,
+        generatedBy: req.user._id,
+        confirmedBy: null,
+        confirmedAt: null,
+      },
+      { new: true, runValidators: true }
+    )
+    await Bundle.deleteMany({ bundlePlanId: bundlePlan._id })
+  } else {
+    bundlePlan = await BundlePlan.create({
+      leadId: request.leadId?._id || request.leadId,
+      shipperRequestId: request._id,
+      vendorId: request.vendorId,
+      planNumber,
+      status: 'generated',
+      totalSourceItems: vendorLines.length,
+      totalBundles: generatedBundles.length,
+      totalWeight,
+      maxLengthFeet,
+      warnings,
+      generatedBy: req.user._id,
+    })
+  }
+
+  const bundlesToInsert = generatedBundles.map((bundle) => ({
+    ...bundle,
+    bundlePlanId: bundlePlan._id,
+    leadId: request.leadId?._id || request.leadId,
+    shipperRequestId: request._id,
+  }))
+  const bundles = await Bundle.insertMany(bundlesToInsert)
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.BUNDLE_PLAN_GENERATED,
+    leadId: request.leadId?._id || request.leadId,
+    customerId: request.leadId?.customerId || null,
+    performedBy: req.user._id,
+    metadata: {
+      shipperRequestId: request._id,
+      bundlePlanId: bundlePlan._id,
+      totalSourceItems: vendorLines.length,
+      totalBundles: bundles.length,
+      totalWeight,
+      maxLengthFeet,
+    },
+  })
+
+  return created(res, {
+    bundlePlan: {
+      _id: bundlePlan._id,
+      planNumber: bundlePlan.planNumber,
+      status: bundlePlan.status,
+      totalBundles: bundlePlan.totalBundles,
+      totalWeight: bundlePlan.totalWeight,
+      maxLengthFeet: bundlePlan.maxLengthFeet,
+    },
+    bundles: bundles.map((bundle) => ({
+      _id: bundle._id,
+      bundleNo: bundle.bundleNo,
+      bundleType: bundle.bundleType,
+      totalWeight: bundle.totalWeight,
+      maxLengthFeet: bundle.maxLengthFeet,
+      stacking: {
+        stackLevel: bundle.stacking?.stackLevel,
+        loadingPriority: bundle.stacking?.loadingPriority,
+      },
+      warnings: bundle.warnings || [],
+    })),
+  }, 'Bundle plan generated')
 })

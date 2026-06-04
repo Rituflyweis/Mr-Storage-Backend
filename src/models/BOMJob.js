@@ -18,10 +18,14 @@ const BOMJobSchema = new mongoose.Schema(
       default: 'queued',
     },
 
-    extractionMethod: { type: String, enum: ['exceljs', 'claude_fallback'], default: 'exceljs' },
+    extractionMethod: { type: String, enum: ['exceljs', 'claude_fallback', 'xlsx'], default: 'exceljs' },
     skippedSheets: {
       type: [{ name: String, reason: String }],
       default: [],
+    },
+    ambiguousItems: {
+      type: Number,
+      default: 0,
     },
 
     totalSheets: { type: Number, default: 0 },

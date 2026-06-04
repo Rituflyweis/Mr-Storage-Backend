@@ -27,7 +27,6 @@ exports.getMeetings = asyncHandler(async (req, res) => {
   const meetings = await Meeting.find(filter)
     .populate('customerId')
     .populate('leadId')
-    .populate('assignedTo')
     .populate('createdBy')
     .sort({ meetingTime: 1 })
     .lean()
@@ -41,7 +40,6 @@ exports.getMeetingById = asyncHandler(async (req, res) => {
   const meeting = await Meeting.findById(meetingId)
     .populate('customerId')
     .populate('leadId')
-    .populate('assignedTo')
     .populate('createdBy')
     .lean()
 
@@ -51,7 +49,7 @@ exports.getMeetingById = asyncHandler(async (req, res) => {
 })
 
 exports.createMeeting = asyncHandler(async (req, res) => {
-  const { customerId, leadId, title, meetingTime, duration, mode, meetingLink, notes, assignedTo } = req.body
+  const { customerId, leadId, title, meetingTime, duration, mode, meetingLink, notes } = req.body
 
   if (mode === 'online' && !meetingLink) {
     return badRequest(res, 'Meeting link is required for online meetings')
@@ -62,7 +60,6 @@ exports.createMeeting = asyncHandler(async (req, res) => {
     leadId: leadId || null,
     title,
     createdBy: req.user._id,
-    assignedTo,
     meetingTime: new Date(meetingTime),
     duration,
     mode,
@@ -76,7 +73,7 @@ exports.createMeeting = asyncHandler(async (req, res) => {
     leadId: leadId || null,
     customerId,
     performedBy: req.user._id,
-    metadata: { title, meetingTime, mode, assignedTo },
+    metadata: { title, meetingTime, mode },
   })
 
   return created(res, { meeting })
@@ -117,7 +114,7 @@ exports.editMeeting = asyncHandler(async (req, res) => {
 
   const ALLOWED = [
     'title', 'meetingTime', 'duration', 'mode', 'meetingLink', 'notes',
-    'assignedTo', 'leadId', 'customerId', 'status',
+    'leadId', 'customerId', 'status',
   ]
   ALLOWED.forEach((k) => {
     if (updates[k] === undefined) return

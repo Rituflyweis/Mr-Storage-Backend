@@ -832,7 +832,6 @@ All meetings where `status ≠ completed`. Accepts `startDate/endDate` to filter
       "meetingLink": "https://meet.google.com/abc",
       "notes": "Review warehouse specs", "status": "scheduled",
       "customerId": { "...full customer document..." },
-      "assignedTo": { "...full user document..." },
       "createdBy":  { "...full user document..." },
       "leadId": "64f..."
     }]
@@ -854,7 +853,8 @@ All meetings where `status ≠ completed`. Accepts `startDate/endDate` to filter
 | mode | `online\|offline` | ✓ |
 | meetingLink | string | required when `mode = online` |
 | notes | string | optional |
-| assignedTo | ObjectId | ✓ |
+
+`createdBy` is set from the JWT admin (no assignee field).
 
 ---
 

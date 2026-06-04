@@ -98,6 +98,50 @@ exports.updateLeadTemperature = asyncHandler(async (req, res) => {
   return success(res, { lead: result })
 })
 
+exports.updateLifecycle = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const { lifecycleStatus, note } = req.body
+
+  const lead = await Lead.findById(leadId)
+  if (!lead) return notFound(res, 'Lead not found')
+
+  if (!LIFECYCLE_STAGES.includes(lifecycleStatus)) {
+    return badRequest(res, 'Invalid lifecycle status')
+  }
+
+  lead.lifecycleStatus = lifecycleStatus
+  lead.lifecycleHistory.push({
+    stage: lifecycleStatus,
+    changedAt: new Date(),
+    changedBy: req.user._id,
+  })
+  await lead.save()
+
+  let addedNote = null
+  if (note !== undefined && note !== null && String(note).trim()) {
+    try {
+      addedNote = await appendLeadNote(lead, note, req.user._id)
+    } catch (err) {
+      if (err.code === 'NOTE_REQUIRED') return badRequest(res, err.message)
+      throw err
+    }
+  }
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_LIFECYCLE_UPDATED,
+    leadId,
+    customerId: lead.customerId,
+    performedBy: req.user._id,
+    metadata: { lifecycleStatus, noteAdded: !!addedNote },
+  })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'lifecycle', includeScoreRow: true })
+
+  const data = { lead: enrichLeadDocument(lead) }
+  if (addedNote) data.note = addedNote
+  return success(res, data)
+})
+
 exports.getScoringToday = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query, 'leadScoring.lastScoredAt')
 

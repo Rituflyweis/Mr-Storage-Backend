@@ -2,13 +2,39 @@ const router = require('express').Router()
 const { body, param, query } = require('express-validator')
 const ctrl = require('../../controllers/admin/customer.controller')
 const leadCtrl = require('../../controllers/admin/lead.controller')
+const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { projectFieldValidators, leadCreateFieldValidators } = require('../../utils/leadCreateValidators')
 
 // ── Static routes BEFORE /:customerId ─────────────────────────────────────────
 router.get('/stats', ctrl.getCustomerStats)
 
-router.get('/', ctrl.getAllCustomers)
+router.get(
+  '/projects',
+  [
+    query('scope').optional().isIn(['total', 'active', 'completed', 'not-assigned']),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getAdminProjectList
+)
+
+router.get(
+  '/',
+  [
+    query('scope').optional().isIn(['total', 'active']),
+    query('isActive').optional().isIn(['true', 'false']),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getAllCustomers
+)
 
 router.post('/',
   [
@@ -65,6 +91,7 @@ router.get(
 )
 
 router.get('/:customerId/projects', ctrl.getCustomerProjects)
+router.get('/:customerId/projects/:leadId/agreement', agreementCtrl.getProjectAgreement)
 router.get('/:customerId/projects/:leadId', ctrl.getCustomerProject)
 
 router.post('/:customerId/leads',

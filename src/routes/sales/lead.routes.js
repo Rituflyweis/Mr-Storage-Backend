@@ -3,6 +3,7 @@ const { body, query } = require('express-validator')
 const { LEAD_TEMPERATURES } = require('../../config/constants')
 const ctrl = require('../../controllers/sales/lead.controller')
 const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
+const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { leadCreateFieldValidators, leadEditFieldValidators } = require('../../utils/leadCreateValidators')
 
@@ -50,6 +51,7 @@ router.get('/:leadId/chat-status', chatCtrl.getChatStatus)
 router.put('/:leadId/chat/end', chatCtrl.endChat)
 router.put('/:leadId/chat/reopen', chatCtrl.reopenChat)
 
+router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
 router.get('/:leadId/detail', ctrl.getLeadDetail)
 router.get('/:leadId/notes', ctrl.getLeadNotes)
 router.post('/:leadId/notes',

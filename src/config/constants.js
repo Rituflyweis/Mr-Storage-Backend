@@ -98,6 +98,10 @@ const AUDIT_ACTIONS = {
   CONSOLIDATED_BOM_SENT:    'consolidated_bom.sent',
   SHIPPER_FILE_SUBMITTED:   'shipper.file_submitted',
   ALL_SHIPPERS_SUBMITTED:   'shipper.all_submitted',
+  SHIPPER_REQUEST_APPROVED:  'shipper.request_approved',
+  SHIPPER_REQUEST_REJECTED:  'shipper.request_rejected',
+  SHIPPER_RESUBMIT_REQUESTED:'shipper.resubmit_requested',
+  BUNDLE_PLAN_GENERATED:     'bundle_plan.generated',
   QUOTATION_CREATED:        'quotation.created',
   QUOTATION_SENT:           'quotation.sent',
   QUOTATION_ACCEPTED:       'quotation.accepted',
@@ -168,6 +172,11 @@ const ACTIVE_SHIPPER_REQUEST_STATUSES = [
 const CARRIER_STATUSES = ['active', 'inactive']
 const FREIGHT_BID_STATUSES = ['sent', 'submitted', 'selected', 'rejected', 'expired']
 const ACTIVE_FREIGHT_BID_STATUSES = ['sent', 'submitted']
+const BUNDLE_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
+const BUNDLE_STATUSES = ['draft', 'confirmed', 'assigned_to_truck', 'loaded']
+const PACKING_LIST_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
+const PACKING_LIST_STATUSES = ['draft', 'confirmed', 'delivery_created', 'dispatched', 'delivered', 'cancelled']
+const TRUCK_TYPES = ['SEMI_53', 'HOTSHOT_40']
 const DELIVERY_STATUSES = [
   'draft', 'bidding_sent', 'carrier_selected', 'scheduled',
   'in_transit', 'delivered', 'cancelled',
@@ -227,6 +236,11 @@ module.exports = {
   CARRIER_STATUSES,
   FREIGHT_BID_STATUSES,
   ACTIVE_FREIGHT_BID_STATUSES,
+  BUNDLE_PLAN_STATUSES,
+  BUNDLE_STATUSES,
+  PACKING_LIST_PLAN_STATUSES,
+  PACKING_LIST_STATUSES,
+  TRUCK_TYPES,
   DELIVERY_STATUSES,
   SMDT_COST_UNITS,
   SMDT_CATEGORIES,

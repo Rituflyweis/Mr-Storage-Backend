@@ -1,5 +1,6 @@
 const Customer = require('../../models/Customer')
 const Lead = require('../../models/Lead')
+const POOrder = require('../../models/POOrder')
 const Invoice = require('../../models/Invoice')
 const Quotation = require('../../models/Quotation')
 const ProjectBudget = require('../../models/ProjectBudget')
@@ -9,7 +10,7 @@ const bcrypt = require('bcryptjs')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { AUDIT_ACTIONS, CLOSED_STAGES, INVOICE_STATUSES } = require('../../config/constants')
+const { AUDIT_ACTIONS, INVOICE_STATUSES } = require('../../config/constants')
 const { withProjectIdFields, enrichLeadDocument } = require('../../utils/leadProjectId')
 const { buildLeadCreatePayload } = require('../../utils/leadPayload')
 const {
@@ -20,6 +21,14 @@ const {
   computeProjectInvoiceStats,
   mapProjectInvoiceRow,
 } = require('../../utils/projectInvoiceMetrics')
+const {
+  ACTIVE_PROJECT_MATCH,
+  COMPLETED_PROJECT_MATCH,
+  NOT_ASSIGNED_PROJECT_MATCH,
+  getProjectScopeFilter,
+  mapCustomerListRow,
+  mapProjectListRow,
+} = require('../../utils/customerProjectScope')
 
 const loadCustomerProject = async (customerId, leadId) => {
   const customer = await Customer.findById(customerId).select('_id').lean()
@@ -35,42 +44,32 @@ const loadCustomerProject = async (customerId, leadId) => {
 exports.getCustomerStats = asyncHandler(async (req, res) => {
   const poCustomerIds = await getCustomerIdsWithRaisedPO()
 
-  const [totalCustomers, activeCustomers, totalProjects, inExecution, notAssigned, completed] = await Promise.all([
+  const [totalCustomers, activeCustomers, totalProjects, activeProjects, notAssigned, completed] = await Promise.all([
     Customer.countDocuments({ _id: { $in: poCustomerIds } }),
     Customer.countDocuments({ _id: { $in: poCustomerIds }, isActive: true }),
     Lead.countDocuments(PO_PROJECT_MATCH),
-    Lead.countDocuments({
-      ...PO_PROJECT_MATCH,
-      lifecycleStatus: { $nin: [...CLOSED_STAGES, 'initial_contact'] },
-      isTerminated: false,
-    }),
-    Lead.countDocuments({
-      ...PO_PROJECT_MATCH,
-      assignedSales: null,
-      isTerminated: false,
-    }),
-    Lead.countDocuments({
-      ...PO_PROJECT_MATCH,
-      lifecycleStatus: { $in: CLOSED_STAGES },
-    }),
+    Lead.countDocuments(ACTIVE_PROJECT_MATCH),
+    Lead.countDocuments(NOT_ASSIGNED_PROJECT_MATCH),
+    Lead.countDocuments(COMPLETED_PROJECT_MATCH),
   ])
 
   return success(res, {
     totalCustomers,
     activeCustomers,
     totalProjects,
-    projectsInExecution: inExecution,
+    activeProjects,
     projectsNotAssigned: notAssigned,
     completedProjects: completed,
   })
 })
 
 exports.getAllCustomers = asyncHandler(async (req, res) => {
-  const { isActive, search, page = 1, limit = 20 } = req.query
+  const { scope, isActive, search, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
 
   const filter = { ...dateFilter }
-  if (isActive !== undefined) filter.isActive = isActive === 'true'
+  if (scope === 'active') filter.isActive = true
+  else if (isActive !== undefined) filter.isActive = isActive === 'true'
   if (search && search.trim()) {
     const regex = new RegExp(search.trim(), 'i')
     filter.$or = [
@@ -104,8 +103,66 @@ exports.getAllCustomers = asyncHandler(async (req, res) => {
   ])
   const countMap = new Map(projectCounts.map(p => [String(p._id), p.count]))
 
-  const result = customers.map(c => ({ ...c, totalProjects: countMap.get(String(c._id)) || 0 }))
+  const result = customers.map(c => mapCustomerListRow(c, countMap.get(String(c._id)) || 0))
   return success(res, { customers: result, total, page: parsedPage, limit: parsedLimit })
+})
+
+exports.getAdminProjectList = asyncHandler(async (req, res) => {
+  const { scope = 'total', search, page = 1, limit = 20 } = req.query
+  const dateFilter = buildDateFilter(req.query)
+
+  const filter = { ...getProjectScopeFilter(scope), ...dateFilter }
+  if (search && search.trim()) {
+    const regex = new RegExp(search.trim(), 'i')
+    const matchingCustomers = await Customer.find({
+      $or: [{ firstName: regex }, { email: regex }, { customerId: regex }],
+    }).select('_id').lean()
+    filter.$or = [
+      { projectName: regex },
+      { jobId: regex },
+      { customerId: { $in: matchingCustomers.map(c => c._id) } },
+    ]
+  }
+
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+  const skip = (parsedPage - 1) * parsedLimit
+
+  const [leads, total] = await Promise.all([
+    Lead.find(filter)
+      .select('_id jobId projectName quoteValue lifecycleStatus customerId createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    Lead.countDocuments(filter),
+  ])
+
+  const customerIds = [...new Set(leads.map(l => String(l.customerId)))]
+  const customers = await Customer.find({ _id: { $in: customerIds } })
+    .select('_id firstName')
+    .lean()
+  const customerMap = new Map(customers.map(c => [String(c._id), c]))
+
+  let poRaisedMap = new Map()
+  if (scope === 'not-assigned' && leads.length) {
+    const poOrders = await POOrder.find({ leadId: { $in: leads.map(l => l._id) } })
+      .select('leadId createdAt')
+      .lean()
+    poRaisedMap = new Map(poOrders.map(o => [String(o.leadId), o.createdAt]))
+  }
+
+  const includePoRaisedAt = scope === 'not-assigned'
+  const projects = leads.map(lead => mapProjectListRow(
+    lead,
+    customerMap.get(String(lead.customerId)),
+    {
+      includePoRaisedAt,
+      poRaisedAt: poRaisedMap.get(String(lead._id)) || null,
+    }
+  ))
+
+  return success(res, { projects, total, page: parsedPage, limit: parsedLimit, scope })
 })
 
 exports.createCustomerWithLead = asyncHandler(async (req, res) => {

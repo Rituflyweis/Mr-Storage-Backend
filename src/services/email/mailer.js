@@ -139,10 +139,70 @@ const sendConsolidatedBOMToVendor = async ({
   })
 }
 
+const sendShipperApprovalEmail = async ({ toEmail, vendorName, projectName, jobId }) => {
+  const template = loadTemplate('vendor-shipper-approved')
+  const html = fillTemplate(template, {
+    VENDOR_NAME: vendorName || 'Vendor',
+    PROJECT_NAME: projectName || '',
+    JOB_ID: jobId || '',
+  })
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Vendor Selection Update: ${projectName || 'Project'}`,
+    html,
+  })
+}
+
+const sendShipperRejectionEmail = async ({ toEmail, vendorName, projectName, jobId }) => {
+  const template = loadTemplate('vendor-shipper-rejected')
+  const html = fillTemplate(template, {
+    VENDOR_NAME: vendorName || 'Vendor',
+    PROJECT_NAME: projectName || '',
+    JOB_ID: jobId || '',
+  })
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Vendor Selection Update: ${projectName || 'Project'}`,
+    html,
+  })
+}
+
+const sendShipperResubmitRequestEmail = async ({
+  toEmail,
+  vendorName,
+  projectName,
+  jobId,
+  note,
+  uploadUrl,
+}) => {
+  const template = loadTemplate('vendor-shipper-resubmit')
+  const html = fillTemplate(template, {
+    VENDOR_NAME: vendorName || 'Vendor',
+    PROJECT_NAME: projectName || '',
+    JOB_ID: jobId || '',
+    NOTE: note || '',
+    UPLOAD_URL: uploadUrl || '',
+  })
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Action Required: Updated Quote Needed for ${projectName || 'Project'}`,
+    html,
+  })
+}
+
 module.exports = {
   sendQuotation,
   sendInvoice,
   sendOtp,
   sendEmployeeCredentials,
   sendConsolidatedBOMToVendor,
+  sendShipperApprovalEmail,
+  sendShipperRejectionEmail,
+  sendShipperResubmitRequestEmail,
 }

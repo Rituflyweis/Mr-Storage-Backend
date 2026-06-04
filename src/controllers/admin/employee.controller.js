@@ -3,6 +3,8 @@ const User = require('../../models/User')
 const Lead = require('../../models/Lead')
 const FollowUp = require('../../models/FollowUp')
 const Invoice = require('../../models/Invoice')
+const Quotation = require('../../models/Quotation')
+const Escalation = require('../../models/Escalation')
 const roundRobinService = require('../../services/roundRobin.service')
 const auditService = require('../../services/audit.service')
 const mailer = require('../../services/email/mailer')
@@ -12,6 +14,23 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog, getEmployeesAuditLog } = require('../../services/auditActivity.service')
+
+const mapEmployeeLeadRow = (lead) => {
+  const jobId = lead.jobId || ''
+  return {
+    leadId: lead._id,
+    clientName: lead.customerId?.firstName || '',
+    jobId,
+    projectId: jobId,
+    projectName: lead.projectName || '',
+    location: lead.location || '',
+    lifecycleStatus: lead.lifecycleStatus,
+    quoteValue: lead.quoteValue ?? 0,
+    isTerminated: !!lead.isTerminated,
+    createdAt: lead.createdAt,
+    lead: enrichLeadDocument(lead),
+  }
+}
 
 exports.getStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
@@ -125,39 +144,71 @@ exports.createEmployee = asyncHandler(async (req, res) => {
 exports.getEmployeeDetail = asyncHandler(async (req, res) => {
   const { userId } = req.params
 
-  const employee = await User.findById(userId).lean()
+  const employee = await User.findById(userId).select('-password').lean()
   if (!employee) return notFound(res, 'Employee not found')
 
-  const leads = await Lead.find({ assignedSales: userId })
-    .populate('customerId')
-    .sort({ createdAt: -1 })
-    .lean()
-
-  const closedLeads = leads.filter(l => CLOSED_STAGES.includes(l.lifecycleStatus))
-  const completedFollowUps = await FollowUp.countDocuments({ assignedTo: userId, status: 'completed' })
-
-  const revenueAgg = await Invoice.aggregate([
-    {
-      $lookup: {
-        from: 'leads',
-        localField: 'leadId',
-        foreignField: '_id',
-        as: 'lead',
+  const [
+    assignedLeads,
+    followUpsTotal,
+    followUpsCompleted,
+    quotationsCreated,
+    escalationsRaised,
+    revenueAgg,
+  ] = await Promise.all([
+    Lead.find({ assignedSales: userId })
+      .populate({ path: 'customerId', select: 'firstName lastName email customerId' })
+      .sort({ createdAt: -1 })
+      .lean(),
+    FollowUp.countDocuments({ assignedTo: userId }),
+    FollowUp.countDocuments({ assignedTo: userId, status: 'completed' }),
+    Quotation.countDocuments({ createdBy: userId }),
+    Escalation.countDocuments({ raisedBy: userId }),
+    Invoice.aggregate([
+      {
+        $lookup: {
+          from: 'leads',
+          localField: 'leadId',
+          foreignField: '_id',
+          as: 'lead',
+        },
       },
-    },
-    { $unwind: '$lead' },
-    { $match: { 'lead.assignedSales': employee._id, status: 'paid' } },
-    { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+      { $unwind: '$lead' },
+      { $match: { 'lead.assignedSales': employee._id, status: 'paid' } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+    ]),
   ])
+
+  const activeLeads = []
+  const closedLeads = []
+  for (const lead of assignedLeads) {
+    const row = mapEmployeeLeadRow(lead)
+    if (CLOSED_STAGES.includes(lead.lifecycleStatus)) {
+      closedLeads.push(row)
+    } else if (!lead.isTerminated) {
+      activeLeads.push(row)
+    }
+  }
+
+  const totalLeads = assignedLeads.length
+  const closedCount = closedLeads.length
+  const followUpsCompletedPercentage = followUpsTotal > 0
+    ? Math.round((followUpsCompleted / followUpsTotal) * 100)
+    : 0
 
   return success(res, {
     employee,
-    leads,
+    activeLeads,
+    closedLeads,
     stats: {
-      totalLeads: leads.length,
-      closedLeads: closedLeads.length,
-      conversionRate: leads.length > 0 ? Math.round((closedLeads.length / leads.length) * 100) : 0,
-      followUpsCompleted: completedFollowUps,
+      totalLeads,
+      activeLeadsCount: activeLeads.length,
+      closedLeadsCount: closedCount,
+      conversionRate: totalLeads > 0 ? Math.round((closedCount / totalLeads) * 100) : 0,
+      followUpsTotal,
+      followUpsCompleted,
+      followUpsCompletedPercentage,
+      quotationsCreated,
+      escalationsRaised,
       revenueGenerated: revenueAgg[0]?.total || 0,
     },
   })

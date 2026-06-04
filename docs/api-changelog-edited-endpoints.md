@@ -92,10 +92,13 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | Lead section → list leads | `GET /api/admin/leads` | `GET /api/sales/leads` |
 | Edit customer | `PUT /api/admin/customers/:customerId` | `PUT /api/sales/customers/:customerId` |
 | Edit lead / project | `PUT /api/admin/leads/:leadId` | `PUT /api/sales/leads/:leadId` |
+| Update lifecycle status | `PUT /api/admin/leads/:leadId/lifecycle` | `PUT /api/sales/leads/:leadId/lifecycle` |
+| Lead notes (list / add) | `GET` / `POST /api/admin/leads/:leadId/notes` | `GET` / `POST /api/sales/leads/:leadId/notes` |
 | Assign sales rep (admin only) | `PUT /api/admin/leads/:leadId/assign` | — (sales auto-assigned on create) |
 | Export leads (Excel → S3 URL) | `GET /api/admin/leads/export/excel` | `GET /api/sales/leads/export/excel` |
 | Leads by score | `GET /api/admin/leads/by-score` | `GET /api/sales/leads/by-score` |
 | Set lead temperature | `PUT /api/admin/leads/:leadId/temperature` | `PUT /api/sales/leads/:leadId/temperature` |
+| **Admin handoff doc** | [admin-api-leads-scoring-lifecycle-agreement.md](./admin-api-leads-scoring-lifecycle-agreement.md) — by-score, lifecycle, notes, agreement, employee detail |
 | Employee audit / last activity | `GET /api/admin/employees/audit-log` | — |
 | Employee assigned leads | `GET /api/admin/employees/:userId/assigned-leads` | — |
 | Reports & analytics | `GET /api/admin/reports/analytics` | admin only |
@@ -110,6 +113,9 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | **Customer lookup (filters)** | `GET /api/customers` | **same URL** — admin all, sales customers on assigned leads |
 | **Lead / project lookup (filters)** | `GET /api/leads` | **same URL** — admin all leads, sales assigned only |
 | Payment schedule (per lead) | `POST/GET /api/payment-schedules` | same |
+| Get signed agreement (lead) | `GET /api/admin/leads/:leadId/agreement` | `GET /api/sales/leads/:leadId/agreement` |
+| Get signed agreement (project) | `GET /api/admin/customers/:customerId/projects/:leadId/agreement` | `GET /api/sales/customers/:customerId/projects/:leadId/agreement` |
+| Upload agreement (shared) | `POST /api/upload/leads/:leadId/agreement` | same |
 
 **Auth:** All common invoice + payment-schedule routes require JWT role **`admin`** or **`sales`**. Sales must own the lead (`assignedSales` = current user) for create, **update draft**, and mark-paid.
 
@@ -138,6 +144,7 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | 16 | GET | `/api/sales/leads/export/excel` | sales |
 | 17 | GET | `/api/admin/leads/by-score` | admin |
 | 18 | PUT | `/api/admin/leads/:leadId/temperature` | admin |
+| 18a | PUT | `/api/admin/leads/:leadId/lifecycle` | admin |
 | 19 | GET | `/api/admin/employees/audit-log` | admin |
 | 28 | GET | `/api/admin/employees/:userId/assigned-leads` | admin |
 | 29 | POST | `/api/leads/:leadId/invoices` | admin, sales |
@@ -157,6 +164,10 @@ Query filter `status` on `GET /api/admin/leads/by-score` and `GET /api/sales/lea
 | 24 | GET | `/api/sales/leads` | sales |
 | 25 | GET | `/api/sales/leads/by-score` | sales |
 | 26 | PUT | `/api/sales/leads/:leadId/temperature` | sales |
+| 44a | GET | `/api/admin/leads/:leadId/agreement` | admin |
+| 44b | GET | `/api/sales/leads/:leadId/agreement` | sales |
+| 44c | GET | `/api/admin/customers/:customerId/projects/:leadId/agreement` | admin |
+| 44d | GET | `/api/sales/customers/:customerId/projects/:leadId/agreement` | sales |
 
 ---
 
@@ -1490,7 +1501,7 @@ No `status` query → returned **all** meetings (including `completed` and `canc
 
 **Explicit `?status=`:** Returns only that status (e.g. `?status=completed` for history).
 
-Sorted ascending by `meetingTime`. `customerId`, `leadId`, `assignedTo`, and `createdBy` are populated documents (or `leadId: null`).
+Sorted ascending by `meetingTime`. `customerId`, `leadId`, and `createdBy` are populated documents (or `leadId: null`). **`assignedTo` removed** — use `createdBy` (admin who created the meeting).
 
 ```json
 {
@@ -1507,7 +1518,6 @@ Sorted ascending by `meetingTime`. `customerId`, `leadId`, `assignedTo`, and `cr
       "completedAt": null,
       "leadId": { "_id": "...", "jobId": "PRO-042", "projectName": "Warehouse A" },
       "customerId": { "_id": "...", "customerId": "CUS-00042", "firstName": "Jane", "email": "jane@example.com" },
-      "assignedTo": { "_id": "...", "name": "Sales Rep", "email": "sales@example.com", "role": "sales" },
       "createdBy": { "_id": "...", "name": "Admin", "email": "admin@example.com", "role": "admin" },
       "createdAt": "...",
       "updatedAt": "..."
@@ -1591,13 +1601,6 @@ None.
       "projectName": "Warehouse A",
       "lifecycleStatus": "negotiation"
     },
-    "assignedTo": {
-      "_id": "...",
-      "name": "Sales Rep",
-      "email": "sales@example.com",
-      "role": "sales",
-      "isActive": true
-    },
     "createdBy": {
       "_id": "...",
       "name": "Admin User",
@@ -1613,7 +1616,7 @@ None.
 
 `leadId` is `null` when the meeting is not tied to a project.
 
-Populated fields: `customerId`, `leadId`, `assignedTo`, `createdBy` (full Mongoose documents; passwords omitted on nested users).
+Populated fields: `customerId`, `leadId`, `createdBy` (full Mongoose documents; passwords omitted on nested users).
 
 ### Errors
 
@@ -1922,6 +1925,50 @@ Manual temperature is kept on save. When **AI chat re-scores** the lead, tempera
 | HTTP | Message |
 |------|---------|
 | 400 | Invalid or missing `temperature` |
+| 404 | Lead not found |
+
+---
+
+## §18a — Admin update lifecycle (+ optional note)
+
+### `PUT /api/admin/leads/:leadId/lifecycle`
+
+Dedicated lifecycle update (same behavior as sales `PUT /api/sales/leads/:leadId/lifecycle`). Prefer this over `PUT /api/admin/leads/:leadId` when only changing pipeline status.
+
+**Auth:** Admin JWT.
+
+**Request body:**
+
+```json
+{
+  "lifecycleStatus": "negotiation",
+  "note": "Customer requested revised timeline."
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `lifecycleStatus` | Yes | One of `LIFECYCLE_STAGES` (e.g. `initial_contact`, `proposal_sent`, `negotiation`, …) |
+| `note` | No | If provided, appends a lead note (same as `POST .../notes`) |
+
+**Response `data`:**
+
+```json
+{
+  "lead": { "...enriched lead with lifecycleStatus and lifecycleHistory..." },
+  "note": { "_id": "...", "note": "...", "addedAt": "...", "addedBy": { } }
+}
+```
+
+`note` is omitted when no note was sent.
+
+**Lead notes (standalone):** `GET /api/admin/leads/:leadId/notes` — list; `POST /api/admin/leads/:leadId/notes` — body `{ "note": "..." }`. See **§27**.
+
+### Errors
+
+| HTTP | Message |
+|------|---------|
+| 400 | Invalid or missing `lifecycleStatus` |
 | 404 | Lead not found |
 
 ---
@@ -2317,7 +2364,7 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 | PUT | `/api/admin/leads/:leadId/assign` | `{ "employeeId": "<userId>" }` — still the only way to change `assignedSales` on admin |
 | PUT | `/api/sales/leads/:leadId/lifecycle` | Still works; `lifecycleStatus` can also be sent on `PUT /api/sales/leads/:leadId` now |
 | GET | `/api/admin/customers/:customerId` | Customer detail + financial summary (not paginated invoices — use §7) |
-| POST | `/api/admin/meetings` | Create meeting (unchanged) |
+| POST | `/api/admin/meetings` | Create meeting — **`assignedTo` removed**; owner is `createdBy` (JWT admin) |
 | PUT | `/api/admin/meetings/:meetingId` | Edit meeting (unchanged) |
 | PUT | `/api/admin/meetings/:meetingId/complete` | Mark complete (unchanged) |
 | GET | `/api/sales/leads/export` | Legacy CSV download in response body (not S3) |
@@ -2335,6 +2382,70 @@ GET /api/sales/leads/by-score?startDate=2026-05-01&endDate=2026-05-26&page=1&lim
 ## Maintenance
 
 **Last updated:** 2026-05-26 — §43 admin project invoice stats & payments
+
+---
+
+## §27b — Admin employee detail (active / closed leads + KPIs)
+
+### `GET /api/admin/employees/:userId`
+
+| | |
+|---|---|
+| **Role** | `admin` |
+| **UI** | Employees → employee detail |
+| **Change** | Returns **`activeLeads`** and **`closedLeads`** lists plus expanded **`stats`** |
+
+**Response `data`:**
+
+```json
+{
+  "employee": {
+    "_id": "664c1a2b3d4e5f6789012001",
+    "name": "Sales One",
+    "email": "sales1@example.com",
+    "role": "sales",
+    "isActive": true
+  },
+  "activeLeads": [
+    {
+      "leadId": "665a1b2c3d4e5f6789012345",
+      "clientName": "Jane",
+      "jobId": "PRO-042",
+      "projectId": "PRO-042",
+      "projectName": "Warehouse A",
+      "location": "Austin, TX",
+      "lifecycleStatus": "negotiation",
+      "quoteValue": 175000,
+      "isTerminated": false,
+      "createdAt": "2026-04-15T08:00:00.000Z",
+      "lead": { }
+    }
+  ],
+  "closedLeads": [ ],
+  "stats": {
+    "totalLeads": 42,
+    "activeLeadsCount": 28,
+    "closedLeadsCount": 11,
+    "conversionRate": 26,
+    "followUpsTotal": 50,
+    "followUpsCompleted": 35,
+    "followUpsCompletedPercentage": 70,
+    "quotationsCreated": 18,
+    "escalationsRaised": 3,
+    "revenueGenerated": 450000
+  }
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `activeLeads` | Assigned leads **not** in closed lifecycle stages and **not** `isTerminated` |
+| `closedLeads` | Assigned leads in `CLOSED_STAGES` (`deal_closed`, `payment_done`, `converted_to_po`, `sent_to_admin`, `delivered`) |
+| `followUpsCompletedPercentage` | `completed / total` follow-ups where `assignedTo` = this employee |
+| `quotationsCreated` | Count of `Quotation` documents with `createdBy` = this employee |
+| `escalationsRaised` | Count of `Escalation` documents with `raisedBy` = this employee |
+
+**Removed:** top-level `leads` array (use `activeLeads` / `closedLeads`). For paginated assigned leads, use **`GET .../assigned-leads`**.
 
 ---
 
@@ -3524,3 +3635,102 @@ Project = lead with `isRaisedToPO: true`. Path uses `customerId` + `leadId` (pro
 | `invoiceId` | Use with `GET /api/invoices/:invoiceId` for download/detail |
 
 Sorted by `createdAt` descending.
+
+---
+
+## §44 — Get signed agreement / contract (admin + sales, lead + project URLs)
+
+Returns the latest **`lead.documents[]`** entry with `type: "contract"` (signed agreement). Four separate URLs for frontend routing; **same response shape** on all four.
+
+### Endpoints
+
+| Context | Admin | Sales |
+|---------|-------|-------|
+| Lead section | `GET /api/admin/leads/:leadId/agreement` | `GET /api/sales/leads/:leadId/agreement` |
+| Customer → project | `GET /api/admin/customers/:customerId/projects/:leadId/agreement` | `GET /api/sales/customers/:customerId/projects/:leadId/agreement` |
+
+**Upload (unchanged, shared):** `POST /api/upload/leads/:leadId/agreement` — body `{ "url", "name" }` appends a contract document to the lead.
+
+### Auth & access
+
+| Route | Admin | Sales |
+|-------|-------|-------|
+| `.../leads/:leadId/agreement` | Any lead | Lead must be **assigned** to current user |
+| `.../projects/:leadId/agreement` | Lead must belong to `customerId` and `isRaisedToPO: true` | Same + **assigned** to current user |
+
+### Path parameters
+
+| Param | Lead URLs | Project URLs |
+|-------|-----------|----------------|
+| `leadId` | Yes (MongoId) | Yes (MongoId) |
+| `customerId` | — | Yes (MongoId) |
+
+### Query parameters
+
+None.
+
+### Request body
+
+`N/A` (GET)
+
+### Response `200` — `data`
+
+```json
+{
+  "leadId": "665a00000000000000000001",
+  "customerId": "664c00000000000000000001",
+  "projectName": "Warehouse A",
+  "jobId": "PRO-042",
+  "projectId": "PRO-042",
+  "agreement": {
+    "_id": "665f00000000000000000001",
+    "url": "https://cdn.example.com/contracts/signed.pdf",
+    "fileName": "signed-contract.pdf",
+    "name": "signed-contract.pdf",
+    "type": "contract",
+    "uploadedAt": "2026-05-22T12:00:00.000Z",
+    "uploadedBy": {
+      "_id": "665e00000000000000000001",
+      "name": "Admin User",
+      "email": "admin@example.com",
+      "role": "admin"
+    }
+  },
+  "agreementUploadedAt": "2026-05-22T12:00:00.000Z"
+}
+```
+
+When no contract document exists:
+
+```json
+{
+  "leadId": "665a...",
+  "customerId": "664c...",
+  "projectName": "Warehouse A",
+  "jobId": "PRO-042",
+  "projectId": "PRO-042",
+  "agreement": null,
+  "agreementUploadedAt": null
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `agreement` | Latest `documents[]` item where `type === "contract"`; `null` if none |
+| `agreementUploadedAt` | Same as `agreement.uploadedAt`, or `null` |
+| `fileName` / `name` | Both set to stored document `name` |
+| `projectId` | Alias of `jobId` (`PRO-xxx`) |
+
+If multiple contract documents exist, the **newest** by `uploadedAt` is returned.
+
+### Errors
+
+| HTTP | Lead URLs | Project URLs |
+|------|-----------|----------------|
+| 403 | — | Sales — lead not assigned |
+| 404 | Lead not found | Customer not found / **Project not found** (wrong customer, not PO-raised, or sales not assigned) |
+
+### Related
+
+- `GET /api/admin/leads/:leadId/documents?type=contract` — list/filter all contract documents (§21)
+- `GET .../leads/:leadId/detail` — full lead payload; use §44 when you only need the agreement URL
