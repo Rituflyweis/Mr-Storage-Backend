@@ -4,7 +4,7 @@ Frontend integration guide for the **Plant Panel** (`role: "plant"`).
 
 > **Maintenance:** Add or update a section here whenever a plant panel endpoint is implemented or changed. Only document **completed** endpoints — no placeholders for work in progress.
 >
-> **Last updated:** 2026-06-03 — Vendor upload public APIs, consolidated BOM send, shipper socket + audit events.
+> **Last updated:** 2026-06-05 — Shipper comparison (async jobs), bundle plan generate, full socket events, integration flow.
 
 ---
 
@@ -199,6 +199,34 @@ Ordered pipeline after admin assigns PO to plant:
 ### SMDT `category` (Excel sheet names)
 
 `Insulation` | `Joist` | `Panels` | `TRIM` | `Mastic` | `Screws` | `ABolts` | `CLIPS` | `Cable` | `Flange_Brace` | `Jambs` | `DCOL` | `ZGIRT` | `OPEN CHANNEL` | `EaveStruts` | `ACCESSORIES` | `SKTLIGHT` | `ANGL1` | `TS_PANEL` | `frames`
+
+### `consolidatedBOM.status`
+
+`draft` | `sent_to_vendor` | `vendor_submitted` | `approved`
+
+### `shipperRequest.status`
+
+`sent` | `submitted` | `comparison_processing` | `comparison_completed` | `comparison_failed` | `approved` | `rejected` | `resubmit_requested`
+
+Vendor public upload link is active when status is `sent` or `resubmit_requested`.
+
+### `shipperRequest.comparisonStatus`
+
+`idle` | `processing` | `completed` | `failed`
+
+### `quoteComparisonResult.status` (filter on §21M)
+
+`matched` | `missing_in_vendor_quote` | `extra_in_vendor_quote` | `qty_mismatch` | `length_mismatch` | `weight_mismatch` | `part_mismatch` | `price_mismatch` | `ambiguous_match`
+
+### `bundlePlan.status` / `bundle.status`
+
+Bundle plan: `draft` | `generated` | `confirmed` | `cancelled`
+
+Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
+
+### `bundleType`
+
+`panels` | `trim` | `framing` | `fasteners` | `accessories` | `mixed` | `custom`
 
 ---
 
@@ -1076,9 +1104,18 @@ Confirm building BOM when **every** line item is priced.
 
 **400** if any unpriced items — returns `errors.unpricedMarkIds`.
 
-**200:** `{ buildingId, buildingNumber, isConfirmed: true, totalCost }` — sets building `status` → `bom_confirmed`.
+### Response `data` (200)
 
-**Audit:** `bom.confirmed`
+```json
+{
+  "buildingId": "...",
+  "buildingNumber": 1,
+  "isConfirmed": true,
+  "totalCost": 4520.75
+}
+```
+
+Sets building `status` → `bom_confirmed`. **Audit:** `bom.confirmed`
 
 ---
 
@@ -1280,13 +1317,55 @@ Production: replace host with your API origin (same host as REST API).
 
 | Event | Room | When | Payload |
 |-------|------|------|---------|
-| `project_assigned` | `user:{plantUserId}` | Admin assigns PO to plant user | `{ leadId, poOrderId, projectName }` |
-| `bom_extraction_complete` | `user:{uploadedBy}` | BOM async job finished OK | `{ jobId, buildingNumber, totalItems, matchedItems, unmatchedItems, frameItems }` |
-| `bom_extraction_failed` | `user:{uploadedBy}` | BOM async job failed | `{ jobId, buildingNumber, error }` |
-| `shipper_file_submitted` | `user:{plantUserId}` | Vendor submits quote file for one request | `{ leadId, requestId, vendorId, vendorName, submittedAt, quoteValue }` |
-| `all_shipper_files_submitted` | `user:{plantUserId}` | All requested vendors (from `ConsolidatedBOM.sentToVendors`) have submitted | `{ leadId, consolidatedBOMId, vendorCount }` |
-| `shipper_comparison_complete` | `user:{triggeredBy}` | Comparison job completed | `{ jobId, requestId, leadId, vendorId, summary }` |
-| `shipper_comparison_failed` | `user:{triggeredBy}` | Comparison job failed | `{ jobId, requestId, leadId, vendorId, error }` |
+| `project_assigned` | `user:{plantUserId}` | Admin assigns PO to plant user | See below |
+| `bom_extraction_complete` | `user:{uploadedBy}` | BOM async job finished OK | See below |
+| `bom_extraction_failed` | `user:{uploadedBy}` | BOM async job failed | See below |
+| `shipper_file_submitted` | `user:{plantUserId}` | Vendor submits quote file for one request | See below |
+| `all_shipper_files_submitted` | `user:{plantUserId}` | All requested vendors have submitted | See below |
+| `shipper_comparison_complete` | `user:{triggeredBy}` | Comparison job completed | See below |
+| `shipper_comparison_failed` | `user:{triggeredBy}` | Comparison job failed | See below |
+
+**Payload examples**
+
+```json
+// project_assigned
+{ "leadId": "...", "poOrderId": "...", "projectName": "ABC Warehouse" }
+
+// bom_extraction_complete
+{ "jobId": "...", "buildingNumber": 1, "totalItems": 13, "matchedItems": 13, "unmatchedItems": 0, "frameItems": 2 }
+
+// bom_extraction_failed
+{ "jobId": "...", "buildingNumber": 1, "error": "Failed to parse spreadsheet" }
+
+// shipper_file_submitted
+{ "leadId": "...", "requestId": "...", "vendorId": "...", "vendorName": "ABC Steel", "submittedAt": "...", "quoteValue": 2100 }
+
+// all_shipper_files_submitted
+{ "leadId": "...", "consolidatedBOMId": "...", "vendorCount": 3 }
+
+// shipper_comparison_complete
+{
+  "jobId": "...",
+  "requestId": "...",
+  "leadId": "...",
+  "vendorId": "...",
+  "summary": {
+    "expectedLines": 48,
+    "vendorLines": 47,
+    "matchedLines": 43,
+    "missingItems": 2,
+    "extraItems": 1,
+    "qtyMismatches": 1,
+    "lengthMismatches": 0,
+    "weightMismatches": 0,
+    "priceMismatches": 3,
+    "ambiguousMatches": 0
+  }
+}
+
+// shipper_comparison_failed
+{ "jobId": "...", "requestId": "...", "leadId": "...", "vendorId": "...", "error": "Unsupported vendor quote file type" }
+```
 
 ### Example — BOM upload screen
 
@@ -1306,9 +1385,18 @@ socket.on('shipper_file_submitted', (data) => {
 socket.on('all_shipper_files_submitted', (data) => {
   // show "all vendor quotes submitted" alert on plant dashboard
 })
+
+socket.on('shipper_comparison_complete', (data) => {
+  // data: { jobId, requestId, leadId, vendorId, summary }
+  // refresh comparison-summary + enable approve if blockers empty
+})
+
+socket.on('shipper_comparison_failed', (data) => {
+  // data: { jobId, requestId, leadId, vendorId, error }
+})
 ```
 
-Polling ([§13](#13-get-apiplantbomjobjobidstatus), [§14](#14-post-apiplantbomjobsstatus)) remains a valid fallback when the socket is disconnected.
+Polling ([§13](#13-get-apiplantbomjobjobidstatus), [§14](#14-post-apiplantbomjobsstatus), [§21H](#21h-get-apiplantshipper-requestscompare-jobsjobidstatus)) remains a valid fallback when the socket is disconnected.
 
 ---
 
@@ -1801,13 +1889,38 @@ Returns paginated row-level mismatch/match rows from `QuoteComparisonResult`.
       "resultId": "...",
       "status": "missing_in_vendor_quote",
       "severity": "critical",
-      "expected": { "...": "..." },
+      "expected": {
+        "partCode": "C62514",
+        "partColor": "RO",
+        "qty": 25,
+        "lengthFeet": 6.9792,
+        "weight": 621,
+        "unitCost": 1.28
+      },
       "received": null,
-      "difference": { "...": "..." },
+      "difference": {
+        "qtyDiff": null,
+        "lengthDiff": null,
+        "weightDiff": null,
+        "unitPriceDiff": null,
+        "amountDiff": null
+      },
       "matchMethod": "none",
-      "matchConfidence": null,
+      "matchConfidence": 0,
       "reason": "Expected item was not found in vendor quote",
-      "createdAt": "..."
+      "createdAt": "2026-06-04T05:10:00.000Z"
+    },
+    {
+      "resultId": "...",
+      "status": "qty_mismatch",
+      "severity": "critical",
+      "expected": { "partCode": "PC16-RO", "qty": 28, "lengthFeet": 6.97 },
+      "received": { "partCode": "PC16-RO", "qty": 24, "lengthFeet": 6.97, "unitPrice": 1.30 },
+      "difference": { "qtyDiff": -4, "lengthDiff": 0, "weightDiff": -88, "unitPriceDiff": 0.02, "amountDiff": null },
+      "matchMethod": "part_length_grouped",
+      "matchConfidence": 0.9,
+      "reason": "Vendor quantity does not match expected quantity",
+      "createdAt": "2026-06-04T05:10:00.000Z"
     }
   ]
 }
@@ -1822,14 +1935,15 @@ Generate Bundle Plan rows from approved vendor quote lines.
 ### Preconditions
 
 - `ShipperRequest.status = approved`
-- `VendorQuoteLine` exists for this `shipperRequestId`
+- `VendorQuoteLine` rows exist for this `shipperRequestId` (from comparison step)
 - If existing bundle plan is already `confirmed`, generation is blocked
+- If a non-cancelled `PackingListPlan` already exists for the bundle plan, regeneration is blocked
 
 ### Request body
 
 None.
 
-### Response `data`
+### Response `data` (201 on first generate, 200 on regenerate)
 
 ```json
 {
@@ -1837,19 +1951,42 @@ None.
     "_id": "...",
     "planNumber": "BP-0001",
     "status": "generated",
+    "totalSourceItems": 47,
     "totalBundles": 12,
     "totalWeight": 38400,
-    "maxLengthFeet": 48
+    "maxLengthFeet": 48,
+    "missingWeightLineCount": 2,
+    "hasWeightWarning": true,
+    "warnings": [
+      "2 vendor line(s) have missing/zero weight. Bundle weight and truck planning may be inaccurate."
+    ]
   },
   "bundles": [
     {
       "_id": "...",
       "bundleNo": "B-001",
       "bundleType": "framing",
+      "title": "FRAMING Bundle",
+      "totalQty": 18,
       "totalWeight": 6200,
       "maxLengthFeet": 48,
-      "stacking": { "stackLevel": "bottom", "loadingPriority": 10 },
-      "warnings": []
+      "itemCount": 6,
+      "missingWeightItemCount": 0,
+      "stacking": {
+        "stackLevel": "bottom",
+        "canStackOnTop": true,
+        "canHaveItemsStackedOnIt": true,
+        "isFragile": false,
+        "mustStayFlat": false,
+        "keepDry": false,
+        "requiresEdgeProtection": false,
+        "loadingPriority": 10,
+        "unloadingPriority": 50
+      },
+      "loadSequence": null,
+      "handlingInstruction": "",
+      "warnings": [],
+      "notes": ""
     }
   ]
 }
@@ -1858,11 +1995,19 @@ None.
 ### Behavior
 
 - Validates plant access for request lead.
-- Loads vendor lines from `VendorQuoteLine`.
-- Runs deterministic bundling algorithm (`loadPlanning.service`).
-- Creates or regenerates `BundlePlan` + `Bundle` rows.
-- Saves generated stacking defaults, load sequence, and warnings.
+- Loads vendor lines from `VendorQuoteLine` (qty or pieceQty > 0).
+- Runs deterministic bundling algorithm (`loadPlanning.service.generateBundlesFromVendorLines`).
+- Creates `BundlePlan` + `Bundle` rows, or regenerates draft plan (deletes old bundles) when allowed.
+- Saves stacking defaults, warnings, and per-bundle item snapshots.
 - Logs audit event `bundle_plan.generated`.
+
+### Errors
+
+| HTTP | When |
+|------|------|
+| 400 | Request not approved, no vendor lines, no bundles generated, confirmed plan exists, or packing list plan blocks regen |
+| 403 | Plant user not assigned to project PO |
+| 404 | Shipper request not found |
 
 ---
 
@@ -2602,11 +2747,75 @@ Soft-deactivate — **never** hard-deletes SMDT data.
 
 ---
 
+## End-to-end integration flows
+
+### Flow A — BOM → consolidated BOM → vendor send
+
+```text
+1. POST /api/plant/projects/:leadId/bom          (per building, after S3 upload)
+2. Poll POST /api/plant/bom/jobs/status          (or socket bom_extraction_complete)
+3. GET  /api/plant/bom/:jobId                    (price unmatched lines)
+4. PUT  /api/plant/bom/items/:bomItemId/price    (optional manual pricing)
+5. POST /api/plant/bom/buildings/:buildingId/confirm   (repeat per building)
+6. POST /api/plant/projects/:leadId/consolidated-bom/generate
+7. POST /api/plant/projects/:leadId/consolidated-bom/send   { vendorIds: [...] }
+```
+
+### Flow B — Vendor upload (public, no plant JWT)
+
+```text
+1. Vendor opens link from email: GET /api/public/vendor-upload/:token
+2. POST /api/public/vendor-upload/:token/presigned-url   { fileName, fileType }
+3. PUT  <uploadUrl>   (direct to S3)
+4. POST /api/public/vendor-upload/:token   { submittedFileUrl, submittedFileName, quoteValue }
+```
+
+Plant listens for `shipper_file_submitted` / `all_shipper_files_submitted` on `/admin` socket.
+
+### Flow C — Shipper comparison → approve → bundle plan
+
+```text
+1. GET  /api/plant/shipper-files/projects
+2. GET  /api/plant/shipper-files/projects/:leadId/requests
+3. POST /api/plant/shipper-requests/:requestId/compare
+4. Poll GET /api/plant/shipper-requests/compare-jobs/:jobId/status
+   (or socket shipper_comparison_complete)
+5. GET  /api/plant/shipper-requests/:requestId/comparison-summary
+6. GET  /api/plant/shipper-requests/:requestId/comparison-results?page=1&limit=20
+7a. If blockers empty → POST /api/plant/shipper-requests/:requestId/approve
+7b. If mismatches   → POST /api/plant/shipper-requests/:requestId/request-resubmit  { note }
+    (vendor re-uploads via same token; then repeat from step 3)
+8. POST /api/plant/shipper-requests/:requestId/bundle-plan/generate
+```
+
+`canProceedToApproval` from step 5 gates the approve button. Blockers: `comparison_not_run`, `missing_items`, `qty_mismatch`, `length_mismatch`, `weight_mismatch`, `ambiguous_match`.
+
+---
+
+## Not yet implemented (do not call from FE yet)
+
+These prefixes are mounted under `/api/plant` but route files are **empty stubs**:
+
+| Prefix | Planned use |
+|--------|-------------|
+| `/api/plant/dashboard` | Plant dashboard KPIs |
+| `/api/plant/bundle-plans` | GET plan detail, confirm plan |
+| `/api/plant/bundles` | GET single bundle |
+| `/api/plant/packing-list-plans` | Generate truck load plan from bundles |
+| `/api/plant/packing-lists` | Packing list detail |
+| `/api/plant/deliveries` | Delivery CRUD |
+| `/api/plant/freight-bids` | Carrier bidding |
+
+`loadPlanning.service.generateMixedTruckPackingLists` exists in code; API wiring is pending.
+
+---
+
 ## Frontend quick reference
 
 | Screen | Endpoint(s) |
 |--------|-------------|
 | Login | `POST /api/auth/login` → check `role === "plant"` |
+| Socket connect | `io(origin + '/admin', { auth: { token } })` — see [Socket.io](#socketio-plant-panel) |
 | Projects stat cards | `GET /api/plant/projects/stats` |
 | Projects table | `GET /api/plant/projects` |
 | Filter: date range | `startDate`, `endDate` on both endpoints |
@@ -2624,6 +2833,21 @@ Soft-deactivate — **never** hard-deletes SMDT data.
 | BOM pricing | `GET /api/plant/bom/:jobId`, `PUT /api/plant/bom/items/:bomItemId/price` |
 | Confirm building BOM | `POST /api/plant/bom/buildings/:buildingId/confirm` |
 | BOM tab list | `GET /api/plant/projects/:leadId/bom-files` |
+| Consolidated BOM | `POST .../consolidated-bom/generate`, `GET .../consolidated-bom` |
+| Send BOM to vendors | `POST .../consolidated-bom/send` `{ vendorIds }` |
+| Shipper projects list | `GET /api/plant/shipper-files/projects` |
+| Shipper requests table | `GET /api/plant/shipper-files/projects/:leadId/requests` |
+| Shipper file preview | `GET /api/plant/shipper-requests/:requestId/document` |
+| Run comparison | `POST /api/plant/shipper-requests/:requestId/compare` |
+| Poll comparison job | `GET .../compare-jobs/:jobId/status` or `POST .../compare-jobs/status` |
+| Comparison summary | `GET .../comparison-summary` |
+| Comparison result rows | `GET .../comparison-results?status=&severity=&page=&limit=` |
+| Approve vendor | `POST .../approve` |
+| Request resubmit | `POST .../request-resubmit` `{ note }` |
+| Generate bundle plan | `POST .../bundle-plan/generate` |
+| Vendor public upload page | `GET /api/public/vendor-upload/:token` |
+| Vendor S3 presign | `POST /api/public/vendor-upload/:token/presigned-url` |
+| Vendor submit quote | `POST /api/public/vendor-upload/:token` |
 | Vendors table | `GET /api/plant/vendors` |
 | Add vendor | `POST /api/plant/vendors` |
 | Vendor detail | `GET /api/plant/vendors/:vendorId` |
@@ -2645,4 +2869,4 @@ Soft-deactivate — **never** hard-deletes SMDT data.
 
 ---
 
-*Last updated: Projects (19) + SMDT (6 at `/api/smdt`).*
+*Document covers 37 plant/SMDT/public-vendor endpoints + 7 socket events. Load-planning APIs beyond bundle-plan generate are not wired yet.*

@@ -1,6 +1,7 @@
 const router = require('express').Router()
 const { body, query } = require('express-validator')
 const ctrl = require('../../controllers/plant/project.controller')
+const bundleCtrl = require('../../controllers/plant/bundle.controller')
 const validate = require('../../middleware/validate')
 const { PLANT_LIFECYCLE_STAGES, BOM_FILE_FORMATS } = require('../../config/constants')
 
@@ -80,5 +81,6 @@ router.post('/:leadId/consolidated-bom/send',
 )
 router.get('/:leadId/delivery', ctrl.getProjectDelivery)
 router.get('/:leadId/shipper-files', ctrl.getProjectShipperFiles)
+router.get('/:leadId/bundle-plan', bundleCtrl.getProjectBundlePlan)
 
 module.exports = router

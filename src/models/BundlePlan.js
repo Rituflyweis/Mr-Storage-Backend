@@ -4,7 +4,7 @@ const { BUNDLE_PLAN_STATUSES } = require('../config/constants')
 const BundlePlanSchema = new mongoose.Schema(
   {
     leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
-    shipperRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'ShipperRequest', required: true, index: true },
+    shipperRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'ShipperRequest', required: true },
     vendorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', required: true, index: true },
     planNumber: { type: String, required: true, unique: true, trim: true },
 

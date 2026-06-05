@@ -5,6 +5,7 @@ const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const QuoteComparisonResult = require('../../models/QuoteComparisonResult')
 const VendorQuoteLine = require('../../models/VendorQuoteLine')
 const BundlePlan = require('../../models/BundlePlan')
+const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { processShipperComparisonJob } = require('../../services/plant/shipperComparison.service')
@@ -553,77 +554,175 @@ exports.getShipperComparisonResults = asyncHandler(async (req, res) => {
 
 exports.generateBundlePlan = asyncHandler(async (req, res) => {
   const { requestId } = req.params
+
   const request = await ShipperRequest.findById(requestId)
     .populate('leadId', 'projectName customerId')
     .lean()
-  if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  if (!request) {
+    return notFound(res, 'Shipper request not found')
+  }
+
+  const leadId = request.leadId?._id || request.leadId
+
+  const access = await assertPlantProjectAccess(leadId, req.user._id)
+
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
   }
 
   if (request.status !== 'approved') {
-    return badRequest(res, 'Bundle plan can be generated only for approved shipper request')
+    return badRequest(
+      res,
+      'Bundle plan can be generated only for approved shipper request'
+    )
   }
 
-  const existingPlan = await BundlePlan.findOne({ shipperRequestId: request._id }).select('_id status').lean()
+  const existingPlan = await BundlePlan.findOne({
+    shipperRequestId: request._id,
+  })
+    .select('_id status planNumber')
+    .lean()
+
   if (existingPlan?.status === 'confirmed') {
-    return badRequest(res, 'Confirmed bundle plan already exists for this shipper request')
+    return badRequest(
+      res,
+      'Confirmed bundle plan already exists for this shipper request'
+    )
   }
 
-  const vendorLines = await VendorQuoteLine.find({ shipperRequestId: request._id }).lean()
-  if (!vendorLines.length) {
-    return badRequest(res, 'No vendor quote lines found for this shipper request')
+  /**
+   * Critical:
+   * Do not delete/regenerate bundles if packing list planning already exists.
+   * Otherwise PackingList.bundleIds will point to deleted Bundle documents.
+   */
+  if (existingPlan) {
+    const existingPackingListPlan = await PackingListPlan.findOne({
+      bundlePlanId: existingPlan._id,
+      status: { $ne: 'cancelled' },
+    })
+      .select('_id status')
+      .lean()
+
+    if (existingPackingListPlan) {
+      return badRequest(
+        res,
+        'Cannot regenerate bundle plan because packing list/truck plan already exists. Cancel or reset packing list plan first.',
+        {
+          packingListPlanId: existingPackingListPlan._id,
+          packingListPlanStatus: existingPackingListPlan.status,
+        }
+      )
+    }
   }
+
+  const vendorLines = await VendorQuoteLine.find({
+    shipperRequestId: request._id,
+    $or: [
+      { qty: { $gt: 0 } },
+      { pieceQty: { $gt: 0 } },
+    ],
+  })
+    .sort({
+      extractionFormat: 1,
+      pageNumber: 1,
+      rowNumber: 1,
+      pieceMarkNormalized: 1,
+    })
+    .lean()
+
+  if (!vendorLines.length) {
+    return badRequest(res, 'No valid vendor quote lines found for this shipper request')
+  }
+
+  const missingWeightLines = vendorLines.filter((line) => {
+    const weight = Number(line.weight)
+    return !Number.isFinite(weight) || weight <= 0
+  })
 
   const generatedBundles = generateBundlesFromVendorLines(vendorLines)
+
   if (!generatedBundles.length) {
     return badRequest(res, 'No bundles could be generated from vendor lines')
   }
 
-  const planNumber = existingPlan
-    ? (await BundlePlan.findById(existingPlan._id).select('planNumber').lean())?.planNumber || await getNextBundlePlanNumber()
-    : await getNextBundlePlanNumber()
-  const totalWeight = generatedBundles.reduce((sum, b) => sum + Number(b.totalWeight || 0), 0)
-  const maxLengthFeet = generatedBundles.reduce((max, b) => Math.max(max, Number(b.maxLengthFeet || 0)), 0)
-  const warnings = [...new Set(generatedBundles.flatMap((b) => b.warnings || []))]
+  const planNumber = existingPlan?.planNumber || await getNextBundlePlanNumber()
+
+  const totalWeight = generatedBundles.reduce(
+    (sum, bundle) => sum + Number(bundle.totalWeight || 0),
+    0
+  )
+
+  const maxLengthFeet = generatedBundles.reduce(
+    (max, bundle) => Math.max(max, Number(bundle.maxLengthFeet || 0)),
+    0
+  )
+
+  const warnings = [
+    ...new Set([
+      ...generatedBundles.flatMap((bundle) => bundle.warnings || []),
+
+      ...(missingWeightLines.length
+        ? [
+            `${missingWeightLines.length} vendor line(s) have missing/zero weight. Bundle weight and truck planning may be inaccurate.`,
+          ]
+        : []),
+
+      ...(totalWeight <= 0
+        ? [
+            'Total bundle plan weight is zero/missing. Truck/load planning must be manually reviewed.',
+          ]
+        : []),
+    ]),
+  ]
 
   let bundlePlan
+  const wasRegenerated = Boolean(existingPlan)
+
   if (existingPlan) {
     bundlePlan = await BundlePlan.findByIdAndUpdate(
       existingPlan._id,
       {
-        leadId: request.leadId?._id || request.leadId,
+        leadId,
         shipperRequestId: request._id,
         vendorId: request.vendorId,
         planNumber,
         status: 'generated',
+
         totalSourceItems: vendorLines.length,
         totalBundles: generatedBundles.length,
         totalWeight,
         maxLengthFeet,
         warnings,
+
         generatedBy: req.user._id,
         confirmedBy: null,
         confirmedAt: null,
       },
-      { new: true, runValidators: true }
+      {
+        new: true,
+        runValidators: true,
+      }
     )
-    await Bundle.deleteMany({ bundlePlanId: bundlePlan._id })
+
+    await Bundle.deleteMany({
+      bundlePlanId: bundlePlan._id,
+    })
   } else {
     bundlePlan = await BundlePlan.create({
-      leadId: request.leadId?._id || request.leadId,
+      leadId,
       shipperRequestId: request._id,
       vendorId: request.vendorId,
       planNumber,
       status: 'generated',
+
       totalSourceItems: vendorLines.length,
       totalBundles: generatedBundles.length,
       totalWeight,
       maxLengthFeet,
       warnings,
+
       generatedBy: req.user._id,
     })
   }
@@ -631,15 +730,16 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
   const bundlesToInsert = generatedBundles.map((bundle) => ({
     ...bundle,
     bundlePlanId: bundlePlan._id,
-    leadId: request.leadId?._id || request.leadId,
+    leadId,
     shipperRequestId: request._id,
   }))
+
   const bundles = await Bundle.insertMany(bundlesToInsert)
 
   await auditService.log({
     type: 'plant',
     action: AUDIT_ACTIONS.BUNDLE_PLAN_GENERATED,
-    leadId: request.leadId?._id || request.leadId,
+    leadId,
     customerId: request.leadId?.customerId || null,
     performedBy: req.user._id,
     metadata: {
@@ -649,29 +749,67 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
       totalBundles: bundles.length,
       totalWeight,
       maxLengthFeet,
+      missingWeightLineCount: missingWeightLines.length,
+      regenerated: wasRegenerated,
     },
   })
 
-  return created(res, {
+  const responseData = {
     bundlePlan: {
       _id: bundlePlan._id,
       planNumber: bundlePlan.planNumber,
       status: bundlePlan.status,
+
+      totalSourceItems: bundlePlan.totalSourceItems,
       totalBundles: bundlePlan.totalBundles,
       totalWeight: bundlePlan.totalWeight,
       maxLengthFeet: bundlePlan.maxLengthFeet,
+
+      missingWeightLineCount: missingWeightLines.length,
+      hasWeightWarning: missingWeightLines.length > 0 || totalWeight <= 0,
+
+      warnings: bundlePlan.warnings || [],
     },
+
     bundles: bundles.map((bundle) => ({
       _id: bundle._id,
       bundleNo: bundle.bundleNo,
       bundleType: bundle.bundleType,
+      title: bundle.title,
+
+      totalQty: bundle.totalQty,
       totalWeight: bundle.totalWeight,
       maxLengthFeet: bundle.maxLengthFeet,
+
+      itemCount: bundle.items?.length || 0,
+
+      missingWeightItemCount: (bundle.items || []).filter((item) => {
+        return item.sourceLineSnapshot?.weightMissing === true
+      }).length,
+
       stacking: {
         stackLevel: bundle.stacking?.stackLevel,
+        canStackOnTop: bundle.stacking?.canStackOnTop,
+        canHaveItemsStackedOnIt: bundle.stacking?.canHaveItemsStackedOnIt,
+        isFragile: bundle.stacking?.isFragile,
+        mustStayFlat: bundle.stacking?.mustStayFlat,
+        keepDry: bundle.stacking?.keepDry,
+        requiresEdgeProtection: bundle.stacking?.requiresEdgeProtection,
         loadingPriority: bundle.stacking?.loadingPriority,
+        unloadingPriority: bundle.stacking?.unloadingPriority,
       },
+
+      loadSequence: bundle.loadSequence,
+      handlingInstruction: bundle.handlingInstruction || '',
+
       warnings: bundle.warnings || [],
+      notes: bundle.notes || '',
     })),
-  }, 'Bundle plan generated')
+  }
+
+  if (wasRegenerated) {
+    return success(res, responseData, 'Bundle plan regenerated')
+  }
+
+  return created(res, responseData, 'Bundle plan generated')
 })

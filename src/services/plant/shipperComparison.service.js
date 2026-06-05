@@ -22,6 +22,7 @@ const normalizeKey = (value) => {
     .trim()
     .toUpperCase()
     .replace(/\s+/g, '')
+    .replace(/[^\w#+./-]/g, '')
 }
 
 const cleanStr = (value) => {
@@ -45,8 +46,14 @@ const toNum = (value) => {
   return Number.isFinite(n) ? n : null
 }
 
-const close = (a, b, tolerance = 0.02) => {
-  return Math.abs(Number(a || 0) - Number(b || 0)) <= tolerance
+const safeNum = (value, fallback = 0) => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+const close = (a, b, tolerance = 0.05) => {
+  if (a == null || b == null) return false
+  return Math.abs(Number(a) - Number(b)) <= tolerance
 }
 
 const downloadBuffer = (url) =>
@@ -75,6 +82,76 @@ const col = (headers, aliases) => {
 
 const normalizeHeader = (header) => normalizeKey(header)
 
+const parseMbsLengthToFeet = (value) => {
+  if (value == null || value === '') return null
+
+  const raw = String(value)
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[‐-‒–—]/g, '-')
+    .trim()
+
+  if (!raw) return null
+
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    return Number(raw)
+  }
+
+  /**
+   * MBS style:
+   * 15'11-12" means 15 ft + 11 + 12/16 inches.
+   * 16'02-04" means 16 ft + 2 + 4/16 inches.
+   */
+  const mbsFeet = raw.match(/^(\d+)'\s*(\d{1,2})-(\d{1,2})"?$/)
+  if (mbsFeet) {
+    const feet = Number(mbsFeet[1])
+    const inches = Number(mbsFeet[2])
+    const sixteenths = Number(mbsFeet[3]) / 16
+    return feet + (inches + sixteenths) / 12
+  }
+
+  /**
+   * Inch-only MBS style:
+   * 6-00" = 6 inches
+   * 1-04" = 1.25 inches
+   * 0-14" = 0.875 inches
+   */
+  const mbsInches = raw.match(/^(\d+)-(\d{1,2})"?$/)
+  if (mbsInches) {
+    const inches = Number(mbsInches[1])
+    const sixteenths = Number(mbsInches[2]) / 16
+    return (inches + sixteenths) / 12
+  }
+
+  /**
+   * Quicken style:
+   * 6' 11-3/4"
+   * 11' 3-7/8"
+   */
+  const feetDashFraction = raw.match(/^(\d+)'\s*(\d+)-(\d+)\/(\d+)"?$/)
+  if (feetDashFraction) {
+    const feet = Number(feetDashFraction[1])
+    const inches = Number(feetDashFraction[2])
+    const frac = Number(feetDashFraction[3]) / Number(feetDashFraction[4])
+    return feet + (inches + frac) / 12
+  }
+
+  /**
+   * Central States style:
+   * 6' 11.75''
+   * 13' 11.75''
+   */
+  const feetDecimalInches = raw.match(/^(\d+)'\s*(\d+(?:\.\d+)?)''?$/)
+  if (feetDecimalInches) {
+    const feet = Number(feetDecimalInches[1])
+    const inches = Number(feetDecimalInches[2])
+    return feet + inches / 12
+  }
+
+  const fallback = parseLengthToFeet(raw)
+  return Number.isFinite(Number(fallback)) ? Number(fallback) : null
+}
+
 const normalizeComparableKey = ({ partCode, partColor, lengthFeet }) => {
   const part = normalizeKey(partCode)
   const color = normalizeKey(partColor)
@@ -85,6 +162,175 @@ const normalizeComparableKey = ({ partCode, partColor, lengthFeet }) => {
       : '_'
 
   return `${part || '_'}|${color || '_'}|${length}`
+}
+
+const detectPdfFormat = (text) => {
+  const t = String(text || '').toUpperCase()
+
+  if (
+    t.includes('QUICKEN STEEL') ||
+    t.includes('SALES ORDER') ||
+    t.includes('PIECE MARK:')
+  ) {
+    return 'quicken_steel'
+  }
+
+  if (
+    t.includes('CENTRAL STATES') ||
+    t.includes('LINE PRODUCT DESCRIPTION QTY UOM UNIT COST TOTAL COST') ||
+    t.includes('PIECES @') ||
+    t.includes('PART MARK:')
+  ) {
+    return 'central_states'
+  }
+
+  if (
+    t.includes('WEIGHT & COST SUMMARY') ||
+    t.includes('TOTAL WEIGHT =') ||
+    t.includes('QUAN MARK DESCRIPTION') ||
+    t.includes('ROOF & WALL SHEETING')
+  ) {
+    return 'mbs_material_report'
+  }
+
+  return 'generic_material_pdf'
+}
+
+const buildPdfExtractionPrompt = (format, text) => {
+  const baseShape = `Return JSON only in this exact structure:
+{
+  "lines": [
+    {
+      "lineNo": "1",
+      "qty": 10,
+      "pieceQty": 10,
+      "totalLinearFeet": null,
+      "uom": null,
+      "partCode": "C42516",
+      "vendorProductCode": "C42516",
+      "description": "Stud",
+      "color": "RO",
+      "lengthText": "15'11-12\\"",
+      "weight": 59.4,
+      "unitPrice": null,
+      "priceUnit": "UNKNOWN",
+      "amount": 56.70,
+      "pieceMark": "S-1",
+      "punchInfo": "",
+      "leftPunch": "",
+      "rightPunch": "",
+      "pageNumber": 1,
+      "rawText": "original source row text",
+      "confidence": 0.95,
+      "warnings": []
+    }
+  ]
+}`
+
+  if (format === 'quicken_steel') {
+    return `Extract shipper/vendor material line items from this Quicken Steel sales order PDF text.
+
+This format has rows similar to:
+Line Item Description Length Weight Unit Price Amount Qty
+1 16Ga CEE Purlin Red Oxide 8 X 3-1/2" $2.53 / FT 28 $494.48 PC16-RO-8X3.5 6' 11-3/4" 621
+Punch: Custom Punch
+Piece Mark: DJ-1
+
+Rules:
+- Extract actual material line items only.
+- Attach "Punch:" and "Piece Mark:" continuation lines to the item immediately above them.
+- qty is the physical quantity/piece count.
+- partCode and vendorProductCode should be the product code like PC16-RO-8X3.5.
+- lengthText must preserve the original length.
+- weight is the line weight.
+- unitPrice is the numeric value from "$2.53 / FT"; priceUnit should be FT.
+- amount is the line amount.
+- Do not include headers, footers, totals, customer information, or signature pages.
+- Do not invent missing values.
+
+${baseShape}
+
+PDF text:
+${text.slice(0, 120000)}`
+  }
+
+  if (format === 'central_states') {
+    return `Extract shipper/vendor material line items from this Central States quote PDF text.
+
+This format has rows like:
+1 C83516R Purlin,Prime,R,Cee,8,3.5,16
+28 Pieces @ 6' 11.75''
+Left Punch: PPEP
+Right Punch: PPEP
+Part Mark: DJ-1
+195.4167 LF 3.0006 586.37
+
+Rules:
+- Extract actual material line items only.
+- Product code like C83516R should be partCode and vendorProductCode.
+- IMPORTANT: the Qty column is usually total linear feet, not physical piece count.
+- pieceQty must come from "28 Pieces @ ...".
+- qty must be the physical piece count when pieceQty is available.
+- totalLinearFeet must come from the LF Qty value like 195.4167.
+- uom should be LF when visible.
+- lengthText must come from the "Pieces @ length" text, e.g. "6' 11.75''".
+- Extract Part Mark as pieceMark.
+- Extract Left Punch and Right Punch.
+- unitPrice is Unit Cost.
+- amount is Total Cost.
+- Do not include page headers, totals, bill-to/ship-to info, or repeated table headers.
+- Do not invent missing values.
+
+${baseShape}
+
+PDF text:
+${text.slice(0, 120000)}`
+  }
+
+  if (format === 'mbs_material_report') {
+    return `Extract shipper/material line items from this MBS-style material report PDF text.
+
+This format has sections like:
+Quan Mark Description Stock Length Weight Cost
+2 S-1 Stud C42516 15'11-12" 59.4 56.70
+
+And sheeting/trim sections may have:
+Quan Mark Description Part Clr Pitch Length Weight Cost
+4 ES-1 EW Sheet RLOC26 C1 16'00-00" 169.2 229.32
+
+Rules:
+- Extract only actual material line rows.
+- Skip section headings, separator lines, totals, summaries, color legends, supplier discount summaries, and page labels.
+- qty is the first number in the material row.
+- pieceMark is the Mark value, e.g. S-1, DJ-1, P-1, G-1, ES-1, RS-1, MINICL, BASECL, RA, BA.
+- partCode should be Stock/Part value, e.g. C42516, Z62516, RLOC26, PLOC+29, MINICLIP, BASECLIP, B4216, #12114MM.
+- color should be extracted only when a visible color code exists, e.g. RO, GZ, M, C1, NC.
+- lengthText must preserve original length, e.g. 15'11-12", 6-00", 1-04".
+- weight is line weight.
+- amount is line cost.
+- unitPrice may be null unless explicitly visible.
+- Do not invent missing values.
+
+${baseShape}
+
+PDF text:
+${text.slice(0, 120000)}`
+  }
+
+  return `Extract shipper/vendor material line items from this PDF text.
+
+Rules:
+- Extract actual line items only.
+- Skip headers, footers, totals, summaries, tax rows, notes, and page labels.
+- Prefer physical quantity as qty.
+- Extract part/product code, description, mark, color, length, weight, unit price, amount.
+- Do not invent missing values.
+- Include warnings when uncertain.
+
+${baseShape}
+
+PDF text:
+${text.slice(0, 120000)}`
 }
 
 const isTotalOrInstructionRow = (joined) => {
@@ -101,33 +347,45 @@ const isTotalOrInstructionRow = (joined) => {
   )
 }
 
-/**
- * Maps one extracted spreadsheet/PDF row into VendorQuoteLine shape.
- * Headers passed here must already be normalized with normalizeKey().
- */
 const mapRowToVendorLine = ({
   row,
   rowNumber,
   shipperRequestId,
   request,
   extractionMethod,
+  extractionFormat = 'excel',
   pageNumber = null,
   rawText = '',
 }) => {
   const headers = row.__headers || []
 
-  const iQty = col(headers, ['QTY', 'QUANTITY'])
-  const iPart = col(headers, ['PART', 'PARTCODE', 'ITEM', 'MBIPN', 'MBIP/N'])
+  const iQty = col(headers, ['QTY', 'QUANTITY', 'PIECEQTY'])
+  const iPieceQty = col(headers, ['PIECEQTY', 'PIECES'])
+  const iTotalLf = col(headers, ['TOTALLINEARFEET', 'TOTALFEET', 'LF', 'LINEARFEET'])
+  const iUom = col(headers, ['UOM', 'UNIT'])
+  const iPart = col(headers, ['PART', 'PARTCODE', 'ITEM', 'MBIPN', 'MBIP/N', 'PRODUCT', 'PRODUCTCODE'])
+  const iVendorProduct = col(headers, ['VENDORPRODUCTCODE', 'PRODUCT', 'PRODUCTCODE'])
   const iDesc = col(headers, ['DESCRIPTION', 'DESC'])
-  const iColor = col(headers, ['COLOR', 'COLOUR', 'FINISH'])
+  const iColor = col(headers, ['COLOR', 'COLOUR', 'FINISH', 'CLR'])
   const iLength = col(headers, ['LENGTH', 'LEN', 'LENGTHFT'])
   const iWeight = col(headers, ['WEIGHT', 'WT', 'WEIGHTLBS'])
-  const iUnitPrice = col(headers, ['UNITPRICE', 'PRICE', 'RATE'])
-  const iAmount = col(headers, ['TOTAL', 'AMOUNT', 'LINETOTAL', 'EXTAMOUNT'])
-  const iMark = col(headers, ['MARK', 'MARKID', 'PIECEMARK', 'PIECE'])
+  const iUnitPrice = col(headers, ['UNITPRICE', 'UNITCOST', 'PRICE', 'RATE'])
+  const iPriceUnit = col(headers, ['PRICEUNIT'])
+  const iAmount = col(headers, ['TOTAL', 'AMOUNT', 'LINETOTAL', 'EXTAMOUNT', 'TOTALCOST'])
+  const iMark = col(headers, ['MARK', 'MARKID', 'PIECEMARK', 'PIECE', 'PARTMARK'])
+  const iPunch = col(headers, ['PUNCH', 'PUNCHINFO'])
+  const iLeftPunch = col(headers, ['LEFTPUNCH'])
+  const iRightPunch = col(headers, ['RIGHTPUNCH'])
+  const iLineNo = col(headers, ['LINENO', 'LINE'])
 
-  const qty = iQty >= 0 ? toNum(row[iQty]) : null
+  const pieceQty = iPieceQty >= 0 ? toNum(row[iPieceQty]) : null
+  const qtyRaw = iQty >= 0 ? toNum(row[iQty]) : null
+  const totalLinearFeet = iTotalLf >= 0 ? toNum(row[iTotalLf]) : null
+
+  const qty = pieceQty != null ? pieceQty : qtyRaw
+
   const partCode = iPart >= 0 ? cleanStr(row[iPart]) : ''
+  const vendorProductCode = iVendorProduct >= 0 ? cleanStr(row[iVendorProduct]) : partCode
   const description = iDesc >= 0 ? cleanStr(row[iDesc]) : ''
   const color = iColor >= 0 ? cleanStr(row[iColor]) : ''
   const lengthText = iLength >= 0 ? cleanStr(row[iLength]) : ''
@@ -141,12 +399,18 @@ const mapRowToVendorLine = ({
 
     pageNumber,
     rowNumber,
-    vendorLineNo: '',
+    vendorLineNo: iLineNo >= 0 ? cleanStr(row[iLineNo]) : '',
 
     qty,
+    pieceQty,
+    totalLinearFeet,
+    uom: iUom >= 0 ? cleanStr(row[iUom]) : null,
 
     partCode: partCode || null,
     partCodeNormalized: normalizeKey(partCode) || null,
+
+    vendorProductCode: vendorProductCode || null,
+    vendorProductCodeNormalized: normalizeKey(vendorProductCode) || null,
 
     description,
 
@@ -157,19 +421,23 @@ const mapRowToVendorLine = ({
     colorNormalized: normalizeKey(color) || null,
 
     lengthText: lengthText || null,
-    lengthFeet: parseLengthToFeet(lengthText),
+    lengthFeet: parseMbsLengthToFeet(lengthText),
 
     weight: iWeight >= 0 ? toNum(row[iWeight]) : null,
 
     unitPrice: iUnitPrice >= 0 ? toNum(row[iUnitPrice]) : null,
-    priceUnit: 'UNKNOWN',
+    priceUnit: iPriceUnit >= 0 ? normalizeKey(row[iPriceUnit]) || 'UNKNOWN' : 'UNKNOWN',
     amount: iAmount >= 0 ? toNum(row[iAmount]) : null,
 
-    punchInfo: '',
+    punchInfo: iPunch >= 0 ? cleanStr(row[iPunch]) : '',
+    leftPunch: iLeftPunch >= 0 ? cleanStr(row[iLeftPunch]) : '',
+    rightPunch: iRightPunch >= 0 ? cleanStr(row[iRightPunch]) : '',
+
     bendInfo: '',
     notes: '',
 
     extractionMethod,
+    extractionFormat,
     extractionConfidence: null,
     warnings: [],
 
@@ -190,6 +458,8 @@ const parseSheetRows = (rows) => {
       normalized.includes('PART') ||
       normalized.includes('PARTCODE') ||
       normalized.includes('ITEM') ||
+      normalized.includes('PRODUCT') ||
+      normalized.includes('PRODUCTCODE') ||
       normalized.includes('MBIPN') ||
       normalized.includes('MBIP/N')
 
@@ -207,7 +477,6 @@ const parseSheetRows = (rows) => {
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i] || []
-
     const joined = row.map((cell) => cleanStr(cell)).join(' ')
 
     if (isTotalOrInstructionRow(joined)) continue
@@ -223,7 +492,7 @@ const parseSheetRows = (rows) => {
   return parsedRows
 }
 
-const extractExcelQuoteLines = async (buffer, request) => {
+const extractExcelQuoteLines = async (buffer, request, extractionFormat = 'excel') => {
   const workbook = XLSX.read(buffer, {
     type: 'buffer',
     cellDates: false,
@@ -248,6 +517,7 @@ const extractExcelQuoteLines = async (buffer, request) => {
         shipperRequestId: request._id,
         request,
         extractionMethod: 'excel',
+        extractionFormat,
       })
 
       if (doc.partCodeNormalized || doc.description || doc.qty != null) {
@@ -274,7 +544,8 @@ const extractCsvQuoteLines = async (buffer, request) => {
         rowNumber: item.rowNumber,
         shipperRequestId: request._id,
         request,
-        extractionMethod: 'excel',
+        extractionMethod: 'csv',
+        extractionFormat: 'csv',
       })
     )
     .filter((doc) => doc.partCodeNormalized || doc.description || doc.qty != null)
@@ -292,51 +563,18 @@ const extractPdfQuoteLinesWithClaude = async (buffer, request) => {
     throw new Error('ANTHROPIC_API_KEY missing for PDF parsing')
   }
 
+  const extractionFormat = detectPdfFormat(text)
+  const prompt = buildPdfExtractionPrompt(extractionFormat, text)
+
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 12000,
+    max_tokens: 16000,
     system:
-      'You extract vendor quote / shipper line items from PDF text. Return strict JSON only. No markdown.',
+      'You extract shipper/vendor material line items from PDF text. Return strict JSON only. No markdown.',
     messages: [
       {
         role: 'user',
-        content: `Extract vendor quote rows from the text below.
-
-Return JSON only in this exact structure:
-{
-  "lines": [
-    {
-      "qty": 10,
-      "partCode": "P100",
-      "description": "Part description",
-      "color": "RO",
-      "lengthText": "5' 6\\"",
-      "weight": 10.5,
-      "unitPrice": 2.5,
-      "amount": 25,
-      "pieceMark": "M1",
-      "pageNumber": 1,
-      "rawText": "original row text",
-      "confidence": 0.9,
-      "warnings": []
-    }
-  ]
-}
-
-Rules:
-- Extract only actual line items.
-- Skip totals, tax rows, headers, footers, notes, and page labels.
-- qty must be a number when visible.
-- partCode should be the actual item/part code if present.
-- If part code is missing, keep partCode as null and preserve description.
-- lengthText must preserve feet/inch format exactly when visible.
-- weight must be numeric if visible.
-- unitPrice and amount must be numeric if visible.
-- Do not invent missing values.
-- If uncertain, include warning in warnings[].
-
-PDF text:
-${text.slice(0, 120000)}`,
+        content: prompt,
       },
     ],
   })
@@ -353,28 +591,49 @@ ${text.slice(0, 120000)}`,
 
   return lines
     .map((line, index) => {
+      const pieceQty = toNum(line.pieceQty)
+      const qty = pieceQty != null ? pieceQty : toNum(line.qty)
+
       const row = [
-        line.qty,
-        line.partCode,
-        line.description,
-        line.color,
-        line.lengthText,
-        line.weight,
-        line.unitPrice,
-        line.amount,
-        line.pieceMark,
+        line.lineNo ?? '',
+        qty,
+        pieceQty,
+        line.totalLinearFeet ?? null,
+        line.uom ?? null,
+        line.partCode ?? line.vendorProductCode ?? null,
+        line.vendorProductCode ?? line.partCode ?? null,
+        line.description ?? '',
+        line.color ?? null,
+        line.lengthText ?? null,
+        line.weight ?? null,
+        line.unitPrice ?? null,
+        line.priceUnit ?? 'UNKNOWN',
+        line.amount ?? null,
+        line.pieceMark ?? '',
+        line.punchInfo ?? '',
+        line.leftPunch ?? '',
+        line.rightPunch ?? '',
       ]
 
       row.__headers = [
+        'LINE',
         'QTY',
+        'PIECEQTY',
+        'TOTALLINEARFEET',
+        'UOM',
         'PARTCODE',
+        'VENDORPRODUCTCODE',
         'DESCRIPTION',
         'COLOR',
         'LENGTH',
         'WEIGHT',
         'UNITPRICE',
+        'PRICEUNIT',
         'AMOUNT',
         'MARK',
+        'PUNCHINFO',
+        'LEFTPUNCH',
+        'RIGHTPUNCH',
       ]
 
       const doc = mapRowToVendorLine({
@@ -383,6 +642,7 @@ ${text.slice(0, 120000)}`,
         shipperRequestId: request._id,
         request,
         extractionMethod: 'claude',
+        extractionFormat,
         pageNumber: line.pageNumber ?? null,
         rawText: line.rawText || '',
       })
@@ -405,8 +665,8 @@ const extractVendorQuoteLines = async ({ fileUrl, fileName, request }) => {
 
   const buffer = await downloadBuffer(fileUrl)
 
-  if (['xlsx', 'xls'].includes(ext)) {
-    return extractExcelQuoteLines(buffer, request)
+  if (['xlsx', 'xls', 'ods'].includes(ext)) {
+    return extractExcelQuoteLines(buffer, request, 'excel')
   }
 
   if (ext === 'csv') {
@@ -420,11 +680,6 @@ const extractVendorQuoteLines = async ({ fileUrl, fileName, request }) => {
   throw new Error('Unsupported vendor quote file type')
 }
 
-/**
- * Expected rows come from updated ConsolidatedBOM.items[].
- * This assumes consolidated BOM was generated using the updated grouping key:
- * partCode + color + costUnit + category + description + length.
- */
 const normalizeExpectedBomItems = (items) => {
   return items.map((item) => ({
     consolidatedItemId: item._id,
@@ -465,12 +720,20 @@ const normalizeVendorQuoteLines = (lines) => {
     partCode: line.partCode || null,
     partCodeNormalized: normalizeKey(line.partCode),
 
+    vendorProductCode: line.vendorProductCode || null,
+    vendorProductCodeNormalized: normalizeKey(line.vendorProductCode),
+
     partColor: line.color || null,
     partColorNormalized: normalizeKey(line.color),
 
     description: line.description || '',
 
-    qty: Number(line.qty || 0),
+    qty: line.pieceQty != null ? Number(line.pieceQty) : Number(line.qty || 0),
+    pieceQty: line.pieceQty != null ? Number(line.pieceQty) : null,
+    totalLinearFeet:
+      line.totalLinearFeet != null ? Number(line.totalLinearFeet) : null,
+    uom: line.uom || null,
+
     lengthFeet: line.lengthFeet != null ? Number(line.lengthFeet) : null,
     weight: line.weight != null ? Number(line.weight) : 0,
 
@@ -479,6 +742,7 @@ const normalizeVendorQuoteLines = (lines) => {
     amount: line.amount ?? null,
 
     pieceMark: line.pieceMark || '',
+    extractionFormat: line.extractionFormat || 'generic_material_pdf',
 
     comparableKey: normalizeComparableKey({
       partCode: line.partCode,
@@ -488,9 +752,6 @@ const normalizeVendorQuoteLines = (lines) => {
   }))
 }
 
-/**
- * Groups vendor rows because vendors may split the same item into multiple rows.
- */
 const groupVendorLinesForComparison = (receivedItems) => {
   const map = new Map()
 
@@ -504,12 +765,19 @@ const groupVendorLinesForComparison = (receivedItems) => {
         partCode: item.partCode,
         partCodeNormalized: item.partCodeNormalized,
 
+        vendorProductCode: item.vendorProductCode,
+        vendorProductCodeNormalized: item.vendorProductCodeNormalized,
+
         partColor: item.partColor,
         partColorNormalized: item.partColorNormalized,
 
         description: item.description,
 
         qty: 0,
+        pieceQty: 0,
+        totalLinearFeet: 0,
+        uom: item.uom,
+
         lengthFeet: item.lengthFeet || 0,
         weight: 0,
 
@@ -519,6 +787,7 @@ const groupVendorLinesForComparison = (receivedItems) => {
 
         pieceMarks: [],
         sourceLineCount: 0,
+        extractionFormat: item.extractionFormat,
 
         comparableKey: key,
       })
@@ -528,6 +797,15 @@ const groupVendorLinesForComparison = (receivedItems) => {
 
     group.vendorQuoteLineIds.push(item.vendorQuoteLineId)
     group.qty += Number(item.qty || 0)
+
+    if (item.pieceQty != null) {
+      group.pieceQty += Number(item.pieceQty || 0)
+    }
+
+    if (item.totalLinearFeet != null) {
+      group.totalLinearFeet += Number(item.totalLinearFeet || 0)
+    }
+
     group.weight += Number(item.weight || 0)
 
     if (item.amount != null) {
@@ -548,63 +826,172 @@ const groupVendorLinesForComparison = (receivedItems) => {
   return Array.from(map.values())
 }
 
+const markOverlap = (expected, received) => {
+  const expectedMarks = new Set(
+    (expected.markIds || [])
+      .map((mark) => normalizeKey(mark))
+      .filter(Boolean)
+  )
+
+  const receivedMarks = [
+    received.pieceMark,
+    ...(received.pieceMarks || []),
+  ]
+    .map((mark) => normalizeKey(mark))
+    .filter(Boolean)
+
+  if (!expectedMarks.size || !receivedMarks.length) return false
+
+  return receivedMarks.some((mark) => expectedMarks.has(mark))
+}
+
+const samePart = (expected, candidate) => {
+  if (!expected.partCodeNormalized) return false
+
+  return (
+    candidate.partCodeNormalized === expected.partCodeNormalized ||
+    candidate.vendorProductCodeNormalized === expected.partCodeNormalized
+  )
+}
+
+const findAmbiguousCandidates = (expected, candidates) => {
+  const byMark = candidates.filter((candidate) => markOverlap(expected, candidate))
+
+  if (byMark.length > 1) {
+    return byMark
+  }
+
+  const byPart = candidates.filter((candidate) => samePart(expected, candidate))
+
+  if (byPart.length > 1) {
+    return byPart
+  }
+
+  return []
+}
+
 const findBestVendorMatch = (expected, groupedVendorItems, usedVendorKeys) => {
   const candidates = groupedVendorItems.filter(
     (candidate) => !usedVendorKeys.has(candidate.comparableKey)
   )
 
-  // 1. Exact part + color + length
+  const ambiguous = findAmbiguousCandidates(expected, candidates)
+  if (ambiguous.length > 1) {
+    const clearMatch = ambiguous.find(
+      (candidate) =>
+        markOverlap(expected, candidate) &&
+        samePart(expected, candidate) &&
+        close(candidate.lengthFeet, expected.lengthFeet, 0.05)
+    )
+
+    if (!clearMatch) {
+      return {
+        ambiguous: true,
+        candidates: ambiguous.slice(0, 10),
+        matchMethod: 'none',
+        confidence: 0.4,
+      }
+    }
+  }
+
   let match = candidates.find(
     (candidate) =>
-      candidate.partCodeNormalized === expected.partCodeNormalized &&
+      markOverlap(expected, candidate) &&
+      samePart(expected, candidate) &&
+      close(candidate.lengthFeet, expected.lengthFeet, 0.05)
+  )
+
+  if (match) {
+    return {
+      match,
+      matchMethod: 'piece_mark',
+      confidence: 0.99,
+    }
+  }
+
+  match = candidates.find(
+    (candidate) =>
+      markOverlap(expected, candidate) &&
+      close(candidate.lengthFeet, expected.lengthFeet, 0.05)
+  )
+
+  if (match) {
+    return {
+      match,
+      matchMethod: 'piece_mark',
+      confidence: 0.95,
+    }
+  }
+
+  match = candidates.find(
+    (candidate) =>
+      markOverlap(expected, candidate) &&
+      samePart(expected, candidate)
+  )
+
+  if (match) {
+    return {
+      match,
+      matchMethod: 'piece_mark',
+      confidence: 0.9,
+    }
+  }
+
+  match = candidates.find(
+    (candidate) =>
+      samePart(expected, candidate) &&
       candidate.partColorNormalized === expected.partColorNormalized &&
-      close(candidate.lengthFeet, expected.lengthFeet, 0.02)
+      close(candidate.lengthFeet, expected.lengthFeet, 0.05)
   )
 
   if (match) {
     return {
       match,
       matchMethod: 'exact_part_color_length',
-      confidence: 0.98,
+      confidence: 0.92,
     }
   }
 
-  // 2. Part + length, color ignored
   match = candidates.find(
     (candidate) =>
-      candidate.partCodeNormalized === expected.partCodeNormalized &&
-      close(candidate.lengthFeet, expected.lengthFeet, 0.02)
+      samePart(expected, candidate) &&
+      close(candidate.lengthFeet, expected.lengthFeet, 0.05)
   )
 
   if (match) {
     return {
       match,
       matchMethod: 'part_length_grouped',
-      confidence: 0.9,
+      confidence: 0.85,
     }
   }
 
-  // 3. Part only
-  match = candidates.find(
-    (candidate) => candidate.partCodeNormalized === expected.partCodeNormalized
-  )
+  match = candidates.find((candidate) => samePart(expected, candidate))
 
   if (match) {
     return {
       match,
       matchMethod: 'part_only_grouped',
-      confidence: 0.75,
+      confidence: 0.6,
     }
   }
 
   return null
 }
 
+const getComparableReceivedQty = (received) => {
+  if (received.pieceQty != null && Number(received.pieceQty) > 0) {
+    return Number(received.pieceQty)
+  }
+
+  return Number(received.qty || 0)
+}
+
 const detectMismatches = (expected, received) => {
   const issues = []
 
   const expectedQty = Number(expected.qty || 0)
-  const receivedQty = Number(received.qty || 0)
+  const receivedQty = getComparableReceivedQty(received)
 
   if (Math.abs(expectedQty - receivedQty) > 0) {
     issues.push({
@@ -615,12 +1002,26 @@ const detectMismatches = (expected, received) => {
     })
   }
 
-  if (!close(expected.lengthFeet, received.lengthFeet, 0.02)) {
+  if (!close(expected.lengthFeet, received.lengthFeet, 0.05)) {
     issues.push({
       status: 'length_mismatch',
       issueType: 'length_mismatch',
       severity: 'high',
       reason: `Vendor length does not match expected length. Expected ${expected.lengthFeet}, received ${received.lengthFeet}.`,
+    })
+  }
+
+  if (
+    expected.qty &&
+    expected.lengthFeet &&
+    received.totalLinearFeet &&
+    Math.abs(Number(expected.qty) * Number(expected.lengthFeet) - Number(received.totalLinearFeet)) > 0.25
+  ) {
+    issues.push({
+      status: 'length_mismatch',
+      issueType: 'total_linear_feet_mismatch',
+      severity: 'medium',
+      reason: `Vendor total LF does not match expected Qty x Length. Expected ${(Number(expected.qty) * Number(expected.lengthFeet)).toFixed(4)}, received ${received.totalLinearFeet}.`,
     })
   }
 
@@ -645,8 +1046,8 @@ const detectMismatches = (expected, received) => {
     issues.push({
       status: 'price_mismatch',
       issueType: 'price_mismatch',
-      severity: 'medium',
-      reason: `Vendor unit price differs from internal expected cost. Expected ${expected.unitCost}, received ${received.unitPrice}.`,
+      severity: 'low',
+      reason: `Vendor/internal unit price differs. Expected internal cost ${expected.unitCost}, received vendor unit price ${received.unitPrice}.`,
     })
   }
 
@@ -661,7 +1062,8 @@ const buildResult = (
   request,
   reason,
   matchMethod = 'none',
-  confidence = null
+  confidence = null,
+  matchCandidates = []
 ) => ({
   shipperRequestId: request._id,
   leadId: request.leadId,
@@ -670,32 +1072,44 @@ const buildResult = (
 
   consolidatedItemId: expected?.consolidatedItemId || null,
 
-  // Primary vendor line reference. Full list remains inside received.vendorQuoteLineIds.
   vendorQuoteLineId:
     received?.vendorQuoteLineId ||
     received?.vendorQuoteLineIds?.[0] ||
     null,
+
+  vendorQuoteLineIds: received?.vendorQuoteLineIds || [],
 
   status,
   severity,
 
   expected: expected || null,
   received: received || null,
+  matchCandidates,
 
   difference: {
     qtyDiff:
       received && expected
-        ? Number(received.qty || 0) - Number(expected.qty || 0)
+        ? getComparableReceivedQty(received) - Number(expected.qty || 0)
         : null,
 
     lengthDiff:
       received && expected
-        ? Number(received.lengthFeet || 0) - Number(expected.lengthFeet || 0)
+        ? safeNum(received.lengthFeet) - safeNum(expected.lengthFeet)
+        : null,
+
+    totalLinearFeetDiff:
+      received &&
+      expected &&
+      received.totalLinearFeet != null &&
+      expected.qty != null &&
+      expected.lengthFeet != null
+        ? Number(received.totalLinearFeet) -
+          Number(expected.qty) * Number(expected.lengthFeet)
         : null,
 
     weightDiff:
       received && expected
-        ? Number(received.weight || 0) - Number(expected.weight || 0)
+        ? safeNum(received.weight) - safeNum(expected.weight)
         : null,
 
     unitPriceDiff:
@@ -737,25 +1151,23 @@ const buildSummary = (expectedItems, groupedVendorItems, results) => ({
 
   matchedLines: results.filter((r) => r.status === 'matched').length,
 
-  missingItems: results.filter((r) => r.status === 'missing_in_vendor_quote')
-    .length,
+  missingItems: results.filter((r) => r.status === 'missing_in_vendor_quote').length,
 
-  extraItems: results.filter((r) => r.status === 'extra_in_vendor_quote')
-    .length,
+  extraItems: results.filter((r) => r.status === 'extra_in_vendor_quote').length,
 
   qtyMismatches: results.filter((r) => r.status === 'qty_mismatch').length,
 
-  lengthMismatches: results.filter((r) => r.status === 'length_mismatch')
-    .length,
+  lengthMismatches: results.filter((r) => r.status === 'length_mismatch').length,
 
-  weightMismatches: results.filter((r) => r.status === 'weight_mismatch')
-    .length,
+  weightMismatches: results.filter((r) => r.status === 'weight_mismatch').length,
 
-  priceMismatches: results.filter((r) => r.status === 'price_mismatch')
-    .length,
+  priceMismatches: results.filter((r) => r.status === 'price_mismatch').length,
 
-  ambiguousMatches: results.filter((r) => r.status === 'ambiguous_match')
-    .length,
+  ambiguousMatches: results.filter((r) => r.status === 'ambiguous_match').length,
+
+  manualReviewRequired: results.filter((r) =>
+    ['ambiguous_match', 'missing_in_vendor_quote', 'extra_in_vendor_quote'].includes(r.status)
+  ).length,
 })
 
 const compareExpectedVsVendor = (expectedItems, receivedItems, request) => {
@@ -799,8 +1211,35 @@ const compareExpectedVsVendor = (expectedItems, receivedItems, request) => {
       continue
     }
 
-    const { match, matchMethod, confidence } = matchedResult
+    if (matchedResult.ambiguous) {
+      results.push(
+        buildResult(
+          'ambiguous_match',
+          'high',
+          expected,
+          null,
+          request,
+          'Multiple possible shipper matches found. Manual review required.',
+          'none',
+          matchedResult.confidence,
+          matchedResult.candidates
+        )
+      )
 
+      exceptions.push(
+        buildException(
+          'ambiguous',
+          'high',
+          expected,
+          { candidates: matchedResult.candidates },
+          'Multiple possible shipper matches found. Manual review required.'
+        )
+      )
+
+      continue
+    }
+
+    const { match, matchMethod, confidence } = matchedResult
     usedVendorKeys.add(match.comparableKey)
 
     const mismatches = detectMismatches(expected, match)
@@ -1029,10 +1468,12 @@ module.exports = {
   compareShipperRequest,
   processShipperComparisonJob,
 
-  // Useful for tests
   extractVendorQuoteLines,
   compareExpectedVsVendor,
   normalizeExpectedBomItems,
   normalizeVendorQuoteLines,
   groupVendorLinesForComparison,
+
+  detectPdfFormat,
+  parseMbsLengthToFeet,
 }

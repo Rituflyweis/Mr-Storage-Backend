@@ -4,19 +4,29 @@
   <meta charset="UTF-8" />
   <style>
     body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 0; background: #f5f5f5; }
-    .container { max-width: 600px; margin: 30px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .container { max-width: 640px; margin: 30px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
     .header { background: #1a2e4a; color: white; padding: 30px; }
     .header h1 { margin: 0 0 4px; font-size: 20px; }
-    .header p { margin: 0; font-size: 13px; opacity: 0.8; }
+    .header p { margin: 4px 0 0; font-size: 13px; opacity: 0.85; }
     .body { padding: 30px; }
-    .meta { display: flex; justify-content: space-between; margin-bottom: 24px; }
-    .meta div { font-size: 13px; color: #555; }
-    .meta div strong { display: block; color: #222; font-size: 15px; margin-bottom: 2px; }
+    .greeting { font-size: 15px; margin-bottom: 16px; }
+    .detail-table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; }
+    .detail-table tr td { padding: 9px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+    .detail-table tr td:first-child { color: #666; width: 42%; }
+    .detail-table tr td:last-child { font-weight: 600; color: #1a2e4a; text-align: right; }
+    .section-title { font-size: 14px; font-weight: 700; color: #1a2e4a; margin: 24px 0 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .line-items { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .line-items th { background: #f0f4f8; color: #1a2e4a; padding: 10px 8px; text-align: left; border-bottom: 2px solid #d8e2ec; font-size: 11px; text-transform: uppercase; }
+    .line-items th.num { text-align: right; }
+    .line-items th.qty { text-align: center; }
+    .totals-wrap { margin-top: 20px; border-top: 2px solid #1a2e4a; padding-top: 12px; }
+    .totals-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .totals-table td { padding: 7px 0; }
+    .totals-table td:last-child { text-align: right; font-weight: 600; }
+    .totals-table tr.grand td { font-size: 18px; font-weight: 700; color: #1a2e4a; padding-top: 12px; border-top: 1px solid #eee; }
     .total-box { background: #1a2e4a; color: white; border-radius: 6px; padding: 18px 20px; text-align: right; margin: 20px 0; }
-    .total-box .label { font-size: 12px; opacity: 0.7; }
+    .total-box .label { font-size: 12px; opacity: 0.75; }
     .total-box .amount { font-size: 26px; font-weight: 700; }
-    .info-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #eee; font-size: 13px; }
-    .info-row span:last-child { font-weight: 600; }
     .footer { background: #f8f8f8; padding: 18px 30px; font-size: 12px; color: #888; text-align: center; border-top: 1px solid #eee; }
   </style>
 </head>
@@ -24,23 +34,56 @@
   <div class="container">
     <div class="header">
       <h1>Invoice {{INVOICE_NUMBER}}</h1>
-      <p>Date: {{DATE}}</p>
+      <p>Invoice date: {{DATE}}</p>
+      <p>Due date: {{DUE_DATE}}</p>
     </div>
     <div class="body">
-      <p style="font-size:15px;margin-bottom:20px">Dear <strong>{{CUSTOMER_NAME}}</strong>,</p>
-      <p style="font-size:14px;color:#555">Please find your invoice details below.</p>
+      <p class="greeting">Dear <strong>{{CUSTOMER_NAME}}</strong>,</p>
+      <p style="font-size:14px;color:#555;line-height:1.5;margin-bottom:8px">
+        Please find your invoice details below. Payment is due per the terms listed.
+      </p>
 
       <div class="total-box">
-        <div class="label">Total Amount Due</div>
+        <div class="label">Total amount due</div>
         <div class="amount">{{TOTAL_AMOUNT}}</div>
       </div>
 
-      <div class="info-row"><span>Invoice Number</span><span>{{INVOICE_NUMBER}}</span></div>
-      <div class="info-row"><span>PO Number</span><span>{{PO_NUMBER}}</span></div>
-      <div class="info-row"><span>Payment Due</span><span>{{DAYS_TO_PAY}} days from invoice date</span></div>
+      <table class="detail-table">
+        <tr><td>Invoice number</td><td>{{INVOICE_NUMBER}}</td></tr>
+        <tr><td>PO number</td><td>{{PO_NUMBER}}</td></tr>
+        <tr><td>Invoice date</td><td>{{DATE}}</td></tr>
+        <tr><td>Due date</td><td>{{DUE_DATE}}</td></tr>
+        <tr><td>Payment terms</td><td>{{PAYMENT_TERMS}}</td></tr>
+        <tr><td>Days to pay</td><td>{{DAYS_TO_PAY}}</td></tr>
+      </table>
 
-      <p style="font-size:13px;color:#888;margin-top:24px">
-        Please make payment within the specified terms. Contact us if you have any questions.
+      <div class="section-title">Line items</div>
+      <table class="line-items">
+        <thead>
+          <tr>
+            <th style="width:28px">#</th>
+            <th>Description</th>
+            <th class="num">Rate</th>
+            <th class="num">Markup</th>
+            <th class="qty">Qty</th>
+            <th class="num">Tax</th>
+            <th class="num">Line total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{LINE_ITEMS}}
+        </tbody>
+      </table>
+
+      <div class="section-title">Summary</div>
+      <div class="totals-wrap">
+        <table class="totals-table">
+          {{TOTALS_ROWS}}
+        </table>
+      </div>
+
+      <p style="font-size:13px;color:#888;margin-top:24px;line-height:1.5">
+        Please remit payment by the due date above. Contact us if you have any questions about this invoice.
       </p>
     </div>
     <div class="footer">Please reply to this email for any invoice queries.</div>

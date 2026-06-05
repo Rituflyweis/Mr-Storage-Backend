@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer')
 const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM } = require('../../config/env')
+const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
 const path = require('path')
 const fs = require('fs')
 
@@ -24,6 +25,103 @@ const loadTemplate = (templateName) => {
 const fillTemplate = (template, values = {}) => {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] ?? '')
 }
+
+const escapeHtml = (str) => {
+  if (str == null) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+const formatInvoiceMoney = (value) => {
+  if (value == null || value === '' || Number.isNaN(Number(value))) return '—'
+  return Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const formatInvoiceDate = (value) => {
+  if (!value) return '—'
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '—' : d.toDateString()
+}
+
+const buildInvoiceLineItemsRows = (lineItems = []) => {
+  if (!lineItems.length) {
+    return '<tr><td colspan="7" style="text-align:center;color:#888;padding:16px">No line items on this invoice</td></tr>'
+  }
+
+  return lineItems
+    .map((li, index) => {
+      const description = (li.items || []).filter(Boolean).map(escapeHtml).join('<br/>') || '—'
+      const images = (li.images || []).filter(Boolean)
+      const imagesHtml = images.length
+        ? `<div style="margin-top:6px;font-size:11px">${images
+            .map(
+              (url, i) =>
+                `<a href="${escapeHtml(url)}" style="color:#1a2e4a" target="_blank" rel="noopener">Image ${i + 1}</a>`
+            )
+            .join(' · ')}</div>`
+        : ''
+
+      return `<tr>
+        <td style="padding:10px 6px;border-bottom:1px solid #eee;vertical-align:top;color:#666">${index + 1}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top">${description}${imagesHtml}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceMoney(li.rate)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceMoney(li.markup)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;vertical-align:top">${li.quantity ?? '—'}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceMoney(li.tax)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;vertical-align:top">${formatInvoiceMoney(li.total)}</td>
+      </tr>`
+    })
+    .join('')
+}
+
+const buildInvoiceTotalsRows = (invoice) => {
+  const rows = [
+    ['Subtotal', invoice.subtotal],
+    ['Markup total', invoice.markupTotal],
+    ['Discount', invoice.discount],
+    ['Deposit', invoice.depositAmount],
+    ['Total due', invoice.totalAmount],
+  ]
+
+  return rows
+    .map(([label, amount], i) => {
+      const isGrand = i === rows.length - 1
+      const rowClass = isGrand ? ' class="grand"' : ''
+      const labelStyle = isGrand
+        ? 'text-align:right;color:#1a2e4a;font-weight:700;padding:10px 8px 6px'
+        : 'text-align:right;color:#666;padding:6px 8px'
+      const valueStyle = isGrand
+        ? 'text-align:right;font-weight:700;font-size:18px;color:#1a2e4a;width:120px;padding:10px 8px 6px'
+        : 'text-align:right;font-weight:600;width:120px;padding:6px 8px'
+      const displayAmount =
+        label === 'Discount' && amount != null && Number(amount) !== 0
+          ? `−${formatInvoiceMoney(amount)}`
+          : formatInvoiceMoney(amount)
+      return `<tr${rowClass}>
+          <td style="${labelStyle}">${label}</td>
+          <td style="${valueStyle}">${displayAmount}</td>
+        </tr>`
+    })
+    .join('')
+}
+
+const buildInvoicePaymentTerms = (invoice) => {
+  if (invoice.daysToPay != null && invoice.daysToPay !== '') {
+    return `${invoice.daysToPay} days from invoice date`
+  }
+  if (invoice.dueDate) {
+    return `Payment due by ${formatInvoiceDate(invoice.dueDate)}`
+  }
+  return 'As agreed'
+}
+
+const resolveInvoiceDueDate = (invoice) =>
+  invoice.dueDate || computeInvoiceDueDate(invoice.date, invoice.daysToPay)
+
+const buildInvoiceDueDate = (invoice) => formatInvoiceDate(resolveInvoiceDueDate(invoice))
 
 const sendQuotation = async ({ toEmail, customerName, quotation }) => {
   const template = loadTemplate('quotation')
@@ -62,20 +160,29 @@ const sendQuotation = async ({ toEmail, customerName, quotation }) => {
 }
 
 const sendInvoice = async ({ toEmail, customerName, invoice }) => {
+  const inv = invoice?.toObject ? invoice.toObject() : invoice
   const template = loadTemplate('invoice')
   const html = fillTemplate(template, {
-    CUSTOMER_NAME: customerName,
-    INVOICE_NUMBER: invoice.invoiceNumber,
-    DATE: new Date(invoice.date).toDateString(),
-    TOTAL_AMOUNT: invoice.totalAmount?.toLocaleString() || '',
-    DAYS_TO_PAY: invoice.daysToPay || '',
-    PO_NUMBER: invoice.poNumber || '',
+    CUSTOMER_NAME: escapeHtml(customerName),
+    INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || '—'),
+    DATE: formatInvoiceDate(inv.date),
+    DUE_DATE: buildInvoiceDueDate(inv),
+    PAYMENT_TERMS: buildInvoicePaymentTerms(inv),
+    DAYS_TO_PAY: inv.daysToPay != null && inv.daysToPay !== '' ? String(inv.daysToPay) : '—',
+    PO_NUMBER: escapeHtml(inv.poNumber || '—'),
+    SUBTOTAL: formatInvoiceMoney(inv.subtotal),
+    MARKUP_TOTAL: formatInvoiceMoney(inv.markupTotal),
+    DISCOUNT: formatInvoiceMoney(inv.discount),
+    DEPOSIT_AMOUNT: formatInvoiceMoney(inv.depositAmount),
+    TOTAL_AMOUNT: formatInvoiceMoney(inv.totalAmount),
+    LINE_ITEMS: buildInvoiceLineItemsRows(inv.lineItems),
+    TOTALS_ROWS: buildInvoiceTotalsRows(inv),
   })
 
   await transporter.sendMail({
     from: MAIL_FROM,
     to: toEmail,
-    subject: `Invoice ${invoice.invoiceNumber}`,
+    subject: `Invoice ${inv.invoiceNumber || ''}`,
     html,
   })
 }
