@@ -216,10 +216,6 @@ const buildBundleKey = (line) => {
   const part = normalizeText(line.partCode || line.vendorProductCode || 'NO_PART')
   const lengthBucket = getLengthBucket(line.lengthFeet)
 
-  /**
-   * Fasteners/accessories can be grouped more loosely.
-   * Framing/panels/trim should include part grouping to avoid bad mixed bundles.
-   */
   if (['fasteners', 'accessories'].includes(type)) {
     return `${type}|${color}`
   }
@@ -289,7 +285,9 @@ const getBundleWarnings = (bundle) => {
   }
 
   if ((bundle.totalWeight || 0) <= 0) {
-    warnings.push('Bundle has no valid weight. Truck/load plan is not trustworthy until weight is reviewed.')
+    warnings.push(
+      'Bundle has no valid weight. Truck/load plan is not trustworthy until weight is reviewed.'
+    )
   }
 
   if (bundle.maxLengthFeet > 53) {
@@ -436,10 +434,6 @@ const selectTruckTypeForBundle = (bundle) => {
   const weight = Number(bundle.totalWeight || 0)
   const length = Number(bundle.maxLengthFeet || 0)
 
-  /**
-   * If weight is zero/missing, do not pretend a truck can be selected accurately.
-   * We still allow the packing list generation, but it must carry warnings.
-   */
   if (weight <= 0) {
     if (length <= 40) return TRUCK_TYPES.HOTSHOT_40
     if (length <= 53) return TRUCK_TYPES.SEMI_53
@@ -454,6 +448,7 @@ const selectTruckTypeForBundle = (bundle) => {
 
 const canFitBundleInPackingList = (packingList, bundle) => {
   const newWeight = packingList.totalWeight + Number(bundle.totalWeight || 0)
+
   const newLength = Math.max(
     packingList.maxLengthFeet || 0,
     bundle.maxLengthFeet || 0
@@ -502,6 +497,7 @@ const addBundleToPackingList = (packingList, bundle) => {
   packingList.totalBundles += 1
   packingList.totalItems += bundle.items?.length || 0
   packingList.totalWeight += Number(bundle.totalWeight || 0)
+
   packingList.maxLengthFeet = Math.max(
     packingList.maxLengthFeet || 0,
     bundle.maxLengthFeet || 0
@@ -539,7 +535,6 @@ const assignPackingListLayers = (bundles) => {
 
 const getPackingListWarnings = (packingList) => {
   const warnings = []
-
   const bundles = packingList.bundles || []
 
   const missingWeightBundles = bundles.filter((bundle) => {
@@ -558,7 +553,9 @@ const getPackingListWarnings = (packingList) => {
   }
 
   if (packingList.totalWeight <= 0) {
-    warnings.push('Packing list has no valid total weight. Truck selection must be manually reviewed.')
+    warnings.push(
+      'Packing list has no valid total weight. Truck selection must be manually reviewed.'
+    )
   }
 
   if (packingList.totalWeight > packingList.maxTruckWeight) {
@@ -677,14 +674,33 @@ const recalculateBundleMetrics = (bundle) => {
 
 const aggregateBundlePlanSummary = (bundles = []) => {
   const totalBundles = bundles.length
-  const totalWeight = bundles.reduce((sum, bundle) => sum + Number(bundle.totalWeight || 0), 0)
+
+  const totalWeight = bundles.reduce(
+    (sum, bundle) => sum + Number(bundle.totalWeight || 0),
+    0
+  )
+
   const maxLengthFeet = bundles.reduce(
     (max, bundle) => Math.max(max, Number(bundle.maxLengthFeet || 0)),
     0
   )
-  const warnings = [...new Set(bundles.flatMap((bundle) => bundle.warnings || []))]
 
-  return { totalBundles, totalWeight, maxLengthFeet, warnings }
+  const warnings = [
+    ...new Set(bundles.flatMap((bundle) => bundle.warnings || [])),
+  ]
+
+  if (totalWeight <= 0 && totalBundles > 0) {
+    warnings.push(
+      'Bundle plan has no valid total weight. Truck/load planning must be manually reviewed.'
+    )
+  }
+
+  return {
+    totalBundles,
+    totalWeight,
+    maxLengthFeet,
+    warnings: [...new Set(warnings)],
+  }
 }
 
 module.exports = {
@@ -696,6 +712,7 @@ module.exports = {
 
   assignLoadSequence,
   assignPackingListLayers,
+
   recalculateBundleMetrics,
   aggregateBundlePlanSummary,
 

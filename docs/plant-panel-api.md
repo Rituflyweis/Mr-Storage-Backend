@@ -4,7 +4,7 @@ Frontend integration guide for the **Plant Panel** (`role: "plant"`).
 
 > **Maintenance:** Add or update a section here whenever a plant panel endpoint is implemented or changed. Only document **completed** endpoints — no placeholders for work in progress.
 >
-> **Last updated:** 2026-06-05 — Shipper comparison (async jobs), bundle plan generate, full socket events, integration flow.
+> **Last updated:** 2026-06-05 — BOM/consolidated flow refresh, shipper comparison + resubmit loop, bundle plan + packing list plan APIs, full socket events.
 
 ---
 
@@ -208,7 +208,7 @@ Ordered pipeline after admin assigns PO to plant:
 
 `sent` | `submitted` | `comparison_processing` | `comparison_completed` | `comparison_failed` | `approved` | `rejected` | `resubmit_requested`
 
-Vendor public upload link is active when status is `sent` or `resubmit_requested`.
+Vendor public upload link is active when status is `sent`, `resubmit_requested`, or `submitted`.
 
 ### `shipperRequest.comparisonStatus`
 
@@ -273,6 +273,20 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21L | GET | `/api/plant/shipper-requests/:requestId/comparison-summary` | Summary + `canProceedToApproval` decision |
 | 21M | GET | `/api/plant/shipper-requests/:requestId/comparison-results` | Paginated row-level comparison results |
 | 21N | POST | `/api/plant/shipper-requests/:requestId/bundle-plan/generate` | Generate bundle plan from approved vendor lines |
+| 21O | GET | `/api/plant/projects/:leadId/bundle-plan` | Get latest non-cancelled bundle plan for project |
+| 21P | GET | `/api/plant/bundle-plans/:bundlePlanId` | Bundle plan detail with bundle summaries |
+| 21Q | PUT | `/api/plant/bundle-plans/:bundlePlanId` | Update bundle plan notes |
+| 21R | GET | `/api/plant/bundle-plans/:bundlePlanId/coverage` | Vendor-line assignment coverage for confirm gate |
+| 21S | POST | `/api/plant/bundle-plans/:bundlePlanId/confirm` | Confirm bundle plan after exact coverage |
+| 21T | POST | `/api/plant/bundle-plans/:bundlePlanId/bundles` | Create manual/empty bundle |
+| 21U | GET | `/api/plant/bundles/:bundleId` | Bundle detail + items |
+| 21V | PUT | `/api/plant/bundles/:bundleId` | Edit bundle items/stacking/metadata |
+| 21W | DELETE | `/api/plant/bundles/:bundleId` | Delete editable unassigned bundle |
+| 21X | POST | `/api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate` | Generate packing list / truck load plan |
+| 21Y | GET | `/api/plant/packing-list-plans/:packingListPlanId` | Packing list plan detail + truck rows |
+| 21Z | POST | `/api/plant/packing-list-plans/:packingListPlanId/confirm` | Confirm packing list plan |
+| 21ZA | GET | `/api/plant/packing-lists/:packingListId` | Single truck-wise packing list detail |
+| 21ZB | PUT | `/api/plant/packing-lists/:packingListId` | Edit truck assignment/layout/details |
 | 22 | GET | `/api/plant/vendors` | List vendors / shippers |
 | 23 | POST | `/api/plant/vendors` | Add vendor / shipper |
 | 24 | GET | `/api/plant/vendors/:vendorId` | Vendor detail + stats + order history |
@@ -1146,12 +1160,13 @@ None.
     "status": "draft",
     "fileUrl": "https://bucket.s3.region.amazonaws.com/consolidated/.../uuid.xlsx",
     "totalCost": 87450.25,
-    "itemCount": 48
+    "itemCount": 48,
+    "lineItemCount": 320
   }
 }
 ```
 
-`itemCount` = grouped part lines (by partCode + partColor), not raw BOM row count.
+`itemCount` = grouped part lines (by partCode + partColor), `lineItemCount` = raw priced BOM rows used in consolidation.
 
 ### Errors
 
@@ -1799,7 +1814,7 @@ Request corrected quote from a vendor using the same public upload token/link.
 - Saves `manualReviewNote` with provided note.
 - Sends vendor email with note and same upload link (`token` unchanged).
 - Logs audit event `shipper.resubmit_requested`.
-- Public vendor upload remains valid for status `resubmit_requested`.
+- Public vendor upload remains valid for statuses `sent`, `resubmit_requested`, and `submitted`.
 
 ---
 
@@ -2008,6 +2023,408 @@ None.
 | 400 | Request not approved, no vendor lines, no bundles generated, confirmed plan exists, or packing list plan blocks regen |
 | 403 | Plant user not assigned to project PO |
 | 404 | Shipper request not found |
+
+---
+
+## 21O. `GET /api/plant/projects/:leadId/bundle-plan`
+
+Get latest non-cancelled bundle plan for project with bundle summary rows.
+
+### Response `data`
+
+```json
+{
+  "bundlePlan": {
+    "_id": "...",
+    "leadId": "...",
+    "shipperRequestId": "...",
+    "vendorId": "...",
+    "planNumber": "BP-0001",
+    "status": "generated",
+    "totalSourceItems": 47,
+    "totalBundles": 12,
+    "totalWeight": 38400,
+    "maxLengthFeet": 48,
+    "warnings": [],
+    "notes": "",
+    "generatedBy": "...",
+    "confirmedBy": null,
+    "confirmedAt": null,
+    "createdAt": "...",
+    "updatedAt": "..."
+  },
+  "bundles": [
+    {
+      "_id": "...",
+      "bundleNo": "B-001",
+      "bundleType": "framing",
+      "title": "FRAMING Bundle",
+      "totalQty": 18,
+      "totalWeight": 6200,
+      "maxLengthFeet": 48,
+      "itemCount": 6,
+      "warnings": [],
+      "stacking": { "stackLevel": "bottom", "loadingPriority": 10, "unloadingPriority": 50 },
+      "loadSequence": 1,
+      "status": "draft"
+    }
+  ],
+  "summary": {
+    "totalBundles": 12,
+    "totalWeight": 38400,
+    "maxLengthFeet": 48,
+    "warnings": []
+  }
+}
+```
+
+---
+
+## 21P. `GET /api/plant/bundle-plans/:bundlePlanId`
+
+Bundle plan detail by id (same structure as §21O, id-driven).
+
+---
+
+## 21Q. `PUT /api/plant/bundle-plans/:bundlePlanId`
+
+Update bundle plan metadata.
+
+### Request body
+
+```json
+{ "notes": "Checked by plant manager." }
+```
+
+### Response `data`
+
+```json
+{
+  "bundlePlan": {
+    "_id": "...",
+    "notes": "Checked by plant manager.",
+    "updatedAt": "..."
+  }
+}
+```
+
+---
+
+## 21R. `GET /api/plant/bundle-plans/:bundlePlanId/coverage`
+
+Coverage validation before confirm. Compares vendor line qty vs assigned qty across all bundles.
+
+### Response `data`
+
+```json
+{
+  "rows": [
+    {
+      "vendorQuoteLineId": "...",
+      "partCode": "PC16-RO-8X3.5",
+      "description": "16Ga CEE Purlin Red Oxide",
+      "expectedQty": 28,
+      "assignedQty": 24,
+      "diff": -4,
+      "status": "unassigned"
+    }
+  ],
+  "summary": {
+    "totalVendorLines": 47,
+    "exactCount": 45,
+    "unassignedCount": 1,
+    "overAssignedCount": 1,
+    "canConfirm": false
+  }
+}
+```
+
+`status` in rows: `exact | unassigned | over_assigned`
+
+---
+
+## 21S. `POST /api/plant/bundle-plans/:bundlePlanId/confirm`
+
+Confirm bundle plan only when every vendor line has exact assignment.
+
+### Success response `data`
+
+```json
+{
+  "bundlePlanId": "...",
+  "status": "confirmed",
+  "confirmedAt": "...",
+  "summary": {
+    "totalVendorLines": 47,
+    "exactCount": 47,
+    "unassignedCount": 0,
+    "overAssignedCount": 0,
+    "canConfirm": true
+  }
+}
+```
+
+### Validation failure
+
+`400` with coverage summary when assignments are incomplete.
+
+---
+
+## 21T. `POST /api/plant/bundle-plans/:bundlePlanId/bundles`
+
+Create manual/empty bundle (for manual regrouping).
+
+### Request body
+
+```json
+{
+  "bundleType": "custom",
+  "title": "Manual split bundle",
+  "notes": "Created for on-site sequence."
+}
+```
+
+### Response `data`
+
+```json
+{
+  "bundle": { "_id": "...", "bundleNo": "B-013", "bundleType": "custom", "title": "Manual split bundle" },
+  "bundlePlanSummary": { "totalBundles": 13, "totalWeight": 38400, "maxLengthFeet": 48, "warnings": [] }
+}
+```
+
+---
+
+## 21U. `GET /api/plant/bundles/:bundleId`
+
+Full bundle with all item rows.
+
+### Response `data`
+
+```json
+{
+  "bundle": {
+    "_id": "...",
+    "bundlePlanId": "...",
+    "bundleNo": "B-001",
+    "bundleType": "framing",
+    "title": "FRAMING Bundle",
+    "totalQty": 18,
+    "totalWeight": 6200,
+    "maxLengthFeet": 48,
+    "stacking": { "stackLevel": "bottom", "loadingPriority": 10 },
+    "loadSequence": 1,
+    "handlingInstruction": "",
+    "warnings": [],
+    "notes": ""
+  },
+  "items": [
+    {
+      "_id": "...",
+      "vendorQuoteLineId": "...",
+      "partCode": "PC16-RO",
+      "description": "16Ga CEE",
+      "qty": 4,
+      "lengthFeet": 6.97,
+      "weight": 89,
+      "markIds": ["S6-1"],
+      "sourceLineSnapshot": { "...": "..." }
+    }
+  ]
+}
+```
+
+---
+
+## 21V. `PUT /api/plant/bundles/:bundleId`
+
+Edit bundle content and metadata.
+
+### Editable fields
+
+`items`, `bundleType`, `title`, `stacking`, `loadSequence`, `handlingInstruction`, `notes`
+
+### Important behavior
+
+- Recalculates bundle totals (`totalQty`, `totalWeight`, `maxLengthFeet`) and warnings.
+- Recalculates bundle-plan summary (`totalBundles`, `totalWeight`, `maxLengthFeet`, `warnings`).
+- Blocks edit when:
+  - bundle plan already confirmed, or
+  - non-cancelled packing-list plan exists.
+
+### Response `data`
+
+```json
+{
+  "bundle": { "_id": "...", "bundleNo": "B-001", "totalQty": 20, "totalWeight": 6400, "warnings": [] },
+  "items": [{ "_id": "...", "vendorQuoteLineId": "...", "qty": 8 }],
+  "bundlePlanSummary": { "totalBundles": 12, "totalWeight": 38600, "maxLengthFeet": 48, "warnings": [] }
+}
+```
+
+---
+
+## 21W. `DELETE /api/plant/bundles/:bundleId`
+
+Delete a bundle (only if editable and not assigned to packing list).
+
+### Response `data`
+
+```json
+{
+  "deletedBundleId": "...",
+  "bundlePlanSummary": { "totalBundles": 11, "totalWeight": 32200, "maxLengthFeet": 48, "warnings": [] }
+}
+```
+
+---
+
+## 21X. `POST /api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate`
+
+Generate truck-wise packing list plan from confirmed bundles.
+
+### Preconditions
+
+- `BundlePlan.status = confirmed`
+- confirmed bundle rows exist
+- no confirmed packing-list plan already exists
+
+### Response `data` (201 on first generate, 200 on regenerate)
+
+```json
+{
+  "packingListPlan": {
+    "_id": "...",
+    "planNumber": "PLP-0001",
+    "status": "generated",
+    "totalPackingLists": 2,
+    "totalBundles": 18,
+    "totalWeight": 62400,
+    "maxLengthFeet": 51,
+    "truckSummary": { "semi53Count": 1, "hotshot40Count": 1, "totalTrucks": 2 },
+    "missingWeightBundleCount": 1,
+    "hasWeightWarning": true,
+    "warnings": ["1 bundle(s) have missing/zero weight. Truck assignment and total load weight must be manually reviewed."]
+  },
+  "packingLists": [
+    {
+      "_id": "...",
+      "packingListNo": "PL-001",
+      "truckNo": "TRUCK-1",
+      "truckType": "SEMI_53",
+      "truckLabel": "53 ft Semi",
+      "maxTruckWeight": 45000,
+      "hardMaxTruckWeight": 48000,
+      "maxTruckLengthFeet": 53,
+      "totalWeight": 44200,
+      "maxLengthFeet": 51,
+      "totalBundles": 12,
+      "totalItems": 68,
+      "bundleIds": ["..."],
+      "loadLayout": { "bottomLayerBundleIds": [], "middleLayerBundleIds": [], "topLayerBundleIds": [], "loadingNotes": "" },
+      "hasWeightWarning": false,
+      "warnings": [],
+      "status": "draft"
+    }
+  ],
+  "truckConfig": {
+    "SEMI_53": { "truckType": "SEMI_53", "label": "53 ft Semi", "maxWeight": 45000, "hardMaxWeight": 48000, "maxLengthFeet": 53 },
+    "HOTSHOT_40": { "truckType": "HOTSHOT_40", "label": "40 ft Hot Shot", "maxWeight": 18000, "hardMaxWeight": 18000, "maxLengthFeet": 40 }
+  }
+}
+```
+
+---
+
+## 21Y. `GET /api/plant/packing-list-plans/:packingListPlanId`
+
+Get generated packing-list plan + truck rows.
+
+### Response `data`
+
+```json
+{
+  "packingListPlan": { "_id": "...", "status": "generated", "totalPackingLists": 2, "totalBundles": 18, "totalWeight": 62400 },
+  "packingLists": [{ "_id": "...", "packingListNo": "PL-001", "truckType": "SEMI_53", "totalWeight": 44200 }],
+  "summary": {
+    "totalWeight": 62400,
+    "totalBundles": 18,
+    "totalPackingLists": 2,
+    "truckSummary": { "semi53Count": 1, "hotshot40Count": 1, "totalTrucks": 2 },
+    "warnings": []
+  }
+}
+```
+
+---
+
+## 21Z. `POST /api/plant/packing-list-plans/:packingListPlanId/confirm`
+
+Confirm packing-list plan with assignment and hard-limit validations.
+
+### Validation before confirm
+
+- each bundle in bundle plan assigned exactly once across packing lists
+- each packing list has valid `truckType`
+- no row exceeds hard weight/length limits
+
+### Response `data`
+
+```json
+{
+  "packingListPlanId": "...",
+  "status": "confirmed",
+  "confirmedAt": "...",
+  "summary": {
+    "totalWeight": 62400,
+    "totalBundles": 18,
+    "truckSummary": { "semi53Count": 1, "hotshot40Count": 1, "totalTrucks": 2 }
+  }
+}
+```
+
+---
+
+## 21ZA. `GET /api/plant/packing-lists/:packingListId`
+
+Get one truck-wise packing list with bundles and load layout.
+
+### Response `data`
+
+```json
+{
+  "packingList": { "_id": "...", "packingListNo": "PL-001", "truckType": "SEMI_53", "bundleIds": ["..."], "warnings": [] },
+  "truckInfo": {
+    "truckType": "SEMI_53",
+    "truckLabel": "53 ft Semi",
+    "totalWeight": 44200,
+    "maxTruckWeight": 45000,
+    "hardMaxTruckWeight": 48000,
+    "maxTruckLengthFeet": 53
+  },
+  "bundles": [{ "_id": "...", "bundleNo": "B-001", "totalWeight": 6200 }],
+  "loadLayout": { "bottomLayerBundleIds": [], "middleLayerBundleIds": [], "topLayerBundleIds": [], "loadingNotes": "" },
+  "planStatus": "generated"
+}
+```
+
+---
+
+## 21ZB. `PUT /api/plant/packing-lists/:packingListId`
+
+Edit truck-level assignment and layout.
+
+### Editable fields
+
+`truckType`, `bundleIds`, `loadLayout`, `loadingNotes`, `overrideReason`, `notes`
+
+### Important behavior
+
+- Recalculates row totals + warnings.
+- Updates `Bundle.packingListId` assignments.
+- Removes moved bundles from sibling packing lists.
+- Recalculates parent packing-list-plan summary.
+- Blocks edit if packing-list-plan already confirmed.
 
 ---
 
@@ -2772,7 +3189,7 @@ Soft-deactivate — **never** hard-deletes SMDT data.
 
 Plant listens for `shipper_file_submitted` / `all_shipper_files_submitted` on `/admin` socket.
 
-### Flow C — Shipper comparison → approve → bundle plan
+### Flow C — Shipper comparison → approve/resubmit → bundle + packing plan
 
 ```text
 1. GET  /api/plant/shipper-files/projects
@@ -2786,6 +3203,14 @@ Plant listens for `shipper_file_submitted` / `all_shipper_files_submitted` on `/
 7b. If mismatches   → POST /api/plant/shipper-requests/:requestId/request-resubmit  { note }
     (vendor re-uploads via same token; then repeat from step 3)
 8. POST /api/plant/shipper-requests/:requestId/bundle-plan/generate
+9. GET  /api/plant/projects/:leadId/bundle-plan
+10. GET /api/plant/bundle-plans/:bundlePlanId/coverage
+11. PUT /api/plant/bundles/:bundleId        (repeat as needed for manual regrouping)
+12. POST /api/plant/bundle-plans/:bundlePlanId/confirm
+13. POST /api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate
+14. GET /api/plant/packing-list-plans/:packingListPlanId
+15. PUT /api/plant/packing-lists/:packingListId        (optional manual truck adjustment)
+16. POST /api/plant/packing-list-plans/:packingListPlanId/confirm
 ```
 
 `canProceedToApproval` from step 5 gates the approve button. Blockers: `comparison_not_run`, `missing_items`, `qty_mismatch`, `length_mismatch`, `weight_mismatch`, `ambiguous_match`.
@@ -2799,14 +3224,8 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Prefix | Planned use |
 |--------|-------------|
 | `/api/plant/dashboard` | Plant dashboard KPIs |
-| `/api/plant/bundle-plans` | GET plan detail, confirm plan |
-| `/api/plant/bundles` | GET single bundle |
-| `/api/plant/packing-list-plans` | Generate truck load plan from bundles |
-| `/api/plant/packing-lists` | Packing list detail |
 | `/api/plant/deliveries` | Delivery CRUD |
 | `/api/plant/freight-bids` | Carrier bidding |
-
-`loadPlanning.service.generateMixedTruckPackingLists` exists in code; API wiring is pending.
 
 ---
 
@@ -2845,6 +3264,17 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Approve vendor | `POST .../approve` |
 | Request resubmit | `POST .../request-resubmit` `{ note }` |
 | Generate bundle plan | `POST .../bundle-plan/generate` |
+| Bundle plan by project | `GET /api/plant/projects/:leadId/bundle-plan` |
+| Bundle plan by id | `GET /api/plant/bundle-plans/:bundlePlanId` |
+| Bundle plan notes | `PUT /api/plant/bundle-plans/:bundlePlanId` |
+| Bundle coverage check | `GET /api/plant/bundle-plans/:bundlePlanId/coverage` |
+| Confirm bundle plan | `POST /api/plant/bundle-plans/:bundlePlanId/confirm` |
+| Add manual bundle | `POST /api/plant/bundle-plans/:bundlePlanId/bundles` |
+| Bundle detail/edit/delete | `GET/PUT/DELETE /api/plant/bundles/:bundleId` |
+| Generate packing list plan | `POST /api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate` |
+| Packing list plan detail | `GET /api/plant/packing-list-plans/:packingListPlanId` |
+| Confirm packing list plan | `POST /api/plant/packing-list-plans/:packingListPlanId/confirm` |
+| Single packing list detail/edit | `GET/PUT /api/plant/packing-lists/:packingListId` |
 | Vendor public upload page | `GET /api/public/vendor-upload/:token` |
 | Vendor S3 presign | `POST /api/public/vendor-upload/:token/presigned-url` |
 | Vendor submit quote | `POST /api/public/vendor-upload/:token` |
@@ -2869,4 +3299,4 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 
 ---
 
-*Document covers 37 plant/SMDT/public-vendor endpoints + 7 socket events. Load-planning APIs beyond bundle-plan generate are not wired yet.*
+*Document now includes the updated BOM → consolidated BOM → vendor upload → compare/resubmit/approve → bundle plan → packing-list plan flow used by current code.*

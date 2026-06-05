@@ -17,22 +17,45 @@ const countForTruckType = (packingLists, type) =>
 
 const buildPackingListPlanSummary = (packingLists = []) => {
   const totalPackingLists = packingLists.length
-  const totalBundles = packingLists.reduce((sum, row) => sum + Number(row.totalBundles || 0), 0)
-  const totalWeight = packingLists.reduce((sum, row) => sum + Number(row.totalWeight || 0), 0)
-  const maxLengthFeet = packingLists.reduce((max, row) => Math.max(max, Number(row.maxLengthFeet || 0)), 0)
-  const warnings = [...new Set(packingLists.flatMap((row) => row.warnings || []))]
+
+  const totalBundles = packingLists.reduce(
+    (sum, row) => sum + Number(row.totalBundles || 0),
+    0
+  )
+
+  const totalWeight = packingLists.reduce(
+    (sum, row) => sum + Number(row.totalWeight || 0),
+    0
+  )
+
+  const maxLengthFeet = packingLists.reduce(
+    (max, row) => Math.max(max, Number(row.maxLengthFeet || 0)),
+    0
+  )
+
+  const warnings = [
+    ...new Set(packingLists.flatMap((row) => row.warnings || [])),
+  ]
+
+  if (totalWeight <= 0 && totalPackingLists > 0) {
+    warnings.push(
+      'Total packing list weight is zero/missing. Truck plan must be manually reviewed.'
+    )
+  }
 
   return {
     totalPackingLists,
     totalBundles,
     totalWeight,
     maxLengthFeet,
+
     truckSummary: {
       semi53Count: countForTruckType(packingLists, 'SEMI_53'),
       hotshot40Count: countForTruckType(packingLists, 'HOTSHOT_40'),
       totalTrucks: totalPackingLists,
     },
-    warnings,
+
+    warnings: [...new Set(warnings)],
   }
 }
 
@@ -301,75 +324,145 @@ exports.confirmBundlePlan = asyncHandler(async (req, res) => {
 })
 
 exports.generatePackingListPlan = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req.user._id)
+  const { bundlePlanId } = req.params
+
+  const loaded = await loadBundlePlanWithAccess(bundlePlanId, req.user._id)
+
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
   }
 
-  const bundlePlan = await BundlePlan.findById(req.params.bundlePlanId)
-  if (!bundlePlan) return notFound(res, 'Bundle plan not found')
-  if (bundlePlan.status !== 'confirmed') {
-    return badRequest(res, 'Bundle plan must be confirmed before generating packing list plan')
+  const bundlePlan = await BundlePlan.findById(bundlePlanId).lean()
+
+  if (!bundlePlan) {
+    return notFound(res, 'Bundle plan not found')
   }
 
-  const existingPlan = await PackingListPlan.findOne({ bundlePlanId: bundlePlan._id }).lean()
-  if (existingPlan?.status === 'confirmed') {
-    return badRequest(res, 'Confirmed packing list plan already exists for this bundle plan')
+  if (bundlePlan.status !== 'confirmed') {
+    return badRequest(
+      res,
+      'Bundle plan must be confirmed before generating packing list plan'
+    )
   }
+
+  const existingPlan = await PackingListPlan.findOne({
+    bundlePlanId: bundlePlan._id,
+  }).lean()
+
+  if (existingPlan?.status === 'confirmed') {
+    return badRequest(
+      res,
+      'Confirmed packing list plan already exists for this bundle plan'
+    )
+  }
+
+  /**
+   * Future safety:
+   * When Delivery/Freight bidding module is added, block regeneration if delivery exists.
+   */
 
   const bundles = await Bundle.find({
     bundlePlanId: bundlePlan._id,
     status: 'confirmed',
-  }).lean()
+  })
+    .sort({
+      loadSequence: 1,
+      totalWeight: -1,
+      maxLengthFeet: -1,
+      createdAt: 1,
+    })
+    .lean()
 
   if (!bundles.length) {
     return badRequest(res, 'No confirmed bundles found for this bundle plan')
   }
 
+  const bundlesWithMissingWeight = bundles.filter((bundle) => {
+    const totalWeight = Number(bundle.totalWeight || 0)
+
+    return (
+      totalWeight <= 0 ||
+      (bundle.warnings || []).some((warning) => {
+        const text = String(warning || '').toLowerCase()
+
+        return (
+          text.includes('missing/zero weight') ||
+          text.includes('no valid weight') ||
+          text.includes('weight and truck plan may be inaccurate') ||
+          text.includes('truck/load plan is not trustworthy')
+        )
+      })
+    )
+  })
+
   const generated = generateMixedTruckPackingLists(bundles)
+
   if (!generated.length) {
     return badRequest(res, 'No packing lists could be generated from bundles')
   }
 
   const summary = buildPackingListPlanSummary(generated)
-  const planNumber = existingPlan?.planNumber || await getNextPackingListPlanNumber()
+
+  if (bundlesWithMissingWeight.length > 0) {
+    summary.warnings = [
+      ...new Set([
+        ...(summary.warnings || []),
+        `${bundlesWithMissingWeight.length} bundle(s) have missing/zero weight. Truck assignment and total load weight must be manually reviewed.`,
+      ]),
+    ]
+  }
+
+  const planNumber =
+    existingPlan?.planNumber || await getNextPackingListPlanNumber()
 
   let packingListPlan
+  const wasRegenerated = Boolean(existingPlan)
+
   if (existingPlan) {
     packingListPlan = await PackingListPlan.findByIdAndUpdate(
       existingPlan._id,
       {
         status: 'generated',
         planNumber,
+
         totalPackingLists: summary.totalPackingLists,
         totalBundles: summary.totalBundles,
         totalWeight: summary.totalWeight,
         maxLengthFeet: summary.maxLengthFeet,
         truckSummary: summary.truckSummary,
         warnings: summary.warnings,
+
         overrideReason: '',
         generatedBy: req.user._id,
         confirmedBy: null,
         confirmedAt: null,
       },
-      { new: true, runValidators: true }
+      {
+        new: true,
+        runValidators: true,
+      }
     )
 
-    await PackingList.deleteMany({ packingListPlanId: packingListPlan._id })
+    await PackingList.deleteMany({
+      packingListPlanId: packingListPlan._id,
+    })
   } else {
     packingListPlan = await PackingListPlan.create({
       leadId: bundlePlan.leadId,
       shipperRequestId: bundlePlan.shipperRequestId,
       bundlePlanId: bundlePlan._id,
+
       planNumber,
       status: 'generated',
+
       totalPackingLists: summary.totalPackingLists,
       totalBundles: summary.totalBundles,
       totalWeight: summary.totalWeight,
       maxLengthFeet: summary.maxLengthFeet,
       truckSummary: summary.truckSummary,
       warnings: summary.warnings,
+
       generatedBy: req.user._id,
     })
   }
@@ -384,38 +477,109 @@ exports.generatePackingListPlan = asyncHandler(async (req, res) => {
 
   const packingLists = await PackingList.insertMany(rowsToInsert)
 
-  await Bundle.updateMany({ bundlePlanId: bundlePlan._id }, { packingListId: null })
+  /**
+   * During regeneration, reset bundles first.
+   * Then assign only bundles that are present in generated packing lists.
+   */
+  await Bundle.updateMany(
+    {
+      bundlePlanId: bundlePlan._id,
+    },
+    {
+      $set: {
+        packingListId: null,
+        status: 'confirmed',
+      },
+    }
+  )
+
   for (const packingList of packingLists) {
     if (!packingList.bundleIds?.length) continue
+
     await Bundle.updateMany(
-      { _id: { $in: packingList.bundleIds } },
-      { packingListId: packingList._id, status: 'assigned_to_truck' }
+      {
+        _id: {
+          $in: packingList.bundleIds,
+        },
+      },
+      {
+        $set: {
+          packingListId: packingList._id,
+          status: 'assigned_to_truck',
+        },
+      }
     )
   }
 
-  return created(res, {
+  const hasWeightWarning = (packingListPlan.warnings || []).some((warning) => {
+    const text = String(warning || '').toLowerCase()
+
+    return (
+      text.includes('weight') ||
+      text.includes('missing') ||
+      text.includes('zero')
+    )
+  })
+
+  const responseData = {
     packingListPlan: {
       _id: packingListPlan._id,
       planNumber: packingListPlan.planNumber,
       status: packingListPlan.status,
+
       totalPackingLists: packingListPlan.totalPackingLists,
       totalBundles: packingListPlan.totalBundles,
       totalWeight: packingListPlan.totalWeight,
       maxLengthFeet: packingListPlan.maxLengthFeet,
+
       truckSummary: packingListPlan.truckSummary,
+
+      missingWeightBundleCount: bundlesWithMissingWeight.length,
+      hasWeightWarning,
+
       warnings: packingListPlan.warnings || [],
     },
+
     packingLists: packingLists.map((row) => ({
       _id: row._id,
+
       packingListNo: row.packingListNo,
       truckNo: row.truckNo,
       truckType: row.truckType,
       truckLabel: row.truckLabel,
+
+      maxTruckWeight: row.maxTruckWeight,
+      hardMaxTruckWeight: row.hardMaxTruckWeight,
+      maxTruckLengthFeet: row.maxTruckLengthFeet,
+
       totalWeight: row.totalWeight,
       maxLengthFeet: row.maxLengthFeet,
       totalBundles: row.totalBundles,
+      totalItems: row.totalItems,
+
+      bundleIds: row.bundleIds || [],
+      loadLayout: row.loadLayout,
+
+      hasWeightWarning: (row.warnings || []).some((warning) => {
+        const text = String(warning || '').toLowerCase()
+
+        return (
+          text.includes('weight') ||
+          text.includes('missing') ||
+          text.includes('zero')
+        )
+      }),
+
       warnings: row.warnings || [],
+      status: row.status,
     })),
+
     truckConfig: TRUCK_TYPES,
-  }, existingPlan ? 'Packing list plan regenerated' : 'Packing list plan generated')
+  }
+
+  if (wasRegenerated) {
+    return success(res, responseData, 'Packing list plan regenerated')
+  }
+
+  return created(res, responseData, 'Packing list plan generated')
 })
