@@ -20,14 +20,14 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }))
 app.use(express.urlencoded({ extended: true }))
 
-// ── Global rate limit ─────────────────────────────────────────────────────────
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many requests' },
-}))
+// // ── Global rate limit ─────────────────────────────────────────────────────────
+// app.use(rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 300,
+//   standardHeaders: true,
+//   legacyHeaders: false,
+//   message: { success: false, message: 'Too many requests' },
+// }))
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', env: NODE_ENV }))
