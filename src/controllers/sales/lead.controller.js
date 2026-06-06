@@ -102,7 +102,7 @@ exports.getLeads = asyncHandler(async (req, res) => {
     Lead.find(filter)
       .select('_id jobId projectName customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO')
       .populate({ path: 'customerId', select: 'firstName email' })
-      .sort({ createdAt: -1 })
+      .sort({ 'assigningHistory.assignedAt': -1 })
       .skip(skip)
       .limit(parsedLimit)
       .lean(),
@@ -353,8 +353,14 @@ exports.getEscalatedLeads = asyncHandler(async (req, res) => {
 
   const [escalations, total] = await Promise.all([
     Escalation.find(escalationFilter)
-      .populate({ path: 'leadId', select: '_id jobId projectName lifecycleStatus quoteValue customerId' })
-      .populate({ path: 'customerId', select: 'firstName email' })
+      .populate({
+  path: 'leadId',
+  select: '_id jobId projectName lifecycleStatus quoteValue customerId assignedSales',
+  populate: {
+    path: 'assignedSales',
+    select: '_id firstName lastName email'
+  }
+})
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -368,59 +374,155 @@ exports.getEscalatedLeads = asyncHandler(async (req, res) => {
     lifecycleStatus: e.leadId?.lifecycleStatus || '',
     quoteValue: e.leadId?.quoteValue || 0,
     customerId: e.customerId ? { _id: e.customerId._id, firstName: e.customerId.firstName, email: e.customerId.email } : null,
+    assignedTo: e.leadId?.assignedSales ? {
+    _id: e.leadId.assignedSales._id,
+    firstName: e.leadId.assignedSales.firstName,
+    lastName: e.leadId.assignedSales.lastName,
+    email: e.leadId.assignedSales.email
+  } : null,
     escalation: { _id: e._id, note: e.note, status: e.status, createdAt: e.createdAt },
   }, e.leadId?.jobId))
 
   return success(res, { leads: result, total })
 })
 
+
 exports.getLeadDetail = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { lead: guardedLead, error, status } = await guardLead(leadId, req.user._id)
-  if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
 
-  const lead = await Lead.findById(leadId).lean()
+  const { lead: guardedLead, error, status } = await guardLead(
+    leadId,
+    req.user._id
+  )
+
+  if (error) {
+    return status === 404
+      ? notFound(res, error)
+      : forbidden(res, error)
+  }
+
+  const lead = await Lead.findById(leadId)
+    .populate(
+      'assignedSales',
+      '_id firstName lastName email phone role'
+    )
+    .lean()
 
   const [
-    customer, quotations, auditLogs, activityLogs, followUps,
-    invoices, buildings, budget, recentMessages,
+    customer,
+    quotations,
+    auditLogs,
+    activityLogs,
+    followUps,
+    invoices,
+    buildings,
+    budget,
+    recentMessages,
   ] = await Promise.all([
-    Customer.findById(lead.customerId).select('_id customerId firstName email phone company location').lean(),
-    Quotation.find({ leadId }).sort({ versionNumber: -1, createdAt: -1 }).lean(),
-    AuditLog.find({ leadId, type: { $ne: 'activity' } }).sort({ createdAt: 1 }).lean(),
-    AuditLog.find({ leadId, type: 'activity' }).sort({ createdAt: 1 }).lean(),
-    FollowUp.find({ leadId }).sort({ followUpDate: 1 }).lean(),
-    Invoice.find({ leadId }).populate('paidBy').sort({ createdAt: -1 }).lean(),
-    Building.find({ leadId }).sort({ buildingNumber: 1 }).lean(),
+    Customer.findById(lead.customerId)
+      .select('_id customerId firstName email phone company location')
+      .lean(),
+
+    Quotation.find({ leadId })
+      .sort({ versionNumber: -1, createdAt: -1 })
+      .lean(),
+
+    AuditLog.find({
+      leadId,
+      type: { $ne: 'activity' },
+    })
+      .sort({ createdAt: 1 })
+      .lean(),
+
+    AuditLog.find({
+      leadId,
+      type: 'activity',
+    })
+      .sort({ createdAt: 1 })
+      .lean(),
+
+    FollowUp.find({ leadId })
+      .sort({ followUpDate: 1 })
+      .lean(),
+
+    Invoice.find({ leadId })
+      .populate('paidBy')
+      .sort({ createdAt: -1 })
+      .lean(),
+
+    Building.find({ leadId })
+      .sort({ buildingNumber: 1 })
+      .lean(),
+
     ProjectBudget.findOne({ leadId }).lean(),
-    Message.find({ leadId }).sort({ createdAt: -1 }).limit(20).lean().then(m => m.reverse()),
+
+    Message.find({ leadId })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean()
+      .then((m) => m.reverse()),
   ])
 
-  const flaggedQuotations = quotations.map((q, i) => ({ ...q, isLatest: i === 0 }))
-  const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
-  const totalPending = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const flaggedQuotations = quotations.map((q, i) => ({
+    ...q,
+    isLatest: i === 0,
+  }))
 
-  const budgetOut = budget ? {
-    materialBudget: budget.materialBudget,
-    logisticBudget: budget.logisticBudget,
-    productionBudget: budget.productionBudget,
-    shipperBudget: budget.shipperBudget,
-    otherCost: budget.otherCost,
-    totalBudget: budget.totalBudget,
-    expectedProfit: (lead.quoteValue || 0) - (budget.totalBudget || 0),
-  } : null
+  const totalPaid = invoices
+    .filter((i) => i.status === 'paid')
+    .reduce((s, i) => s + (i.totalAmount || 0), 0)
+
+  const totalPending = invoices
+    .filter((i) => ['sent', 'overdue'].includes(i.status))
+    .reduce((s, i) => s + (i.totalAmount || 0), 0)
+
+  const budgetOut = budget
+    ? {
+        materialBudget: budget.materialBudget,
+        logisticBudget: budget.logisticBudget,
+        productionBudget: budget.productionBudget,
+        shipperBudget: budget.shipperBudget,
+        otherCost: budget.otherCost,
+        totalBudget: budget.totalBudget,
+        expectedProfit:
+          (lead.quoteValue || 0) - (budget.totalBudget || 0),
+      }
+    : null
 
   const leadNotes = await formatLeadNotes(lead)
 
+  // Get latest assignment date
+  const latestAssignment =
+    lead.assigningHistory?.length > 0
+      ? lead.assigningHistory[lead.assigningHistory.length - 1]
+      : null
+
+  const enrichedLead = enrichLeadDocument(lead)
+
+  enrichedLead.assignedSales = lead.assignedSales
+    ? {
+        ...lead.assignedSales,
+        assignedAt: latestAssignment?.assignedAt || null,
+      }
+    : null
+
   return success(res, {
-    lead: enrichLeadDocument(lead),
+    lead: enrichedLead,
     customer,
-    rfq: { aiQuoteData: lead.aiQuoteData, aiContextSummary: lead.aiContextSummary },
+    rfq: {
+      aiQuoteData: lead.aiQuoteData,
+      aiContextSummary: lead.aiContextSummary,
+    },
     quotations: flaggedQuotations,
     auditLog: auditLogs,
     activityLog: activityLogs,
     followUps,
-    payments: { invoices, totalPaid, totalPending, totalInvoices: invoices.length },
+    payments: {
+      invoices,
+      totalPaid,
+      totalPending,
+      totalInvoices: invoices.length,
+    },
     buildings,
     budget: budgetOut,
     recentMessages,
@@ -706,16 +808,32 @@ exports.getMyPOOrders = asyncHandler(async (req, res) => {
   if (status) filter.status = status
 
   const skip = (parsedPage - 1) * parsedLimit
-  const [orders, total] = await Promise.all([
-    POOrder.find(filter)
-      .populate({ path: 'leadId', select: 'projectName' })
-      .populate({ path: 'customerId', select: 'firstName' })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parsedLimit)
-      .lean(),
-    POOrder.countDocuments(filter),
-  ])
+ const [orders, total] = await Promise.all([
+  POOrder.find(filter)
+    .populate({
+      path: 'leadId',
+      select: 'jobId projectName'
+    })
+    .populate({
+      path: 'customerId',
+      select: 'firstName'
+    })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(parsedLimit)
+    .lean(),
+  POOrder.countDocuments(filter),
+])
 
-  return success(res, { orders, total, page: parsedPage, limit: parsedLimit })
+const formattedOrders = orders.map(order => ({
+  ...order,
+  jobId: order.leadId?.jobId || null,
+}))
+
+return success(res, {
+  orders: formattedOrders,
+  total,
+  page: parsedPage,
+  limit: parsedLimit,
+})
 })
