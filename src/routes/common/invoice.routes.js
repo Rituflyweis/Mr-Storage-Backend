@@ -11,12 +11,12 @@ const updateInvoiceValidators = [
 ]
 
 router.get('/stats', ctrl.getInvoiceStats)
+router.get('/export', ctrl.exportInvoices)
 router.get('/', ctrl.listInvoices)
 router.get('/:invoiceId', ctrl.getInvoice)
 router.put('/:invoiceId', updateInvoiceValidators, validate, ctrl.updateInvoice)
 router.post('/:invoiceId/send', ctrl.sendInvoice)
 router.put('/:invoiceId/mark-paid', ctrl.markAsPaid)
-router.get('/export', ctrl.exportInvoices)
 
 
 module.exports = router

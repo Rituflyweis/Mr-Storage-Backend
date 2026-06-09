@@ -11,6 +11,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { isInvoiceOverdue, resolveInvoiceLeadIds, getScopedLeadIds } = require('../../utils/invoiceScope')
 const { AUDIT_ACTIONS, INVOICE_STATUSES } = require('../../config/constants')
+const { generateInvoiceListExcel, generateInvoiceListPdf } = require('../../utils/exportInvoices')
 
 const INVOICE_BODY_FIELDS = [
   'date', 'daysToPay', 'lineItems',
