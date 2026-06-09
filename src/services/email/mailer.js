@@ -3,6 +3,7 @@ const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM } = require('../..
 const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
 const path = require('path')
 const fs = require('fs')
+const { generateInvoicePdf } = require('./generateInvoiceHelper')
 
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
@@ -159,6 +160,7 @@ const sendQuotation = async ({ toEmail, customerName, quotation }) => {
   })
 }
 
+
 const sendInvoice = async ({ toEmail, customerName, invoice }) => {
   const inv = invoice?.toObject ? invoice.toObject() : invoice
   const template = loadTemplate('invoice')
@@ -179,11 +181,22 @@ const sendInvoice = async ({ toEmail, customerName, invoice }) => {
     TOTALS_ROWS: buildInvoiceTotalsRows(inv),
   })
 
+  // Generate PDF from the same HTML used for the email body
+  const pdfBuffer = await generateInvoicePdf(html)
+  const invoiceFilename = `Invoice-${inv.invoiceNumber || 'document'}.pdf`
+
   await transporter.sendMail({
     from: MAIL_FROM,
     to: toEmail,
     subject: `Invoice ${inv.invoiceNumber || ''}`,
     html,
+    attachments: [
+      {
+        filename: invoiceFilename,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      },
+    ],
   })
 }
 

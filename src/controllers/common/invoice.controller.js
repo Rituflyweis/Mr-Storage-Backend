@@ -339,3 +339,54 @@ exports.listInvoices = asyncHandler(async (req, res) => {
     limit: parsedLimit,
   })
 })
+
+
+exports.exportInvoices = asyncHandler(async (req, res) => {
+  const { format = 'excel', status, leadId, search } = req.query
+
+  if (status && !INVOICE_STATUSES.includes(status)) {
+    return badRequest(res, `Invalid status. Use: ${INVOICE_STATUSES.join(', ')}`)
+  }
+
+  // ✅ Same filter logic as listInvoices (no pagination)
+  const { leadIds } = await resolveInvoiceLeadIds(req.user, { search, leadId })
+  const filter = { ...buildDateFilter(req.query, 'createdAt') }
+  if (status) filter.status = status
+
+  if (leadIds !== null) {
+    if (leadIds.length === 0) {
+      return badRequest(res, 'No matching invoices found to export')
+    }
+    filter.leadId = { $in: leadIds }
+  }
+
+  const invoices = await Invoice.find(filter)
+    .populate('customerId', 'firstName lastName email')
+    .populate('createdBy', 'name email')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  // Attach projectName same as listInvoices
+  const leadIdSet = new Set(invoices.map(i => String(i.leadId)))
+  const leadRows = leadIdSet.size
+    ? await Lead.find({ _id: { $in: [...leadIdSet] } }).select('_id projectName').lean()
+    : []
+  const projectNameByLead = Object.fromEntries(leadRows.map(l => [String(l._id), l.projectName || '']))
+
+  const rows = invoices.map(inv => ({
+    ...inv,
+    projectName: projectNameByLead[String(inv.leadId)] || '—',
+  }))
+
+  if (format === 'pdf') {
+    const buffer = await generateInvoiceListPdf(rows)
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', 'attachment; filename="invoices.pdf"')
+    return res.send(buffer)
+  }
+
+  const buffer = await generateInvoiceListExcel(rows)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="invoices.xlsx"')
+  return res.send(buffer)
+})

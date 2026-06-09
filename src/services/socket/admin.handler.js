@@ -136,6 +136,12 @@ const adminHandler = (socket, adminNS) => {
       global.io.of('/chat').to(`lead:${leadId}`).emit('sales_typing', { isTyping: false })
     }
   })
+
+  socket.on('join_user_room', () => {
+  const userId = socket.user._id.toString()
+  socket.join(`user:${userId}`)
+  console.log(`User ${userId} joined their room`)
+})
 }
 
 module.exports = adminHandler
