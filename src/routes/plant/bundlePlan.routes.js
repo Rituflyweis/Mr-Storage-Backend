@@ -1,6 +1,7 @@
 const router = require('express').Router()
 const { body, param } = require('express-validator')
 const ctrl = require('../../controllers/plant/bundlePlan.controller')
+const deliveryCtrl = require('../../controllers/plant/delivery.controller')
 const validate = require('../../middleware/validate')
 
 const BUNDLE_TYPES = ['panels', 'trim', 'framing', 'fasteners', 'accessories', 'mixed', 'custom']
@@ -44,6 +45,12 @@ router.post('/:bundlePlanId/packing-list-plan/generate',
   [param('bundlePlanId').isMongoId()],
   validate,
   ctrl.generatePackingListPlan
+)
+
+router.get('/:bundlePlanId/freight-autofill',
+  [param('bundlePlanId').isMongoId()],
+  validate,
+  deliveryCtrl.getFreightAutofill
 )
 
 module.exports = router

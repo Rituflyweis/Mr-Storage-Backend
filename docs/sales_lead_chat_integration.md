@@ -18,8 +18,10 @@ Two Socket.io namespaces on the backend:
 Lifecycle:
 
 1. Customer starts chat → talks to AI bot.
-2. When AI extracts a quote, backend round-robin assigns a sales user, flips `lead.isHandedToSales = true`. AI goes silent.
-3. From that point messages flow **customer ⇄ sales** in realtime; AI no longer replies.
+2. AI can be cut off in two ways:
+   - **Admin intervention** — admin sends any message via `sales_message`. Sets `lead.isStaffChatActive = true`. AI stops immediately; admin manages the lead manually (assign sales when ready).
+   - **Sales assignment** — admin assigns a sales user (`PUT /api/admin/leads/:leadId/assign`). Sets `lead.isHandedToSales = true`. AI stops; messages flow **customer ⇄ sales**.
+3. From either cutoff point, AI no longer replies to customer messages.
 
 Frontend integrators care about two surfaces:
 
@@ -52,6 +54,9 @@ Response:
     "leadId": "665f...",
     "customerName": "John",
     "isReturning": false,
+    "isHandedToSales": false,
+    "isStaffChatActive": false,
+    "isQuoteReady": false,
     "isChatEnded": false
   }
 }
@@ -60,6 +65,8 @@ Response:
 Persist `customerId` + `leadId` in the widget; they are required for every socket event.
 
 If `isChatEnded` is `true`, disable the message input until chat is reopened (see end-chat guide).
+
+If `isStaffChatActive` or `isHandedToSales` is `true`, do not show AI typing indicators — a human is handling the chat.
 
 ### 2.2 Chat history (full transcript)
 `GET /api/public/chat/history/:leadId`
@@ -71,9 +78,12 @@ Response:
   "data": {
     "isChatEnded": false,
     "chatEndedAt": null,
+    "isStaffChatActive": false,
+    "isHandedToSales": false,
+    "isAiActive": true,
     "canCustomerSend": true,
     "messages": [
-      { "senderType": "ai|customer|sales", "content": "...", "createdAt": "...", "isRead": true }
+      { "senderType": "ai|customer|sales|admin", "content": "...", "createdAt": "...", "isRead": true, "senderName?": "..." }
     ]
   }
 }
@@ -131,8 +141,9 @@ chatSocket.emit('typing_stop',  { leadId })
 | `ai_typing` | `{ isTyping: boolean }` | Show/hide AI typing dots. |
 | `sales_typing` | `{ isTyping: boolean, name }` | Show "Rahul is typing…" |
 | `lead_handed_to_sales` | `{ assignedSales: "Rahul" }` | Show banner: "You are now connected to Rahul." |
+| `staff_chat_active` | `{ leadId, isAiActive: false, intervenedBy: "admin\|sales", staffName }` | Admin or sales took over — hide AI UI, show human support banner. |
 | `chat_error` | `{ message }` | Render inline error/toast. |
-| `chat_status` | `{ leadId, isChatEnded, canCustomerSend, ... }` | Current chat open/closed state (on `join_lead`). |
+| `chat_status` | `{ leadId, isChatEnded, isStaffChatActive, isHandedToSales, isAiActive, canCustomerSend, ... }` | Current chat open/closed + AI vs human mode (on `join_lead`). |
 | `chat_ended` | same as `chat_status` | Staff ended chat — disable input. |
 | `chat_reopened` | same shape, `isChatEnded: false` | Staff reopened chat — enable input. |
 
@@ -184,7 +195,7 @@ Server guards:
 - If the connected user has `role === 'sales'`, the lead **must** be assigned to them (`lead.assignedSales`).
 - Failure → server emits `error` event with `{ message: 'This lead is not assigned to you' }`.
 
-Admins can post to any lead.
+Admins can post to any lead. **The first admin message on a lead cuts off AI** (`isStaffChatActive = true`). Sales assignment remains manual — use `PUT /api/admin/leads/:leadId/assign` when ready.
 
 ### 4.4 Typing
 ```js
@@ -204,7 +215,8 @@ This sets `isRead = true` on all `senderType === 'customer'` messages for that l
 | Event | Payload | Meaning |
 |---|---|---|
 | `new_message` | `{ _id, senderType, senderId?, senderName?, content, createdAt, leadId }` | Any new message on a lead room you joined. Use for live transcript. |
-| `new_customer_message` | `{ leadId, message: { senderType, content, createdAt } }` | Fires on the assigned sales user's `user:<userId>` room when the lead is **handed to sales** and the customer sends a message. Use this to badge unread counts even if the user is not viewing that lead. |
+| `new_customer_message` | `{ leadId, message: { senderType, content, createdAt } }` | Fires on `user:<salesId>` when handed to sales, or on `admin_room` when admin intervened (`isStaffChatActive`) but no sales assigned yet. |
+| `staff_chat_active` | `{ leadId, isAiActive, intervenedBy, staffName, ... }` | First staff message cut off AI — update UI to human-handled mode. |
 | `lead_quote_ready` | `{ leadId, customerId }` | Admin-only (`admin_room`). AI extracted a quote — show notification "Quote ready, lead assigned". |
 | `new_lead` | `{ leadId, customerId, customerName }` | Admin-only. Brand-new lead from chat init. |
 | `customer_typing` | `{ isTyping }` | Customer is typing in the lead room. |
@@ -236,6 +248,7 @@ Render rules:
 - `senderType === 'customer'` → right-aligned (in sales UI) / left-aligned (in customer widget).
 - `senderType === 'ai'` → labeled "Assistant" or bot avatar.
 - `senderType === 'sales'` → labeled with `senderName` if provided; fall back to "Support".
+- `senderType === 'admin'` → labeled with `senderName` if provided; fall back to "Support".
 
 ---
 
@@ -299,10 +312,10 @@ Socket URL = same origin as REST (no separate host).
 ## 9. Quick Reference
 
 **Customer events (emit):** `join_lead`, `customer_message`, `typing_start`, `typing_stop`
-**Customer events (listen):** `new_message`, `ai_typing`, `sales_typing`, `lead_handed_to_sales`, `chat_error`, `chat_status`, `chat_ended`, `chat_reopened`
+**Customer events (listen):** `new_message`, `ai_typing`, `sales_typing`, `lead_handed_to_sales`, `staff_chat_active`, `chat_error`, `chat_status`, `chat_ended`, `chat_reopened`
 
 **Sales events (emit):** `join_lead_chat`, `leave_lead_chat`, `sales_message`, `sales_typing_start`, `sales_typing_stop`, `mark_messages_read`, `end_lead_chat`, `reopen_lead_chat`
-**Sales events (listen):** `new_message`, `new_customer_message`, `lead_quote_ready` (admin), `new_lead` (admin), `customer_typing`, `error`, `chat_status`, `chat_ended`, `chat_reopened`
+**Sales events (listen):** `new_message`, `new_customer_message`, `staff_chat_active`, `lead_quote_ready` (admin), `new_lead` (admin), `customer_typing`, `error`, `chat_status`, `chat_ended`, `chat_reopened`
 
 **REST:**
 - `POST /api/public/chat/init`

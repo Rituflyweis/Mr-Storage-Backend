@@ -1,6 +1,7 @@
 const router = require('express').Router()
 const { body } = require('express-validator')
 const ctrl = require('../controllers/public.controller')
+const freightBidCtrl = require('../controllers/public/freightBidPublic.controller')
 const validate = require('../middleware/validate')
 const rateLimit = require('express-rate-limit')
 
@@ -51,6 +52,21 @@ router.post('/vendor-upload/:token',
   ],
   validate,
   ctrl.submitVendorUpload
+)
+
+router.get('/freight-bids/:token',
+  vendorUploadLimiter,
+  freightBidCtrl.getFreightBidInfo
+)
+
+router.post('/freight-bids/:token/submit',
+  vendorUploadLimiter,
+  [
+    body('quotedAmount').isNumeric(),
+    body('carrierNotes').optional().isString().trim(),
+  ],
+  validate,
+  freightBidCtrl.submitFreightBid
 )
 
 module.exports = router

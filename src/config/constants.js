@@ -132,11 +132,15 @@ const AUDIT_ACTIONS = {
   ACTIVITY_LOGGED:          'activity.logged',
   CHAT_ENDED:               'chat.ended',
   CHAT_REOPENED:            'chat.reopened',
+  CHAT_STAFF_TAKEOVER:      'chat.staff_takeover',
 
   VENDOR_CREATED:            'vendor.created',
   VENDOR_UPDATED:            'vendor.updated',
   CARRIER_CREATED:           'carrier.created',
   CARRIER_UPDATED:           'carrier.updated',
+  DELIVERY_CREATED:          'delivery.created',
+  FREIGHT_BIDS_SENT:         'freight_bids.sent',
+  FREIGHT_BID_SELECTED:      'freight_bid.selected',
 
   SMDT_BULK_UPLOADED:        'smdt.bulk_uploaded',
   SMDT_ITEM_ADDED:           'smdt.item_added',

@@ -303,6 +303,121 @@ const sendShipperResubmitRequestEmail = async ({
   })
 }
 
+const sendFreightBidRequestEmail = async ({
+  toEmail,
+  carrierName,
+  projectName,
+  jobId,
+  deliveryNumber,
+  bidDeadline,
+  bidUrl,
+  loadDescription,
+  loadWeight,
+  pickupLocation,
+  deliveryLocation,
+}) => {
+  const safeCarrier = escapeHtml(carrierName || 'Carrier')
+  const safeProject = escapeHtml(projectName || '')
+  const safeJobId = escapeHtml(jobId || '')
+  const safeDeliveryNumber = escapeHtml(deliveryNumber || '')
+  const safeBidUrl = escapeHtml(bidUrl || '')
+  const safeLoadDescription = escapeHtml(loadDescription || '')
+  const safePickup = escapeHtml(pickupLocation || '')
+  const safeDelivery = escapeHtml(deliveryLocation || '')
+  const safeWeight = loadWeight != null ? `${formatInvoiceMoney(loadWeight)} lbs` : '—'
+  const safeDeadline = formatInvoiceDate(bidDeadline)
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Freight Bid Request</h2>
+      <p>Hi ${safeCarrier},</p>
+      <p>You have received a freight bid request for the below project:</p>
+      <ul>
+        <li><strong>Project:</strong> ${safeProject}</li>
+        <li><strong>Job ID:</strong> ${safeJobId}</li>
+        <li><strong>Freight Request #:</strong> ${safeDeliveryNumber}</li>
+        <li><strong>Load description:</strong> ${safeLoadDescription}</li>
+        <li><strong>Load weight:</strong> ${safeWeight}</li>
+        <li><strong>Pickup location:</strong> ${safePickup}</li>
+        <li><strong>Delivery location:</strong> ${safeDelivery}</li>
+        <li><strong>Bid deadline:</strong> ${safeDeadline}</li>
+      </ul>
+      <p>
+        Submit your bid here:<br/>
+        <a href="${safeBidUrl}" target="_blank" rel="noopener">${safeBidUrl}</a>
+      </p>
+      <p>Please submit before deadline. Late bids are automatically blocked.</p>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Freight Bid Request: ${projectName || 'Project'}${deliveryNumber ? ` (${deliveryNumber})` : ''}`,
+    html,
+  })
+}
+
+const sendFreightBidAwardedEmail = async ({
+  toEmail,
+  carrierName,
+  projectName,
+  jobId,
+  deliveryNumber,
+  quotedAmount,
+}) => {
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Freight Bid Awarded</h2>
+      <p>Hi ${escapeHtml(carrierName || 'Carrier')},</p>
+      <p>Your freight bid has been selected for this request:</p>
+      <ul>
+        <li><strong>Project:</strong> ${escapeHtml(projectName || '')}</li>
+        <li><strong>Job ID:</strong> ${escapeHtml(jobId || '')}</li>
+        <li><strong>Freight Request #:</strong> ${escapeHtml(deliveryNumber || '')}</li>
+        <li><strong>Awarded Amount:</strong> ${quotedAmount != null ? `${formatInvoiceMoney(quotedAmount)} USD` : '—'}</li>
+      </ul>
+      <p>Our team will coordinate next steps with you shortly.</p>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Freight Bid Awarded: ${projectName || 'Project'}${deliveryNumber ? ` (${deliveryNumber})` : ''}`,
+    html,
+  })
+}
+
+const sendFreightBidRejectedEmail = async ({
+  toEmail,
+  carrierName,
+  projectName,
+  jobId,
+  deliveryNumber,
+}) => {
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Freight Bid Update</h2>
+      <p>Hi ${escapeHtml(carrierName || 'Carrier')},</p>
+      <p>Thanks for submitting your freight bid. Another carrier was selected for this request:</p>
+      <ul>
+        <li><strong>Project:</strong> ${escapeHtml(projectName || '')}</li>
+        <li><strong>Job ID:</strong> ${escapeHtml(jobId || '')}</li>
+        <li><strong>Freight Request #:</strong> ${escapeHtml(deliveryNumber || '')}</li>
+      </ul>
+      <p>We appreciate your response and look forward to future opportunities.</p>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Freight Bid Update: ${projectName || 'Project'}${deliveryNumber ? ` (${deliveryNumber})` : ''}`,
+    html,
+  })
+}
+
 module.exports = {
   sendQuotation,
   sendInvoice,
@@ -312,4 +427,7 @@ module.exports = {
   sendShipperApprovalEmail,
   sendShipperRejectionEmail,
   sendShipperResubmitRequestEmail,
+  sendFreightBidRequestEmail,
+  sendFreightBidAwardedEmail,
+  sendFreightBidRejectedEmail,
 }

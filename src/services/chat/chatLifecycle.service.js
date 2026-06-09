@@ -5,11 +5,17 @@ const { AUDIT_ACTIONS } = require('../../config/constants')
 
 const formatChatStatus = (lead) => {
   const isChatEnded = Boolean(lead?.isChatEnded)
+  const isStaffChatActive = Boolean(lead?.isStaffChatActive)
+  const isHandedToSales = Boolean(lead?.isHandedToSales)
+  const isAiActive = !isChatEnded && !isStaffChatActive && !isHandedToSales
   return {
     leadId: String(lead._id),
     isChatEnded,
     chatEndedAt: lead.chatEndedAt || null,
     chatEndedBy: lead.chatEndedBy || null,
+    isStaffChatActive,
+    isHandedToSales,
+    isAiActive,
     canCustomerSend: !isChatEnded,
     canStaffSend: !isChatEnded,
   }
@@ -17,10 +23,56 @@ const formatChatStatus = (lead) => {
 
 const getChatStatusByLeadId = async (leadId) => {
   const lead = await Lead.findById(leadId)
-    .select('isChatEnded chatEndedAt chatEndedBy')
+    .select('isChatEnded chatEndedAt chatEndedBy isStaffChatActive isHandedToSales')
     .lean()
   if (!lead) return null
   return formatChatStatus(lead)
+}
+
+const broadcastStaffChatActive = (leadId, payload) => {
+  if (!global.io) return
+  const adminNS = global.io.of('/admin')
+  const chatNS = global.io.of('/chat')
+  const room = `lead:${leadId}`
+  adminNS.to(room).emit('staff_chat_active', payload)
+  chatNS.to(room).emit('staff_chat_active', payload)
+}
+
+/**
+ * First staff message (admin or sales) cuts off AI. Admin can manage manually without assigning sales.
+ */
+const activateStaffChat = async (leadId, { userId, role, staffName }) => {
+  const lead = await Lead.findById(leadId)
+    .select('isStaffChatActive isHandedToSales isChatEnded customerId')
+    .lean()
+  if (!lead || lead.isChatEnded) return { activated: false }
+
+  const wasAiActive = !lead.isStaffChatActive && !lead.isHandedToSales
+
+  if (!lead.isStaffChatActive) {
+    await Lead.findByIdAndUpdate(leadId, { $set: { isStaffChatActive: true } })
+  }
+
+  if (wasAiActive) {
+    await auditService.log({
+      type: 'chat',
+      action: AUDIT_ACTIONS.CHAT_STAFF_TAKEOVER,
+      leadId,
+      customerId: lead.customerId,
+      performedBy: userId,
+      metadata: { intervenedBy: role },
+    })
+
+    const status = formatChatStatus({ ...lead, isStaffChatActive: true })
+    broadcastStaffChatActive(leadId, {
+      ...status,
+      intervenedBy: role,
+      staffName: staffName || (role === 'admin' ? 'Admin' : 'Sales'),
+    })
+    await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'staff_takeover' })
+  }
+
+  return { activated: true, wasAiActive }
 }
 
 const isLeadChatEnded = async (leadId) => {
@@ -100,7 +152,9 @@ module.exports = {
   formatChatStatus,
   getChatStatusByLeadId,
   isLeadChatEnded,
+  activateStaffChat,
   endChat,
   reopenChat,
   broadcastChatLifecycle,
+  broadcastStaffChatActive,
 }

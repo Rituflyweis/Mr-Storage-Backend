@@ -131,7 +131,9 @@ exports.chatInit = asyncHandler(async (req, res) => {
 exports.getChatHistory = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
-  const lead = await Lead.findById(leadId).select('isChatEnded chatEndedAt').lean()
+  const lead = await Lead.findById(leadId)
+    .select('isChatEnded chatEndedAt isStaffChatActive isHandedToSales')
+    .lean()
   if (!lead) return badRequest(res, 'Lead not found')
 
   const messages = await Message.find({ leadId })
@@ -152,9 +154,15 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
         : undefined,
   }))
 
+  const isStaffChatActive = Boolean(lead.isStaffChatActive)
+  const isHandedToSales = Boolean(lead.isHandedToSales)
+
   return success(res, {
     isChatEnded: lead.isChatEnded || false,
     chatEndedAt: lead.chatEndedAt || null,
+    isStaffChatActive,
+    isHandedToSales,
+    isAiActive: !lead.isChatEnded && !isStaffChatActive && !isHandedToSales,
     canCustomerSend: !lead.isChatEnded,
     messages: rows,
   })

@@ -287,6 +287,14 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21Z | POST | `/api/plant/packing-list-plans/:packingListPlanId/confirm` | Confirm packing list plan |
 | 21ZA | GET | `/api/plant/packing-lists/:packingListId` | Single truck-wise packing list detail |
 | 21ZB | PUT | `/api/plant/packing-lists/:packingListId` | Edit truck assignment/layout/details |
+| 21ZC | GET | `/api/plant/bundle-plans/:bundlePlanId/freight-autofill` | Auto-fill fields for freight request form |
+| 21ZD | POST | `/api/plant/deliveries` | Create freight request |
+| 21ZE | GET | `/api/plant/deliveries/project/:leadId` | Freight request list for one project |
+| 21ZF | POST | `/api/plant/deliveries/:deliveryId/send-bids` | Send bid requests to selected carriers |
+| 21ZG | GET | `/api/plant/deliveries/:deliveryId/bids` | Freight bid detail + stats + sorted bids |
+| 21ZH | POST | `/api/plant/freight-bids/:bidId/select` | Award one freight bid and reject others |
+| 21ZI | GET | `/api/public/freight-bids/:token` | Public freight bid link details |
+| 21ZJ | POST | `/api/public/freight-bids/:token/submit` | Public carrier bid submit (deadline enforced) |
 | 22 | GET | `/api/plant/vendors` | List vendors / shippers |
 | 23 | POST | `/api/plant/vendors` | Add vendor / shipper |
 | 24 | GET | `/api/plant/vendors/:vendorId` | Vendor detail + stats + order history |
@@ -2428,6 +2436,269 @@ Edit truck-level assignment and layout.
 
 ---
 
+## 21ZC. `GET /api/plant/bundle-plans/:bundlePlanId/freight-autofill`
+
+Returns only the FE auto-fill fields requested for freight request form.
+
+### Response `data`
+
+```json
+{
+  "loadDescription": "18 bundle(s) for bundle plan BP-0001",
+  "weight": 62400,
+  "dimensions": {
+    "lengthFeet": 51,
+    "widthFeet": 8.5,
+    "heightFeet": 8
+  },
+  "metalType": "framing, panels, trim",
+  "packageCount": 18
+}
+```
+
+---
+
+## 21ZD. `POST /api/plant/deliveries`
+
+Create freight request (delivery) with editable freight fields.
+
+### Request body (example)
+
+```json
+{
+  "leadId": "665a00000000000000000001",
+  "description": "Project outbound freight",
+  "loadDescription": "18 bundle shipment",
+  "weight": 62400,
+  "dimensions": { "lengthFeet": 51, "widthFeet": 8.5, "heightFeet": 8 },
+  "metalType": "framing, panels, trim",
+  "packageCount": 18,
+  "loadingEquipment": ["forklift", "crane"],
+  "bidDeadline": "2026-06-10T18:00:00.000Z",
+  "documentUrl": "https://bucket.s3.../freight/freight-sheet.pdf",
+  "pickupLocation": "Plant Yard, Houston",
+  "pickupLocationData": { "address": "Plant Yard, Houston", "coordinates": { "lat": 29.7604, "lng": -95.3698 } },
+  "deliveryLocation": "ABC Site, Austin",
+  "deliveryLocationData": { "address": "ABC Site, Austin", "coordinates": { "lat": 30.2672, "lng": -97.7431 } },
+  "timings": "Mon-Fri 8AM-6PM",
+  "pickupDate": "2026-06-12T00:00:00.000Z",
+  "pickupTime": "09:00",
+  "deliveryDate": "2026-06-13T00:00:00.000Z",
+  "deliveryTime": "13:00",
+  "receivingPoc": "John Doe",
+  "pickupContactPhone": "+1-555-222-3344",
+  "specialRequirements": "Do not stack top layer panels",
+  "additionalNotes": "Call 30 mins before arrival"
+}
+```
+
+### Response `data`
+
+```json
+{
+  "delivery": {
+    "_id": "...",
+    "deliveryNumber": "DEL-0001",
+    "leadId": "...",
+    "status": "draft",
+    "selectedCarrierBidId": null
+  }
+}
+```
+
+---
+
+## 21ZE. `GET /api/plant/deliveries/project/:leadId`
+
+Project freight request list (same view payload as project delivery endpoint).
+
+### Response `data`
+
+```json
+{
+  "requests": [
+    {
+      "requestId": "...",
+      "projectName": "ABC Warehouse",
+      "description": "18 bundle shipment",
+      "pickupLocation": "Plant Yard, Houston",
+      "deliveryLocation": "ABC Site, Austin",
+      "pickupDate": "2026-06-12T00:00:00.000Z",
+      "deliveryDate": "2026-06-13T00:00:00.000Z",
+      "carrier": null,
+      "averageBid": 2450,
+      "status": "bidding_sent",
+      "loadWeight": 62400
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+## 21ZF. `POST /api/plant/deliveries/:deliveryId/send-bids`
+
+Send bid requests to selected active carriers.
+
+### Request body
+
+```json
+{
+  "carrierIds": ["665a0000000000000000c001", "665a0000000000000000c002"],
+  "bidDeadline": "2026-06-10T18:00:00.000Z"
+}
+```
+
+### Response `data`
+
+```json
+{
+  "deliveryId": "...",
+  "status": "bidding_sent",
+  "bidDeadline": "2026-06-10T18:00:00.000Z",
+  "sent": [
+    { "bidId": "...", "carrierId": "...", "carrierName": "Metro Freight", "expiresAt": "2026-06-10T18:00:00.000Z" }
+  ],
+  "failures": []
+}
+```
+
+Behavior:
+- Creates or refreshes one `FreightBid` per carrier.
+- Sends public bid link email.
+- Sets `Delivery.status = bidding_sent`.
+
+---
+
+## 21ZG. `GET /api/plant/deliveries/:deliveryId/bids`
+
+Freight bid detailed view.
+
+### Query params
+
+| Param | Type | Default |
+|---|---|---|
+| `sort` | `low_to_high` \| `high_to_low` | `low_to_high` |
+
+### Response `data`
+
+```json
+{
+  "requestId": "...",
+  "projectName": "ABC Warehouse",
+  "status": "bidding_sent",
+  "stats": {
+    "totalBids": 3,
+    "awardedBid": null,
+    "averageBid": 2410.33,
+    "potentialSavings": null
+  },
+  "bidRange": {
+    "lowestBid": { "bidId": "...", "amount": 2300, "carrierId": "...", "carrierName": "Metro Freight" },
+    "highestBid": { "bidId": "...", "amount": 2550, "carrierId": "...", "carrierName": "FastLine Logistics" }
+  },
+  "sort": "low_to_high",
+  "bids": [
+    {
+      "bidId": "...",
+      "carrierId": "...",
+      "carrierName": "Metro Freight",
+      "submittedAt": "2026-06-09T11:20:00.000Z",
+      "carrierNote": "Rate valid for 24h",
+      "bidAmount": 2300,
+      "status": "submitted",
+      "isLowest": true
+    }
+  ]
+}
+```
+
+---
+
+## 21ZH. `POST /api/plant/freight-bids/:bidId/select`
+
+Award one bid:
+- selected bid -> `selected`
+- all other bids for same delivery -> `rejected`
+- delivery linked to awarded bid (`selectedCarrierBidId`)
+- delivery status -> `carrier_selected`
+- awarded carrier gets awarded email, others get rejection emails
+
+### Response `data`
+
+```json
+{
+  "deliveryId": "...",
+  "status": "carrier_selected",
+  "selectedBid": {
+    "bidId": "...",
+    "carrierId": "...",
+    "quotedAmount": 2300,
+    "selectedAt": "2026-06-09T13:15:00.000Z"
+  },
+  "rejectedBidIds": ["..."],
+  "emailFailures": []
+}
+```
+
+---
+
+## 21ZI. `GET /api/public/freight-bids/:token`
+
+Public carrier page bootstrap.
+
+### Response `data`
+
+```json
+{
+  "bidId": "...",
+  "status": "sent",
+  "carrierName": "Metro Freight",
+  "projectName": "ABC Warehouse",
+  "jobId": "PRO-001",
+  "deliveryNumber": "DEL-0001",
+  "description": "18 bundle shipment",
+  "pickupLocation": "Plant Yard, Houston",
+  "deliveryLocation": "ABC Site, Austin",
+  "bidDeadline": "2026-06-10T18:00:00.000Z",
+  "quotedAmount": null,
+  "carrierNotes": ""
+}
+```
+
+---
+
+## 21ZJ. `POST /api/public/freight-bids/:token/submit`
+
+Public bid submit.
+
+### Request body
+
+```json
+{
+  "quotedAmount": 2300,
+  "carrierNotes": "Rate valid for 24h"
+}
+```
+
+### Response `data`
+
+```json
+{
+  "bidId": "...",
+  "status": "submitted",
+  "quotedAmount": 2300,
+  "carrierNotes": "Rate valid for 24h",
+  "submittedAt": "2026-06-09T11:20:00.000Z"
+}
+```
+
+Deadline behavior:
+- after `expiresAt` / bid deadline, submit is rejected with `400`.
+
+---
+
 ## Admin side effect — PO assign
 
 When admin calls `PUT /api/admin/po-orders/:poOrderId/assign`:
@@ -3217,6 +3488,27 @@ Plant listens for `shipper_file_submitted` / `all_shipper_files_submitted` on `/
 
 ---
 
+### Flow D — Freight request → bidding → award
+
+```text
+1. GET  /api/plant/bundle-plans/:bundlePlanId/freight-autofill
+2. POST /api/plant/deliveries
+3. POST /api/plant/deliveries/:deliveryId/send-bids   { carrierIds, bidDeadline }
+4. Carrier opens: GET /api/public/freight-bids/:token
+5. Carrier submits: POST /api/public/freight-bids/:token/submit   { quotedAmount, carrierNotes }
+6. Plant views: GET /api/plant/deliveries/:deliveryId/bids?sort=low_to_high
+7. Plant awards: POST /api/plant/freight-bids/:bidId/select
+```
+
+Award behavior at step 7:
+- selected bid becomes `selected`
+- all other bids for same delivery become `rejected`
+- `Delivery.selectedCarrierBidId` set to selected bid
+- `Delivery.status` becomes `carrier_selected`
+- awarded carrier gets award email and others get rejection email
+
+---
+
 ## Not yet implemented (do not call from FE yet)
 
 These prefixes are mounted under `/api/plant` but route files are **empty stubs**:
@@ -3224,8 +3516,6 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Prefix | Planned use |
 |--------|-------------|
 | `/api/plant/dashboard` | Plant dashboard KPIs |
-| `/api/plant/deliveries` | Delivery CRUD |
-| `/api/plant/freight-bids` | Carrier bidding |
 
 ---
 
@@ -3275,6 +3565,15 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Packing list plan detail | `GET /api/plant/packing-list-plans/:packingListPlanId` |
 | Confirm packing list plan | `POST /api/plant/packing-list-plans/:packingListPlanId/confirm` |
 | Single packing list detail/edit | `GET/PUT /api/plant/packing-lists/:packingListId` |
+| Freight auto-fill from bundle plan | `GET /api/plant/bundle-plans/:bundlePlanId/freight-autofill` |
+| Create freight request | `POST /api/plant/deliveries` |
+| Freight requests list by project | `GET /api/plant/deliveries/project/:leadId` |
+| Legacy project freight list | `GET /api/plant/projects/:leadId/delivery` |
+| Send freight bid links | `POST /api/plant/deliveries/:deliveryId/send-bids` |
+| Freight bid detail view | `GET /api/plant/deliveries/:deliveryId/bids?sort=low_to_high|high_to_low` |
+| Award freight bid | `POST /api/plant/freight-bids/:bidId/select` |
+| Public freight bid page | `GET /api/public/freight-bids/:token` |
+| Public freight bid submit | `POST /api/public/freight-bids/:token/submit` |
 | Vendor public upload page | `GET /api/public/vendor-upload/:token` |
 | Vendor S3 presign | `POST /api/public/vendor-upload/:token/presigned-url` |
 | Vendor submit quote | `POST /api/public/vendor-upload/:token` |

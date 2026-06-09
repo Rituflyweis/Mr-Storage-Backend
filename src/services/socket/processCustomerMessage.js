@@ -60,6 +60,15 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
         content: content.trim(),
         createdAt: customerMsg.createdAt,
       })
+    } else if (leadForChat.isStaffChatActive && global.io) {
+      global.io.of('/admin').to('admin_room').emit('new_customer_message', {
+        leadId,
+        message: {
+          senderType: 'customer',
+          content: content.trim(),
+          createdAt: customerMsg.createdAt,
+        },
+      })
     }
     return
   }
@@ -80,6 +89,15 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
     customer,
     currentConversationSummary: lead.aiContextSummary || '',
   })
+
+  // Staff may have intervened while Claude was responding — discard AI reply.
+  const leadAfterAi = await Lead.findById(leadId)
+    .select('isStaffChatActive isHandedToSales')
+    .lean()
+  if (leadAfterAi?.isStaffChatActive || leadAfterAi?.isHandedToSales) {
+    chatNS.to(`lead:${leadId}`).emit('ai_typing', { isTyping: false })
+    return
+  }
 
   const aiMsg = await Message.create({
     leadId,

@@ -97,8 +97,12 @@ const adminHandler = (socket, adminNS) => {
 
       adminNS.to(`lead:${leadId}`).emit('new_message', payload)
 
-      // Human takeover — stop AI on future customer messages (assignment stays manual).
-      await Lead.findByIdAndUpdate(leadId, { $set: { isStaffChatActive: true } })
+      // First staff message cuts off AI; admin can manage manually without assigning sales.
+      await chatLifecycle.activateStaffChat(leadId, {
+        userId: socket.user._id,
+        role: senderType,
+        staffName: socket.user.name,
+      })
 
     } catch (err) {
       console.error('[AdminHandler] sales_message error:', err.message)

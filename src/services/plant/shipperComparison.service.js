@@ -2,7 +2,7 @@ const Anthropic = require('@anthropic-ai/sdk')
 const https = require('https')
 const http = require('http')
 const XLSX = require('xlsx')
-const pdfParse = require('pdf-parse')
+const { PDFParse } = require('pdf-parse')
 const { parse: parseCsv } = require('csv-parse/sync')
 
 const env = require('../../config/env')
@@ -529,6 +529,16 @@ const extractExcelQuoteLines = async (buffer, request, extractionFormat = 'excel
   return docs
 }
 
+const extractPdfText = async (buffer) => {
+  const parser = new PDFParse({ data: buffer })
+  try {
+    const result = await parser.getText()
+    return result.text || ''
+  } finally {
+    await parser.destroy()
+  }
+}
+
 const extractCsvQuoteLines = async (buffer, request) => {
   const records = parseCsv(buffer.toString('utf8'), {
     relax_column_count: true,
@@ -552,8 +562,7 @@ const extractCsvQuoteLines = async (buffer, request) => {
 }
 
 const extractPdfQuoteLinesWithClaude = async (buffer, request) => {
-  const parsedPdf = await pdfParse(buffer)
-  const text = parsedPdf.text || ''
+  const text = await extractPdfText(buffer)
 
   if (!text.trim()) {
     throw new Error('Unable to extract text from PDF')
