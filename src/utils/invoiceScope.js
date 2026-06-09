@@ -8,7 +8,7 @@ const getEffectiveDueDate = (inv) => {
 }
 
 const isInvoiceOverdue = (inv, now = new Date()) => {
-  if (!['sent', 'overdue'].includes(inv.status)) return false
+  if (['paid', 'cancelled'].includes(inv.status)) return false  // sirf yeh do skip
   const due = getEffectiveDueDate(inv)
   if (!due) return false
   return due < now

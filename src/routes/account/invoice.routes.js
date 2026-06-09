@@ -6,4 +6,5 @@ router.get('/analytics',                 ctrl.getAnalytics)
 router.get('/project/:leadId/breakdown', ctrl.getProjectBreakdown)
 router.put('/:invoiceId/mark-paid',      ctrl.markAsPaid)
 
+
 module.exports = router

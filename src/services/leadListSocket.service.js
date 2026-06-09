@@ -106,36 +106,85 @@ const emitLeadListCreated = async (leadId, options = {}) => {
   }
 }
 
+// const emitLeadListUpdated = async (leadId, options = {}) => {
+//   const io = getIo()
+//   if (!io) return
+
+//   const { trigger = 'updated', includeScoreRow = false } = options
+//   const adminLead = await getLeadForAdminList(leadId)
+//   if (!adminLead) return
+
+//   const payload = {
+//     leadId,
+//     lead: adminLead,
+//     meta: { action: 'updated', trigger },
+//   }
+//   if (includeScoreRow) payload.scoreRow = await getScoreRow(leadId)
+
+//   io.to('admin_room').emit('lead_list_updated', payload)
+
+//   if (adminLead.assignedSales?._id) {
+//     const salesLead = await getLeadForSalesList(leadId)
+//     if (salesLead) {
+//       io.to(`user:${adminLead.assignedSales._id}`).emit('lead_list_updated', {
+//         leadId,
+//         lead: salesLead,
+//         scoreRow: payload.scoreRow || null,
+//         meta: { action: 'updated', trigger },
+//       })
+//     }
+//   }
+// }
+
 const emitLeadListUpdated = async (leadId, options = {}) => {
   const io = getIo()
   if (!io) return
 
-  const { trigger = 'updated', includeScoreRow = false } = options
+  const {
+    trigger = 'updated',
+    includeScoreRow = false,
+    notifySales = true,
+  } = options
+
   const adminLead = await getLeadForAdminList(leadId)
   if (!adminLead) return
 
   const payload = {
     leadId,
     lead: adminLead,
-    meta: { action: 'updated', trigger },
+    meta: {
+      action: 'updated',
+      trigger,
+    },
   }
-  if (includeScoreRow) payload.scoreRow = await getScoreRow(leadId)
 
+  if (includeScoreRow) {
+    payload.scoreRow = await getScoreRow(leadId)
+  }
+
+  // Always notify admin panel
   io.to('admin_room').emit('lead_list_updated', payload)
 
-  if (adminLead.assignedSales?._id) {
+  // Notify assigned sales only when required
+  if (notifySales && adminLead.assignedSales?._id) {
     const salesLead = await getLeadForSalesList(leadId)
+
     if (salesLead) {
-      io.to(`user:${adminLead.assignedSales._id}`).emit('lead_list_updated', {
-        leadId,
-        lead: salesLead,
-        scoreRow: payload.scoreRow || null,
-        meta: { action: 'updated', trigger },
-      })
+      io.to(`user:${adminLead.assignedSales._id}`).emit(
+        'lead_list_updated',
+        {
+          leadId,
+          lead: salesLead,
+          scoreRow: payload.scoreRow || null,
+          meta: {
+            action: 'updated',
+            trigger,
+          },
+        }
+      )
     }
   }
 }
-
 module.exports = {
   emitLeadListCreated,
   emitLeadListUpdated,

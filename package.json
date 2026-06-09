@@ -4,7 +4,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "vercel dev",
     "seed": "node scripts/seed.js",
     "create-user": "node scripts/createUser.js"
   },
@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/s3-request-presigner": "^3.0.0",
+    "@napi-rs/canvas": "^1.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.0",
@@ -24,8 +25,11 @@
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.0",
     "mongoose": "^8.0.0",
+    "node-schedule": "^2.1.1",
     "nodemailer": "^8.0.10",
     "pdf-parse": "^2.4.5",
+    "pdfkit": "^0.19.0",
+    "puppeteer": "^24.43.1",
     "socket.io": "^4.7.0",
     "uuid": "^9.0.0",
     "xlsx": "^0.18.5"

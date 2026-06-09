@@ -8,6 +8,7 @@ const { success, created, notFound, forbidden, badRequest } = require('../../uti
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const { scheduleFollowUpReminder } = require('../../utils/scheduler/followUpScheduler')
 
 const isOverdue = (f) => f.status === 'pending' && new Date(f.followUpDate) < new Date()
 
@@ -113,14 +114,16 @@ exports.createFollowUp = asyncHandler(async (req, res) => {
     priority: priority || 'medium',
   })
 
-  await auditService.log({
-    type: 'followup',
+  await auditService.log({                                                
+    type: 'followup',   
     action: AUDIT_ACTIONS.FOLLOWUP_CREATED,
     leadId,
     customerId,
     performedBy: req.user._id,
     metadata: { followUpDate, priority, modeOfContact },
   })
+    
+  scheduleFollowUpReminder(followUp)
 
   return created(res, { followUp })
 })
