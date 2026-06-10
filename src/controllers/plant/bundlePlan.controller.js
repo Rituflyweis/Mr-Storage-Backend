@@ -4,6 +4,7 @@ const VendorQuoteLine = require('../../models/VendorQuoteLine')
 const PackingListPlan = require('../../models/PackingListPlan')
 const PackingList = require('../../models/PackingList')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { resolveLeadByProjectRef } = require('../../utils/projectRef')
 const {
   TRUCK_TYPES,
   generateMixedTruckPackingLists,
@@ -155,6 +156,27 @@ const loadBundlePlanWithAccess = async (bundlePlanId, plantUserId) => {
   if (access.error) return access
 
   return { bundlePlan }
+}
+
+const loadBundlePlanByProjectWithAccess = async (projectRef, plantUserId) => {
+  const lead = await resolveLeadByProjectRef(projectRef)
+  if (!lead) return { error: 'Project not found', code: 404 }
+
+  const access = await assertPlantProjectAccess(lead._id, plantUserId)
+  if (access.error) return access
+
+  const bundlePlan = await BundlePlan.findOne({
+    leadId: lead._id,
+    status: { $ne: 'cancelled' },
+  })
+    .sort({ updatedAt: -1 })
+    .lean()
+
+  if (!bundlePlan) {
+    return { error: 'No bundle plan found for this project', code: 404 }
+  }
+
+  return { lead, bundlePlan }
 }
 
 exports.getBundlePlan = asyncHandler(async (req, res) => {
@@ -364,7 +386,7 @@ exports.generatePackingListPlan = asyncHandler(async (req, res) => {
 
   const bundles = await Bundle.find({
     bundlePlanId: bundlePlan._id,
-    status: 'confirmed',
+    status: { $in: ['confirmed', 'assigned_to_truck', 'loaded'] },
   })
     .sort({
       loadSequence: 1,
@@ -375,7 +397,10 @@ exports.generatePackingListPlan = asyncHandler(async (req, res) => {
     .lean()
 
   if (!bundles.length) {
-    return badRequest(res, 'No confirmed bundles found for this bundle plan')
+    return badRequest(
+      res,
+      'No confirmed/assigned bundles found for this bundle plan'
+    )
   }
 
   const bundlesWithMissingWeight = bundles.filter((bundle) => {
@@ -582,4 +607,181 @@ exports.generatePackingListPlan = asyncHandler(async (req, res) => {
   }
 
   return created(res, responseData, 'Packing list plan generated')
+})
+
+exports.getProjectLoadPlanning = asyncHandler(async (req, res) => {
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  if (loaded.error) {
+    if (loaded.code === 404) return notFound(res, loaded.error)
+    return forbidden(res, loaded.error)
+  }
+
+  const { lead, bundlePlan } = loaded
+  const [bundles, packingListPlan, packingLists] = await Promise.all([
+    Bundle.find({ bundlePlanId: bundlePlan._id })
+      .sort({ loadSequence: 1, bundleNo: 1 })
+      .lean(),
+    PackingListPlan.findOne({ bundlePlanId: bundlePlan._id }).lean(),
+    PackingList.find({ bundlePlanId: bundlePlan._id }).sort({ truckNo: 1, packingListNo: 1 }).lean(),
+  ])
+
+  const summary = aggregateBundlePlanSummary(bundles)
+
+  return success(res, {
+    project: {
+      _id: lead._id,
+      projectId: lead.jobId,
+      projectName: lead.projectName || '',
+    },
+    bundlePlan,
+    bundles: bundles.map(mapBundleSummaryRow),
+    bundleSummary: summary,
+    packingListPlan: packingListPlan || null,
+    packingLists,
+  })
+})
+
+exports.updateProjectLoadPlanning = asyncHandler(async (req, res) => {
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  if (loaded.error) {
+    if (loaded.code === 404) return notFound(res, loaded.error)
+    return forbidden(res, loaded.error)
+  }
+
+  const { bundlePlan } = loaded
+  const payload = req.body || {}
+
+  let updatedBundlePlan = null
+  let updatedPackingListPlan = null
+  let updatedPackingLists = []
+  let updatedBundles = []
+
+  if (payload.bundlePlanNotes !== undefined) {
+    updatedBundlePlan = await BundlePlan.findByIdAndUpdate(
+      bundlePlan._id,
+      { notes: String(payload.bundlePlanNotes || '').trim() },
+      { new: true, runValidators: true }
+    ).lean()
+  } else {
+    updatedBundlePlan = bundlePlan
+  }
+
+  if (payload.packingListPlanNotes !== undefined) {
+    const existing = await PackingListPlan.findOne({ bundlePlanId: bundlePlan._id })
+    if (!existing) return badRequest(res, 'Packing list plan not found for this project')
+    updatedPackingListPlan = await PackingListPlan.findByIdAndUpdate(
+      existing._id,
+      { notes: String(payload.packingListPlanNotes || '').trim() },
+      { new: true, runValidators: true }
+    ).lean()
+  } else {
+    updatedPackingListPlan = await PackingListPlan.findOne({ bundlePlanId: bundlePlan._id }).lean()
+  }
+
+  if (Array.isArray(payload.bundleUpdates) && payload.bundleUpdates.length > 0) {
+    const uniqueIds = [...new Set(payload.bundleUpdates.map((row) => String(row.bundleId || '')))].filter(Boolean)
+    const existingBundles = await Bundle.find({
+      _id: { $in: uniqueIds },
+      bundlePlanId: bundlePlan._id,
+    })
+    if (existingBundles.length !== uniqueIds.length) {
+      return badRequest(res, 'All bundleUpdates.bundleId must belong to this project bundle plan')
+    }
+
+    for (const row of payload.bundleUpdates) {
+      const updateDoc = {}
+      if (row.loadSequence !== undefined) {
+        updateDoc.loadSequence = row.loadSequence == null ? null : Number(row.loadSequence)
+      }
+      if (row.notes !== undefined) {
+        updateDoc.notes = String(row.notes || '').trim()
+      }
+      if (row.handlingInstruction !== undefined) {
+        updateDoc.handlingInstruction = String(row.handlingInstruction || '').trim()
+      }
+      if (Object.keys(updateDoc).length > 0) {
+        await Bundle.findByIdAndUpdate(row.bundleId, updateDoc, { runValidators: true })
+      }
+    }
+    updatedBundles = await Bundle.find({ bundlePlanId: bundlePlan._id })
+      .sort({ loadSequence: 1, bundleNo: 1 })
+      .lean()
+  } else {
+    updatedBundles = await Bundle.find({ bundlePlanId: bundlePlan._id })
+      .sort({ loadSequence: 1, bundleNo: 1 })
+      .lean()
+  }
+
+  if (Array.isArray(payload.packingListUpdates) && payload.packingListUpdates.length > 0) {
+    const plan = await PackingListPlan.findOne({ bundlePlanId: bundlePlan._id })
+    if (!plan) return badRequest(res, 'Packing list plan not found for this project')
+
+    const uniqueIds = [...new Set(payload.packingListUpdates.map((row) => String(row.packingListId || '')))].filter(Boolean)
+    const existingRows = await PackingList.find({
+      _id: { $in: uniqueIds },
+      packingListPlanId: plan._id,
+    })
+    if (existingRows.length !== uniqueIds.length) {
+      return badRequest(res, 'All packingListUpdates.packingListId must belong to this project packing list plan')
+    }
+
+    for (const row of payload.packingListUpdates) {
+      const updateDoc = {}
+      if (row.notes !== undefined) updateDoc.notes = String(row.notes || '').trim()
+      if (row.loadingNotes !== undefined) {
+        updateDoc['loadLayout.loadingNotes'] = String(row.loadingNotes || '').trim()
+      }
+      if (Object.keys(updateDoc).length > 0) {
+        await PackingList.findByIdAndUpdate(row.packingListId, updateDoc, { runValidators: true })
+      }
+    }
+    updatedPackingLists = await PackingList.find({ packingListPlanId: plan._id })
+      .sort({ truckNo: 1, packingListNo: 1 })
+      .lean()
+    updatedPackingListPlan = updatedPackingListPlan || plan.toObject()
+  } else if (updatedPackingListPlan?._id) {
+    updatedPackingLists = await PackingList.find({ packingListPlanId: updatedPackingListPlan._id })
+      .sort({ truckNo: 1, packingListNo: 1 })
+      .lean()
+  }
+
+  return success(res, {
+    bundlePlan: updatedBundlePlan,
+    bundles: updatedBundles.map(mapBundleSummaryRow),
+    packingListPlan: updatedPackingListPlan || null,
+    packingLists: updatedPackingLists,
+  }, 'Project load planning updated')
+})
+
+exports.getProjectBundlePlanCoverage = asyncHandler(async (req, res) => {
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  if (loaded.error) {
+    if (loaded.code === 404) return notFound(res, loaded.error)
+    return forbidden(res, loaded.error)
+  }
+
+  req.params.bundlePlanId = String(loaded.bundlePlan._id)
+  return exports.getBundlePlanCoverage(req, res)
+})
+
+exports.confirmProjectBundlePlan = asyncHandler(async (req, res) => {
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  if (loaded.error) {
+    if (loaded.code === 404) return notFound(res, loaded.error)
+    return forbidden(res, loaded.error)
+  }
+
+  req.params.bundlePlanId = String(loaded.bundlePlan._id)
+  return exports.confirmBundlePlan(req, res)
+})
+
+exports.generateProjectPackingListPlan = asyncHandler(async (req, res) => {
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  if (loaded.error) {
+    if (loaded.code === 404) return notFound(res, loaded.error)
+    return forbidden(res, loaded.error)
+  }
+
+  req.params.bundlePlanId = String(loaded.bundlePlan._id)
+  return exports.generatePackingListPlan(req, res)
 })

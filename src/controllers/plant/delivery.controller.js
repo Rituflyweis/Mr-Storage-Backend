@@ -11,6 +11,7 @@ const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
 const { CLIENT_URL } = require('../../config/env')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const { resolveLeadByProjectRef } = require('../../utils/projectRef')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -100,6 +101,29 @@ exports.getFreightAutofill = asyncHandler(async (req, res) => {
   const [packingListPlan, bundles] = await Promise.all([
     PackingListPlan.findOne({ bundlePlanId }).lean(),
     Bundle.find({ bundlePlanId }).lean(),
+  ])
+
+  return success(res, buildFreightAutofill(bundlePlan, packingListPlan, bundles))
+})
+
+exports.getFreightAutofillByProject = asyncHandler(async (req, res) => {
+  const lead = await resolveLeadByProjectRef(req.params.projectId)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const access = await assertPlantProjectAccess(lead._id, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const bundlePlan = await BundlePlan.findOne({ leadId: lead._id, status: { $ne: 'cancelled' } })
+    .sort({ updatedAt: -1 })
+    .lean()
+  if (!bundlePlan) return notFound(res, 'No bundle plan found for this project')
+
+  const [packingListPlan, bundles] = await Promise.all([
+    PackingListPlan.findOne({ bundlePlanId: bundlePlan._id }).lean(),
+    Bundle.find({ bundlePlanId: bundlePlan._id }).lean(),
   ])
 
   return success(res, buildFreightAutofill(bundlePlan, packingListPlan, bundles))
@@ -365,4 +389,38 @@ exports.getDeliveryBids = asyncHandler(async (req, res) => {
     sort,
     bids: mapped,
   })
+})
+
+exports.sendDeliveryBidsByProject = asyncHandler(async (req, res) => {
+  const lead = await resolveLeadByProjectRef(req.params.projectId)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const access = await assertPlantProjectAccess(lead._id, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const delivery = await Delivery.findOne({ leadId: lead._id }).sort({ createdAt: -1 })
+  if (!delivery) return notFound(res, 'Freight request not found for this project')
+
+  req.params.deliveryId = String(delivery._id)
+  return exports.sendDeliveryBids(req, res)
+})
+
+exports.getDeliveryBidsByProject = asyncHandler(async (req, res) => {
+  const lead = await resolveLeadByProjectRef(req.params.projectId)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const access = await assertPlantProjectAccess(lead._id, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const delivery = await Delivery.findOne({ leadId: lead._id }).sort({ createdAt: -1 }).lean()
+  if (!delivery) return notFound(res, 'Freight request not found for this project')
+
+  req.params.deliveryId = String(delivery._id)
+  return exports.getDeliveryBids(req, res)
 })

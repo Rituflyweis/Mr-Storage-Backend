@@ -3460,7 +3460,7 @@ Soft-deactivate — **never** hard-deletes SMDT data.
 
 Plant listens for `shipper_file_submitted` / `all_shipper_files_submitted` on `/admin` socket.
 
-### Flow C — Shipper comparison → approve/resubmit → bundle + packing plan
+### Flow C — Shipper comparison → approve/resubmit → unified load + truck planning
 
 ```text
 1. GET  /api/plant/shipper-files/projects
@@ -3474,15 +3474,21 @@ Plant listens for `shipper_file_submitted` / `all_shipper_files_submitted` on `/
 7b. If mismatches   → POST /api/plant/shipper-requests/:requestId/request-resubmit  { note }
     (vendor re-uploads via same token; then repeat from step 3)
 8. POST /api/plant/shipper-requests/:requestId/bundle-plan/generate
-9. GET  /api/plant/projects/:leadId/bundle-plan
-10. GET /api/plant/bundle-plans/:bundlePlanId/coverage
-11. PUT /api/plant/bundles/:bundleId        (repeat as needed for manual regrouping)
-12. POST /api/plant/bundle-plans/:bundlePlanId/confirm
-13. POST /api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate
-14. GET /api/plant/packing-list-plans/:packingListPlanId
-15. PUT /api/plant/packing-lists/:packingListId        (optional manual truck adjustment)
-16. POST /api/plant/packing-list-plans/:packingListPlanId/confirm
+9. GET  /api/plant/projects/:projectId/load-planning
+10. GET /api/plant/projects/:projectId/load-planning/coverage
+11. PUT /api/plant/projects/:projectId/load-planning
+    (repeat as needed for bundle loadSequence/notes + truck notes updates)
+12. POST /api/plant/projects/:projectId/load-planning/confirm-bundles
+13. POST /api/plant/projects/:projectId/load-planning/generate-truck-plan
+14. GET /api/plant/projects/:projectId/load-planning/truck-plan
+15. PUT /api/plant/projects/:projectId/load-planning/trucks/:packingListId
+    (optional detailed truck layout adjustment)
+16. POST /api/plant/projects/:projectId/load-planning/truck-plan/confirm
 ```
+
+Regenerate note:
+- `POST /api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate` (and unified project variant) accepts bundles in statuses `confirmed`, `assigned_to_truck`, or `loaded`.
+- This keeps regeneration working after prior truck assignment edits.
 
 `canProceedToApproval` from step 5 gates the approve button. Blockers: `comparison_not_run`, `missing_items`, `qty_mismatch`, `length_mismatch`, `weight_mismatch`, `ambiguous_match`.
 
@@ -3491,12 +3497,12 @@ Plant listens for `shipper_file_submitted` / `all_shipper_files_submitted` on `/
 ### Flow D — Freight request → bidding → award
 
 ```text
-1. GET  /api/plant/bundle-plans/:bundlePlanId/freight-autofill
+1. GET  /api/plant/projects/:projectId/freight-autofill
 2. POST /api/plant/deliveries
-3. POST /api/plant/deliveries/:deliveryId/send-bids   { carrierIds, bidDeadline }
+3. POST /api/plant/projects/:projectId/freight/send-bids   { carrierIds, bidDeadline }
 4. Carrier opens: GET /api/public/freight-bids/:token
 5. Carrier submits: POST /api/public/freight-bids/:token/submit   { quotedAmount, carrierNotes }
-6. Plant views: GET /api/plant/deliveries/:deliveryId/bids?sort=low_to_high
+6. Plant views: GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high
 7. Plant awards: POST /api/plant/freight-bids/:bidId/select
 ```
 
@@ -3555,6 +3561,17 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Request resubmit | `POST .../request-resubmit` `{ note }` |
 | Generate bundle plan | `POST .../bundle-plan/generate` |
 | Bundle plan by project | `GET /api/plant/projects/:leadId/bundle-plan` |
+| Unified load + truck planning snapshot | `GET /api/plant/projects/:projectId/load-planning` (`projectId` accepts lead `_id` or `jobId` like `PRO-019`) |
+| Unified load/truck notes & sequence update | `PUT /api/plant/projects/:projectId/load-planning` |
+| Unified coverage check | `GET /api/plant/projects/:projectId/load-planning/coverage` |
+| Unified bundle confirm | `POST /api/plant/projects/:projectId/load-planning/confirm-bundles` |
+| Unified truck-plan generate | `POST /api/plant/projects/:projectId/load-planning/generate-truck-plan` |
+| Unified truck-plan detail | `GET /api/plant/projects/:projectId/load-planning/truck-plan` |
+| Unified truck row edit | `PUT /api/plant/projects/:projectId/load-planning/trucks/:packingListId` |
+| Unified truck-plan confirm | `POST /api/plant/projects/:projectId/load-planning/truck-plan/confirm` |
+| Unified freight autofill | `GET /api/plant/projects/:projectId/freight-autofill` |
+| Unified freight send bids | `POST /api/plant/projects/:projectId/freight/send-bids` |
+| Unified freight bid detail view | `GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high|high_to_low` |
 | Bundle plan by id | `GET /api/plant/bundle-plans/:bundlePlanId` |
 | Bundle plan notes | `PUT /api/plant/bundle-plans/:bundlePlanId` |
 | Bundle coverage check | `GET /api/plant/bundle-plans/:bundlePlanId/coverage` |
