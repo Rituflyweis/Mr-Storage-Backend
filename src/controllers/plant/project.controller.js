@@ -631,10 +631,9 @@ exports.uploadProjectBom = asyncHandler(async (req, res) => {
       isConfirmed: false,
     })
 
-    if (building.status !== 'bom_confirmed') {
-      building.status = 'bom_pending'
-      await building.save()
-    }
+    // Any fresh upload invalidates prior confirmation for that building.
+    building.status = 'bom_pending'
+    await building.save()
 
     processBOMJob(
       job._id,
@@ -903,13 +902,14 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
     buildingMap[String(building._id)] = building.buildingNumber
   })
 
-  const { buffer, totalCost } = await generateConsolidatedExcel(
+  const { buffer } = await generateConsolidatedExcel(
     lead,
     buildings,
     allItems
   )
 
   const groupedItems = groupItemsForConsolidation(allItems, buildingMap)
+  const totalCost = groupedItems.reduce((sum, item) => sum + (item.totalCost || 0), 0)
 
   const { fileUrl } = await uploadConsolidatedExcelToS3(buffer, leadId)
 

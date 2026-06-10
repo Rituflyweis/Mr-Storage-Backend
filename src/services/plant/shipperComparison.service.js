@@ -1,3 +1,27 @@
+
+/**
+ * Shipper quote extraction + comparison pipeline.
+ *
+ * Demo-safe / same-schema version.
+ * VERSION: shipper-comparison-v4-bomitem-expected-rows
+ *
+ * What this version does:
+ *   - Keeps the existing model schemas unchanged.
+ *   - Uses deterministic parsers for Central States and Quicken Steel.
+ *   - Uses Claude/Sonnet only as extraction fallback, not as final judge.
+ *   - Compares vendor quote against ConsolidatedBOM using:
+ *       normalized piece mark + piece length tolerance + qty
+ *   - Normalizes incompatible vendor part codes into a canonical material key:
+ *       C83516R       -> CEE|16GA|8|3.5|RED_OXIDE
+ *       PC16-RO-8X3.5 -> CEE|16GA|8|3.5|RED_OXIDE
+ *   - Stores canonical material details inside rawRow / expected / received Mixed fields
+ *     so no schema migration is required.
+ *
+ * Public contract preserved:
+ *   - processShipperComparisonJob(jobId)
+ *   - compareShipperRequest(requestId)
+ */
+
 const Anthropic = require('@anthropic-ai/sdk')
 const https = require('https')
 const http = require('http')
@@ -8,527 +32,536 @@ const { parse: parseCsv } = require('csv-parse/sync')
 const env = require('../../config/env')
 const ShipperRequest = require('../../models/ShipperRequest')
 const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
+const BOMItem = require('../../models/BOMItem')
 const VendorQuoteLine = require('../../models/VendorQuoteLine')
 const QuoteComparisonResult = require('../../models/QuoteComparisonResult')
 const ShipperComparisonJob = require('../../models/ShipperComparisonJob')
-const { parseLengthToFeet } = require('./bom.service')
 
-const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+/* =========================================================
+ * Constants
+ * ========================================================= */
+const LENGTH_TOLERANCE_INCH = 0.5
+const LENGTH_TOL_FEET = LENGTH_TOLERANCE_INCH / 12
+const SERVICE_VERSION = 'shipper-comparison-v4.1-material-cleanup'
+const DEFAULT_SONNET_MODEL = env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514'
 
-const normalizeKey = (value) => {
-  if (value == null) return ''
+let anthropicClient = null
+const getAnthropicClient = () => {
+  if (!env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY missing for AI-assisted PDF extraction')
+  }
+  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+  return anthropicClient
+}
 
-  return String(value)
+/* =========================================================
+ * Primitives
+ * ========================================================= */
+const normMark = (v) => {
+  if (v == null) return ''
+  return String(v).trim().toUpperCase().replace(/\s+/g, '')
+}
+
+const normCode = (v) => {
+  if (v == null) return ''
+  return String(v)
     .trim()
     .toUpperCase()
     .replace(/\s+/g, '')
-    .replace(/[^\w#+./-]/g, '')
+    .replace(/[^A-Z0-9#+./-]/g, '')
 }
 
-const cleanStr = (value) => {
-  if (value == null) return ''
-
-  return String(value)
-    .replace(/^'+/, '')
-    .replace(/'+$/, '')
-    .trim()
+const cleanStr = (v) => {
+  if (v == null) return ''
+  return String(v).replace(/^'+/, '').replace(/'+$/, '').trim()
 }
 
-const toNum = (value) => {
-  if (value == null || value === '') return null
+const cleanMaterialDescription = (value) => {
+  let s = cleanStr(value)
+  if (!s) return ''
 
-  const n = Number(
-    String(value)
-      .replace(/[$,%\s,]/g, '')
-      .trim()
+  // Vendor lines often append LF/UOM + unit price + amount at the end.
+  // Example: "Wall Girt 42.9167 LF 3.0000 128.75"
+  s = s.replace(
+    /\s+\d+(?:\.\d+)?\s*(?:LF|FT|EA|LB|LOT)\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s*$/i,
+    ''
+  )
+  s = s.replace(
+    /\s+\d+(?:\.\d+)?\s*(?:LF|FT|EA|LB|LOT)\s+\d+(?:\.\d+)?\s*$/i,
+    ''
   )
 
+  return s.trim()
+}
+
+const toNum = (v) => {
+  if (v == null || v === '') return null
+  const n = Number(String(v).replace(/[$,%\s,]/g, '').trim())
   return Number.isFinite(n) ? n : null
 }
 
-const safeNum = (value, fallback = 0) => {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
-}
-
-const close = (a, b, tolerance = 0.05) => {
-  if (a == null || b == null) return false
-  return Math.abs(Number(a) - Number(b)) <= tolerance
-}
+const safe = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0)
+const round = (n, d = 4) => Math.round(Number(n || 0) * 10 ** d) / 10 ** d
+const fmtFt = (f) => (f == null ? 'n/a' : `${safe(f).toFixed(3)}ft`)
+const uniq = (arr) => [...new Set((arr || []).filter((x) => x != null && x !== ''))]
 
 const downloadBuffer = (url) =>
   new Promise((resolve, reject) => {
-    const lib = url.startsWith('https') ? https : http
-
+    const lib = String(url || '').startsWith('https') ? https : http
     lib
       .get(url, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          downloadBuffer(res.headers.location).then(resolve).catch(reject)
+          return
+        }
         if (res.statusCode >= 400) {
           reject(new Error(`Failed to download file: HTTP ${res.statusCode}`))
           return
         }
-
         const chunks = []
-
-        res.on('data', (chunk) => chunks.push(chunk))
+        res.on('data', (c) => chunks.push(c))
         res.on('end', () => resolve(Buffer.concat(chunks)))
         res.on('error', reject)
       })
       .on('error', reject)
   })
 
-const col = (headers, aliases) => {
-  return headers.findIndex((header) => aliases.includes(header))
+/* =========================================================
+ * Length normalization
+ * Supports:
+ *   6' 11.75''
+ *   6' 11-3/4"
+ *   15'11-12"    // sixteenths notation
+ *   1-04"        // inch-sixteenths notation
+ *   numeric strings as feet when no quote marks exist
+ * ========================================================= */
+const fractionishToNumber = (value) => {
+  if (value == null || value === '') return null
+  const s = String(value).trim()
+
+  const mixedHyphen = s.match(/^(\d+)\s*-\s*(\d+)\s*\/\s*(\d+)$/)
+  if (mixedHyphen) {
+    return Number(mixedHyphen[1]) + Number(mixedHyphen[2]) / Number(mixedHyphen[3])
+  }
+
+  const mixedSpace = s.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)$/)
+  if (mixedSpace) {
+    return Number(mixedSpace[1]) + Number(mixedSpace[2]) / Number(mixedSpace[3])
+  }
+
+  const frac = s.match(/^(\d+)\s*\/\s*(\d+)$/)
+  if (frac) return Number(frac[1]) / Number(frac[2])
+
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
 }
 
-const normalizeHeader = (header) => normalizeKey(header)
-
-const parseMbsLengthToFeet = (value) => {
+const lengthToFeet = (value) => {
   if (value == null || value === '') return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value
 
-  const raw = String(value)
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/[‐-‒–—]/g, '-')
+  let s = String(value)
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u2010-\u2015]/g, '-')
+    .replace(/''/g, '"')
+    .replace(/″/g, '"')
+    .replace(/′/g, "'")
+    .replace(/\bFT\b/gi, "'")
+    .replace(/\bIN\b/gi, '"')
     .trim()
 
-  if (!raw) return null
+  if (!s) return null
 
-  if (/^\d+(\.\d+)?$/.test(raw)) {
-    return Number(raw)
+  // Pure numeric values in uploaded spreadsheets are normally feet.
+  if (/^\d+(?:\.\d+)?$/.test(s)) return Number(s)
+
+  // MBS pattern: 15'11-12" where 12 means sixteenths.
+  const mbs = s.match(/^(\d+)\s*'\s*(\d{1,2})-(\d{1,2})"?$/)
+  if (mbs) {
+    return Number(mbs[1]) + (Number(mbs[2]) + Number(mbs[3]) / 16) / 12
   }
 
-  /**
-   * MBS style:
-   * 15'11-12" means 15 ft + 11 + 12/16 inches.
-   * 16'02-04" means 16 ft + 2 + 4/16 inches.
-   */
-  const mbsFeet = raw.match(/^(\d+)'\s*(\d{1,2})-(\d{1,2})"?$/)
-  if (mbsFeet) {
-    const feet = Number(mbsFeet[1])
-    const inches = Number(mbsFeet[2])
-    const sixteenths = Number(mbsFeet[3]) / 16
-    return feet + (inches + sixteenths) / 12
+  // Inch-sixteenths only: 6-00", 1-04".
+  const mbsIn = s.match(/^(\d{1,2})-(\d{1,2})"$/)
+  if (mbsIn) {
+    return (Number(mbsIn[1]) + Number(mbsIn[2]) / 16) / 12
   }
 
-  /**
-   * Inch-only MBS style:
-   * 6-00" = 6 inches
-   * 1-04" = 1.25 inches
-   * 0-14" = 0.875 inches
-   */
-  const mbsInches = raw.match(/^(\d+)-(\d{1,2})"?$/)
-  if (mbsInches) {
-    const inches = Number(mbsInches[1])
-    const sixteenths = Number(mbsInches[2]) / 16
-    return (inches + sixteenths) / 12
+  // Remove a wrapped trailing table value after the inch mark, if PDF text extraction appended it.
+  s = s.replace(/("?)\s+\d+(?:\.\d+)?\s*$/, '$1').trim()
+
+  let feet = 0
+  let inches = 0
+  let matched = false
+
+  const feetMatch = s.match(/(\d+(?:\.\d+)?)\s*'/)
+  if (feetMatch) {
+    feet = Number(feetMatch[1])
+    matched = true
+    s = s.slice(feetMatch.index + feetMatch[0].length)
   }
 
-  /**
-   * Quicken style:
-   * 6' 11-3/4"
-   * 11' 3-7/8"
-   */
-  const feetDashFraction = raw.match(/^(\d+)'\s*(\d+)-(\d+)\/(\d+)"?$/)
-  if (feetDashFraction) {
-    const feet = Number(feetDashFraction[1])
-    const inches = Number(feetDashFraction[2])
-    const frac = Number(feetDashFraction[3]) / Number(feetDashFraction[4])
-    return feet + (inches + frac) / 12
-  }
-
-  /**
-   * Central States style:
-   * 6' 11.75''
-   * 13' 11.75''
-   */
-  const feetDecimalInches = raw.match(/^(\d+)'\s*(\d+(?:\.\d+)?)''?$/)
-  if (feetDecimalInches) {
-    const feet = Number(feetDecimalInches[1])
-    const inches = Number(feetDecimalInches[2])
-    return feet + inches / 12
-  }
-
-  const fallback = parseLengthToFeet(raw)
-  return Number.isFinite(Number(fallback)) ? Number(fallback) : null
-}
-
-const normalizeComparableKey = ({ partCode, partColor, lengthFeet }) => {
-  const part = normalizeKey(partCode)
-  const color = normalizeKey(partColor)
-
-  const length =
-    lengthFeet != null && Number.isFinite(Number(lengthFeet))
-      ? Number(lengthFeet).toFixed(4)
-      : '_'
-
-  return `${part || '_'}|${color || '_'}|${length}`
-}
-
-const detectPdfFormat = (text) => {
-  const t = String(text || '').toUpperCase()
-
-  if (
-    t.includes('QUICKEN STEEL') ||
-    t.includes('SALES ORDER') ||
-    t.includes('PIECE MARK:')
-  ) {
-    return 'quicken_steel'
-  }
-
-  if (
-    t.includes('CENTRAL STATES') ||
-    t.includes('LINE PRODUCT DESCRIPTION QTY UOM UNIT COST TOTAL COST') ||
-    t.includes('PIECES @') ||
-    t.includes('PART MARK:')
-  ) {
-    return 'central_states'
-  }
-
-  if (
-    t.includes('WEIGHT & COST SUMMARY') ||
-    t.includes('TOTAL WEIGHT =') ||
-    t.includes('QUAN MARK DESCRIPTION') ||
-    t.includes('ROOF & WALL SHEETING')
-  ) {
-    return 'mbs_material_report'
-  }
-
-  return 'generic_material_pdf'
-}
-
-const buildPdfExtractionPrompt = (format, text) => {
-  const baseShape = `Return JSON only in this exact structure:
-{
-  "lines": [
-    {
-      "lineNo": "1",
-      "qty": 10,
-      "pieceQty": 10,
-      "totalLinearFeet": null,
-      "uom": null,
-      "partCode": "C42516",
-      "vendorProductCode": "C42516",
-      "description": "Stud",
-      "color": "RO",
-      "lengthText": "15'11-12\\"",
-      "weight": 59.4,
-      "unitPrice": null,
-      "priceUnit": "UNKNOWN",
-      "amount": 56.70,
-      "pieceMark": "S-1",
-      "punchInfo": "",
-      "leftPunch": "",
-      "rightPunch": "",
-      "pageNumber": 1,
-      "rawText": "original source row text",
-      "confidence": 0.95,
-      "warnings": []
-    }
-  ]
-}`
-
-  if (format === 'quicken_steel') {
-    return `Extract shipper/vendor material line items from this Quicken Steel sales order PDF text.
-
-This format has rows similar to:
-Line Item Description Length Weight Unit Price Amount Qty
-1 16Ga CEE Purlin Red Oxide 8 X 3-1/2" $2.53 / FT 28 $494.48 PC16-RO-8X3.5 6' 11-3/4" 621
-Punch: Custom Punch
-Piece Mark: DJ-1
-
-Rules:
-- Extract actual material line items only.
-- Attach "Punch:" and "Piece Mark:" continuation lines to the item immediately above them.
-- qty is the physical quantity/piece count.
-- partCode and vendorProductCode should be the product code like PC16-RO-8X3.5.
-- lengthText must preserve the original length.
-- weight is the line weight.
-- unitPrice is the numeric value from "$2.53 / FT"; priceUnit should be FT.
-- amount is the line amount.
-- Do not include headers, footers, totals, customer information, or signature pages.
-- Do not invent missing values.
-
-${baseShape}
-
-PDF text:
-${text.slice(0, 120000)}`
-  }
-
-  if (format === 'central_states') {
-    return `Extract shipper/vendor material line items from this Central States quote PDF text.
-
-This format has rows like:
-1 C83516R Purlin,Prime,R,Cee,8,3.5,16
-28 Pieces @ 6' 11.75''
-Left Punch: PPEP
-Right Punch: PPEP
-Part Mark: DJ-1
-195.4167 LF 3.0006 586.37
-
-Rules:
-- Extract actual material line items only.
-- Product code like C83516R should be partCode and vendorProductCode.
-- IMPORTANT: the Qty column is usually total linear feet, not physical piece count.
-- pieceQty must come from "28 Pieces @ ...".
-- qty must be the physical piece count when pieceQty is available.
-- totalLinearFeet must come from the LF Qty value like 195.4167.
-- uom should be LF when visible.
-- lengthText must come from the "Pieces @ length" text, e.g. "6' 11.75''".
-- Extract Part Mark as pieceMark.
-- Extract Left Punch and Right Punch.
-- unitPrice is Unit Cost.
-- amount is Total Cost.
-- Do not include page headers, totals, bill-to/ship-to info, or repeated table headers.
-- Do not invent missing values.
-
-${baseShape}
-
-PDF text:
-${text.slice(0, 120000)}`
-  }
-
-  if (format === 'mbs_material_report') {
-    return `Extract shipper/material line items from this MBS-style material report PDF text.
-
-This format has sections like:
-Quan Mark Description Stock Length Weight Cost
-2 S-1 Stud C42516 15'11-12" 59.4 56.70
-
-And sheeting/trim sections may have:
-Quan Mark Description Part Clr Pitch Length Weight Cost
-4 ES-1 EW Sheet RLOC26 C1 16'00-00" 169.2 229.32
-
-Rules:
-- Extract only actual material line rows.
-- Skip section headings, separator lines, totals, summaries, color legends, supplier discount summaries, and page labels.
-- qty is the first number in the material row.
-- pieceMark is the Mark value, e.g. S-1, DJ-1, P-1, G-1, ES-1, RS-1, MINICL, BASECL, RA, BA.
-- partCode should be Stock/Part value, e.g. C42516, Z62516, RLOC26, PLOC+29, MINICLIP, BASECLIP, B4216, #12114MM.
-- color should be extracted only when a visible color code exists, e.g. RO, GZ, M, C1, NC.
-- lengthText must preserve original length, e.g. 15'11-12", 6-00", 1-04".
-- weight is line weight.
-- amount is line cost.
-- unitPrice may be null unless explicitly visible.
-- Do not invent missing values.
-
-${baseShape}
-
-PDF text:
-${text.slice(0, 120000)}`
-  }
-
-  return `Extract shipper/vendor material line items from this PDF text.
-
-Rules:
-- Extract actual line items only.
-- Skip headers, footers, totals, summaries, tax rows, notes, and page labels.
-- Prefer physical quantity as qty.
-- Extract part/product code, description, mark, color, length, weight, unit price, amount.
-- Do not invent missing values.
-- Include warnings when uncertain.
-
-${baseShape}
-
-PDF text:
-${text.slice(0, 120000)}`
-}
-
-const isTotalOrInstructionRow = (joined) => {
-  const text = String(joined || '').toLowerCase().trim()
-
-  return (
-    !text ||
-    text.startsWith('total') ||
-    text.includes('grand total') ||
-    text.includes('subtotal') ||
-    text.includes('example data') ||
-    text.includes('<-example') ||
-    text.includes('sample data')
-  )
-}
-
-const mapRowToVendorLine = ({
-  row,
-  rowNumber,
-  shipperRequestId,
-  request,
-  extractionMethod,
-  extractionFormat = 'excel',
-  pageNumber = null,
-  rawText = '',
-}) => {
-  const headers = row.__headers || []
-
-  const iQty = col(headers, ['QTY', 'QUANTITY', 'PIECEQTY'])
-  const iPieceQty = col(headers, ['PIECEQTY', 'PIECES'])
-  const iTotalLf = col(headers, ['TOTALLINEARFEET', 'TOTALFEET', 'LF', 'LINEARFEET'])
-  const iUom = col(headers, ['UOM', 'UNIT'])
-  const iPart = col(headers, ['PART', 'PARTCODE', 'ITEM', 'MBIPN', 'MBIP/N', 'PRODUCT', 'PRODUCTCODE'])
-  const iVendorProduct = col(headers, ['VENDORPRODUCTCODE', 'PRODUCT', 'PRODUCTCODE'])
-  const iDesc = col(headers, ['DESCRIPTION', 'DESC'])
-  const iColor = col(headers, ['COLOR', 'COLOUR', 'FINISH', 'CLR'])
-  const iLength = col(headers, ['LENGTH', 'LEN', 'LENGTHFT'])
-  const iWeight = col(headers, ['WEIGHT', 'WT', 'WEIGHTLBS'])
-  const iUnitPrice = col(headers, ['UNITPRICE', 'UNITCOST', 'PRICE', 'RATE'])
-  const iPriceUnit = col(headers, ['PRICEUNIT'])
-  const iAmount = col(headers, ['TOTAL', 'AMOUNT', 'LINETOTAL', 'EXTAMOUNT', 'TOTALCOST'])
-  const iMark = col(headers, ['MARK', 'MARKID', 'PIECEMARK', 'PIECE', 'PARTMARK'])
-  const iPunch = col(headers, ['PUNCH', 'PUNCHINFO'])
-  const iLeftPunch = col(headers, ['LEFTPUNCH'])
-  const iRightPunch = col(headers, ['RIGHTPUNCH'])
-  const iLineNo = col(headers, ['LINENO', 'LINE'])
-
-  const pieceQty = iPieceQty >= 0 ? toNum(row[iPieceQty]) : null
-  const qtyRaw = iQty >= 0 ? toNum(row[iQty]) : null
-  const totalLinearFeet = iTotalLf >= 0 ? toNum(row[iTotalLf]) : null
-
-  const qty = pieceQty != null ? pieceQty : qtyRaw
-
-  const partCode = iPart >= 0 ? cleanStr(row[iPart]) : ''
-  const vendorProductCode = iVendorProduct >= 0 ? cleanStr(row[iVendorProduct]) : partCode
-  const description = iDesc >= 0 ? cleanStr(row[iDesc]) : ''
-  const color = iColor >= 0 ? cleanStr(row[iColor]) : ''
-  const lengthText = iLength >= 0 ? cleanStr(row[iLength]) : ''
-  const pieceMark = iMark >= 0 ? cleanStr(row[iMark]) : ''
-
-  return {
-    shipperRequestId,
-    leadId: request.leadId,
-    consolidatedBOMId: request.consolidatedBOMId,
-    vendorId: request.vendorId,
-
-    pageNumber,
-    rowNumber,
-    vendorLineNo: iLineNo >= 0 ? cleanStr(row[iLineNo]) : '',
-
-    qty,
-    pieceQty,
-    totalLinearFeet,
-    uom: iUom >= 0 ? cleanStr(row[iUom]) : null,
-
-    partCode: partCode || null,
-    partCodeNormalized: normalizeKey(partCode) || null,
-
-    vendorProductCode: vendorProductCode || null,
-    vendorProductCodeNormalized: normalizeKey(vendorProductCode) || null,
-
-    description,
-
-    pieceMark,
-    pieceMarkNormalized: normalizeKey(pieceMark),
-
-    color: color || null,
-    colorNormalized: normalizeKey(color) || null,
-
-    lengthText: lengthText || null,
-    lengthFeet: parseMbsLengthToFeet(lengthText),
-
-    weight: iWeight >= 0 ? toNum(row[iWeight]) : null,
-
-    unitPrice: iUnitPrice >= 0 ? toNum(row[iUnitPrice]) : null,
-    priceUnit: iPriceUnit >= 0 ? normalizeKey(row[iPriceUnit]) || 'UNKNOWN' : 'UNKNOWN',
-    amount: iAmount >= 0 ? toNum(row[iAmount]) : null,
-
-    punchInfo: iPunch >= 0 ? cleanStr(row[iPunch]) : '',
-    leftPunch: iLeftPunch >= 0 ? cleanStr(row[iLeftPunch]) : '',
-    rightPunch: iRightPunch >= 0 ? cleanStr(row[iRightPunch]) : '',
-
-    bendInfo: '',
-    notes: '',
-
-    extractionMethod,
-    extractionFormat,
-    extractionConfidence: null,
-    warnings: [],
-
-    rawText,
-    rawRow: row,
-  }
-}
-
-const parseSheetRows = (rows) => {
-  if (!rows.length) return []
-
-  const headerIdx = rows.findIndex((row) => {
-    const normalized = (row || []).map(normalizeHeader)
-
-    const hasQty = normalized.includes('QTY') || normalized.includes('QUANTITY')
-
-    const hasPart =
-      normalized.includes('PART') ||
-      normalized.includes('PARTCODE') ||
-      normalized.includes('ITEM') ||
-      normalized.includes('PRODUCT') ||
-      normalized.includes('PRODUCTCODE') ||
-      normalized.includes('MBIPN') ||
-      normalized.includes('MBIP/N')
-
-    const hasDescription =
-      normalized.includes('DESCRIPTION') ||
-      normalized.includes('DESC')
-
-    return hasQty && (hasPart || hasDescription)
-  })
-
-  if (headerIdx < 0) return []
-
-  const headers = (rows[headerIdx] || []).map(normalizeHeader)
-  const parsedRows = []
-
-  for (let i = headerIdx + 1; i < rows.length; i++) {
-    const row = rows[i] || []
-    const joined = row.map((cell) => cleanStr(cell)).join(' ')
-
-    if (isTotalOrInstructionRow(joined)) continue
-
-    row.__headers = headers
-
-    parsedRows.push({
-      row,
-      rowNumber: i + 1,
-    })
-  }
-
-  return parsedRows
-}
-
-const extractExcelQuoteLines = async (buffer, request, extractionFormat = 'excel') => {
-  const workbook = XLSX.read(buffer, {
-    type: 'buffer',
-    cellDates: false,
-    raw: false,
-  })
-
-  const docs = []
-
-  for (const sheetName of workbook.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-      header: 1,
-      defval: null,
-      raw: false,
-    })
-
-    const parsed = parseSheetRows(rows)
-
-    for (const item of parsed) {
-      const doc = mapRowToVendorLine({
-        row: item.row,
-        rowNumber: item.rowNumber,
-        shipperRequestId: request._id,
-        request,
-        extractionMethod: 'excel',
-        extractionFormat,
-      })
-
-      if (doc.partCodeNormalized || doc.description || doc.qty != null) {
-        docs.push(doc)
+  s = s.replace(/"/g, '').trim()
+
+  if (s) {
+    // Examples: 11.75, 11-3/4, 11 3/4, 3/4
+    const inchNumber = fractionishToNumber(s)
+    if (inchNumber != null) {
+      inches += inchNumber
+      matched = true
+    } else {
+      const anyNum = s.match(/\d+(?:\.\d+)?/)
+      if (anyNum) {
+        inches += Number(anyNum[0])
+        matched = true
       }
     }
   }
 
-  return docs
+  if (!matched) return null
+  return feet + inches / 12
 }
 
+const lengthBucketInches = (feet) => {
+  if (feet == null || !Number.isFinite(Number(feet))) return null
+  const inches = Number(feet) * 12
+  return Math.round(inches / LENGTH_TOLERANCE_INCH) * LENGTH_TOLERANCE_INCH
+}
+
+const lengthDiffInches = (aFeet, bFeet) => {
+  if (aFeet == null || bFeet == null) return null
+  return Math.abs(Number(aFeet) * 12 - Number(bFeet) * 12)
+}
+
+/* =========================================================
+ * Canonical material normalization
+ * Same schema is preserved by storing this under rawRow / expected / received.
+ * ========================================================= */
+const normalizeColor = (value) => {
+  const s = String(value || '').toUpperCase()
+  if (!s) return null
+  if (/RED\s*OXIDE|\bRO\b|\bR\.O\.\b|\bPRIME,R\b|,R,|OXIDE/.test(s)) return 'RED_OXIDE'
+  if (/GALV|GALVANIZED|\bG\b/.test(s)) return 'GALVANIZED'
+  if (/WHITE|\bWH\b/.test(s)) return 'WHITE'
+  if (/BLACK|\bBLK\b/.test(s)) return 'BLACK'
+  return normCode(value) || null
+}
+
+const normalizeShape = (value) => {
+  const s = String(value || '').toUpperCase()
+  if (/\bCEE\b|\bCEES\b|\bC\s*PURLIN\b|\bC-PURLIN\b|\bPURLIN\b.*\bCEE\b/.test(s)) return 'CEE'
+  if (/\bZEE\b|\bZEES\b|\bZ\s*PURLIN\b|\bZ-PURLIN\b/.test(s)) return 'ZEE'
+  if (/CHANNEL/.test(s)) return 'CHANNEL'
+  if (/ANGLE/.test(s)) return 'ANGLE'
+  if (/TRIM|FLASHING/.test(s)) return 'TRIM'
+  return null
+}
+
+const parseDimensionValue = (value) => {
+  if (value == null) return null
+  const cleaned = String(value).replace(/"/g, '').trim()
+  return fractionishToNumber(cleaned)
+}
+
+const buildMaterialKey = ({ shape, gauge, depthInches, flangeInches, color }) => {
+  if (!shape || !gauge || !depthInches || !flangeInches) return null
+  return [
+    shape,
+    `${Number(gauge)}GA`,
+    round(depthInches, 3),
+    round(flangeInches, 3),
+    color || 'UNKNOWN_COLOR',
+  ].join('|')
+}
+
+const normalizeMaterial = ({ partCode, description, color, partColor }) => {
+  const rawPartCode = cleanStr(partCode)
+  const rawDescription = cleanStr(description)
+  const combined = `${rawPartCode} ${rawDescription} ${color || ''} ${partColor || ''}`.toUpperCase()
+
+  let shape = normalizeShape(combined)
+  let gauge = null
+  let depthInches = null
+  let flangeInches = null
+  let normalizedColor = normalizeColor(color || partColor || combined)
+  const warnings = []
+
+  const code = normCode(rawPartCode)
+
+  // Central States style: C83516R = CEE, 8 deep, 3.5 flange, 16ga, Red Oxide.
+  // Also supports Z82514R etc.
+  const central = code.match(/^([CZ])(\d{1,2})(\d{2})(\d{2})([A-Z]*)$/)
+  if (central) {
+    shape = central[1] === 'C' ? 'CEE' : 'ZEE'
+    depthInches = Number(central[2])
+    flangeInches = Number(central[3]) / 10
+    gauge = Number(central[4])
+    if (!normalizedColor && central[5].includes('R')) normalizedColor = 'RED_OXIDE'
+  }
+
+  // Quicken style: PC16-RO-8X3.5, PC12-RO-8X2.5
+  const quicken = code.match(/^(P?[CZ])?(\d{2})-?([A-Z]{1,3})?-?(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)/)
+  if (quicken) {
+    if (!shape) shape = code.startsWith('PZ') || code.startsWith('Z') ? 'ZEE' : 'CEE'
+    gauge = Number(quicken[2])
+    if (!normalizedColor && quicken[3]) normalizedColor = normalizeColor(quicken[3])
+    depthInches = Number(quicken[4])
+    flangeInches = Number(quicken[5])
+  }
+
+  // Description fallback: 16Ga CEE Purlin Red Oxide 8 X 3-1/2"
+  if (!gauge) {
+    const gm = combined.match(/(\d{2})\s*GA\b|GAUGE\s*(\d{2})/)
+    if (gm) gauge = Number(gm[1] || gm[2])
+  }
+
+  if (!depthInches || !flangeInches) {
+    const dim = combined.match(/(\d+(?:\.\d+)?)\s*"?\s*X\s*(\d+(?:\.\d+)?|\d+\s*-\s*\d+\s*\/\s*\d+|\d+\s+\d+\s*\/\s*\d+)\s*"?/)
+    if (dim) {
+      depthInches = depthInches || Number(dim[1])
+      flangeInches = flangeInches || parseDimensionValue(dim[2])
+    }
+  }
+
+  const materialKey = buildMaterialKey({ shape, gauge, depthInches, flangeInches, color: normalizedColor })
+
+  let confidence = 0.3
+  if (materialKey) confidence = 0.95
+  else if (shape || gauge || depthInches || flangeInches) confidence = 0.6
+  else warnings.push('Unable to build canonical material key from part code/description')
+
+  return {
+    rawPartCode: rawPartCode || null,
+    rawDescription,
+    shape: shape || null,
+    gauge: gauge || null,
+    depthInches: depthInches || null,
+    flangeInches: flangeInches || null,
+    color: normalizedColor || null,
+    materialKey,
+    confidence,
+    warnings,
+  }
+}
+
+const materialCompatibility = (expectedMaterial, receivedMaterial) => {
+  const e = expectedMaterial || {}
+  const r = receivedMaterial || {}
+
+  if (e.materialKey && r.materialKey && e.materialKey === r.materialKey) {
+    return { compatible: true, confidence: 0.99, reason: 'Canonical material key matched.' }
+  }
+
+  const essentialFields = ['shape', 'gauge', 'depthInches', 'flangeInches']
+  const bothHaveEssentials = essentialFields.every((k) => e[k] != null && r[k] != null)
+  if (bothHaveEssentials) {
+    const sameEssentials =
+      e.shape === r.shape &&
+      Number(e.gauge) === Number(r.gauge) &&
+      Math.abs(Number(e.depthInches) - Number(r.depthInches)) < 0.01 &&
+      Math.abs(Number(e.flangeInches) - Number(r.flangeInches)) < 0.01
+
+    const colorCompatible = !e.color || !r.color || e.color === r.color
+
+    if (sameEssentials && colorCompatible) {
+      return { compatible: true, confidence: 0.93, reason: 'Canonical material dimensions matched.' }
+    }
+
+    return {
+      compatible: false,
+      confidence: 0.9,
+      reason: `Material mismatch: expected ${e.materialKey || 'partial material'}, received ${r.materialKey || 'partial material'}.`,
+    }
+  }
+
+  return {
+    compatible: null,
+    confidence: 0.55,
+    reason: 'Material could not be fully verified from available part code/description.',
+  }
+}
+
+/* =========================================================
+ * Deterministic vendor PDF parsers
+ * ========================================================= */
+const detectVendorFormat = (text) => {
+  const t = String(text || '').toUpperCase()
+  if (t.includes('CENTRAL STATES') || /\bPIECES?\s*@/i.test(text) || t.includes('PART MARK:')) {
+    return 'central_states'
+  }
+  if (t.includes('QUICKEN STEEL') || (t.includes('PIECE MARK:') && t.includes('SALES ORDER'))) {
+    return 'quicken_steel'
+  }
+  return 'generic_material_pdf'
+}
+
+const parseCentralStates = (text) => {
+  const lines = String(text).split('\n').map((l) => l.replace(/\r/g, ''))
+  const items = []
+  let cur = null
+  let pageNumber = 1
+
+  const flush = () => {
+    if (cur && (cur.mark || cur.pieceQty != null || cur.product)) {
+      cur.rawText = (cur.rawParts || []).join('\n')
+      delete cur.rawParts
+      items.push(cur)
+    }
+    cur = null
+  }
+
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+
+    const pageM = line.match(/^Page:\s*(\d+)\s+of\s+\d+/i)
+    if (pageM) {
+      pageNumber = Number(pageM[1])
+      continue
+    }
+
+    if (/^Line\s+Product\s+Description/i.test(line)) continue
+
+    // totals row can appear after Part Mark in extracted text.
+    const totals = line.match(/^([\d,]+(?:\.\d+)?)\s+(LF|FT|EA|LB)\s+([\d.]+)\s+([\d,]+(?:\.\d{2})?)$/i)
+    if (totals && cur) {
+      cur.totalLinearFeet = Number(totals[1].replace(/,/g, ''))
+      cur.uom = totals[2].toUpperCase() === 'FT' ? 'LF' : totals[2].toUpperCase()
+      cur.unitPrice = Number(totals[3])
+      cur.amount = Number(totals[4].replace(/,/g, ''))
+      cur.rawParts.push(line)
+      continue
+    }
+
+    // New item starts as: 1 C83516R Purlin,Prime,R,Cee,8,3.5,16
+    const head = line.match(/^(\d+)\s+([A-Z0-9][A-Z0-9./-]{2,})\s+(.+)$/)
+    if (head && !/^\d+\s+Pieces?\b/i.test(line)) {
+      flush()
+      cur = {
+        lineNo: head[1],
+        product: head[2],
+        description: head[3].trim(),
+        pageNumber,
+        rawParts: [line],
+      }
+      continue
+    }
+
+    const pcs = line.match(/^([\d,]+)\s+Pieces?\s*@\s*(.+)$/i)
+    if (pcs && cur) {
+      cur.pieceQty = Number(pcs[1].replace(/,/g, ''))
+      cur.lengthText = pcs[2].trim()
+      cur.lengthFeet = lengthToFeet(cur.lengthText)
+      cur.rawParts.push(line)
+      continue
+    }
+
+    const lp = line.match(/^Left Punch:\s*(.*)$/i)
+    if (lp && cur) {
+      cur.leftPunch = lp[1].trim()
+      cur.rawParts.push(line)
+      continue
+    }
+
+    const rp = line.match(/^Right Punch:\s*(.*)$/i)
+    if (rp && cur) {
+      cur.rightPunch = rp[1].trim()
+      cur.rawParts.push(line)
+      continue
+    }
+
+    const mk = line.match(/^Part Mark:\s*(.+)$/i)
+    if (mk && cur) {
+      cur.mark = mk[1].trim()
+      cur.rawParts.push(line)
+      continue
+    }
+
+    // Description continuation fallback.
+    if (cur && !cur.pieceQty && !/^Total\b/i.test(line)) {
+      cur.description = `${cur.description} ${line}`.trim()
+      cur.rawParts.push(line)
+    }
+  }
+
+  flush()
+  return { items, format: 'central_states' }
+}
+
+const parseQuicken = (text) => {
+  const lines = String(text).split('\n').map((l) => l.replace(/\r/g, ''))
+  const items = []
+  let cur = null
+  let pageNumber = 1
+
+  const flush = () => {
+    if (cur && (cur.mark || cur.pieceQty != null || cur.product)) {
+      cur.rawText = (cur.rawParts || []).join('\n')
+      delete cur.rawParts
+      items.push(cur)
+    }
+    cur = null
+  }
+
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+
+    const pageM = line.match(/Page\s+Number:\s*(\d+)/i) || line.match(/Page\s+(\d+)\s+of\s+\d+/i)
+    if (pageM) pageNumber = Number(pageM[1])
+
+    if (/^(Line\s+Item\s+Description|QUICKEN STEEL|SOLD TO|SHIP TO|Print Date|Document Ref)/i.test(line)) continue
+
+    /**
+     * Extracted text order in the sample Quicken PDF:
+     * 1 16Ga CEE Purlin Red Oxide 8 X 3-1/2" $2.53 / FT 28 $494.48 PC16-RO-8X3.5 6' 11-3/4" 621
+     */
+    const row = line.match(
+      /^(\d+)\s+(.+?)\s+\$([\d,]+(?:\.\d+)?)\s*\/\s*([A-Z]+)\s+([\d,]+(?:\.\d+)?)\s+\$([\d,]+(?:\.\d{2})?)\s+([A-Z0-9][A-Z0-9./-]+)\s+(.+?)\s+([\d,]+(?:\.\d+)?)$/i
+    )
+
+    if (row) {
+      flush()
+      cur = {
+        lineNo: row[1],
+        description: cleanStr(row[2]),
+        unitPrice: Number(row[3].replace(/,/g, '')),
+        priceUnit: row[4].toUpperCase(),
+        pieceQty: Number(row[5].replace(/,/g, '')),
+        amount: Number(row[6].replace(/,/g, '')),
+        product: row[7],
+        lengthText: cleanStr(row[8]),
+        lengthFeet: lengthToFeet(row[8]),
+        weight: Number(row[9].replace(/,/g, '')),
+        pageNumber,
+        rawParts: [line],
+      }
+      continue
+    }
+
+    const punch = line.match(/^Punch:\s*(.+)$/i)
+    if (punch && cur) {
+      cur.punchInfo = punch[1].trim()
+      cur.rawParts.push(line)
+      continue
+    }
+
+    const mk = line.match(/^Piece Mark:\s*(.+)$/i)
+    if (mk && cur) {
+      cur.mark = mk[1].trim()
+      cur.rawParts.push(line)
+      continue
+    }
+  }
+
+  flush()
+  return { items, format: 'quicken_steel' }
+}
+
+/* =========================================================
+ * LLM fallback for unknown / broken PDF text layouts
+ * ========================================================= */
 const extractPdfText = async (buffer) => {
   const parser = new PDFParse({ data: buffer })
   try {
@@ -539,809 +572,880 @@ const extractPdfText = async (buffer) => {
   }
 }
 
-const extractCsvQuoteLines = async (buffer, request) => {
-  const records = parseCsv(buffer.toString('utf8'), {
-    relax_column_count: true,
-    skip_empty_lines: true,
-  })
-
-  const parsed = parseSheetRows(records)
-
-  return parsed
-    .map((item) =>
-      mapRowToVendorLine({
-        row: item.row,
-        rowNumber: item.rowNumber,
-        shipperRequestId: request._id,
-        request,
-        extractionMethod: 'csv',
-        extractionFormat: 'csv',
-      })
-    )
-    .filter((doc) => doc.partCodeNormalized || doc.description || doc.qty != null)
+const safeJsonParseFromText = (raw) => {
+  const text = String(raw || '').replace(/```json|```/g, '').trim()
+  const match = text.match(/\{[\s\S]*\}/)
+  if (!match) throw new Error('AI extraction returned no JSON object')
+  return JSON.parse(match[0])
 }
 
-const extractPdfQuoteLinesWithClaude = async (buffer, request) => {
-  const text = await extractPdfText(buffer)
+const extractPdfWithLlm = async (text) => {
+  const client = getAnthropicClient()
 
-  if (!text.trim()) {
-    throw new Error('Unable to extract text from PDF')
-  }
+  const prompt = `Extract vendor material line items from this quote PDF text.
+Return STRICT JSON only. No markdown. No commentary.
 
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY missing for PDF parsing')
-  }
+Schema:
+{
+  "lines": [
+    {
+      "lineNo": "1",
+      "pieceQty": 10,
+      "product": "PC16-RO-8X3.5",
+      "description": "16Ga CEE Purlin Red Oxide 8 X 3-1/2",
+      "color": "Red Oxide",
+      "lengthText": "15' 11-3/4\"",
+      "totalLinearFeet": 159.79,
+      "uom": "LF",
+      "unitPrice": 2.53,
+      "priceUnit": "FT",
+      "amount": 404.25,
+      "weight": 621,
+      "pieceMark": "DJ-1",
+      "leftPunch": "CUSTOM",
+      "rightPunch": "PPEP",
+      "punchInfo": "Custom Punch",
+      "pageNumber": 1,
+      "rawText": "original row text here"
+    }
+  ]
+}
 
-  const extractionFormat = detectPdfFormat(text)
-  const prompt = buildPdfExtractionPrompt(extractionFormat, text)
+Rules:
+- Extract actual material rows only.
+- Skip cover pages, signatures, summaries, totals, tax, freight, notes, terms, headers and footers.
+- pieceQty = physical piece count, not LF quantity.
+- lengthText = per-piece length, preserve original notation.
+- product = vendor product/part/item code when present.
+- Attach Piece Mark / Part Mark continuation lines to the material row above.
+- If unsure about a row, include it with low confidence fields missing rather than inventing values.
+- Do not compare against BOM. Extraction only.
+
+PDF text:
+${String(text || '').slice(0, 120000)}`
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: DEFAULT_SONNET_MODEL,
     max_tokens: 16000,
-    system:
-      'You extract shipper/vendor material line items from PDF text. Return strict JSON only. No markdown.',
-    messages: [
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
+    temperature: 0,
+    system: 'You extract steel vendor quote material rows into strict JSON. You never compare, summarize, or invent values.',
+    messages: [{ role: 'user', content: prompt }],
   })
 
   const raw = response.content?.[0]?.text || ''
-  const jsonMatch = raw.match(/\{[\s\S]*\}/)
+  const parsed = safeJsonParseFromText(raw)
 
-  if (!jsonMatch) {
-    throw new Error('Claude PDF extraction returned no JSON')
-  }
+  const items = (parsed.lines || []).map((l, idx) => ({
+    lineNo: l.lineNo != null ? String(l.lineNo) : String(idx + 1),
+    product: cleanStr(l.product) || null,
+    description: cleanStr(l.description),
+    color: cleanStr(l.color) || null,
+    pieceQty: toNum(l.pieceQty),
+    lengthText: cleanStr(l.lengthText) || null,
+    lengthFeet: lengthToFeet(l.lengthText),
+    totalLinearFeet: toNum(l.totalLinearFeet),
+    uom: cleanStr(l.uom) || null,
+    unitPrice: toNum(l.unitPrice),
+    priceUnit: cleanStr(l.priceUnit) || 'UNKNOWN',
+    amount: toNum(l.amount),
+    weight: toNum(l.weight),
+    mark: cleanStr(l.pieceMark),
+    leftPunch: cleanStr(l.leftPunch),
+    rightPunch: cleanStr(l.rightPunch),
+    punchInfo: cleanStr(l.punchInfo),
+    pageNumber: toNum(l.pageNumber),
+    rawText: cleanStr(l.rawText),
+    warnings: l.warnings || [],
+  }))
 
-  const extracted = JSON.parse(jsonMatch[0])
-  const lines = extracted.lines || []
-
-  return lines
-    .map((line, index) => {
-      const pieceQty = toNum(line.pieceQty)
-      const qty = pieceQty != null ? pieceQty : toNum(line.qty)
-
-      const row = [
-        line.lineNo ?? '',
-        qty,
-        pieceQty,
-        line.totalLinearFeet ?? null,
-        line.uom ?? null,
-        line.partCode ?? line.vendorProductCode ?? null,
-        line.vendorProductCode ?? line.partCode ?? null,
-        line.description ?? '',
-        line.color ?? null,
-        line.lengthText ?? null,
-        line.weight ?? null,
-        line.unitPrice ?? null,
-        line.priceUnit ?? 'UNKNOWN',
-        line.amount ?? null,
-        line.pieceMark ?? '',
-        line.punchInfo ?? '',
-        line.leftPunch ?? '',
-        line.rightPunch ?? '',
-      ]
-
-      row.__headers = [
-        'LINE',
-        'QTY',
-        'PIECEQTY',
-        'TOTALLINEARFEET',
-        'UOM',
-        'PARTCODE',
-        'VENDORPRODUCTCODE',
-        'DESCRIPTION',
-        'COLOR',
-        'LENGTH',
-        'WEIGHT',
-        'UNITPRICE',
-        'PRICEUNIT',
-        'AMOUNT',
-        'MARK',
-        'PUNCHINFO',
-        'LEFTPUNCH',
-        'RIGHTPUNCH',
-      ]
-
-      const doc = mapRowToVendorLine({
-        row,
-        rowNumber: index + 1,
-        shipperRequestId: request._id,
-        request,
-        extractionMethod: 'claude',
-        extractionFormat,
-        pageNumber: line.pageNumber ?? null,
-        rawText: line.rawText || '',
-      })
-
-      doc.extractionConfidence =
-        typeof line.confidence === 'number' ? line.confidence : null
-
-      doc.warnings = Array.isArray(line.warnings) ? line.warnings : []
-
-      return doc
-    })
-    .filter((doc) => doc.partCodeNormalized || doc.description || doc.qty != null)
+  return { items, format: 'generic_material_pdf' }
 }
 
-const extractVendorQuoteLines = async ({ fileUrl, fileName, request }) => {
-  const ext = String(fileName || '')
-    .split('.')
-    .pop()
-    .toLowerCase()
+/* =========================================================
+ * Excel / CSV header-mapped parser
+ * ========================================================= */
+const col = (headers, aliases) => headers.findIndex((h) => aliases.includes(h))
 
+const parseTabular = (rows) => {
+  if (!rows.length) return []
+  const headerIdx = rows.findIndex((row) => {
+    const n = (row || []).map(normCode)
+    const hasQty = n.includes('QTY') || n.includes('QUANTITY') || n.includes('PIECES') || n.includes('PIECEQTY')
+    const hasMark = n.includes('MARK') || n.includes('PIECEMARK') || n.includes('PARTMARK') || n.includes('MARKID')
+    const hasDesc = n.includes('DESCRIPTION') || n.includes('DESC') || n.includes('ITEMDESCRIPTION')
+    return hasQty && (hasMark || hasDesc)
+  })
+  if (headerIdx < 0) return []
+
+  const headers = (rows[headerIdx] || []).map(normCode)
+  const iQty = col(headers, ['QTY', 'QUANTITY', 'PIECES', 'PIECEQTY'])
+  const iMark = col(headers, ['MARK', 'PIECEMARK', 'PARTMARK', 'MARKID'])
+  const iPart = col(headers, ['PART', 'PARTCODE', 'ITEM', 'PRODUCT', 'PRODUCTCODE', 'ITEMCODE'])
+  const iColor = col(headers, ['COLOR', 'COLOUR', 'CLR', 'FINISH'])
+  const iLen = col(headers, ['LENGTH', 'LEN', 'PIECELENGTH', 'CUTLENGTH'])
+  const iWeight = col(headers, ['WEIGHT', 'WT'])
+  const iDesc = col(headers, ['DESCRIPTION', 'DESC', 'ITEMDESCRIPTION'])
+  const iAmount = col(headers, ['AMOUNT', 'TOTAL', 'TOTALCOST'])
+  const iUnitPrice = col(headers, ['UNITPRICE', 'UNITCOST', 'PRICE'])
+
+  const out = []
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i] || []
+    const joined = row.map((c) => cleanStr(c)).join(' ').toLowerCase()
+    if (!joined.trim() || joined.startsWith('total') || joined.includes('subtotal')) continue
+
+    const lengthText = iLen >= 0 ? cleanStr(row[iLen]) : ''
+    out.push({
+      lineNo: String(i + 1),
+      pieceQty: iQty >= 0 ? toNum(row[iQty]) : null,
+      mark: iMark >= 0 ? cleanStr(row[iMark]) : '',
+      product: iPart >= 0 ? cleanStr(row[iPart]) : null,
+      color: iColor >= 0 ? cleanStr(row[iColor]) : null,
+      description: iDesc >= 0 ? cleanStr(row[iDesc]) : '',
+      lengthText: lengthText || null,
+      lengthFeet: lengthToFeet(lengthText),
+      weight: iWeight >= 0 ? toNum(row[iWeight]) : null,
+      amount: iAmount >= 0 ? toNum(row[iAmount]) : null,
+      unitPrice: iUnitPrice >= 0 ? toNum(row[iUnitPrice]) : null,
+      rawRow: row,
+    })
+  }
+  return out
+}
+
+/* =========================================================
+ * Unified vendor extraction
+ * ========================================================= */
+const extractVendorItems = async ({ fileUrl, fileName }) => {
+  const ext = String(fileName || '').split('.').pop().toLowerCase()
   const buffer = await downloadBuffer(fileUrl)
 
   if (['xlsx', 'xls', 'ods'].includes(ext)) {
-    return extractExcelQuoteLines(buffer, request, 'excel')
+    const wb = XLSX.read(buffer, { type: 'buffer', raw: false })
+    const items = []
+    for (const name of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null, raw: false })
+      items.push(...parseTabular(rows))
+    }
+    return { items, format: 'excel', extractionMethod: 'excel' }
   }
 
   if (ext === 'csv') {
-    return extractCsvQuoteLines(buffer, request)
+    const records = parseCsv(buffer.toString('utf8'), { relax_column_count: true, skip_empty_lines: true })
+    return { items: parseTabular(records), format: 'csv', extractionMethod: 'csv' }
   }
 
   if (ext === 'pdf') {
-    return extractPdfQuoteLinesWithClaude(buffer, request)
+    const text = await extractPdfText(buffer)
+    if (!text.trim()) throw new Error('Unable to extract text from PDF')
+
+    const fmt = detectVendorFormat(text)
+
+    if (fmt === 'central_states') {
+      const parsed = parseCentralStates(text)
+      if (parsed.items.length) return { ...parsed, extractionMethod: 'pdf_text' }
+    }
+
+    if (fmt === 'quicken_steel') {
+      const parsed = parseQuicken(text)
+      if (parsed.items.length) return { ...parsed, extractionMethod: 'pdf_text' }
+    }
+
+    // Unknown or parser failed. Sonnet extracts; backend still compares deterministically.
+    return { ...(await extractPdfWithLlm(text)), extractionMethod: 'claude' }
   }
 
   throw new Error('Unsupported vendor quote file type')
 }
 
-const normalizeExpectedBomItems = (items) => {
-  return items.map((item) => ({
-    consolidatedItemId: item._id,
+/* =========================================================
+ * Persistence mapping: vendor item -> VendorQuoteLine doc
+ * Schema unchanged. Canonical material goes into rawRow.
+ * ========================================================= */
+const toVendorQuoteLineDoc = (item, request, format, extractionMethod) => {
+  const cleanedDescriptionForMaterial = cleanMaterialDescription(item.description)
+  const material = normalizeMaterial({
+    partCode: item.product,
+    description: cleanedDescriptionForMaterial,
+    color: item.color,
+  })
 
-    partCode: item.partCode || null,
-    partCodeNormalized: normalizeKey(item.partCode),
+  const warnings = uniq([...(item.warnings || []), ...(material.warnings || [])])
 
-    partColor: item.partColor || null,
-    partColorNormalized: normalizeKey(item.partColor),
+  return {
+    shipperRequestId: request._id,
+    leadId: request.leadId,
+    consolidatedBOMId: request.consolidatedBOMId,
+    vendorId: request.vendorId,
+
+    pageNumber: item.pageNumber ?? null,
+    rowNumber: toNum(item.lineNo),
+    vendorLineNo: item.lineNo || '',
+
+    qty: item.pieceQty ?? null,
+    pieceQty: item.pieceQty ?? null,
+    totalLinearFeet: item.totalLinearFeet ?? null,
+    uom: item.uom || null,
+
+    partCode: item.product || null,
+    partCodeNormalized: normCode(item.product) || null,
+    vendorProductCode: item.product || null,
+    vendorProductCodeNormalized: normCode(item.product) || null,
 
     description: item.description || '',
-    category: item.category || '',
 
-    qty: Number(item.totalQty || 0),
-    lengthFeet: Number(item.totalLengthFeet || 0),
-    weight: Number(item.totalWeight || 0),
+    pieceMark: item.mark || '',
+    pieceMarkNormalized: normMark(item.mark),
 
-    costUnit: item.costUnit || null,
-    unitCost: item.unitCost ?? null,
-    totalCost: Number(item.totalCost || 0),
+    color: item.color || material.color || null,
+    colorNormalized: normCode(item.color || material.color) || null,
 
-    markIds: item.markIds || [],
-    bomItemIds: item.bomItemIds || [],
-    sourceLineCount: item.sourceLineCount || 0,
+    lengthText: item.lengthText || null,
+    lengthFeet: item.lengthFeet ?? null,
 
-    comparableKey: normalizeComparableKey({
-      partCode: item.partCode,
-      partColor: item.partColor,
-      lengthFeet: item.totalLengthFeet,
-    }),
-  }))
+    weight: item.weight ?? null,
+
+    unitPrice: item.unitPrice ?? null,
+    priceUnit: ['EA', 'FT', 'LF', 'LB', 'LOT'].includes(String(item.priceUnit || '').toUpperCase())
+      ? String(item.priceUnit).toUpperCase()
+      : 'UNKNOWN',
+    amount: item.amount ?? null,
+
+    punchInfo: item.punchInfo || '',
+    leftPunch: item.leftPunch || '',
+    rightPunch: item.rightPunch || '',
+
+    extractionMethod: extractionMethod || 'hybrid',
+    extractionFormat: format || 'generic_material_pdf',
+    extractionConfidence: material.confidence ?? null,
+
+    warnings,
+    rawText: item.rawText || '',
+    rawRow: {
+      original: item.rawRow || item,
+      canonicalMaterial: material,
+      lengthBucketInches: lengthBucketInches(item.lengthFeet),
+    },
+  }
 }
 
-const normalizeVendorQuoteLines = (lines) => {
-  return lines.map((line) => ({
-    vendorQuoteLineId: line._id,
+/* =========================================================
+ * Expected side normalization from ConsolidatedBOM.items
+ * Important: totalLengthFeet is normally aggregate LF.
+ * For comparison we need piece length, so use totalLengthFeet / totalQty
+ * unless an explicit piece/cut length exists.
+ * ========================================================= */
+const firstDefined = (...values) => values.find((v) => v != null && v !== '')
 
-    partCode: line.partCode || null,
-    partCodeNormalized: normalizeKey(line.partCode),
+const expectedPieceLengthFeet = (item) => {
+  const explicit = firstDefined(
+    item.pieceLengthFeet,
+    item.lengthFeet,
+    item.cutLengthFeet,
+    item.unitLengthFeet,
+    item.length
+  )
+  if (explicit != null) return lengthToFeet(explicit)
 
-    vendorProductCode: line.vendorProductCode || null,
-    vendorProductCodeNormalized: normalizeKey(line.vendorProductCode),
+  const lengthText = firstDefined(item.lengthText, item.cutLengthText, item.sizeLength)
+  if (lengthText != null) return lengthToFeet(lengthText)
 
-    partColor: line.color || null,
-    partColorNormalized: normalizeKey(line.color),
+  const totalLengthFeet = toNum(item.totalLengthFeet)
+  const totalQty = toNum(item.totalQty)
 
-    description: line.description || '',
+  if (totalLengthFeet != null && totalQty != null && totalQty > 0) {
+    // totalLengthFeet = qty * pieceLength for Central/Quicken style materials.
+    return totalLengthFeet / totalQty
+  }
 
-    qty: line.pieceQty != null ? Number(line.pieceQty) : Number(line.qty || 0),
-    pieceQty: line.pieceQty != null ? Number(line.pieceQty) : null,
-    totalLinearFeet:
-      line.totalLinearFeet != null ? Number(line.totalLinearFeet) : null,
-    uom: line.uom || null,
-
-    lengthFeet: line.lengthFeet != null ? Number(line.lengthFeet) : null,
-    weight: line.weight != null ? Number(line.weight) : 0,
-
-    priceUnit: line.priceUnit || 'UNKNOWN',
-    unitPrice: line.unitPrice ?? null,
-    amount: line.amount ?? null,
-
-    pieceMark: line.pieceMark || '',
-    extractionFormat: line.extractionFormat || 'generic_material_pdf',
-
-    comparableKey: normalizeComparableKey({
-      partCode: line.partCode,
-      partColor: line.color,
-      lengthFeet: line.lengthFeet,
-    }),
-  }))
+  return totalLengthFeet
 }
 
-const groupVendorLinesForComparison = (receivedItems) => {
-  const map = new Map()
 
-  for (const item of receivedItems) {
-    const key = item.comparableKey
+const splitMarkList = (value) => {
+  if (Array.isArray(value)) {
+    return uniq(value.flatMap((v) => splitMarkList(v)))
+  }
 
-    if (!map.has(key)) {
-      map.set(key, {
-        vendorQuoteLineIds: [],
+  const s = cleanStr(value)
+  if (!s || ['-', 'NA', 'N/A', 'NULL', 'NONE'].includes(s.toUpperCase())) return []
 
-        partCode: item.partCode,
-        partCodeNormalized: item.partCodeNormalized,
+  return uniq(
+    s
+      .split(',')
+      .map((m) => cleanStr(m))
+      .filter(Boolean)
+  )
+}
 
-        vendorProductCode: item.vendorProductCode,
-        vendorProductCodeNormalized: item.vendorProductCodeNormalized,
+const effectiveMarkForKey = (mark) => {
+  const m = normMark(mark)
+  if (!m || m === '_' || m === '0' || m === 'NA' || m === 'N/A') return ''
+  return m
+}
 
-        partColor: item.partColor,
-        partColorNormalized: item.partColorNormalized,
+const anonymousMaterialKey = (row, material) => {
+  return (
+    material?.materialKey ||
+    normCode(row.partCode || row.product || row.vendorProductCode) ||
+    normCode(row.description) ||
+    '_'
+  )
+}
 
-        description: item.description,
+/**
+ * Mirrors consolidatedBom.service groupItemsForShipper(), but returns comparable
+ * rows for the comparison engine. This is important because the Excel shipper
+ * file is generated from BOMItem grouping, while ConsolidatedBOM.items is a
+ * priced summary grouping. Comparing vendor quote against the priced summary
+ * creates false qty mismatches.
+ */
+const normalizeExpectedFromBomItemsForShipper = (bomItems) => {
+  const groups = new Map()
 
-        qty: 0,
-        pieceQty: 0,
-        totalLinearFeet: 0,
-        uom: item.uom,
+  for (const item of bomItems || []) {
+    const pieceLengthFeet = item.lengthFeet != null ? Number(item.lengthFeet) : lengthToFeet(item.lengthRaw)
+    if (pieceLengthFeet == null || !Number.isFinite(pieceLengthFeet)) continue
 
-        lengthFeet: item.lengthFeet || 0,
-        weight: 0,
+    const identity =
+      item.partCodeNormalized ||
+      normCode(item.partCode) ||
+      `DESC:${normCode(item.description)}`
 
-        priceUnit: item.priceUnit || 'UNKNOWN',
-        unitPrice: item.unitPrice,
-        amount: 0,
+    const colorKey = item.partColorNormalized || normCode(item.partColor) || '_'
+    const lengthKey = Number(pieceLengthFeet).toFixed(4)
+    const key = [identity || '_', colorKey, lengthKey].join('|')
 
-        pieceMarks: [],
+    if (!groups.has(key)) {
+      groups.set(key, {
+        _ids: [],
+        partCode: item.partCode || null,
+        partColor: item.partColor || null,
+        description: item.description || '',
+        category: item.category || '',
+        lengthFeet: pieceLengthFeet,
+        totalQty: 0,
+        totalWeight: 0,
+        marks: new Set(),
+        material: normalizeMaterial({
+          partCode: item.partCode,
+          description: item.description,
+          color: item.partColor,
+          partColor: item.partColor,
+        }),
         sourceLineCount: 0,
-        extractionFormat: item.extractionFormat,
-
-        comparableKey: key,
       })
     }
 
-    const group = map.get(key)
-
-    group.vendorQuoteLineIds.push(item.vendorQuoteLineId)
-    group.qty += Number(item.qty || 0)
-
-    if (item.pieceQty != null) {
-      group.pieceQty += Number(item.pieceQty || 0)
-    }
-
-    if (item.totalLinearFeet != null) {
-      group.totalLinearFeet += Number(item.totalLinearFeet || 0)
-    }
-
-    group.weight += Number(item.weight || 0)
-
-    if (item.amount != null) {
-      group.amount += Number(item.amount || 0)
-    }
-
-    if (item.pieceMark) {
-      group.pieceMarks.push(item.pieceMark)
-    }
-
-    if (group.unitPrice == null && item.unitPrice != null) {
-      group.unitPrice = item.unitPrice
-    }
-
+    const group = groups.get(key)
+    group.totalQty += safe(item.quantity)
+    group.totalWeight += safe(item.weight)
     group.sourceLineCount += 1
+    if (item._id) group._ids.push(item._id)
+
+    const marks = splitMarkList(item.markId)
+    for (const mark of marks) group.marks.add(mark)
   }
 
-  return Array.from(map.values())
-}
+  const rows = []
+  for (const group of groups.values()) {
+    const marks = [...group.marks]
 
-const markOverlap = (expected, received) => {
-  const expectedMarks = new Set(
-    (expected.markIds || [])
-      .map((mark) => normalizeKey(mark))
-      .filter(Boolean)
-  )
-
-  const receivedMarks = [
-    received.pieceMark,
-    ...(received.pieceMarks || []),
-  ]
-    .map((mark) => normalizeKey(mark))
-    .filter(Boolean)
-
-  if (!expectedMarks.size || !receivedMarks.length) return false
-
-  return receivedMarks.some((mark) => expectedMarks.has(mark))
-}
-
-const samePart = (expected, candidate) => {
-  if (!expected.partCodeNormalized) return false
-
-  return (
-    candidate.partCodeNormalized === expected.partCodeNormalized ||
-    candidate.vendorProductCodeNormalized === expected.partCodeNormalized
-  )
-}
-
-const findAmbiguousCandidates = (expected, candidates) => {
-  const byMark = candidates.filter((candidate) => markOverlap(expected, candidate))
-
-  if (byMark.length > 1) {
-    return byMark
+    // Match the generated shipper quote style: when a shipper row lists several
+    // marks, each mark can appear as a separate quote line carrying the row qty.
+    // This is demo-safe and consistent with the PDF test quote generated from
+    // the consolidated workbook.
+    if (marks.length) {
+      for (const mark of marks) {
+        rows.push({
+          _id: group._ids[0] || null,
+          bomItemIds: group._ids,
+          markId: mark,
+          partCode: group.partCode,
+          partColor: group.partColor,
+          description: group.description,
+          category: group.category,
+          lengthFeet: group.lengthFeet,
+          totalQty: group.totalQty,
+          totalWeight: group.totalWeight,
+          material: group.material,
+          sourceLineCount: group.sourceLineCount,
+          qtyShared: false,
+          expectedSource: 'bom_items_shipper_group',
+        })
+      }
+    } else {
+      rows.push({
+        _id: group._ids[0] || null,
+        bomItemIds: group._ids,
+        markId: '_',
+        partCode: group.partCode,
+        partColor: group.partColor,
+        description: group.description,
+        category: group.category,
+        lengthFeet: group.lengthFeet,
+        totalQty: group.totalQty,
+        totalWeight: group.totalWeight,
+        material: group.material,
+        sourceLineCount: group.sourceLineCount,
+        qtyShared: false,
+        expectedSource: 'bom_items_shipper_group',
+      })
+    }
   }
 
-  const byPart = candidates.filter((candidate) => samePart(expected, candidate))
-
-  if (byPart.length > 1) {
-    return byPart
-  }
-
-  return []
+  return rows
 }
 
-const findBestVendorMatch = (expected, groupedVendorItems, usedVendorKeys) => {
-  const candidates = groupedVendorItems.filter(
-    (candidate) => !usedVendorKeys.has(candidate.comparableKey)
+const buildExpectedRowsForComparison = async (consolidatedBOM) => {
+  const bomItemIds = uniq(
+    (consolidatedBOM.items || [])
+      .flatMap((item) => item.bomItemIds || [])
+      .map((id) => String(id))
   )
 
-  const ambiguous = findAmbiguousCandidates(expected, candidates)
-  if (ambiguous.length > 1) {
-    const clearMatch = ambiguous.find(
-      (candidate) =>
-        markOverlap(expected, candidate) &&
-        samePart(expected, candidate) &&
-        close(candidate.lengthFeet, expected.lengthFeet, 0.05)
-    )
-
-    if (!clearMatch) {
+  if (bomItemIds.length) {
+    const bomItems = await BOMItem.find({ _id: { $in: bomItemIds } }).lean()
+    if (bomItems.length) {
       return {
-        ambiguous: true,
-        candidates: ambiguous.slice(0, 10),
-        matchMethod: 'none',
-        confidence: 0.4,
+        rows: normalizeExpectedFromBomItemsForShipper(bomItems),
+        meta: {
+          expectedSource: 'bom_items_shipper_group',
+          bomItemIdsFound: bomItemIds.length,
+          bomItemsLoaded: bomItems.length,
+        },
       }
     }
   }
 
-  let match = candidates.find(
-    (candidate) =>
-      markOverlap(expected, candidate) &&
-      samePart(expected, candidate) &&
-      close(candidate.lengthFeet, expected.lengthFeet, 0.05)
-  )
-
-  if (match) {
-    return {
-      match,
-      matchMethod: 'piece_mark',
-      confidence: 0.99,
-    }
+  // Fallback for older records where bomItemIds were not saved.
+  return {
+    rows: normalizeExpected(consolidatedBOM.items || []),
+    meta: {
+      expectedSource: 'consolidated_items_fallback',
+      bomItemIdsFound: bomItemIds.length,
+      bomItemsLoaded: 0,
+    },
   }
-
-  match = candidates.find(
-    (candidate) =>
-      markOverlap(expected, candidate) &&
-      close(candidate.lengthFeet, expected.lengthFeet, 0.05)
-  )
-
-  if (match) {
-    return {
-      match,
-      matchMethod: 'piece_mark',
-      confidence: 0.95,
-    }
-  }
-
-  match = candidates.find(
-    (candidate) =>
-      markOverlap(expected, candidate) &&
-      samePart(expected, candidate)
-  )
-
-  if (match) {
-    return {
-      match,
-      matchMethod: 'piece_mark',
-      confidence: 0.9,
-    }
-  }
-
-  match = candidates.find(
-    (candidate) =>
-      samePart(expected, candidate) &&
-      candidate.partColorNormalized === expected.partColorNormalized &&
-      close(candidate.lengthFeet, expected.lengthFeet, 0.05)
-  )
-
-  if (match) {
-    return {
-      match,
-      matchMethod: 'exact_part_color_length',
-      confidence: 0.92,
-    }
-  }
-
-  match = candidates.find(
-    (candidate) =>
-      samePart(expected, candidate) &&
-      close(candidate.lengthFeet, expected.lengthFeet, 0.05)
-  )
-
-  if (match) {
-    return {
-      match,
-      matchMethod: 'part_length_grouped',
-      confidence: 0.85,
-    }
-  }
-
-  match = candidates.find((candidate) => samePart(expected, candidate))
-
-  if (match) {
-    return {
-      match,
-      matchMethod: 'part_only_grouped',
-      confidence: 0.6,
-    }
-  }
-
-  return null
 }
 
-const getComparableReceivedQty = (received) => {
-  if (received.pieceQty != null && Number(received.pieceQty) > 0) {
-    return Number(received.pieceQty)
+const normalizeExpected = (items) => {
+  const rows = []
+
+  for (const item of items || []) {
+    const marks = splitMarkList(item.markIds)
+    const totalQty = Number(item.totalQty || 0)
+    const lengthFeet = expectedPieceLengthFeet(item)
+    const material = normalizeMaterial({
+      partCode: item.partCode,
+      description: item.description,
+      color: item.color,
+      partColor: item.partColor,
+    })
+
+    const base = {
+      _id: item._id,
+      partCode: item.partCode || null,
+      partColor: item.partColor || null,
+      description: item.description || '',
+      category: item.category || '',
+      lengthFeet,
+      totalQty,
+      totalLengthFeet: toNum(item.totalLengthFeet),
+      material,
+      sourceLineCount: item.sourceLineCount || 0,
+    }
+
+    if (marks.length <= 1) {
+      rows.push({ ...base, markId: marks[0] || null, qtyShared: false })
+      continue
+    }
+
+    // Same schema cannot safely know qty-per-mark if multiple marks are merged.
+    // Keep rows comparable by mark+length, but treat qty mismatch as ambiguous.
+    for (const mark of marks) {
+      rows.push({
+        ...base,
+        markId: mark,
+        qtyShared: true,
+        sharedMarkCount: marks.length,
+      })
+    }
   }
 
-  return Number(received.qty || 0)
+  return rows
 }
 
-const detectMismatches = (expected, received) => {
-  const issues = []
-
-  const expectedQty = Number(expected.qty || 0)
-  const receivedQty = getComparableReceivedQty(received)
-
-  if (Math.abs(expectedQty - receivedQty) > 0) {
-    issues.push({
-      status: 'qty_mismatch',
-      issueType: 'qty_mismatch',
-      severity: 'critical',
-      reason: `Vendor quantity does not match expected quantity. Expected ${expectedQty}, received ${receivedQty}.`,
-    })
-  }
-
-  if (!close(expected.lengthFeet, received.lengthFeet, 0.05)) {
-    issues.push({
-      status: 'length_mismatch',
-      issueType: 'length_mismatch',
-      severity: 'high',
-      reason: `Vendor length does not match expected length. Expected ${expected.lengthFeet}, received ${received.lengthFeet}.`,
-    })
-  }
-
-  if (
-    expected.qty &&
-    expected.lengthFeet &&
-    received.totalLinearFeet &&
-    Math.abs(Number(expected.qty) * Number(expected.lengthFeet) - Number(received.totalLinearFeet)) > 0.25
-  ) {
-    issues.push({
-      status: 'length_mismatch',
-      issueType: 'total_linear_feet_mismatch',
-      severity: 'medium',
-      reason: `Vendor total LF does not match expected Qty x Length. Expected ${(Number(expected.qty) * Number(expected.lengthFeet)).toFixed(4)}, received ${received.totalLinearFeet}.`,
-    })
-  }
-
-  if (
-    expected.weight &&
-    received.weight &&
-    Math.abs(Number(expected.weight) - Number(received.weight)) > 2
-  ) {
-    issues.push({
-      status: 'weight_mismatch',
-      issueType: 'weight_mismatch',
-      severity: 'medium',
-      reason: `Vendor weight does not match expected weight. Expected ${expected.weight}, received ${received.weight}.`,
-    })
-  }
-
-  if (
-    expected.unitCost != null &&
-    received.unitPrice != null &&
-    Math.abs(Number(expected.unitCost) - Number(received.unitPrice)) > 0.01
-  ) {
-    issues.push({
-      status: 'price_mismatch',
-      issueType: 'price_mismatch',
-      severity: 'low',
-      reason: `Vendor/internal unit price differs. Expected internal cost ${expected.unitCost}, received vendor unit price ${received.unitPrice}.`,
-    })
-  }
-
-  return issues
+/* =========================================================
+ * Matching helpers
+ * ========================================================= */
+const keyOf = (mark, feet, anonKey = '_') => {
+  const m = effectiveMarkForKey(mark)
+  const identity = m || `_${anonKey || '_'}`
+  return `${identity}|${lengthBucketInches(feet) ?? '_'}`
 }
 
-const buildResult = (
-  status,
-  severity,
-  expected,
-  received,
-  request,
-  reason,
-  matchMethod = 'none',
-  confidence = null,
-  matchCandidates = []
-) => ({
+const groupSide = (rows, { mark, len, qty, id, materialGetter }) => {
+  const map = new Map()
+
+  for (const r of rows) {
+    const material = materialGetter ? materialGetter(r) : r.material || null
+    const anonKey = anonymousMaterialKey(r, material)
+    const k = keyOf(r[mark], r[len], anonKey)
+    const normalizedMark = effectiveMarkForKey(r[mark])
+    if (!map.has(k)) {
+      map.set(k, {
+        key: k,
+        mark: r[mark] || '',
+        markNormalized: normalizedMark,
+        lengthFeet: r[len] ?? null,
+        lengthBucketInches: lengthBucketInches(r[len]),
+        totalQty: 0,
+        ids: [],
+        partCodes: new Set(),
+        descriptions: new Set(),
+        materials: [],
+        sampleDescription: r.description || '',
+        samplePartCode: r.partCode || r.product || '',
+        sourceLineCount: 0,
+        qtyShared: Boolean(r.qtyShared),
+      })
+      if (material) map.get(k).materials.push(material)
+    }
+
+    const g = map.get(k)
+    g.totalQty += Number(r[qty] || 0)
+    if (r[id] != null) g.ids.push(r[id])
+
+    const pc = normCode(r.partCode || r.product)
+    if (pc) g.partCodes.add(pc)
+    if (r.description) g.descriptions.add(r.description)
+    if (r.material) g.materials.push(r.material)
+    if (r.rawRow?.canonicalMaterial) g.materials.push(r.rawRow.canonicalMaterial)
+    if (r.qtyShared) g.qtyShared = true
+    g.sourceLineCount += 1
+  }
+
+  return map
+}
+
+const representativeMaterial = (materials) => {
+  const clean = (materials || []).filter(Boolean)
+  if (!clean.length) return null
+
+  const withKey = clean.find((m) => m.materialKey)
+  if (withKey) return withKey
+
+  return clean.sort((a, b) => safe(b.confidence) - safe(a.confidence))[0]
+}
+
+const snap = (g) => ({
+  mark: g.mark,
+  lengthFeet: g.lengthFeet,
+  lengthBucketInches: g.lengthBucketInches,
+  totalQty: g.totalQty,
+  partCodes: [...g.partCodes],
+  partCode: g.samplePartCode,
+  description: g.sampleDescription,
+  material: representativeMaterial(g.materials),
+  sourceLineCount: g.sourceLineCount,
+  qtyShared: g.qtyShared,
+})
+
+const buildResult = (request, extra) => ({
   shipperRequestId: request._id,
   leadId: request.leadId,
   consolidatedBOMId: request.consolidatedBOMId,
   vendorId: request.vendorId,
-
-  consolidatedItemId: expected?.consolidatedItemId || null,
-
-  vendorQuoteLineId:
-    received?.vendorQuoteLineId ||
-    received?.vendorQuoteLineIds?.[0] ||
-    null,
-
-  vendorQuoteLineIds: received?.vendorQuoteLineIds || [],
-
-  status,
-  severity,
-
-  expected: expected || null,
-  received: received || null,
-  matchCandidates,
-
-  difference: {
-    qtyDiff:
-      received && expected
-        ? getComparableReceivedQty(received) - Number(expected.qty || 0)
-        : null,
-
-    lengthDiff:
-      received && expected
-        ? safeNum(received.lengthFeet) - safeNum(expected.lengthFeet)
-        : null,
-
-    totalLinearFeetDiff:
-      received &&
-      expected &&
-      received.totalLinearFeet != null &&
-      expected.qty != null &&
-      expected.lengthFeet != null
-        ? Number(received.totalLinearFeet) -
-          Number(expected.qty) * Number(expected.lengthFeet)
-        : null,
-
-    weightDiff:
-      received && expected
-        ? safeNum(received.weight) - safeNum(expected.weight)
-        : null,
-
-    unitPriceDiff:
-      received &&
-      expected &&
-      received.unitPrice != null &&
-      expected.unitCost != null
-        ? Number(received.unitPrice) - Number(expected.unitCost)
-        : null,
-
-    amountDiff:
-      received &&
-      expected &&
-      received.amount != null &&
-      expected.totalCost != null
-        ? Number(received.amount) - Number(expected.totalCost)
-        : null,
-  },
-
-  matchMethod,
-  matchConfidence: confidence,
-  reason,
+  ...extra,
 })
 
-const buildException = (issueType, severity, expected, received, reason) => ({
-  partCode: expected?.partCode || received?.partCode || '',
-  description: expected?.description || received?.description || '',
-  expected: expected || null,
-  received: received || null,
-  issueType,
-  severity,
-  reason,
-  source: 'auto_compare',
-})
-
-const buildSummary = (expectedItems, groupedVendorItems, results) => ({
-  expectedLines: expectedItems.length,
-  vendorLines: groupedVendorItems.length,
-
-  matchedLines: results.filter((r) => r.status === 'matched').length,
-
-  missingItems: results.filter((r) => r.status === 'missing_in_vendor_quote').length,
-
-  extraItems: results.filter((r) => r.status === 'extra_in_vendor_quote').length,
-
-  qtyMismatches: results.filter((r) => r.status === 'qty_mismatch').length,
-
-  lengthMismatches: results.filter((r) => r.status === 'length_mismatch').length,
-
-  weightMismatches: results.filter((r) => r.status === 'weight_mismatch').length,
-
-  priceMismatches: results.filter((r) => r.status === 'price_mismatch').length,
-
-  ambiguousMatches: results.filter((r) => r.status === 'ambiguous_match').length,
-
-  manualReviewRequired: results.filter((r) =>
-    ['ambiguous_match', 'missing_in_vendor_quote', 'extra_in_vendor_quote'].includes(r.status)
-  ).length,
-})
-
-const compareExpectedVsVendor = (expectedItems, receivedItems, request) => {
-  const results = []
-  const exceptions = []
-
-  const groupedVendorItems = groupVendorLinesForComparison(receivedItems)
-  const usedVendorKeys = new Set()
-
-  for (const expected of expectedItems) {
-    const matchedResult = findBestVendorMatch(
-      expected,
-      groupedVendorItems,
-      usedVendorKeys
-    )
-
-    if (!matchedResult) {
-      results.push(
-        buildResult(
-          'missing_in_vendor_quote',
-          'critical',
-          expected,
-          null,
-          request,
-          'Expected item was not found in vendor quote',
-          'none',
-          0
-        )
-      )
-
-      exceptions.push(
-        buildException(
-          'missing',
-          'critical',
-          expected,
-          null,
-          'Expected item was not found in vendor quote'
-        )
-      )
-
-      continue
-    }
-
-    if (matchedResult.ambiguous) {
-      results.push(
-        buildResult(
-          'ambiguous_match',
-          'high',
-          expected,
-          null,
-          request,
-          'Multiple possible shipper matches found. Manual review required.',
-          'none',
-          matchedResult.confidence,
-          matchedResult.candidates
-        )
-      )
-
-      exceptions.push(
-        buildException(
-          'ambiguous',
-          'high',
-          expected,
-          { candidates: matchedResult.candidates },
-          'Multiple possible shipper matches found. Manual review required.'
-        )
-      )
-
-      continue
-    }
-
-    const { match, matchMethod, confidence } = matchedResult
-    usedVendorKeys.add(match.comparableKey)
-
-    const mismatches = detectMismatches(expected, match)
-
-    if (!mismatches.length) {
-      results.push(
-        buildResult(
-          'matched',
-          'low',
-          expected,
-          match,
-          request,
-          'Matched successfully',
-          matchMethod,
-          confidence
-        )
-      )
-
-      continue
-    }
-
-    for (const mismatch of mismatches) {
-      results.push(
-        buildResult(
-          mismatch.status,
-          mismatch.severity,
-          expected,
-          match,
-          request,
-          mismatch.reason,
-          matchMethod,
-          confidence
-        )
-      )
-
-      exceptions.push(
-        buildException(
-          mismatch.issueType,
-          mismatch.severity,
-          expected,
-          match,
-          mismatch.reason
-        )
-      )
-    }
-  }
-
-  for (const received of groupedVendorItems) {
-    if (!usedVendorKeys.has(received.comparableKey)) {
-      results.push(
-        buildResult(
-          'extra_in_vendor_quote',
-          'medium',
-          null,
-          received,
-          request,
-          'Vendor quoted an extra item not present in Consolidated BOM',
-          'none',
-          0
-        )
-      )
-
-      exceptions.push(
-        buildException(
-          'extra',
-          'medium',
-          null,
-          received,
-          'Vendor quoted an extra item not present in Consolidated BOM'
-        )
-      )
-    }
-  }
-
-  const summary = buildSummary(expectedItems, groupedVendorItems, results)
-
-  return {
-    results,
-    summary,
-    exceptions,
-  }
+const frameMarkKey = (mark) => {
+  const normalized = normMark(mark).replace(/[^A-Z0-9]/g, '')
+  if (!normalized) return null
+  if (!/^(RF|EW)/.test(normalized)) return null
+  return normalized
 }
 
+const findReceivedMatch = (exp, receivedMap, used) => {
+  const exact = receivedMap.get(exp.key)
+  if (exact && !used.has(exact.key)) {
+    return { type: 'exact', group: exact }
+  }
+
+  const sameMark = [...receivedMap.values()].filter(
+    (r) => !used.has(r.key) && r.markNormalized && r.markNormalized === exp.markNormalized
+  )
+
+  if (!sameMark.length) {
+    // Frame/no-part-code fallback:
+    // match only when RF/EW mark canonical forms are equal and length is within tolerance.
+    const expHasPartCode = Boolean(exp.samplePartCode && normCode(exp.samplePartCode))
+    const expFrameKey = !expHasPartCode ? frameMarkKey(exp.mark) : null
+
+    if (expFrameKey) {
+      const frameCandidates = [...receivedMap.values()].filter(
+        (r) => !used.has(r.key) && frameMarkKey(r.mark) === expFrameKey
+      )
+
+      const frameWithinTolerance = frameCandidates
+        .map((r) => ({ group: r, diff: lengthDiffInches(exp.lengthFeet, r.lengthFeet) }))
+        .filter((x) => x.diff != null && x.diff <= LENGTH_TOLERANCE_INCH)
+        .sort((a, b) => a.diff - b.diff)
+
+      if (frameWithinTolerance.length) {
+        return {
+          type: 'frame_mark_within_tolerance',
+          group: frameWithinTolerance[0].group,
+          diffInches: frameWithinTolerance[0].diff,
+        }
+      }
+    }
+
+    return { type: 'none', group: null }
+  }
+
+  const withinTolerance = sameMark
+    .map((r) => ({ group: r, diff: lengthDiffInches(exp.lengthFeet, r.lengthFeet) }))
+    .filter((x) => x.diff != null && x.diff <= LENGTH_TOLERANCE_INCH)
+    .sort((a, b) => a.diff - b.diff)
+
+  if (withinTolerance.length) {
+    return { type: 'within_tolerance', group: withinTolerance[0].group, diffInches: withinTolerance[0].diff }
+  }
+
+  const nearest = sameMark
+    .map((r) => ({ group: r, diff: lengthDiffInches(exp.lengthFeet, r.lengthFeet) }))
+    .sort((a, b) => safe(a.diff) - safe(b.diff))[0]
+
+  return { type: 'same_mark_length_mismatch', group: nearest?.group || sameMark[0], diffInches: nearest?.diff ?? null }
+}
+
+/* =========================================================
+ * Comparison engine
+ * No AI final judgement. Deterministic only.
+ * ========================================================= */
+const compareMaterials = (expectedRows, receivedRows, request) => {
+  const expected = groupSide(expectedRows, {
+    mark: 'markId',
+    len: 'lengthFeet',
+    qty: 'totalQty',
+    id: '_id',
+    materialGetter: (r) => r.material,
+  })
+
+  const received = groupSide(receivedRows, {
+    mark: 'pieceMark',
+    len: 'lengthFeet',
+    qty: 'pieceQty',
+    id: '_id',
+    materialGetter: (r) => r.rawRow?.canonicalMaterial,
+  })
+
+  const results = []
+  const exceptions = []
+  const used = new Set()
+
+  for (const exp of expected.values()) {
+    const match = findReceivedMatch(exp, received, used)
+    const rec = match.group
+
+    if (!rec) {
+      const reason = `Expected mark ${exp.mark || 'n/a'} (${fmtFt(exp.lengthFeet)}) not found in vendor quote.`
+      results.push(buildResult(request, {
+        consolidatedItemId: exp.ids[0] || null,
+        vendorQuoteLineIds: [],
+        vendorQuoteLineId: null,
+        status: 'missing_in_vendor_quote',
+        severity: 'critical',
+        matchMethod: 'none',
+        matchConfidence: 0,
+        reason,
+        expected: snap(exp),
+        received: null,
+        difference: { qtyDiff: -exp.totalQty },
+      }))
+      exceptions.push({ issueType: 'missing', severity: 'critical', reason, mark: exp.mark })
+      continue
+    }
+
+    used.add(rec.key)
+
+    if (match.type === 'same_mark_length_mismatch') {
+      const reason = `Mark ${exp.mark} found but length differs: expected ${fmtFt(exp.lengthFeet)}, vendor ${fmtFt(rec.lengthFeet)}.`
+      results.push(buildResult(request, {
+        consolidatedItemId: exp.ids[0] || null,
+        vendorQuoteLineIds: rec.ids,
+        vendorQuoteLineId: rec.ids[0] || null,
+        status: 'length_mismatch',
+        severity: 'high',
+        matchMethod: 'piece_mark',
+        matchConfidence: 0.7,
+        reason,
+        expected: snap(exp),
+        received: snap(rec),
+        difference: {
+          lengthDiffFeet: round(safe(rec.lengthFeet) - safe(exp.lengthFeet)),
+          lengthDiffInches: match.diffInches == null ? null : round(match.diffInches, 3),
+        },
+      }))
+      exceptions.push({ issueType: 'length_mismatch', severity: 'high', reason, mark: exp.mark })
+      continue
+    }
+
+    const expMat = representativeMaterial(exp.materials)
+    const recMat = representativeMaterial(rec.materials)
+    let matCheck = materialCompatibility(expMat, recMat)
+    const qtyDiff = rec.totalQty - exp.totalQty
+
+    const expectedPartCodes = [...exp.partCodes].filter(Boolean)
+    const receivedPartCodes = [...rec.partCodes].filter(Boolean)
+    const sameNormalizedPartCode =
+      expectedPartCodes.length > 0 &&
+      receivedPartCodes.length > 0 &&
+      expectedPartCodes.some((code) => receivedPartCodes.includes(code))
+
+    // If normalized part codes are already equal, do not fail as part mismatch.
+    if (sameNormalizedPartCode && matCheck.compatible === false) {
+      matCheck = {
+        compatible: true,
+        confidence: Math.max(0.9, Number(matCheck.confidence || 0)),
+        reason: 'Normalized part codes match; treating material as compatible.',
+      }
+    }
+
+    if (qtyDiff !== 0 && (exp.qtyShared || rec.qtyShared)) {
+      const reason = `Mark ${exp.mark} matched, but BOM quantity is shared across multiple marks; per-mark quantity cannot be verified automatically (BOM total ${exp.totalQty}, vendor ${rec.totalQty}). Manual review required.`
+      results.push(buildResult(request, {
+        consolidatedItemId: exp.ids[0] || null,
+        vendorQuoteLineIds: rec.ids,
+        vendorQuoteLineId: rec.ids[0] || null,
+        status: 'ambiguous_match',
+        severity: 'medium',
+        matchMethod: 'piece_mark',
+        matchConfidence: 0.6,
+        reason,
+        expected: snap(exp),
+        received: snap(rec),
+        difference: { qtyDiff, qtyShared: true, materialCheck: matCheck },
+      }))
+      exceptions.push({ issueType: 'ambiguous', severity: 'medium', reason, mark: exp.mark })
+      continue
+    }
+
+    if (qtyDiff !== 0) {
+      const dir = qtyDiff < 0 ? 'short' : 'over'
+      const reason = `Quantity ${dir}: expected ${exp.totalQty}, vendor quoted ${rec.totalQty} (${dir === 'short' ? '' : '+'}${qtyDiff}).`
+      results.push(buildResult(request, {
+        consolidatedItemId: exp.ids[0] || null,
+        vendorQuoteLineIds: rec.ids,
+        vendorQuoteLineId: rec.ids[0] || null,
+        status: 'qty_mismatch',
+        severity: 'critical',
+        matchMethod: 'piece_mark',
+        matchConfidence: 0.97,
+        reason,
+        expected: snap(exp),
+        received: snap(rec),
+        difference: { qtyDiff, direction: dir, materialCheck: matCheck },
+      }))
+      exceptions.push({ issueType: 'qty_mismatch', severity: 'critical', reason, mark: exp.mark, direction: dir })
+      continue
+    }
+
+    if (matCheck.compatible === false) {
+      const reason = `${matCheck.reason} Mark and length matched, qty matched, but material is not equivalent.`
+      results.push(buildResult(request, {
+        consolidatedItemId: exp.ids[0] || null,
+        vendorQuoteLineIds: rec.ids,
+        vendorQuoteLineId: rec.ids[0] || null,
+        status: 'part_mismatch',
+        severity: 'high',
+        matchMethod: 'piece_mark',
+        matchConfidence: 0.75,
+        reason,
+        expected: snap(exp),
+        received: snap(rec),
+        difference: { qtyDiff: 0, materialCheck: matCheck },
+      }))
+      exceptions.push({ issueType: 'part_mismatch', severity: 'high', reason, mark: exp.mark })
+      continue
+    }
+
+    const materialNote = matCheck.compatible === true ? matCheck.reason : matCheck.reason
+    const confidence = matCheck.compatible === true ? 0.99 : 0.92
+    const reason = `Matched on piece mark, length and quantity. ${materialNote}`
+
+    results.push(buildResult(request, {
+      consolidatedItemId: exp.ids[0] || null,
+      vendorQuoteLineIds: rec.ids,
+      vendorQuoteLineId: rec.ids[0] || null,
+      status: 'matched',
+      severity: 'low',
+      matchMethod: 'piece_mark',
+      matchConfidence: confidence,
+      reason,
+      expected: snap(exp),
+      received: snap(rec),
+      difference: {
+        qtyDiff: 0,
+        lengthDiffFeet: round(safe(rec.lengthFeet) - safe(exp.lengthFeet)),
+        lengthDiffInches: lengthDiffInches(exp.lengthFeet, rec.lengthFeet),
+        materialCheck: matCheck,
+      },
+    }))
+  }
+
+  for (const rec of received.values()) {
+    if (used.has(rec.key)) continue
+
+    const reason = `Vendor quoted mark ${rec.mark || 'n/a'} (${fmtFt(rec.lengthFeet)}) not present in Consolidated BOM.`
+    results.push(buildResult(request, {
+      consolidatedItemId: null,
+      vendorQuoteLineIds: rec.ids,
+      vendorQuoteLineId: rec.ids[0] || null,
+      status: 'extra_in_vendor_quote',
+      severity: 'medium',
+      matchMethod: 'none',
+      matchConfidence: 0,
+      reason,
+      expected: null,
+      received: snap(rec),
+      difference: { qtyDiff: rec.totalQty },
+    }))
+    exceptions.push({ issueType: 'extra', severity: 'medium', reason, mark: rec.mark })
+  }
+
+  const count = (status) => results.filter((r) => r.status === status).length
+
+  const summary = {
+    expectedLines: expected.size,
+    vendorLines: received.size,
+    matchedLines: count('matched'),
+    missingItems: count('missing_in_vendor_quote'),
+    extraItems: count('extra_in_vendor_quote'),
+    qtyMismatches: count('qty_mismatch'),
+    lengthMismatches: count('length_mismatch'),
+    weightMismatches: 0,
+    priceMismatches: 0,
+    partMismatches: count('part_mismatch'),
+    ambiguousMatches: count('ambiguous_match'),
+    manualReviewRequired: results.filter((r) =>
+      ['ambiguous_match', 'missing_in_vendor_quote', 'extra_in_vendor_quote', 'part_mismatch', 'length_mismatch', 'qty_mismatch'].includes(r.status)
+    ).length,
+    extractionNote: `${SERVICE_VERSION}: compared against BOMItem shipper-style grouping, not priced ConsolidatedBOM item summary.`,
+  }
+
+  return { results, summary, exceptions }
+}
+
+/* =========================================================
+ * Public: run one comparison
+ * ========================================================= */
 const compareShipperRequest = async (requestId) => {
   const request = await ShipperRequest.findById(requestId)
-
-  if (!request) {
-    throw new Error('Shipper request not found')
-  }
-
-  if (!request.submittedFileUrl) {
-    throw new Error('Vendor has not submitted a file yet')
-  }
+  if (!request) throw new Error('Shipper request not found')
+  if (!request.submittedFileUrl) throw new Error('Vendor has not submitted a file yet')
 
   await ShipperRequest.findByIdAndUpdate(requestId, {
     status: 'comparison_processing',
@@ -1350,40 +1454,38 @@ const compareShipperRequest = async (requestId) => {
   })
 
   try {
-    const consolidatedBOM = await ConsolidatedBOM.findById(
-      request.consolidatedBOMId
-    ).lean()
+    const consolidatedBOM = await ConsolidatedBOM.findById(request.consolidatedBOMId).lean()
+    if (!consolidatedBOM) throw new Error('Consolidated BOM not found')
 
-    if (!consolidatedBOM) {
-      throw new Error('Consolidated BOM not found')
-    }
-
-    const vendorLines = await extractVendorQuoteLines({
+    const { items: vendorItems, format, extractionMethod } = await extractVendorItems({
       fileUrl: request.submittedFileUrl,
       fileName: request.submittedFileName,
-      request,
     })
 
-    await VendorQuoteLine.deleteMany({
-      shipperRequestId: request._id,
-    })
+    if (!vendorItems.length) {
+      throw new Error('No vendor line items could be extracted from the submitted file')
+    }
 
-    await QuoteComparisonResult.deleteMany({
-      shipperRequestId: request._id,
-    })
+    await VendorQuoteLine.deleteMany({ shipperRequestId: request._id })
+    await QuoteComparisonResult.deleteMany({ shipperRequestId: request._id })
 
-    const vendorDocs = vendorLines.length
-      ? await VendorQuoteLine.insertMany(vendorLines, { ordered: false })
-      : []
-
-    const expectedItems = normalizeExpectedBomItems(consolidatedBOM.items || [])
-    const receivedItems = normalizeVendorQuoteLines(vendorDocs)
-
-    const { results, summary, exceptions } = compareExpectedVsVendor(
-      expectedItems,
-      receivedItems,
-      request
+    const vendorDocs = await VendorQuoteLine.insertMany(
+      vendorItems.map((it) => toVendorQuoteLineDoc(it, request, format, extractionMethod)),
+      { ordered: false }
     )
+
+    const { rows: expectedRows, meta: expectedMeta } = await buildExpectedRowsForComparison(consolidatedBOM)
+    const receivedRows = vendorDocs.map((d) => ({
+      _id: d._id,
+      pieceMark: d.pieceMark,
+      lengthFeet: d.lengthFeet,
+      pieceQty: d.pieceQty != null ? d.pieceQty : d.qty,
+      description: d.description,
+      partCode: d.partCode,
+      rawRow: d.rawRow,
+    }))
+
+    const { results, summary, exceptions } = compareMaterials(expectedRows, receivedRows, request)
 
     if (results.length) {
       await QuoteComparisonResult.insertMany(results, { ordered: false })
@@ -1392,14 +1494,28 @@ const compareShipperRequest = async (requestId) => {
     await ShipperRequest.findByIdAndUpdate(requestId, {
       status: 'comparison_completed',
       comparisonStatus: 'completed',
-      comparisonSummary: summary,
+      comparisonSummary: {
+        ...summary,
+        ...expectedMeta,
+        serviceVersion: SERVICE_VERSION,
+        extractionFormat: format,
+        extractionMethod,
+        extractedVendorLines: vendorItems.length,
+      },
       comparisonRanAt: new Date(),
       comparisonError: null,
       exceptions,
     })
 
     return {
-      summary,
+      summary: {
+        ...summary,
+        ...expectedMeta,
+        serviceVersion: SERVICE_VERSION,
+        extractionFormat: format,
+        extractionMethod,
+        extractedVendorLines: vendorItems.length,
+      },
       exceptions,
     }
   } catch (err) {
@@ -1408,14 +1524,15 @@ const compareShipperRequest = async (requestId) => {
       comparisonStatus: 'failed',
       comparisonError: err.message,
     })
-
     throw err
   }
 }
 
+/* =========================================================
+ * Public: async job wrapper
+ * ========================================================= */
 const processShipperComparisonJob = async (jobId) => {
   const job = await ShipperComparisonJob.findById(jobId).lean()
-
   if (!job) return
 
   await ShipperComparisonJob.findByIdAndUpdate(jobId, {
@@ -1440,16 +1557,13 @@ const processShipperComparisonJob = async (jobId) => {
     })
 
     if (global.io) {
-      global.io
-        .of('/admin')
-        .to(`user:${job.triggeredBy}`)
-        .emit('shipper_comparison_complete', {
-          jobId,
-          requestId: job.shipperRequestId,
-          leadId: job.leadId,
-          vendorId: job.vendorId,
-          summary,
-        })
+      global.io.of('/admin').to(`user:${job.triggeredBy}`).emit('shipper_comparison_complete', {
+        jobId,
+        requestId: job.shipperRequestId,
+        leadId: job.leadId,
+        vendorId: job.vendorId,
+        summary,
+      })
     }
   } catch (err) {
     await ShipperComparisonJob.findByIdAndUpdate(jobId, {
@@ -1459,16 +1573,13 @@ const processShipperComparisonJob = async (jobId) => {
     })
 
     if (global.io) {
-      global.io
-        .of('/admin')
-        .to(`user:${job.triggeredBy}`)
-        .emit('shipper_comparison_failed', {
-          jobId,
-          requestId: job.shipperRequestId,
-          leadId: job.leadId,
-          vendorId: job.vendorId,
-          error: err.message,
-        })
+      global.io.of('/admin').to(`user:${job.triggeredBy}`).emit('shipper_comparison_failed', {
+        jobId,
+        requestId: job.shipperRequestId,
+        leadId: job.leadId,
+        vendorId: job.vendorId,
+        error: err.message,
+      })
     }
   }
 }
@@ -1477,12 +1588,16 @@ module.exports = {
   compareShipperRequest,
   processShipperComparisonJob,
 
-  extractVendorQuoteLines,
-  compareExpectedVsVendor,
-  normalizeExpectedBomItems,
-  normalizeVendorQuoteLines,
-  groupVendorLinesForComparison,
-
-  detectPdfFormat,
-  parseMbsLengthToFeet,
+  // exposed for tests / reuse
+  extractVendorItems,
+  compareMaterials,
+  normalizeExpected,
+  normalizeMaterial,
+  materialCompatibility,
+  expectedPieceLengthFeet,
+  lengthToFeet,
+  lengthBucketInches,
+  detectVendorFormat,
+  parseCentralStates,
+  parseQuicken,
 }

@@ -273,25 +273,36 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21L | GET | `/api/plant/shipper-requests/:requestId/comparison-summary` | Summary + `canProceedToApproval` decision |
 | 21M | GET | `/api/plant/shipper-requests/:requestId/comparison-results` | Paginated row-level comparison results |
 | 21N | POST | `/api/plant/shipper-requests/:requestId/bundle-plan/generate` | Generate bundle plan from approved vendor lines |
-| 21O | GET | `/api/plant/projects/:leadId/bundle-plan` | Get latest non-cancelled bundle plan for project |
-| 21P | GET | `/api/plant/bundle-plans/:bundlePlanId` | Bundle plan detail with bundle summaries |
-| 21Q | PUT | `/api/plant/bundle-plans/:bundlePlanId` | Update bundle plan notes |
-| 21R | GET | `/api/plant/bundle-plans/:bundlePlanId/coverage` | Vendor-line assignment coverage for confirm gate |
-| 21S | POST | `/api/plant/bundle-plans/:bundlePlanId/confirm` | Confirm bundle plan after exact coverage |
+| 21O | GET | `/api/plant/projects/:leadId/bundle-plan` | Get latest non-cancelled bundle plan for project (legacy project route) |
+| 21OA | GET | `/api/plant/projects/:projectId/load-planning` | **Primary FE endpoint**: unified load + truck planning snapshot |
+| 21OB | PUT | `/api/plant/projects/:projectId/load-planning` | **Primary FE endpoint**: update bundle/truck notes + sequence |
+| 21OC | GET | `/api/plant/projects/:projectId/load-planning/coverage` | **Primary FE endpoint**: coverage for bundle confirm gate |
+| 21OD | POST | `/api/plant/projects/:projectId/load-planning/confirm-bundles` | **Primary FE endpoint**: confirm bundle plan |
+| 21OE | POST | `/api/plant/projects/:projectId/load-planning/generate-truck-plan` | **Primary FE endpoint**: generate/regenerate truck plan |
+| 21OF | GET | `/api/plant/projects/:projectId/load-planning/truck-plan` | **Primary FE endpoint**: truck plan detail + rows |
+| 21OG | PUT | `/api/plant/projects/:projectId/load-planning/trucks/:packingListId` | **Primary FE endpoint**: edit one truck row |
+| 21OH | POST | `/api/plant/projects/:projectId/load-planning/truck-plan/confirm` | **Primary FE endpoint**: confirm truck plan |
+| 21P | GET | `/api/plant/bundle-plans/:bundlePlanId` | Legacy id-based: bundle plan detail with bundle summaries |
+| 21Q | PUT | `/api/plant/bundle-plans/:bundlePlanId` | Legacy id-based: update bundle plan notes |
+| 21R | GET | `/api/plant/bundle-plans/:bundlePlanId/coverage` | Legacy id-based: vendor-line assignment coverage |
+| 21S | POST | `/api/plant/bundle-plans/:bundlePlanId/confirm` | Legacy id-based: confirm bundle plan |
 | 21T | POST | `/api/plant/bundle-plans/:bundlePlanId/bundles` | Create manual/empty bundle |
 | 21U | GET | `/api/plant/bundles/:bundleId` | Bundle detail + items |
 | 21V | PUT | `/api/plant/bundles/:bundleId` | Edit bundle items/stacking/metadata |
 | 21W | DELETE | `/api/plant/bundles/:bundleId` | Delete editable unassigned bundle |
-| 21X | POST | `/api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate` | Generate packing list / truck load plan |
-| 21Y | GET | `/api/plant/packing-list-plans/:packingListPlanId` | Packing list plan detail + truck rows |
-| 21Z | POST | `/api/plant/packing-list-plans/:packingListPlanId/confirm` | Confirm packing list plan |
-| 21ZA | GET | `/api/plant/packing-lists/:packingListId` | Single truck-wise packing list detail |
-| 21ZB | PUT | `/api/plant/packing-lists/:packingListId` | Edit truck assignment/layout/details |
-| 21ZC | GET | `/api/plant/bundle-plans/:bundlePlanId/freight-autofill` | Auto-fill fields for freight request form |
+| 21X | POST | `/api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate` | Legacy id-based: generate packing list / truck load plan |
+| 21Y | GET | `/api/plant/packing-list-plans/:packingListPlanId` | Legacy id-based: packing list plan detail + truck rows |
+| 21Z | POST | `/api/plant/packing-list-plans/:packingListPlanId/confirm` | Legacy id-based: confirm packing list plan |
+| 21ZA | GET | `/api/plant/packing-lists/:packingListId` | Legacy id-based: single truck-wise packing list detail |
+| 21ZB | PUT | `/api/plant/packing-lists/:packingListId` | Legacy id-based: edit truck assignment/layout/details |
+| 21ZC | GET | `/api/plant/bundle-plans/:bundlePlanId/freight-autofill` | Legacy id-based: auto-fill fields for freight request form |
 | 21ZD | POST | `/api/plant/deliveries` | Create freight request |
 | 21ZE | GET | `/api/plant/deliveries/project/:leadId` | Freight request list for one project |
-| 21ZF | POST | `/api/plant/deliveries/:deliveryId/send-bids` | Send bid requests to selected carriers |
-| 21ZG | GET | `/api/plant/deliveries/:deliveryId/bids` | Freight bid detail + stats + sorted bids |
+| 21ZEA | GET | `/api/plant/projects/:projectId/freight-autofill` | **Primary FE endpoint**: freight auto-fill by project |
+| 21ZEB | POST | `/api/plant/projects/:projectId/freight/send-bids` | **Primary FE endpoint**: send bids for latest project delivery |
+| 21ZEC | GET | `/api/plant/projects/:projectId/freight/bids` | **Primary FE endpoint**: freight bid detail by project |
+| 21ZF | POST | `/api/plant/deliveries/:deliveryId/send-bids` | Legacy id-based: send bid requests to selected carriers |
+| 21ZG | GET | `/api/plant/deliveries/:deliveryId/bids` | Legacy id-based: freight bid detail + stats + sorted bids |
 | 21ZH | POST | `/api/plant/freight-bids/:bidId/select` | Award one freight bid and reject others |
 | 21ZI | GET | `/api/public/freight-bids/:token` | Public freight bid link details |
 | 21ZJ | POST | `/api/public/freight-bids/:token/submit` | Public carrier bid submit (deadline enforced) |
@@ -900,11 +911,11 @@ Register one or more BOM file URLs **after** S3 upload. Starts **async** extract
 | `bomFiles[].buildingId` | Yes | Must belong to this project |
 | `bomFiles[].fileUrl` | Yes | From presigned-url |
 | `bomFiles[].fileName` | Yes | Used for format detection + display |
-| `bomFiles[].fileFormat` | No | `ods` \| `xlsx` \| `xls` — inferred from extension if omitted |
+| `bomFiles[].fileFormat` | No | `ods` \| `xlsx` \| `xls` \| `out` \| `txt` — inferred from extension if omitted |
 
 **Validation:** duplicate `buildingId` → 400; wrong building → 400 (all-or-nothing). **Re-upload** replaces previous job + items for that building.
 
-**Extraction:** ExcelJS parses standard BOM layouts; if zero rows extracted, **Claude fallback** runs automatically (requires `ANTHROPIC_API_KEY`). Skipped sheets (no header row) are listed on the job as `skippedSheets`.
+**Extraction:** Spreadsheet uploads (`ods/xlsx/xls`) are parsed with SheetJS (`xlsx` package). If zero rows are extracted, **Claude fallback** runs automatically (requires `ANTHROPIC_API_KEY`). Fixed-width report files (`.out`, and `.txt` when it matches report format) are parsed by the server out-parser. Skipped sheets (no header row) are listed on the job as `skippedSheets`.
 
 ### Response `data`
 
@@ -2094,6 +2105,110 @@ Bundle plan detail by id (same structure as §21O, id-driven).
 
 ---
 
+## 21OA. `GET /api/plant/projects/:projectId/load-planning`
+
+**Primary frontend endpoint for load + truck planning state restore after refresh.**
+
+`projectId` accepts:
+- lead Mongo `_id` (example: `6a0b91cc8df24a04519ef306`)
+- or project code `jobId` (example: `PRO-019`)
+
+### Response `data`
+
+```json
+{
+  "project": {
+    "_id": "...",
+    "projectId": "PRO-019",
+    "projectName": "ABC Warehouse"
+  },
+  "bundlePlan": { "_id": "...", "status": "confirmed", "planNumber": "BP-0001" },
+  "bundles": [{ "_id": "...", "bundleNo": "B-001", "status": "assigned_to_truck" }],
+  "bundleSummary": { "totalBundles": 29, "totalWeight": 34216.45, "maxLengthFeet": 45, "warnings": [] },
+  "packingListPlan": { "_id": "...", "status": "generated", "planNumber": "PLP-0001" },
+  "packingLists": [{ "_id": "...", "packingListNo": "PL-001", "truckType": "SEMI_53", "status": "draft" }]
+}
+```
+
+---
+
+## 21OB. `PUT /api/plant/projects/:projectId/load-planning`
+
+**Primary frontend endpoint for project-level edits** (without passing bundle-plan / truck-plan id as parent route param).
+
+### Request body (all optional)
+
+```json
+{
+  "bundlePlanNotes": "Reviewed by planner",
+  "packingListPlanNotes": "Check loading order with site team",
+  "bundleUpdates": [
+    {
+      "bundleId": "665a00000000000000000111",
+      "loadSequence": 1,
+      "notes": "Load first",
+      "handlingInstruction": "Keep dry"
+    }
+  ],
+  "packingListUpdates": [
+    {
+      "packingListId": "665a00000000000000000991",
+      "notes": "Use forklift at dock 2",
+      "loadingNotes": "Panels top layer only"
+    }
+  ]
+}
+```
+
+### Response `data`
+
+```json
+{
+  "bundlePlan": { "_id": "...", "notes": "Reviewed by planner" },
+  "bundles": [{ "_id": "...", "bundleNo": "B-001", "loadSequence": 1 }],
+  "packingListPlan": { "_id": "...", "notes": "Check loading order with site team" },
+  "packingLists": [{ "_id": "...", "packingListNo": "PL-001" }]
+}
+```
+
+---
+
+## 21OC. `GET /api/plant/projects/:projectId/load-planning/coverage`
+
+Project-id wrapper for coverage check (same response as §21R).
+
+---
+
+## 21OD. `POST /api/plant/projects/:projectId/load-planning/confirm-bundles`
+
+Project-id wrapper for bundle confirm (same response as §21S).
+
+---
+
+## 21OE. `POST /api/plant/projects/:projectId/load-planning/generate-truck-plan`
+
+Project-id wrapper for truck plan generate/regenerate (same response as §21X).
+
+---
+
+## 21OF. `GET /api/plant/projects/:projectId/load-planning/truck-plan`
+
+Project-id wrapper for truck plan detail (same response as §21Y).
+
+---
+
+## 21OG. `PUT /api/plant/projects/:projectId/load-planning/trucks/:packingListId`
+
+Project-id wrapper for truck row edit (same request/response behavior as §21ZB).
+
+---
+
+## 21OH. `POST /api/plant/projects/:projectId/load-planning/truck-plan/confirm`
+
+Project-id wrapper for truck plan confirm (same response as §21Z).
+
+---
+
 ## 21Q. `PUT /api/plant/bundle-plans/:bundlePlanId`
 
 Update bundle plan metadata.
@@ -2458,6 +2573,14 @@ Returns only the FE auto-fill fields requested for freight request form.
 
 ---
 
+## 21ZEA. `GET /api/plant/projects/:projectId/freight-autofill`
+
+**Primary frontend endpoint** for freight form auto-fill by project id.
+
+Same response shape as §21ZC.
+
+---
+
 ## 21ZD. `POST /api/plant/deliveries`
 
 Create freight request (delivery) with editable freight fields.
@@ -2534,6 +2657,39 @@ Project freight request list (same view payload as project delivery endpoint).
   "total": 1
 }
 ```
+
+---
+
+## 21ZEB. `POST /api/plant/projects/:projectId/freight/send-bids`
+
+**Primary frontend endpoint** to send bid requests using project id.
+
+Behavior:
+- resolves latest project delivery internally
+- applies same logic/response as §21ZF
+
+### Request body
+
+```json
+{
+  "carrierIds": ["665a0000000000000000c001", "665a0000000000000000c002"],
+  "bidDeadline": "2026-06-10T18:00:00.000Z"
+}
+```
+
+---
+
+## 21ZEC. `GET /api/plant/projects/:projectId/freight/bids`
+
+**Primary frontend endpoint** for freight bid detail by project id.
+
+### Query params
+
+| Param | Type | Default |
+|---|---|---|
+| `sort` | `low_to_high` \| `high_to_low` | `low_to_high` |
+
+Same response shape as §21ZG.
 
 ---
 
@@ -3492,6 +3648,10 @@ Regenerate note:
 
 `canProceedToApproval` from step 5 gates the approve button. Blockers: `comparison_not_run`, `missing_items`, `qty_mismatch`, `length_mismatch`, `weight_mismatch`, `ambiguous_match`.
 
+Frontend note:
+- For **all load/truck planning screens**, use project-id endpoints (`/api/plant/projects/:projectId/load-planning...`) as primary integration.
+- Keep id-based endpoints only as backward-compatible fallback.
+
 ---
 
 ### Flow D — Freight request → bidding → award
@@ -3512,6 +3672,11 @@ Award behavior at step 7:
 - `Delivery.selectedCarrierBidId` set to selected bid
 - `Delivery.status` becomes `carrier_selected`
 - awarded carrier gets award email and others get rejection email
+
+Frontend note:
+- For send-bids and bid-detail screens, use project-id endpoints:
+  - `POST /api/plant/projects/:projectId/freight/send-bids`
+  - `GET /api/plant/projects/:projectId/freight/bids`
 
 ---
 
@@ -3561,17 +3726,14 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Request resubmit | `POST .../request-resubmit` `{ note }` |
 | Generate bundle plan | `POST .../bundle-plan/generate` |
 | Bundle plan by project | `GET /api/plant/projects/:leadId/bundle-plan` |
-| Unified load + truck planning snapshot | `GET /api/plant/projects/:projectId/load-planning` (`projectId` accepts lead `_id` or `jobId` like `PRO-019`) |
-| Unified load/truck notes & sequence update | `PUT /api/plant/projects/:projectId/load-planning` |
-| Unified coverage check | `GET /api/plant/projects/:projectId/load-planning/coverage` |
-| Unified bundle confirm | `POST /api/plant/projects/:projectId/load-planning/confirm-bundles` |
-| Unified truck-plan generate | `POST /api/plant/projects/:projectId/load-planning/generate-truck-plan` |
-| Unified truck-plan detail | `GET /api/plant/projects/:projectId/load-planning/truck-plan` |
-| Unified truck row edit | `PUT /api/plant/projects/:projectId/load-planning/trucks/:packingListId` |
-| Unified truck-plan confirm | `POST /api/plant/projects/:projectId/load-planning/truck-plan/confirm` |
-| Unified freight autofill | `GET /api/plant/projects/:projectId/freight-autofill` |
-| Unified freight send bids | `POST /api/plant/projects/:projectId/freight/send-bids` |
-| Unified freight bid detail view | `GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high|high_to_low` |
+| **Primary: unified load planning state** | `GET /api/plant/projects/:projectId/load-planning` |
+| **Primary: unified load planning updates** | `PUT /api/plant/projects/:projectId/load-planning` |
+| **Primary: coverage gate (project)** | `GET /api/plant/projects/:projectId/load-planning/coverage` |
+| **Primary: confirm bundles (project)** | `POST /api/plant/projects/:projectId/load-planning/confirm-bundles` |
+| **Primary: generate truck plan (project)** | `POST /api/plant/projects/:projectId/load-planning/generate-truck-plan` |
+| **Primary: truck plan detail (project)** | `GET /api/plant/projects/:projectId/load-planning/truck-plan` |
+| **Primary: edit truck row (project)** | `PUT /api/plant/projects/:projectId/load-planning/trucks/:packingListId` |
+| **Primary: confirm truck plan (project)** | `POST /api/plant/projects/:projectId/load-planning/truck-plan/confirm` |
 | Bundle plan by id | `GET /api/plant/bundle-plans/:bundlePlanId` |
 | Bundle plan notes | `PUT /api/plant/bundle-plans/:bundlePlanId` |
 | Bundle coverage check | `GET /api/plant/bundle-plans/:bundlePlanId/coverage` |
@@ -3582,10 +3744,12 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Packing list plan detail | `GET /api/plant/packing-list-plans/:packingListPlanId` |
 | Confirm packing list plan | `POST /api/plant/packing-list-plans/:packingListPlanId/confirm` |
 | Single packing list detail/edit | `GET/PUT /api/plant/packing-lists/:packingListId` |
-| Freight auto-fill from bundle plan | `GET /api/plant/bundle-plans/:bundlePlanId/freight-autofill` |
+| **Primary: freight auto-fill by project** | `GET /api/plant/projects/:projectId/freight-autofill` |
 | Create freight request | `POST /api/plant/deliveries` |
 | Freight requests list by project | `GET /api/plant/deliveries/project/:leadId` |
 | Legacy project freight list | `GET /api/plant/projects/:leadId/delivery` |
+| **Primary: send bids by project** | `POST /api/plant/projects/:projectId/freight/send-bids` |
+| **Primary: bids view by project** | `GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high|high_to_low` |
 | Send freight bid links | `POST /api/plant/deliveries/:deliveryId/send-bids` |
 | Freight bid detail view | `GET /api/plant/deliveries/:deliveryId/bids?sort=low_to_high|high_to_low` |
 | Award freight bid | `POST /api/plant/freight-bids/:bidId/select` |

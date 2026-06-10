@@ -14,6 +14,7 @@ const BOMJob = require('../../models/BOMJob')
 const auditService = require('../../services/audit.service')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { normalizeCode } = require('./smdt.service')
+const { parseOutFile } = require('./outparser.service')
 
 const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
 
@@ -43,7 +44,6 @@ const toNum = (val, fallback = null) => {
   const n = Number(
     String(val)
       .replace(/[$,]/g, '')
-      .replace(/,/g, '')
       .trim()
   )
 
@@ -89,9 +89,9 @@ const isExampleOrInstructionRow = (joinedText) => {
 
 /**
  * Handles:
- * 22’-1 1/2”
- * 16’-1 7/8”
- * 3’-0”
+ * 22'-1 1/2"
+ * 16'-1 7/8"
+ * 3'-0"
  * 20'-4"
  * 11 1/2"
  * 3"
@@ -100,9 +100,9 @@ const parseLengthToFeet = (value) => {
   if (!value) return null
 
   const str = String(value)
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/[‐-‒–—]/g, '-')
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u2010-\u2015]/g, '-')
     .trim()
 
   if (!str) return null
@@ -199,7 +199,7 @@ const inferFileFormat = (fileName, fileFormat) => {
     .pop()
     ?.toLowerCase()
 
-  if (['ods', 'xlsx', 'xls'].includes(ext)) return ext
+  if (['ods', 'xlsx', 'xls', 'out', 'txt'].includes(ext)) return ext
 
   return 'xlsx'
 }
@@ -253,13 +253,9 @@ const sheetRowsFromExcelJs = async (buffer, fileFormat) => {
   return sheets
 }
 
-const loadSheetRows = async (buffer, fileFormat) => {
-  // Route all spreadsheet formats through SheetJS for consistency and stability.
-  // We keep ExcelJS helpers in file as fallback utilities.
-  if (['xls', 'xlsx', 'ods'].includes(fileFormat)) {
-    return sheetRowsFromSheetJsBuffer(buffer)
-  }
-
+const loadSheetRows = async (buffer) => {
+  // All spreadsheet formats route through SheetJS for consistency.
+  // sheetRowsFromExcelJs retained as a manual fallback utility.
   return sheetRowsFromSheetJsBuffer(buffer)
 }
 
@@ -316,6 +312,8 @@ const parseRowsToItems = (sheetName, rows, headerIdx) => {
   const iGauge = col(headers, ['THICK', 'GAUGE'])
   const iAngle = col(headers, ['ANGLE'])
   const iType = col(headers, ['TYPE'])
+  const iUnitCost = col(headers, ['UNITCOST', 'UNITPRICE', 'PRICE/EA', 'COST/EA'])
+  const iTotalCost = col(headers, ['TOTALCOST', 'TOTALPRICE', 'COST', 'TOTAL$'])
 
   if (iQty < 0) {
     return {
@@ -353,6 +351,9 @@ const parseRowsToItems = (sheetName, rows, headerIdx) => {
     const partCodeNormalized = normalizeCode(partCode)
     const partColorNormalized = normalizeColor(partColor)
 
+    const bomSourceUnitCost = iUnitCost >= 0 ? toNum(row[iUnitCost]) : null
+    const bomSourceTotalCost = iTotalCost >= 0 ? toNum(row[iTotalCost]) : null
+
     items.push({
       sourceSheetName: sheetName,
       category: sheetName,
@@ -376,6 +377,14 @@ const parseRowsToItems = (sheetName, rows, headerIdx) => {
       gauge: iGauge >= 0 ? cleanStr(row[iGauge]) : null,
       angle: iAngle >= 0 ? cleanStr(row[iAngle]) : null,
       type: iType >= 0 ? cleanStr(row[iType]) : null,
+
+      bomSourceUnitCost:
+        bomSourceUnitCost != null
+          ? bomSourceUnitCost
+          : bomSourceTotalCost != null && quantity > 0
+            ? bomSourceTotalCost / quantity
+            : null,
+      bomSourceTotalCost,
 
       isFrameType: /frame|column|rafter|opening framing/i.test(sheetName),
       isBuyout:
@@ -492,6 +501,8 @@ Return JSON in this exact shape:
       "gauge": "",
       "angle": "",
       "type": "",
+      "unitCost": null,
+      "totalCost": null,
       "isFrameType": false,
       "isBuyout": false
     }
@@ -505,6 +516,7 @@ Rules:
 - treat <BLANK>, BLANK, N/A, NA, and "-" as missing partCode
 - isFrameType true when sheet name suggests frames/columns/rafters/opening framing
 - isBuyout true when part is missing or BUYOUT/N/A/-
+- unitCost / totalCost only when the sheet has explicit price columns; otherwise null
 - Include every valid data row.
 
 Spreadsheet data:
@@ -525,13 +537,16 @@ ${text.slice(0, 120000)}`,
   return (parsed.items || [])
     .map((item) => {
       const partCode = cleanPartCode(item.partCode)
+      const quantity = toNum(item.quantity)
+      const bomSourceUnitCost = toNum(item.unitCost)
+      const bomSourceTotalCost = toNum(item.totalCost)
 
       return {
         sourceSheetName: item.sourceSheetName || item.category || 'Unknown',
         category: item.category || item.sourceSheetName || 'Unknown',
         rowNumber: item.rowNumber ?? null,
 
-        quantity: toNum(item.quantity),
+        quantity,
 
         markId: cleanStr(item.markId) || '',
         description: cleanStr(item.description) || '',
@@ -550,6 +565,14 @@ ${text.slice(0, 120000)}`,
         angle: cleanStr(item.angle),
         type: cleanStr(item.type),
 
+        bomSourceUnitCost:
+          bomSourceUnitCost != null
+            ? bomSourceUnitCost
+            : bomSourceTotalCost != null && quantity > 0
+              ? bomSourceTotalCost / quantity
+              : null,
+        bomSourceTotalCost,
+
         isFrameType:
           item.isFrameType === true ||
           /frame|column|rafter|opening framing/i.test(item.category || ''),
@@ -565,9 +588,40 @@ ${text.slice(0, 120000)}`,
     .filter((item) => item.quantity && item.quantity > 0)
 }
 
+const looksLikeOutReport = (buffer) => {
+  const head = buffer.slice(0, 4000).toString('utf8')
+  return /={20,}/.test(head) && /\bQuan\b/.test(head) && /\bCost\b/.test(head)
+}
+
 const extractBOMItemsFromWorkbook = async (buffer, fileName, fileFormat) => {
   const format = inferFileFormat(fileName, fileFormat)
-  const sheets = await loadSheetRows(buffer, format)
+
+  // Fixed-width MBS-style .out cost reports
+  if (format === 'out' || (format === 'txt' && looksLikeOutReport(buffer))) {
+    const { items, sections, skippedRows } = parseOutFile(buffer)
+
+    const normalized = items.map((item) => ({
+      ...item,
+      partCodeNormalized: normalizeCode(item.partCode),
+      partColorNormalized: normalizeColor(item.partColor),
+      gauge: null,
+      angle: null,
+      type: null,
+      isBuyout: item.isBuyout === true,
+      rawRow: null,
+    }))
+
+    return {
+      items: normalized,
+      skippedRows,
+      skippedSheets: sections
+        .filter((s) => s.items === 0)
+        .map((s) => ({ name: s.name, reason: 'No line items in section' })),
+      extractionMethod: 'out_parser',
+    }
+  }
+
+  const sheets = await loadSheetRows(buffer)
 
   const result = extractBOMItemsFromSheets(sheets)
 
@@ -584,85 +638,104 @@ const extractBOMItemsFromWorkbook = async (buffer, fileName, fileFormat) => {
 
   return {
     ...result,
-    extractionMethod: format === 'xls' ? 'xlsx' : 'exceljs',
+    extractionMethod: 'xlsx',
   }
 }
 
-const resolveColor = async (color) => {
-  if (!color) return null
+/**
+ * Loads all SMDT items and aliases for the active cost version into memory
+ * once per job, so matching is pure in-memory work instead of 3+ DB queries
+ * per BOM line.
+ */
+const buildMatchContext = async (costVersionId) => {
+  const [smdtItems, colorAliases, partAliases] = await Promise.all([
+    SMDTItem.find({ costVersionId, isActive: true }).lean(),
+    SMDTColorAlias.find({ isActive: true }).lean(),
+    SMDTPartAlias.find({ isActive: true }).lean(),
+  ])
 
-  const normalized = normalizeColor(color)
+  const byPartAndColor = new Map()
+  const byPart = new Map()
 
-  const alias = await SMDTColorAlias.findOne({
-    inputColorNormalized: normalized,
-    isActive: true,
-  }).lean()
+  for (const item of smdtItems) {
+    const colorKey = item.partColorNormalized || ''
+    byPartAndColor.set(`${item.partNameNormalized}|${colorKey}`, item)
 
-  return alias ? alias.smdtColorNormalized : normalized
+    if (!byPart.has(item.partNameNormalized)) {
+      byPart.set(item.partNameNormalized, [])
+    }
+    byPart.get(item.partNameNormalized).push(item)
+  }
+
+  const colorAliasMap = new Map()
+  for (const alias of colorAliases) {
+    colorAliasMap.set(alias.inputColorNormalized, alias.smdtColorNormalized)
+  }
+
+  // input part -> [{ category, smdtPartNameNormalized }]
+  const partAliasMap = new Map()
+  for (const alias of partAliases) {
+    if (!partAliasMap.has(alias.inputPartNormalized)) {
+      partAliasMap.set(alias.inputPartNormalized, [])
+    }
+    partAliasMap.get(alias.inputPartNormalized).push(alias)
+  }
+
+  return { byPartAndColor, byPart, colorAliasMap, partAliasMap, costVersionId }
 }
 
-const resolvePart = async (item) => {
+const resolveColorInMemory = (ctx, colorNormalized) => {
+  if (!colorNormalized) return null
+  return ctx.colorAliasMap.get(colorNormalized) || colorNormalized
+}
+
+const resolvePartInMemory = (ctx, item) => {
   if (!item.partCodeNormalized) return null
 
-  const alias = await SMDTPartAlias.findOne({
-    inputPartNormalized: item.partCodeNormalized,
-    isActive: true,
-    $or: [
-      { category: item.category },
-      { category: null },
-    ],
-  }).lean()
+  const aliases = ctx.partAliasMap.get(item.partCodeNormalized)
+  if (!aliases || !aliases.length) return item.partCodeNormalized
 
-  return alias ? alias.smdtPartNameNormalized : item.partCodeNormalized
+  const categoryMatch = aliases.find((a) => a.category === item.category)
+  if (categoryMatch) return categoryMatch.smdtPartNameNormalized
+
+  const generic = aliases.find((a) => a.category == null)
+  if (generic) return generic.smdtPartNameNormalized
+
+  return item.partCodeNormalized
 }
 
-const matchSingleBOMItemToSMDT = async (item, costVersionId) => {
-  if (item.isFrameType || item.isBuyout || !item.partCodeNormalized) {
+const matchBOMItemWithContext = (ctx, item) => {
+  if (!item.partCodeNormalized) {
     return {
       matchStatus: 'unmatched',
       matchConfidence: 'none',
-      matchReason: 'Manual pricing required',
+      matchReason: item.isFrameType
+        ? 'Frame member without part code'
+        : 'No part code on BOM line',
     }
   }
 
-  const part = await resolvePart(item)
-  const color = await resolveColor(item.partColorNormalized)
+  const part = resolvePartInMemory(ctx, item)
+  const color = resolveColorInMemory(ctx, item.partColorNormalized)
+  const usedAlias = part !== item.partCodeNormalized
 
-  const base = {
-    costVersionId,
-    partNameNormalized: part,
-    isActive: true,
-  }
-
-  let match = color
-    ? await SMDTItem.findOne({
-        ...base,
-        partColorNormalized: color,
-      }).lean()
-    : null
-
-  let matchConfidence = match
-    ? part === item.partCodeNormalized
-      ? 'exact'
-      : 'part_alias'
-    : 'none'
-
+  // 1. Exact part + color (color '' covers SMDT items with null color, e.g. frames sheet)
+  let match = ctx.byPartAndColor.get(`${part}|${color || ''}`)
+  let matchConfidence = match ? (usedAlias ? 'part_alias' : 'exact') : 'none'
   let matchReason = match ? 'Matched by part and color' : ''
 
+  // 2. Part + "--" color fallback
   if (!match) {
-    match = await SMDTItem.findOne({
-      ...base,
-      partColorNormalized: normalizeColor('--'),
-    }).lean()
-
+    match = ctx.byPartAndColor.get(`${part}|${normalizeColor('--')}`)
     if (match) {
       matchConfidence = 'color_fallback'
       matchReason = 'Matched by part and -- color fallback'
     }
   }
 
+  // 3. Part-only when unambiguous
   if (!match) {
-    const candidates = await SMDTItem.find(base).limit(5).lean()
+    const candidates = ctx.byPart.get(part) || []
 
     if (candidates.length === 1) {
       match = candidates[0]
@@ -673,7 +746,7 @@ const matchSingleBOMItemToSMDT = async (item, costVersionId) => {
         matchStatus: 'ambiguous',
         matchConfidence: 'none',
         matchReason: 'Multiple SMDT candidates found',
-        matchCandidates: candidates,
+        matchCandidates: candidates.slice(0, 5),
       }
     }
   }
@@ -711,6 +784,47 @@ const matchSingleBOMItemToSMDT = async (item, costVersionId) => {
     costUnit: match.costUnit,
     smdtUnitCost: unitCost,
     smdtTotalCost: total,
+  }
+}
+
+/**
+ * Pricing precedence:
+ * 1. SMDT match           -> priceSource 'smdt'
+ * 2. BOM file's own price -> priceSource 'bom' (fallback when SMDT has no usable match)
+ * 3. Neither              -> unpriced, manual pricing required
+ *
+ * Both prices are always stored on the item when available; only the
+ * final* fields and priceSource record which one was selected.
+ */
+const resolveFinalPricing = (item, match) => {
+  const smdtPriced = match.matchStatus === 'matched' && match.smdtTotalCost != null
+
+  if (smdtPriced) {
+    return {
+      isPriced: true,
+      priceSource: 'smdt',
+      finalUnitCost: match.smdtUnitCost,
+      finalTotalCost: match.smdtTotalCost,
+    }
+  }
+
+  const hasBomPrice =
+    item.bomSourceTotalCost != null && item.bomSourceTotalCost > 0
+
+  if (hasBomPrice) {
+    return {
+      isPriced: true,
+      priceSource: 'bom',
+      finalUnitCost: item.bomSourceUnitCost,
+      finalTotalCost: item.bomSourceTotalCost,
+    }
+  }
+
+  return {
+    isPriced: false,
+    priceSource: null,
+    finalUnitCost: null,
+    finalTotalCost: null,
   }
 }
 
@@ -759,13 +873,13 @@ const processBOMJob = async (
       throw new Error('No BOM line items could be extracted from file')
     }
 
-    const docs = []
+    const ctx = await buildMatchContext(activeVersion._id)
 
-    for (const item of rawItems) {
-      const match = await matchSingleBOMItemToSMDT(item, activeVersion._id)
-      const isPriced = match.matchStatus === 'matched' && match.smdtTotalCost != null
+    const docs = rawItems.map((item) => {
+      const match = matchBOMItemWithContext(ctx, item)
+      const pricing = resolveFinalPricing(item, match)
 
-      docs.push({
+      return {
         leadId,
         buildingId,
         bomJobId: jobId,
@@ -773,12 +887,9 @@ const processBOMJob = async (
 
         ...item,
         ...match,
-
-        isPriced,
-        finalUnitCost: isPriced ? match.smdtUnitCost : null,
-        finalTotalCost: isPriced ? match.smdtTotalCost : null,
-      })
-    }
+        ...pricing,
+      }
+    })
 
     await BOMItem.deleteMany({ bomJobId: jobId })
 
@@ -791,11 +902,13 @@ const processBOMJob = async (
     const matchedItems = docs.filter((item) => item.matchStatus === 'matched').length
     const unmatchedItems = docs.filter((item) => item.matchStatus === 'unmatched').length
     const ambiguousItems = docs.filter((item) => item.matchStatus === 'ambiguous').length
+    const bomPricedItems = docs.filter((item) => item.priceSource === 'bom').length
+    const unpricedItems = docs.filter((item) => !item.isPriced).length
     const totalSheets = new Set(docs.map((item) => item.sourceSheetName)).size
 
     await BOMJob.findByIdAndUpdate(jobId, {
       status: 'completed',
-      extractionMethod: extractionMethod || 'exceljs',
+      extractionMethod: extractionMethod || 'xlsx',
       skippedSheets: skippedSheets || [],
 
       totalSheets,
@@ -803,6 +916,8 @@ const processBOMJob = async (
       matchedItems,
       unmatchedItems,
       ambiguousItems,
+      bomPricedItems,
+      unpricedItems,
       frameItems,
       skippedRows,
 
@@ -824,6 +939,8 @@ const processBOMJob = async (
           matchedItems,
           unmatchedItems,
           ambiguousItems,
+          bomPricedItems,
+          unpricedItems,
         },
       })
     }
@@ -836,6 +953,8 @@ const processBOMJob = async (
         matchedItems,
         unmatchedItems,
         ambiguousItems,
+        bomPricedItems,
+        unpricedItems,
         frameItems,
       })
     }
@@ -875,7 +994,9 @@ module.exports = {
   processBOMJob,
   extractBOMItemsFromWorkbook,
   extractBOMItemsFromSheets,
-  matchSingleBOMItemToSMDT,
+  buildMatchContext,
+  matchBOMItemWithContext,
+  resolveFinalPricing,
   parseLengthToFeet,
   calculateTotalCost,
   inferFileFormat,

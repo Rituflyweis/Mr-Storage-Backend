@@ -18,7 +18,11 @@ const BOMJobSchema = new mongoose.Schema(
       default: 'queued',
     },
 
-    extractionMethod: { type: String, enum: ['exceljs', 'claude_fallback', 'xlsx'], default: 'exceljs' },
+    extractionMethod: {
+      type: String,
+      enum: ['exceljs', 'claude_fallback', 'xlsx', 'out_parser'],
+      default: 'xlsx',
+    },
     skippedSheets: {
       type: [{ name: String, reason: String }],
       default: [],
@@ -32,6 +36,12 @@ const BOMJobSchema = new mongoose.Schema(
     totalItems: { type: Number, default: 0 },
     matchedItems: { type: Number, default: 0 },
     unmatchedItems: { type: Number, default: 0 },
+
+    // Items priced from the BOM file's own cost column (SMDT had no match)
+    bomPricedItems: { type: Number, default: 0 },
+    // Items with no price from any source — need manual pricing
+    unpricedItems: { type: Number, default: 0 },
+
     frameItems: { type: Number, default: 0 },
     skippedRows: { type: Number, default: 0 },
 

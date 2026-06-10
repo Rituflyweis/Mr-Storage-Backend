@@ -25,184 +25,333 @@ const formatNumber = (value, decimals = 2) => {
   return n.toFixed(decimals)
 }
 
-const generateConsolidatedExcel = async (lead, buildingsWithJobs, allItems) => {
-  const workbook = new ExcelJS.Workbook()
-  workbook.creator = 'StoragePro'
+/* ------------------------------------------------------------------
+ * SHIPPER-FORMAT CONSOLIDATED BOM (the deliverable file)
+ *
+ * The consolidated BOM file IS the shipper workbook: no prices.
+ * Fine-split sheets matching the shipper's expected layout, with
+ * same part+color+length merged across buildings (summed QTY/weight)
+ * and a BLDG(S) column for traceability.
+ *
+ * Pricing is NOT in this file. Priced data is persisted separately
+ * to the DB via groupItemsForConsolidation (kept below).
+ * ------------------------------------------------------------------ */
 
+const SHIPPER_SHEETS = [
+  { id: 'FRAMES', title: 'FRAMES' },
+  { id: 'STUDS', title: "STUD'S" },
+  { id: 'TOP_CHANNEL', title: 'TOP CHANNEL' },
+  { id: 'DOOR_JAMBS_AND_HEADERS', title: 'DOOR JAMBS & HEADERS' },
+  { id: 'PURLINS_AND_GIRTS', title: "PURLIN'S & GIRTS" },
+  { id: 'ROOF_AND_WALL_SHEETING', title: 'ROOF & WALL SHEETING' },
+  { id: 'CONNECTION_PLATES', title: 'CONNECTION PLATES' },
+  { id: 'ANGLES', title: 'ANGLES' },
+  { id: 'TRIM', title: 'TRIM' },
+  { id: 'CABLE_BRACING', title: 'CABLE BRACING' },
+  { id: 'FASTENERS', title: 'FASTENERS' },
+  { id: 'ACCESSORIES_AND_SEALANT', title: 'ACCESSORIES & SEALANT' },
+  { id: 'MISC', title: 'MISC' },
+]
+
+/**
+ * First matching rule wins. Description match is primary (most reliable
+ * across formats), part-code pattern second, source category last.
+ */
+const SHIPPER_CLASSIFY_RULES = [
+  { sheet: 'FRAMES', desc: /\b(rf|ew)\s+(column|rafter|int col)\b|wind column|ext beam|rigid frame/i },
+  { sheet: 'FRAMES', part: /^(W\d+X\d+|P\d+X\d+|SP\d+)$/i, category: /frame/i },
+
+  { sheet: 'STUDS', desc: /\bstud\b/i },
+  { sheet: 'TOP_CHANNEL', desc: /top channel/i },
+
+  { sheet: 'DOOR_JAMBS_AND_HEADERS', desc: /door (jamb|header|sill)|\bjamb\b|\bheader\b/i },
+
+  { sheet: 'PURLINS_AND_GIRTS', desc: /purlin|girt|eave strut|\bstrut\b/i },
+  { sheet: 'PURLINS_AND_GIRTS', part: /^Z\d/i },
+
+  { sheet: 'ROOF_AND_WALL_SHEETING', desc: /sheet|liner|soffit|panel/i },
+  { sheet: 'ROOF_AND_WALL_SHEETING', part: /^(RLOC|PLOC|CD\d|CL244)/i },
+
+  { sheet: 'CONNECTION_PLATES', desc: /\bplt\b|plate/i },
+
+  { sheet: 'ANGLES', desc: /flg brc|flange brace|angle|strapping|back up|rake suppor|float eave|sliding cli|gable channel/i },
+
+  { sheet: 'TRIM', desc: /trim|gutter|downspout|rake|peak box|ridge|drip cap|corner|eave t|panel cap/i },
+  { sheet: 'TRIM', category: /^trim$/i },
+
+  { sheet: 'CABLE_BRACING', desc: /cable|cbl|\brod\b|rod@/i },
+  { sheet: 'CABLE_BRACING', part: /^(CB\d|RD\d|CHW|RHW)/i },
+
+  { sheet: 'FASTENERS', desc: /bolt|screw|driller|tek|rivet|washer|\blap\b|fastener/i },
+  { sheet: 'FASTENERS', category: /fastener/i },
+
+  { sheet: 'ACCESSORIES_AND_SEALANT', desc: /sealant|butyl|closure|\bclos\b|grayflex|\bjoi\b|roll-up|\bdoor\b|mastic|tape|metal roof s|tri bea/i },
+  { sheet: 'ACCESSORIES_AND_SEALANT', category: /accessor|sealant/i },
+
+  { sheet: 'FRAMES', category: /frame/i },
+  { sheet: 'DOOR_JAMBS_AND_HEADERS', category: /jamb|header/i },
+  { sheet: 'PURLINS_AND_GIRTS', category: /purlin|girt|strut/i },
+  { sheet: 'ROOF_AND_WALL_SHEETING', category: /sheet/i },
+  { sheet: 'CONNECTION_PLATES', category: /plate/i },
+  { sheet: 'ANGLES', category: /angle|flange/i },
+  { sheet: 'CABLE_BRACING', category: /bracing|cable/i },
+]
+
+const classifyShipperSheet = (item) => {
+  const desc = item.description || ''
+  const part = item.partCode || ''
+  const category = item.category || ''
+
+  for (const rule of SHIPPER_CLASSIFY_RULES) {
+    if (rule.desc && rule.desc.test(desc)) {
+      if (rule.category && !rule.category.test(category)) continue
+      return rule.sheet
+    }
+    if (rule.part && rule.part.test(part)) {
+      if (rule.category && !rule.category.test(category)) continue
+      return rule.sheet
+    }
+    if (!rule.desc && !rule.part && rule.category && rule.category.test(category)) {
+      return rule.sheet
+    }
+  }
+
+  return 'MISC'
+}
+
+const splitMarkIds = (value) => {
+  if (value == null) return []
+
+  const str = String(value).trim()
+  if (!str) return []
+
+  return str
+    .split(/[,;\n]+/)
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .filter((v) => !/^\+?\d+\s+more$/i.test(v))
+}
+
+const sortMarkIds = (marks) => {
+  return [...marks].sort((a, b) =>
+    String(a).localeCompare(String(b), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    })
+  )
+}
+
+/**
+ * Merge identical items across buildings: same part code, color, and length
+ * become one row with summed QTY and weight. Items with no part code key on
+ * description, so distinct custom members never wrongly merge.
+ * buildingMap maps buildingId -> buildingNumber.
+ */
+const groupItemsForShipper = (items, buildingMap) => {
+  const bySheet = new Map()
+
+  items.forEach((item) => {
+    const sheetId = classifyShipperSheet(item)
+
+    if (!bySheet.has(sheetId)) bySheet.set(sheetId, new Map())
+    const sheetMap = bySheet.get(sheetId)
+
+    const lengthKey =
+      item.lengthFeet != null ? Number(item.lengthFeet).toFixed(4) : item.lengthRaw || '_'
+
+    const identity =
+      item.partCodeNormalized ||
+      item.partCode ||
+      `DESC:${(item.description || '').toUpperCase()}`
+
+    const colorKey = item.partColorNormalized || item.partColor || '_'
+
+    const key = [identity, colorKey, lengthKey].join('|')
+
+    if (!sheetMap.has(key)) {
+      sheetMap.set(key, {
+        quantity: 0,
+        marks: new Set(),
+        description: item.description || '',
+        partCode: item.partCode || '',
+        partColor: item.partColor || '',
+        type: item.type || '',
+        angle: item.angle || '',
+        gauge: item.gauge || '',
+        lengthRaw: item.lengthRaw || '',
+        lengthFeet: item.lengthFeet,
+        weight: 0,
+        buildings: new Set(),
+        sourceLineCount: 0,
+      })
+    }
+
+    const group = sheetMap.get(key)
+
+    group.quantity += safeNumber(item.quantity)
+    group.weight += safeNumber(item.weight)
+    group.sourceLineCount += 1
+
+    for (const mark of splitMarkIds(item.markId)) {
+      group.marks.add(mark)
+    }
+
+    const bNum = buildingMap[String(item.buildingId)]
+    if (bNum != null) group.buildings.add(bNum)
+
+    if (!group.description && item.description) group.description = item.description
+    if (!group.gauge && item.gauge) group.gauge = item.gauge
+    if (!group.type && item.type) group.type = item.type
+    if (!group.angle && item.angle) group.angle = item.angle
+  })
+
+  const result = new Map()
+  for (const [sheetId, sheetMap] of bySheet) {
+    const rows = [...sheetMap.values()].sort((a, b) => {
+      const p = (a.partCode || a.description).localeCompare(b.partCode || b.description)
+      if (p !== 0) return p
+      return (b.lengthFeet || 0) - (a.lengthFeet || 0)
+    })
+    result.set(sheetId, rows)
+  }
+
+  return result
+}
+
+const formatShipperMarks = (marks) => sortMarkIds(marks).join(', ')
+
+const SHIPPER_HEADER_FILL = {
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: { argb: 'FFD9D9D9' },
+}
+
+const SHIPPER_COLUMNS = [
+  'QTY', 'MARK', 'DESCRIPTION', 'PART', 'COLOR', 'BLDG(S)',
+  'TYPE', 'ANGLE', 'THICK', 'LENGTH', 'WEIGHT',
+]
+
+const addShipperHeaderBlock = (sheet, title, lead, generatedDate) => {
+  sheet.getCell('C1').value = title
+  sheet.getCell('C1').font = { name: 'Arial', bold: true, size: 14 }
+
+  sheet.getCell('E1').value = 'Date:'
+  sheet.getCell('F1').value = generatedDate
+  sheet.getCell('E2').value = 'Job Id:'
+  sheet.getCell('F2').value = lead.jobId || ''
+  sheet.getCell('C3').value = 'Customer:'
+  sheet.getCell('E3').value = lead.customerName || lead.projectName || ''
+  sheet.getCell('C5').value = 'Project Name:'
+  sheet.getCell('E5').value = lead.projectName || ''
+
+  for (const addr of ['E1', 'E2', 'C3', 'C5']) {
+    sheet.getCell(addr).font = { name: 'Arial', bold: true }
+  }
+}
+
+/**
+ * Generates the consolidated BOM = the shipper-format workbook (no prices).
+ * Same signature/return shape callers already expect.
+ */
+const generateConsolidatedExcel = async (lead, buildingsWithJobs, allItems) => {
   const buildingMap = {}
   buildingsWithJobs.forEach((b) => {
     buildingMap[String(b._id)] = b.buildingNumber
   })
 
-  /**
-   * Sheet 1: Summary
-   */
-  const summary = workbook.addWorksheet('Summary')
+  const grouped = groupItemsForShipper(allItems, buildingMap)
 
-  const totalCost = allItems.reduce(
-    (sum, item) => sum + safeNumber(item.finalTotalCost),
-    0
-  )
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = 'StoragePro'
 
-  const totalWeight = allItems.reduce(
-    (sum, item) => sum + safeNumber(item.weight),
-    0
-  )
+  const generatedDate = new Date().toLocaleDateString('en-US')
 
-  const totalQty = allItems.reduce(
-    (sum, item) => sum + safeNumber(item.quantity),
-    0
-  )
+  /** COVER_SHEET: project info only */
+  const cover = workbook.addWorksheet('COVER_SHEET')
+  cover.getColumn(2).width = 28
+  cover.getColumn(3).width = 45
 
-  const summaryRows = [
-    ['Project Name', lead.projectName || ''],
-    ['Job ID', lead.jobId || ''],
-    ['Location', lead.location || ''],
-    ['Buildings', buildingsWithJobs.length],
-    ['Generated', new Date().toLocaleDateString()],
-    ['Total BOM Lines', allItems.length],
-    ['Total Qty', totalQty],
-    ['Total Weight (lbs)', totalWeight],
-    ['Total Cost', totalCost],
+  const coverLines = [
+    ['', ''],
+    ['', (lead.projectName || '').toUpperCase()],
+    ['', lead.location || ''],
+    ['', ''],
+    ['', 'SHIPPING LIST'],
+    ['', 'FOR'],
+    ['', (lead.customerName || lead.projectName || '').toUpperCase()],
+    ['', ''],
+    ['', 'Job Id:', lead.jobId || ''],
+    ['', 'Date:', generatedDate],
+    ['', 'Buildings:', buildingsWithJobs.map((b) => `#${b.buildingNumber}`).join(', ')],
+    ['', 'Total BOM Lines:', allItems.length],
   ]
+  coverLines.forEach((row) => cover.addRow(row))
+  cover.getCell('B2').font = { name: 'Arial', bold: true, size: 16 }
+  cover.getCell('B5').font = { name: 'Arial', bold: true, size: 14 }
+  cover.getCell('B7').font = { name: 'Arial', bold: true, size: 12 }
 
-  summaryRows.forEach((row) => summary.addRow(row))
-  summary.getColumn(1).width = 22
-  summary.getColumn(2).width = 35
+  let totalRows = 0
 
-  /**
-   * Sheet 2: BOM Items
-   * This is line-level internal detail.
-   */
-  const itemSheet = workbook.addWorksheet('BOM Items')
+  for (const def of SHIPPER_SHEETS) {
+    const rows = grouped.get(def.id)
+    if (!rows || !rows.length) continue
 
-  const itemHeaders = [
-    'Building #',
-    'Category',
-    'Mark ID',
-    'Description',
-    'Part Code',
-    'Color',
-    'Qty',
-    'Length (ft)',
-    'Weight (lbs)',
-    'Cost Unit',
-    'Unit Cost',
-    'Total Cost',
-    'Match Status',
-    'Notes',
-  ]
+    const sheet = workbook.addWorksheet(def.id.replace(/_/g, ' ').slice(0, 31))
 
-  const itemHeaderRow = itemSheet.addRow(itemHeaders)
-  itemHeaderRow.font = { bold: true }
-  itemHeaderRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFD3D3D3' },
+    addShipperHeaderBlock(sheet, def.title, lead, generatedDate)
+
+    const headerRowIdx = 7
+    const headerRow = sheet.getRow(headerRowIdx)
+    SHIPPER_COLUMNS.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1)
+      cell.value = h
+      cell.font = { name: 'Arial', bold: true }
+      cell.fill = SHIPPER_HEADER_FILL
+    })
+
+    const firstDataRow = headerRowIdx + 1
+    let r = firstDataRow
+
+    for (const g of rows) {
+      const row = sheet.getRow(r)
+      row.getCell(1).value = g.quantity
+      row.getCell(2).value = formatShipperMarks(g.marks)
+      row.getCell(3).value = g.description
+      row.getCell(4).value = g.partCode
+      row.getCell(5).value = g.partColor
+      row.getCell(6).value = [...g.buildings].sort((a, b) => a - b).join(', ')
+      row.getCell(7).value = g.type
+      row.getCell(8).value = g.angle
+      row.getCell(9).value = g.gauge
+      row.getCell(10).value = g.lengthRaw
+      row.getCell(11).value = Number(g.weight.toFixed(2))
+      row.getCell(2).alignment = { wrapText: true, vertical: 'top' }
+      row.getCell(3).alignment = { wrapText: true, vertical: 'top' }
+      r++
+      totalRows++
+    }
+
+    const lastDataRow = r - 1
+    const totalRow = sheet.getRow(r + 1)
+    totalRow.getCell(1).value = { formula: `SUM(A${firstDataRow}:A${lastDataRow})` }
+    totalRow.getCell(3).value = 'QTY TOTAL'
+    totalRow.getCell(9).value = 'Total Weight (lbs):'
+    totalRow.getCell(11).value = { formula: `SUM(K${firstDataRow}:K${lastDataRow})` }
+    totalRow.font = { name: 'Arial', bold: true }
+
+    const widths = [8, 50, 38, 14, 10, 10, 8, 8, 8, 14, 12]
+    widths.forEach((w, i) => {
+      sheet.getColumn(i + 1).width = w
+    })
   }
-
-  let grandTotal = 0
-
-  allItems.forEach((item) => {
-    const lineTotal = safeNumber(item.finalTotalCost)
-    grandTotal += lineTotal
-
-    itemSheet.addRow([
-      buildingMap[String(item.buildingId)] || '',
-      item.category || '',
-      item.markId || '',
-      item.description || '',
-      item.partCode || '',
-      item.partColor || '',
-      item.quantity ?? '',
-      item.lengthFeet ?? '',
-      item.weight ?? '',
-      item.costUnit || '',
-      item.finalUnitCost != null ? formatNumber(item.finalUnitCost, 4) : '',
-      item.finalTotalCost != null ? formatNumber(item.finalTotalCost, 2) : '',
-      item.matchStatus || '',
-      item.isManuallyPriced ? 'Manual price' : '',
-    ])
-  })
-
-  itemSheet.addRow([])
-
-  const totalRow = itemSheet.addRow([
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    'TOTAL',
-    formatNumber(grandTotal, 2),
-  ])
-
-  totalRow.font = { bold: true }
-
-  itemSheet.columns.forEach((col) => {
-    col.width = Math.max(col.width || 8, 16)
-  })
-
-  /**
-   * Sheet 3: Vendor Quote
-   * Keep this line-level, not grouped.
-   * Vendor should see every BOM line.
-   */
-  const vendorSheet = workbook.addWorksheet('Vendor Quote')
-
-  const vendorHeaders = [
-    'Building #',
-    'Part Code',
-    'Color',
-    'Description',
-    'Our Qty (EA)',
-    'Our Length (ft)',
-    'Our Weight (lbs)',
-    'Cost Unit',
-    'Vendor Unit Price',
-    'Vendor Total',
-    'Notes',
-  ]
-
-  const vendorHeaderRow = vendorSheet.addRow(vendorHeaders)
-  vendorHeaderRow.font = { bold: true }
-  vendorHeaderRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFCCE5FF' },
-  }
-
-  allItems.forEach((item) => {
-    vendorSheet.addRow([
-      buildingMap[String(item.buildingId)] || '',
-      item.partCode || '',
-      item.partColor || '',
-      item.description || '',
-      item.quantity || '',
-      item.lengthFeet || '',
-      item.weight || '',
-      item.costUnit || '',
-      '',
-      '',
-      '',
-    ])
-  })
-
-  vendorSheet.columns.forEach((col) => {
-    col.width = Math.max(col.width || 8, 18)
-  })
 
   const buffer = await workbook.xlsx.writeBuffer()
 
   return {
     buffer,
-    totalCost: grandTotal,
+    sheetCount: workbook.worksheets.length,
     itemCount: allItems.length,
+    rowCount: totalRows,
   }
 }
 
@@ -250,15 +399,25 @@ const groupItemsForConsolidation = (items, buildingMap) => {
 
     const group = map.get(key)
 
-    group.totalQty += safeNumber(item.quantity)
-    group.totalLengthFeet += safeNumber(item.lengthFeet)
+    const qty = safeNumber(item.quantity)
+    const pieceLengthFeet = safeNumber(item.lengthFeet)
+
+    group.totalQty += qty
+    // Store TOTAL linear feet, not single-piece length.
+    // This is critical because shipper comparison later derives
+    // piece length as totalLengthFeet / totalQty when needed.
+    group.totalLengthFeet += qty * pieceLengthFeet
     group.totalWeight += safeNumber(item.weight)
     group.totalCost += safeNumber(item.finalTotalCost)
 
+    if (group.unitCost == null && item.finalUnitCost != null) {
+      group.unitCost = item.finalUnitCost
+    }
+
     group.buildings.add(buildingMap[String(item.buildingId)] || 0)
 
-    if (item.markId) {
-      group.markIds.push(item.markId)
+    for (const mark of splitMarkIds(item.markId)) {
+      group.markIds.push(mark)
     }
 
     if (item._id) {
@@ -341,4 +500,10 @@ module.exports = {
   groupItemsForConsolidation,
   uploadConsolidatedExcelToS3,
   loadBomItemsForBuildings,
+
+  // Shipper-format helpers (the file is shipper format; these support it)
+  groupItemsForShipper,
+  classifyShipperSheet,
+  splitMarkIds,
+  SHIPPER_SHEETS,
 }

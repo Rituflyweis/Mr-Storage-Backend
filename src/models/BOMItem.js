@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const { BOM_MATCH_STATUSES, BOM_MATCH_CONFIDENCE } = require('../config/constants')
+const { BOM_MATCH_STATUSES, BOM_MATCH_CONFIDENCE, BOM_PRICE_SOURCES } = require('../config/constants')
 
 const BOMItemSchema = new mongoose.Schema(
   {
@@ -39,14 +39,27 @@ const BOMItemSchema = new mongoose.Schema(
     matchReason: { type: String, default: '' },
     matchCandidates: { type: [mongoose.Schema.Types.Mixed], default: [] },
 
+    // SMDT-derived price. Only populated when there is a real SMDT match.
     costUnit: { type: String, default: null },
     smdtUnitCost: { type: Number, default: null },
     smdtTotalCost: { type: Number, default: null },
+
+    // Price extracted from the source BOM file itself (e.g. MBS .out reports
+    // carry a Total Cost column). Stored independently of matching so both
+    // prices are always available for comparison.
+    bomSourceUnitCost: { type: Number, default: null },
+    bomSourceTotalCost: { type: Number, default: null },
 
     isManuallyPriced: { type: Boolean, default: false },
     manualUnitCost: { type: Number, default: null },
     manualTotalCost: { type: Number, default: null },
     manualPriceSavedToSMDT: { type: Boolean, default: false },
+
+    // Which source produced finalUnitCost / finalTotalCost.
+    // 'smdt'   -> matched against SMDT cost data
+    // 'bom'    -> SMDT had no match; BOM file's own price used as fallback
+    // 'manual' -> user entered a price
+    priceSource: { type: String, enum: BOM_PRICE_SOURCES, default: null, index: true },
 
     isPriced: { type: Boolean, default: false, index: true },
     finalUnitCost: { type: Number, default: null },

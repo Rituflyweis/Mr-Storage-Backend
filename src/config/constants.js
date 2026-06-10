@@ -196,10 +196,11 @@ const SMDT_CATEGORIES = [
 ]
 
 const BOM_JOB_STATUSES = ['queued', 'processing', 'completed', 'failed']
-const BOM_FILE_FORMATS = ['ods', 'xlsx', 'xls']
+const BOM_FILE_FORMATS = ['ods', 'xlsx', 'xls', 'out', 'txt']
 const BOM_MATCH_STATUSES = ['matched', 'unmatched', 'ambiguous', 'skipped']
 const BOM_MATCH_CONFIDENCE = ['exact', 'part_alias', 'color_fallback', 'part_only', 'none']
 const BOM_ITEM_FILTERS = ['all', 'unpriced', 'frames', 'matched']
+const BOM_PRICE_SOURCES = ['smdt', 'bom', 'manual']
 
 const CONSOLIDATED_BOM_STATUSES = ['draft', 'sent_to_vendor', 'vendor_submitted', 'approved']
 
@@ -253,5 +254,6 @@ module.exports = {
   BOM_MATCH_STATUSES,
   BOM_MATCH_CONFIDENCE,
   BOM_ITEM_FILTERS,
+  BOM_PRICE_SOURCES,
   CONSOLIDATED_BOM_STATUSES,
 }
