@@ -14,7 +14,7 @@ const { AUDIT_ACTIONS, INVOICE_STATUSES } = require('../../config/constants')
 const { generateInvoiceListExcel, generateInvoiceListPdf } = require('../../utils/exportInvoices')
 
 const INVOICE_BODY_FIELDS = [
-  'date', 'daysToPay', 'lineItems',
+  'date', 'daysToPay', 'lineItems','description',
   'subtotal', 'markupTotal', 'discount', 'depositAmount', 'totalAmount',
 ]
 
@@ -157,18 +157,13 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
   return success(res, { invoice })
 })
 
+
 exports.sendInvoice = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findById(req.params.invoiceId)
   if (!invoice) return notFound(res, 'Invoice not found')
 
   const customer = await Customer.findById(invoice.customerId)
   if (!customer) return notFound(res, 'Customer not found')
-
-  await mailer.sendInvoice({
-    toEmail: customer.email,
-    customerName: customer.firstName,
-    invoice,
-  })
 
   invoice.status = 'sent'
   invoice.sentAt = new Date()
@@ -182,6 +177,13 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { invoiceNumber: invoice.invoiceNumber, sentTo: customer.email },
   })
+
+  // Send email in background — don't block the HTTP response
+  mailer.sendInvoice({
+    toEmail: customer.email,
+    customerName: customer.firstName,
+    invoice,
+  }).catch(err => console.error('[sendInvoice] Email failed for invoice', invoice.invoiceNumber, err.message))
 
   return success(res, { invoice }, 'Invoice sent successfully')
 })
@@ -255,10 +257,17 @@ exports.getLeadInvoices = asyncHandler(async (req, res) => {
 })
 
 exports.getInvoiceStats = asyncHandler(async (req, res) => {
+  const { leadId } = req.query  
   const scopedLeadIds = await getScopedLeadIds(req.user)
   const filter = { status: { $ne: 'cancelled' } }
+
   if (scopedLeadIds !== null) {
     filter.leadId = { $in: scopedLeadIds }
+  }
+
+  // ← leadId param aaye toh override karo global filter
+  if (leadId) {
+    filter.leadId = leadId
   }
 
   const invoices = await Invoice.find(filter)

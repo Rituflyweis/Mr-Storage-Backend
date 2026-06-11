@@ -10,7 +10,9 @@ const updateInvoiceValidators = [
   body('paymentScheduleStageId').optional().isMongoId(),
 ]
 
-router.get('/stats', ctrl.getInvoiceStats)
+router.get('/stats', [
+  query('leadId').optional().isMongoId().withMessage('Invalid leadId'),
+], ctrl.getInvoiceStats)
 router.get('/export', ctrl.exportInvoices)
 router.get('/', ctrl.listInvoices)
 router.get('/:invoiceId', ctrl.getInvoice)
