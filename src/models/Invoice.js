@@ -5,6 +5,7 @@ const { computeInvoiceDueDate } = require('../utils/invoiceDueDate')
 const LineItemSchema = new mongoose.Schema(
   {
     images:   { type: [String], default: [], validate: { validator: v => v.length <= 4, message: 'Max 4 images per line item' } },
+    description: { type: String, default: '' },
     items:    { type: [String], default: [] },
     rate:     { type: Number, default: 0 },
     markup:   { type: Number, default: 0 },
@@ -22,7 +23,7 @@ const InvoiceSchema = new mongoose.Schema(
     quotationId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation', default: null },
     createdBy:         { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     invoiceNumber:     { type: String, unique: true },
-
+    description: { type: String, default: '' },
     date:              { type: Date, default: Date.now },
     paymentScheduleId: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentSchedule', default: null },
     // Links this invoice to a specific stage in a lead-level PaymentSchedule.

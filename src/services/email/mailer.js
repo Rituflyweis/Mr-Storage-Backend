@@ -5,10 +5,15 @@ const path = require('path')
 const fs = require('fs')
 const { generateInvoicePdf } = require('./generateInvoiceHelper')
 
+
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_PORT === 465,
+  port: Number(SMTP_PORT),
+  secure: Number(SMTP_PORT) === 465,
+  family: 4,
+  connectionTimeout: 10000,  
+  greetingTimeout: 10000,   
+  socketTimeout: 30000,     
   auth: {
     user: SMTP_USER,
     pass: SMTP_PASS,
