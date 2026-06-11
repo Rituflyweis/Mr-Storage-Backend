@@ -748,7 +748,12 @@ exports.getProjectDelivery = asyncHandler(async (req, res) => {
   return success(res, {
     deliveries: deliveries.map((d) => {
       const deliveryBids = (bidsByDelivery[String(d._id)] || [])
-        .filter((row) => Number.isFinite(Number(row.quotedAmount)))
+        .filter((row) => {
+          const status = String(row?.status || '').trim().toLowerCase()
+          if (status !== 'submitted' && status !== 'selected') return false
+          if (row?.quotedAmount == null || row?.quotedAmount === '') return false
+          return Number.isFinite(Number(row.quotedAmount))
+        })
       const averageBid = deliveryBids.length
         ? Math.round(
           (deliveryBids.reduce((sum, row) => sum + Number(row.quotedAmount), 0) / deliveryBids.length) * 100

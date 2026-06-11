@@ -39,6 +39,20 @@ const toRounded = (value) => {
   return Math.round(Number(value) * 100) / 100
 }
 
+const isSubmittedBid = (row) => {
+  const status = String(row?.status || '').trim().toLowerCase()
+  return status === 'submitted' || status === 'selected'
+}
+
+const getSubmittedBidAmount = (row) => {
+  if (!isSubmittedBid(row)) return null
+  const rawAmount = row?.quotedAmount
+  if (rawAmount == null || rawAmount === '') return null
+
+  const amount = Number(rawAmount)
+  return Number.isFinite(amount) ? amount : null
+}
+
 const buildFreightAutofill = (bundlePlan, packingListPlan, bundles) => {
   const totalWeight = bundles.reduce((sum, row) => sum + Number(row.totalWeight || 0), 0)
   const maxLengthFeet = bundles.reduce((max, row) => Math.max(max, Number(row.maxLengthFeet || 0)), 0)
@@ -62,19 +76,21 @@ const buildFreightAutofill = (bundlePlan, packingListPlan, bundles) => {
 }
 
 const buildDeliveryBidStats = (bids) => {
-  const submitted = bids.filter((row) => Number.isFinite(Number(row.quotedAmount)))
-  const sorted = [...submitted].sort((a, b) => Number(a.quotedAmount) - Number(b.quotedAmount))
+  const submitted = bids
+    .map((row) => ({ ...row, _normalizedBidAmount: getSubmittedBidAmount(row) }))
+    .filter((row) => row._normalizedBidAmount != null)
+  const sorted = [...submitted].sort((a, b) => a._normalizedBidAmount - b._normalizedBidAmount)
 
   const totalBids = submitted.length
   const averageBid = totalBids
-    ? Math.round((submitted.reduce((sum, row) => sum + Number(row.quotedAmount), 0) / totalBids) * 100) / 100
+    ? Math.round((submitted.reduce((sum, row) => sum + row._normalizedBidAmount, 0) / totalBids) * 100) / 100
     : null
 
   const lowestBid = sorted[0] || null
   const highestBid = sorted[sorted.length - 1] || null
-  const awardedBid = submitted.find((row) => row.status === 'selected') || null
+  const awardedBid = submitted.find((row) => String(row.status || '').trim().toLowerCase() === 'selected') || null
   const potentialSavings = highestBid && awardedBid
-    ? Math.max(0, Number(highestBid.quotedAmount) - Number(awardedBid.quotedAmount))
+    ? Math.max(0, highestBid._normalizedBidAmount - awardedBid._normalizedBidAmount)
     : null
 
   return {
@@ -354,7 +370,7 @@ exports.getDeliveryBids = asyncHandler(async (req, res) => {
       carrierName: row.carrierId?.carrierName || '',
       submittedAt: row.submittedAt,
       carrierNote: row.carrierNotes || '',
-      bidAmount: Number.isFinite(Number(row.quotedAmount)) ? Number(row.quotedAmount) : null,
+      bidAmount: getSubmittedBidAmount(row),
       status: row.status,
       isLowest: lowestId ? String(row._id) === lowestId : false,
     }))
@@ -374,16 +390,16 @@ exports.getDeliveryBids = asyncHandler(async (req, res) => {
     status: delivery.status,
     stats: {
       totalBids: stats.totalBids,
-      awardedBid: stats.awardedBid ? Number(stats.awardedBid.quotedAmount) : null,
+      awardedBid: stats.awardedBid ? stats.awardedBid._normalizedBidAmount : null,
       averageBid: stats.averageBid,
       potentialSavings: stats.potentialSavings,
     },
     bidRange: {
       lowestBid: stats.lowestBid
-        ? { bidId: stats.lowestBid._id, amount: Number(stats.lowestBid.quotedAmount), carrierId: stats.lowestBid.carrierId?._id || stats.lowestBid.carrierId, carrierName: stats.lowestBid.carrierId?.carrierName || '' }
+        ? { bidId: stats.lowestBid._id, amount: stats.lowestBid._normalizedBidAmount, carrierId: stats.lowestBid.carrierId?._id || stats.lowestBid.carrierId, carrierName: stats.lowestBid.carrierId?.carrierName || '' }
         : null,
       highestBid: stats.highestBid
-        ? { bidId: stats.highestBid._id, amount: Number(stats.highestBid.quotedAmount), carrierId: stats.highestBid.carrierId?._id || stats.highestBid.carrierId, carrierName: stats.highestBid.carrierId?.carrierName || '' }
+        ? { bidId: stats.highestBid._id, amount: stats.highestBid._normalizedBidAmount, carrierId: stats.highestBid.carrierId?._id || stats.highestBid.carrierId, carrierName: stats.highestBid.carrierId?.carrierName || '' }
         : null,
     },
     sort,
