@@ -2501,6 +2501,8 @@ Generate truck-wise packing list plan from confirmed bundles.
 
 Get generated packing-list plan + truck rows.
 
+Auth: **Public (no JWT required)**.
+
 ### Response `data`
 
 ```json

@@ -62,6 +62,29 @@ exports.getPackingListPlan = asyncHandler(async (req, res) => {
   })
 })
 
+exports.getPackingListPlanPublic = asyncHandler(async (req, res) => {
+  const packingListPlan = await PackingListPlan.findById(req.params.packingListPlanId).lean()
+  if (!packingListPlan) return notFound(res, 'Packing list plan not found')
+
+  const packingLists = await PackingList.find({ packingListPlanId: packingListPlan._id })
+    .sort({ truckNo: 1, packingListNo: 1 })
+    .lean()
+
+  const summary = {
+    totalWeight: packingListPlan.totalWeight,
+    totalBundles: packingListPlan.totalBundles,
+    totalPackingLists: packingListPlan.totalPackingLists,
+    truckSummary: packingListPlan.truckSummary,
+    warnings: packingListPlan.warnings || [],
+  }
+
+  return success(res, {
+    packingListPlan,
+    packingLists,
+    summary,
+  })
+})
+
 exports.confirmPackingListPlan = asyncHandler(async (req, res) => {
   const loaded = await loadPackingListPlanWithAccess(req.params.packingListPlanId, req.user._id)
   if (loaded.error) {
