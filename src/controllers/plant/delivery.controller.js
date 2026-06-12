@@ -652,7 +652,10 @@ exports.getFreightLoadStats = asyncHandler(async (req, res) => {
     })
   }
 
-  const deliveries = await Delivery.find({ leadId: { $in: leadIds } })
+  const deliveries = await Delivery.find({
+    leadId: { $in: leadIds },
+    status: { $ne: 'draft' },
+  })
     .select('_id status selectedCarrierBidId')
     .lean()
 
@@ -705,6 +708,10 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
   const skip = (page - 1) * limit
 
   const baseFilter = buildDeliveryBaseFilter(req.query)
+  if (!baseFilter.status) {
+    // Freight loads view excludes unsent draft requests by default.
+    baseFilter.status = { $ne: 'draft' }
+  }
 
   const assignedLeadIds = await getAssignedLeadIds(req.user._id)
   if (!assignedLeadIds.length) {

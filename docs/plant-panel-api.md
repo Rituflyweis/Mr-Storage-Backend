@@ -270,7 +270,7 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21I | POST | `/api/plant/shipper-requests/compare-jobs/status` | Batch poll comparison job statuses |
 | 21J | POST | `/api/plant/shipper-requests/:requestId/approve` | Approve selected vendor request and auto-reject others |
 | 21K | POST | `/api/plant/shipper-requests/:requestId/request-resubmit` | Ask vendor to submit corrected quote |
-| 21L | GET | `/api/plant/shipper-requests/:requestId/comparison-summary` | Summary + `canProceedToApproval` decision |
+| 21L | GET | `/api/plant/shipper-requests/:requestId/comparison-summary` | Summary + row-level items + `canProceedToApproval` |
 | 21M | GET | `/api/plant/shipper-requests/:requestId/comparison-results` | Paginated row-level comparison results |
 | 21N | POST | `/api/plant/shipper-requests/:requestId/bundle-plan/generate` | Generate bundle plan from approved vendor lines |
 | 21O | GET | `/api/plant/projects/:leadId/bundle-plan` | Get latest non-cancelled bundle plan for project (legacy project route) |
@@ -287,11 +287,11 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21R | GET | `/api/plant/bundle-plans/:bundlePlanId/coverage` | Legacy id-based: vendor-line assignment coverage |
 | 21S | POST | `/api/plant/bundle-plans/:bundlePlanId/confirm` | Legacy id-based: confirm bundle plan |
 | 21T | POST | `/api/plant/bundle-plans/:bundlePlanId/bundles` | Create manual/empty bundle |
-| 21U | GET | `/api/plant/bundles/:bundleId` | Bundle detail + items |
+| 21U | GET | `/api/plant/bundles/:bundleId` | Bundle detail + items (**public**) |
 | 21V | PUT | `/api/plant/bundles/:bundleId` | Edit bundle items/stacking/metadata |
 | 21W | DELETE | `/api/plant/bundles/:bundleId` | Delete editable unassigned bundle |
 | 21X | POST | `/api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate` | Legacy id-based: generate packing list / truck load plan |
-| 21Y | GET | `/api/plant/packing-list-plans/:packingListPlanId` | Legacy id-based: packing list plan detail + truck rows |
+| 21Y | GET | `/api/plant/packing-list-plans/:packingListPlanId` | Legacy id-based: packing list plan detail + truck rows + bundles (**public**) |
 | 21Z | POST | `/api/plant/packing-list-plans/:packingListPlanId/confirm` | Legacy id-based: confirm packing list plan |
 | 21ZA | GET | `/api/plant/packing-lists/:packingListId` | Legacy id-based: single truck-wise packing list detail |
 | 21ZB | PUT | `/api/plant/packing-lists/:packingListId` | Legacy id-based: edit truck assignment/layout/details |
@@ -2514,6 +2514,7 @@ Auth: **Public (no JWT required)**.
 {
   "packingListPlan": { "_id": "...", "status": "generated", "totalPackingLists": 2, "totalBundles": 18, "totalWeight": 62400 },
   "packingLists": [{ "_id": "...", "packingListNo": "PL-001", "truckType": "SEMI_53", "totalWeight": 44200 }],
+  "bundles": [{ "_id": "...", "bundleNo": "B-001", "status": "assigned_to_truck", "packingListId": "...", "totalWeight": 6200 }],
   "summary": {
     "totalWeight": 62400,
     "totalBundles": 18,
@@ -2742,6 +2743,8 @@ Same response shape as §21ZG.
 
 Freight loads dashboard counters across all plant-assigned projects.
 
+`draft` deliveries are excluded from this endpoint.
+
 ### Response `data`
 
 ```json
@@ -2760,6 +2763,8 @@ Freight loads dashboard counters across all plant-assigned projects.
 ## 21ZEE. `GET /api/plant/deliveries/freight`
 
 Freight loads list with pagination, global search, and filters.
+
+By default this endpoint excludes `draft` deliveries (unsent loads).
 
 ### Query params
 
@@ -4104,15 +4109,21 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Bundle coverage check | `GET /api/plant/bundle-plans/:bundlePlanId/coverage` |
 | Confirm bundle plan | `POST /api/plant/bundle-plans/:bundlePlanId/confirm` |
 | Add manual bundle | `POST /api/plant/bundle-plans/:bundlePlanId/bundles` |
-| Bundle detail/edit/delete | `GET/PUT/DELETE /api/plant/bundles/:bundleId` |
+| Bundle detail/edit/delete | `GET/PUT/DELETE /api/plant/bundles/:bundleId` *(GET is public)* |
 | Generate packing list plan | `POST /api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate` |
-| Packing list plan detail | `GET /api/plant/packing-list-plans/:packingListPlanId` |
+| Packing list plan detail | `GET /api/plant/packing-list-plans/:packingListPlanId` *(public; includes bundles)* |
 | Confirm packing list plan | `POST /api/plant/packing-list-plans/:packingListPlanId/confirm` |
 | Single packing list detail/edit | `GET/PUT /api/plant/packing-lists/:packingListId` |
 | **Primary: freight auto-fill by project** | `GET /api/plant/projects/:projectId/freight-autofill` |
 | Create freight request | `POST /api/plant/deliveries` |
 | Freight requests list by project | `GET /api/plant/deliveries/project/:leadId` |
 | Legacy project freight list | `GET /api/plant/projects/:leadId/delivery` |
+| Freight loads stats | `GET /api/plant/deliveries/freight/stats` *(excludes draft)* |
+| Freight loads list | `GET /api/plant/deliveries/freight` *(excludes draft by default)* |
+| Awarded loads stats/list | `GET /api/plant/deliveries/awarded/stats`, `GET /api/plant/deliveries/awarded` |
+| Delivery calendar | `GET /api/plant/deliveries/calendar` |
+| Delivery dashboard stats/list | `GET /api/plant/deliveries/stats`, `GET /api/plant/deliveries` |
+| Update delivery status | `PATCH /api/plant/deliveries/:deliveryId/status` |
 | **Primary: send bids by project** | `POST /api/plant/projects/:projectId/freight/send-bids` |
 | **Primary: bids view by project** | `GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high|high_to_low` |
 | Send freight bid links | `POST /api/plant/deliveries/:deliveryId/send-bids` |
