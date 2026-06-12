@@ -412,7 +412,7 @@ exports.requestShipperResubmit = asyncHandler(async (req, res) => {
   request.reviewedAt = new Date()
   await request.save()
 
-  const uploadUrl = `${CLIENT_URL}/vendor-upload/${request.token}`
+  const uploadUrl = `${CLIENT_URL}/vendor/${request.token}`
   const emailFailures = []
   try {
     if (request.vendorId?.email) {
@@ -468,6 +468,9 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
   const summary = request.comparisonSummary || null
   const blockers = getComparisonBlockers(summary)
   const canProceedToApproval = request.comparisonStatus === 'completed' && blockers.length === 0
+  const results = await QuoteComparisonResult.find({ shipperRequestId: request._id })
+    .sort({ createdAt: -1 })
+    .lean()
 
   return success(res, {
     requestId: request._id,
@@ -483,6 +486,19 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
     comparisonError: request.comparisonError,
     summary,
     exceptionsCount: Array.isArray(request.exceptions) ? request.exceptions.length : 0,
+    resultCount: results.length,
+    results: results.map((row) => ({
+      resultId: row._id,
+      status: row.status,
+      severity: row.severity,
+      expected: row.expected,
+      received: row.received,
+      difference: row.difference,
+      matchMethod: row.matchMethod,
+      matchConfidence: row.matchConfidence,
+      reason: row.reason,
+      createdAt: row.createdAt,
+    })),
     canProceedToApproval,
     blockers,
   })

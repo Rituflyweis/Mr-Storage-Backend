@@ -1047,7 +1047,7 @@ exports.sendConsolidatedBOM = asyncHandler(async (req, res) => {
       await request.save()
     }
 
-    const uploadUrl = `${CLIENT_URL}/vendor-upload/${request.token}`
+    const uploadUrl = `${CLIENT_URL}/vendor/${request.token}`
 
     try {
       await sendConsolidatedBOMToVendor({

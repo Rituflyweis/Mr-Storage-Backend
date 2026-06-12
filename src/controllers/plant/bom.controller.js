@@ -22,6 +22,8 @@ const buildItemFilter = (filter) => {
       return { isFrameType: true }
     case 'matched':
       return { matchStatus: 'matched' }
+    case 'bom_priced':
+      return { priceSource: 'bom' }
     default:
       return {}
   }
@@ -243,9 +245,13 @@ exports.getBOMJob = asyncHandler(async (req, res) => {
     BOMItem.countDocuments(itemFilter),
   ])
 
-  const allItems = await BOMItem.find({ bomJobId: job._id }).select('isPriced isFrameType finalTotalCost').lean()
+  const allItems = await BOMItem.find({ bomJobId: job._id })
+    .select('isPriced isFrameType finalTotalCost priceSource weight')
+    .lean()
   const pricedItems = allItems.filter((i) => i.isPriced).length
+  const bomPricedItems = allItems.filter((i) => i.priceSource === 'bom').length
   const totalCost = allItems.reduce((sum, i) => sum + (i.finalTotalCost || 0), 0)
+  const totalWeight = allItems.reduce((sum, i) => sum + (Number(i.weight) || 0), 0)
 
   const itemsByCategory = items.reduce((acc, item) => {
     const key = item.category || 'Unknown'
@@ -274,7 +280,9 @@ exports.getBOMJob = asyncHandler(async (req, res) => {
       totalItems: allItems.length,
       pricedItems,
       unpricedItems: allItems.length - pricedItems,
+      bomPricedItems,
       frameItems: allItems.filter((i) => i.isFrameType).length,
+      totalWeight,
       totalCost,
       isFullyPriced: allItems.length > 0 && pricedItems === allItems.length,
     },

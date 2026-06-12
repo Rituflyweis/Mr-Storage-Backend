@@ -6,6 +6,8 @@ const PackingListPlan = require('../../models/PackingListPlan')
 const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Lead = require('../../models/Lead')
+const POOrder = require('../../models/POOrder')
+const ShipperRequest = require('../../models/ShipperRequest')
 const auditService = require('../../services/audit.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
@@ -14,6 +16,19 @@ const { AUDIT_ACTIONS } = require('../../config/constants')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+
+const DELIVERY_STATUS_TRANSITIONS = {
+  draft: ['scheduled', 'cancelled'],
+  bidding_sent: ['scheduled', 'cancelled'],
+  carrier_selected: ['scheduled', 'confirmed', 'in_transit', 'delayed', 'cancelled'],
+  scheduled: ['confirmed', 'in_transit', 'delayed', 'cancelled'],
+  confirmed: ['in_transit', 'delayed', 'cancelled'],
+  in_transit: ['delivered', 'delayed', 'cancelled'],
+  delayed: ['scheduled', 'confirmed', 'in_transit', 'delivered', 'cancelled'],
+}
+
+const getAssignedLeadIds = async (plantUserId) =>
+  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
 
 const getNextDeliveryNumber = async () => {
   const latest = await Delivery.findOne({
@@ -51,6 +66,189 @@ const getSubmittedBidAmount = (row) => {
 
   const amount = Number(rawAmount)
   return Number.isFinite(amount) ? amount : null
+}
+
+const toObjectId = (val) => {
+  if (!val) return null
+  try {
+    return Delivery.db.Types.ObjectId(String(val))
+  } catch (err) {
+    return null
+  }
+}
+
+const normalizeDateOnly = (value) => {
+  if (!value) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d
+}
+
+const startOfDay = (date) => {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+const endOfDay = (date) => {
+  const d = new Date(date)
+  d.setHours(23, 59, 59, 999)
+  return d
+}
+
+const buildDeliverySearchFilter = (search) => {
+  const keyword = String(search || '').trim()
+  if (!keyword) return null
+  const rx = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+  return {
+    $or: [
+      { deliveryNumber: rx },
+      { description: rx },
+      { loadDescription: rx },
+      { pickupLocation: rx },
+      { deliveryLocation: rx },
+      { deliveryTime: rx },
+      { receivingPoc: rx },
+      { loadingEquipment: rx },
+      { materialType: rx },
+    ],
+  }
+}
+
+const buildDeliveryBaseFilter = ({
+  status,
+  projectId,
+  customerId,
+  fromDate,
+  toDate,
+}) => {
+  const filter = {}
+
+  if (status) filter.status = status
+
+  const projectObjectId = toObjectId(projectId)
+  if (projectObjectId) filter.leadId = projectObjectId
+
+  const dateFrom = normalizeDateOnly(fromDate)
+  const dateTo = normalizeDateOnly(toDate)
+  if (dateFrom || dateTo) {
+    filter.deliveryDate = {}
+    if (dateFrom) filter.deliveryDate.$gte = startOfDay(dateFrom)
+    if (dateTo) filter.deliveryDate.$lte = endOfDay(dateTo)
+  }
+
+  if (customerId) {
+    const customerObjectId = toObjectId(customerId)
+    filter._customerId = customerObjectId
+  }
+
+  return filter
+}
+
+const mapDeliveryListRow = (delivery) => {
+  const selectedBid = delivery.selectedCarrierBidId || null
+  const carrier = selectedBid?.carrierId || null
+  const lead = delivery.leadId || null
+  const customer = lead?.customerId || null
+  const shipperVendor = delivery._shipperVendor || null
+
+  return {
+    _id: delivery._id,
+    requestId: delivery._id,
+    deliveryNumber: delivery.deliveryNumber,
+    status: delivery.status,
+    deliveryTime: delivery.deliveryTime || null,
+    project: lead
+      ? {
+          _id: lead._id,
+          jobId: lead.jobId || '',
+          projectName: lead.projectName || '',
+        }
+      : null,
+    customer: customer
+      ? {
+          _id: customer._id,
+          name: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+          email: customer.email || '',
+        }
+      : null,
+    shipperVendor: shipperVendor
+      ? {
+          _id: shipperVendor._id,
+          vendorName: shipperVendor.vendorName || '',
+          vendorCode: shipperVendor.vendorCode || '',
+        }
+      : null,
+    carrier: carrier
+      ? {
+          _id: carrier._id,
+          carrierName: carrier.carrierName || '',
+        }
+      : null,
+    description: delivery.loadDescription || delivery.description || '',
+    pickupLocation: delivery.pickupLocation || delivery.pickupLocationData?.address || '',
+    deliveryLocation: delivery.deliveryLocation || delivery.deliveryLocationData?.address || '',
+    awardedBidAmount: selectedBid?.quotedAmount ?? null,
+    loadSize: {
+      weight: delivery.loadWeight ?? null,
+      dimensions: delivery.dimensions || {},
+      packageCount: delivery.packageCount ?? null,
+    },
+    poc: {
+      receivingPoc: delivery.receivingPoc || '',
+      pickupContactPhone: delivery.pickupContactPhone || '',
+    },
+    equipment: delivery.loadingEquipment || [],
+    pickupDate: delivery.pickupDate,
+    deliveryDate: delivery.deliveryDate,
+    createdAt: delivery.createdAt,
+    updatedAt: delivery.updatedAt,
+  }
+}
+
+const fetchShipperVendorsByLeadIds = async (leadIds) => {
+  if (!leadIds.length) return new Map()
+  const requests = await ShipperRequest.find({
+    leadId: { $in: leadIds },
+    status: { $in: ['sent', 'submitted', 'comparison_processing', 'comparison_completed', 'approved', 'resubmit_requested'] },
+  })
+    .populate('vendorId', 'vendorName vendorCode')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const map = new Map()
+  for (const row of requests) {
+    const key = String(row.leadId)
+    if (!map.has(key)) {
+      map.set(key, row.vendorId || null)
+    }
+  }
+  return map
+}
+
+const buildDeliveryStats = (deliveries) => {
+  const counts = {
+    totalCount: deliveries.length,
+    draftCount: 0,
+    scheduledCount: 0,
+    confirmedCount: 0,
+    inTransitCount: 0,
+    deliveredCount: 0,
+    delayedCount: 0,
+    cancelledCount: 0,
+  }
+
+  for (const d of deliveries) {
+    if (d.status === 'draft') counts.draftCount += 1
+    if (d.status === 'scheduled') counts.scheduledCount += 1
+    if (d.status === 'confirmed' || d.status === 'carrier_selected') counts.confirmedCount += 1
+    if (d.status === 'in_transit') counts.inTransitCount += 1
+    if (d.status === 'delivered') counts.deliveredCount += 1
+    if (d.status === 'delayed') counts.delayedCount += 1
+    if (d.status === 'cancelled') counts.cancelledCount += 1
+  }
+
+  return counts
 }
 
 const buildFreightAutofill = (bundlePlan, packingListPlan, bundles) => {
@@ -305,7 +503,7 @@ exports.sendDeliveryBids = asyncHandler(async (req, res) => {
       await bid.save()
     }
 
-    const bidUrl = `${CLIENT_URL}/freight-bid/${bid.token}`
+    const bidUrl = `${CLIENT_URL}/carrier/${bid.token}`
     try {
       if (carrier.email) {
         await sendFreightBidRequestEmail({
@@ -439,4 +637,495 @@ exports.getDeliveryBidsByProject = asyncHandler(async (req, res) => {
 
   req.params.deliveryId = String(delivery._id)
   return exports.getDeliveryBids(req, res)
+})
+
+exports.getFreightLoadStats = asyncHandler(async (req, res) => {
+  const leadIds = await getAssignedLeadIds(req.user._id)
+  if (!leadIds.length) {
+    return success(res, {
+      totalLoads: 0,
+      requestedLoads: 0,
+      bidsPending: 0,
+      inTransit: 0,
+      delivered: 0,
+      totalSpent: 0,
+    })
+  }
+
+  const deliveries = await Delivery.find({ leadId: { $in: leadIds } })
+    .select('_id status selectedCarrierBidId')
+    .lean()
+
+  const deliveryIds = deliveries.map((d) => d._id)
+  const bids = deliveryIds.length
+    ? await FreightBid.find({ deliveryId: { $in: deliveryIds } }).select('deliveryId status').lean()
+    : []
+  const bidsByDelivery = bids.reduce((acc, row) => {
+    const key = String(row.deliveryId)
+    if (!acc[key]) acc[key] = []
+    acc[key].push(row)
+    return acc
+  }, {})
+
+  const selectedBidIds = deliveries.map((d) => d.selectedCarrierBidId).filter(Boolean)
+  const selectedBids = selectedBidIds.length
+    ? await FreightBid.find({ _id: { $in: selectedBidIds } }).select('_id quotedAmount').lean()
+    : []
+  const selectedBidMap = new Map(selectedBids.map((b) => [String(b._id), b]))
+
+  let totalSpent = 0
+  let bidsPending = 0
+  for (const delivery of deliveries) {
+    const selected = delivery.selectedCarrierBidId
+      ? selectedBidMap.get(String(delivery.selectedCarrierBidId))
+      : null
+    if (selected?.quotedAmount != null) {
+      totalSpent += Number(selected.quotedAmount) || 0
+    }
+
+    const rows = bidsByDelivery[String(delivery._id)] || []
+    const hasSelected = rows.some((row) => row.status === 'selected')
+    const hasSentOrSubmitted = rows.some((row) => row.status === 'sent' || row.status === 'submitted')
+    if (!hasSelected && hasSentOrSubmitted) bidsPending += 1
+  }
+
+  return success(res, {
+    totalLoads: deliveries.length,
+    requestedLoads: deliveries.filter((d) => d.status !== 'cancelled').length,
+    bidsPending,
+    inTransit: deliveries.filter((d) => d.status === 'in_transit').length,
+    delivered: deliveries.filter((d) => d.status === 'delivered').length,
+    totalSpent: Math.round(totalSpent * 100) / 100,
+  })
+})
+
+const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
+  const page = Math.max(1, Number(req.query.page) || 1)
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20))
+  const skip = (page - 1) * limit
+
+  const baseFilter = buildDeliveryBaseFilter(req.query)
+
+  const assignedLeadIds = await getAssignedLeadIds(req.user._id)
+  if (!assignedLeadIds.length) {
+    return success(res, { requests: [], total: 0, page, limit })
+  }
+
+  baseFilter.leadId = baseFilter.leadId || { $in: assignedLeadIds }
+  if (baseFilter.leadId?.$in) {
+    baseFilter.leadId = { $in: baseFilter.leadId.$in.filter((id) => assignedLeadIds.some((a) => String(a) === String(id))) }
+  } else if (!assignedLeadIds.some((a) => String(a) === String(baseFilter.leadId))) {
+    return success(res, { requests: [], total: 0, page, limit })
+  }
+
+  const searchFilter = buildDeliverySearchFilter(req.query.search)
+
+  const customerFilterId = baseFilter._customerId
+  delete baseFilter._customerId
+
+  const pipeline = [{ $match: baseFilter }]
+  pipeline.push({
+    $lookup: {
+      from: 'leads',
+      localField: 'leadId',
+      foreignField: '_id',
+      as: 'leadDoc',
+    },
+  })
+  pipeline.push({
+    $unwind: '$leadDoc',
+  })
+
+  if (customerFilterId) {
+    pipeline.push({
+      $match: { 'leadDoc.customerId': customerFilterId },
+    })
+  }
+
+  if (searchFilter) {
+    pipeline.push({
+      $match: {
+        $or: [
+          ...(searchFilter.$or || []),
+          { 'leadDoc.projectName': new RegExp(String(req.query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+          { 'leadDoc.jobId': new RegExp(String(req.query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+        ],
+      },
+    })
+  }
+
+  pipeline.push({
+    $lookup: {
+      from: 'freightbids',
+      localField: 'selectedCarrierBidId',
+      foreignField: '_id',
+      as: 'selectedBidDoc',
+    },
+  })
+  pipeline.push({
+    $unwind: { path: '$selectedBidDoc', preserveNullAndEmptyArrays: true },
+  })
+  pipeline.push({
+    $lookup: {
+      from: 'freightcarriers',
+      localField: 'selectedBidDoc.carrierId',
+      foreignField: '_id',
+      as: 'selectedCarrierDoc',
+    },
+  })
+  pipeline.push({
+    $unwind: { path: '$selectedCarrierDoc', preserveNullAndEmptyArrays: true },
+  })
+
+  if (req.query.carrierId) {
+    const carrierId = toObjectId(req.query.carrierId)
+    if (!carrierId) return badRequest(res, 'Invalid carrierId')
+    pipeline.push({ $match: { 'selectedCarrierDoc._id': carrierId } })
+  }
+
+  if (awardedOnly) {
+    pipeline.push({
+      $match: { selectedCarrierBidId: { $ne: null } },
+    })
+  }
+
+  pipeline.push({ $sort: { createdAt: -1 } })
+
+  const [rows, totalRows] = await Promise.all([
+    Delivery.aggregate([...pipeline, { $skip: skip }, { $limit: limit }]),
+    Delivery.aggregate([...pipeline, { $count: 'total' }]),
+  ])
+
+  const total = totalRows[0]?.total || 0
+  const leadIds = [...new Set(rows.map((r) => String(r.leadId?._id || r.leadId)).filter(Boolean))]
+  const shipperMap = await fetchShipperVendorsByLeadIds(leadIds)
+
+  const requests = rows.map((row) => {
+    const mapped = mapDeliveryListRow({
+      ...row,
+      leadId: {
+        _id: row.leadDoc?._id || row.leadId,
+        projectName: row.leadDoc?.projectName || '',
+        jobId: row.leadDoc?.jobId || '',
+      },
+      selectedCarrierBidId: row.selectedBidDoc
+        ? {
+            ...row.selectedBidDoc,
+            carrierId: row.selectedCarrierDoc
+              ? {
+                  _id: row.selectedCarrierDoc._id,
+                  carrierName: row.selectedCarrierDoc.carrierName || '',
+                }
+              : null,
+          }
+        : null,
+      _shipperVendor: shipperMap.get(String(row.leadDoc?._id || row.leadId)) || null,
+    })
+    if (awardedOnly) {
+      mapped.awardedCarrierId = mapped.carrier?._id || null
+    }
+    return mapped
+  })
+
+  return success(res, { requests, total, page, limit })
+}
+
+exports.getFreightLoads = asyncHandler(async (req, res) => {
+  return getFreightLoadsCommon(req, res, { awardedOnly: false })
+})
+
+exports.getAwardedLoadStats = asyncHandler(async (req, res) => {
+  const leadIds = await getAssignedLeadIds(req.user._id)
+  if (!leadIds.length) {
+    return success(res, {
+      totalAwarded: 0,
+      inTransit: 0,
+      delivered: 0,
+      totalSpent: 0,
+    })
+  }
+
+  const deliveries = await Delivery.find({
+    leadId: { $in: leadIds },
+    selectedCarrierBidId: { $ne: null },
+  })
+    .select('status selectedCarrierBidId')
+    .lean()
+
+  const selectedBidIds = deliveries.map((d) => d.selectedCarrierBidId).filter(Boolean)
+  const selectedBids = selectedBidIds.length
+    ? await FreightBid.find({ _id: { $in: selectedBidIds } }).select('_id quotedAmount').lean()
+    : []
+  const selectedBidMap = new Map(selectedBids.map((b) => [String(b._id), b]))
+
+  const totalSpent = deliveries.reduce((sum, d) => {
+    const bid = d.selectedCarrierBidId ? selectedBidMap.get(String(d.selectedCarrierBidId)) : null
+    return sum + (Number(bid?.quotedAmount) || 0)
+  }, 0)
+
+  return success(res, {
+    totalAwarded: deliveries.length,
+    inTransit: deliveries.filter((d) => d.status === 'in_transit').length,
+    delivered: deliveries.filter((d) => d.status === 'delivered').length,
+    totalSpent: Math.round(totalSpent * 100) / 100,
+  })
+})
+
+exports.getAwardedLoads = asyncHandler(async (req, res) => {
+  return getFreightLoadsCommon(req, res, { awardedOnly: true })
+})
+
+exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
+  const leadIds = await getAssignedLeadIds(req.user._id)
+  if (!leadIds.length) {
+    return success(res, { dates: [] })
+  }
+
+  const baseFilter = buildDeliveryBaseFilter(req.query)
+  const customerFilterId = baseFilter._customerId
+  delete baseFilter._customerId
+  baseFilter.leadId = baseFilter.leadId || { $in: leadIds }
+  if (baseFilter.leadId?.$in) {
+    baseFilter.leadId = { $in: baseFilter.leadId.$in.filter((id) => leadIds.some((a) => String(a) === String(id))) }
+  } else if (!leadIds.some((a) => String(a) === String(baseFilter.leadId))) {
+    return success(res, { dates: [] })
+  }
+
+  const deliveries = await Delivery.find(baseFilter)
+    .populate({
+      path: 'leadId',
+      select: 'projectName jobId customerId',
+      populate: { path: 'customerId', select: 'firstName lastName email' },
+    })
+    .populate({
+      path: 'selectedCarrierBidId',
+      select: 'quotedAmount carrierId status',
+      populate: { path: 'carrierId', select: 'carrierName' },
+    })
+    .sort({ deliveryDate: 1, deliveryTime: 1, createdAt: 1 })
+    .lean()
+
+  const filteredDeliveries = customerFilterId
+    ? deliveries.filter((d) => String(d.leadId?.customerId?._id || d.leadId?.customerId) === String(customerFilterId))
+    : deliveries
+
+  const leadIdsInRows = [...new Set(filteredDeliveries.map((d) => String(d.leadId?._id || d.leadId)).filter(Boolean))]
+  const shipperMap = await fetchShipperVendorsByLeadIds(leadIdsInRows)
+
+  const grouped = new Map()
+  for (const row of filteredDeliveries) {
+    const dateKey = row.deliveryDate ? new Date(row.deliveryDate).toISOString().slice(0, 10) : 'undated'
+    if (!grouped.has(dateKey)) grouped.set(dateKey, [])
+    grouped.get(dateKey).push({
+      ...mapDeliveryListRow({
+        ...row,
+        _shipperVendor: shipperMap.get(String(row.leadId?._id || row.leadId)) || null,
+      }),
+      // Include full delivery source object for calendar detail usage
+      delivery: row,
+    })
+  }
+
+  const dates = [...grouped.entries()].map(([date, rows]) => ({
+    date,
+    totalDeliveries: rows.length,
+    deliveries: rows,
+  }))
+
+  return success(res, { dates })
+})
+
+exports.getAllDeliveryStats = asyncHandler(async (req, res) => {
+  const leadIds = await getAssignedLeadIds(req.user._id)
+  if (!leadIds.length) {
+    return success(res, {
+      totalCount: 0,
+      draftCount: 0,
+      scheduledCount: 0,
+      confirmedCount: 0,
+      inTransitCount: 0,
+      deliveredCount: 0,
+      delayedCount: 0,
+      cancelledCount: 0,
+    })
+  }
+
+  const deliveries = await Delivery.find({ leadId: { $in: leadIds } }).select('status').lean()
+  return success(res, buildDeliveryStats(deliveries))
+})
+
+exports.getAllDeliveries = asyncHandler(async (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1)
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20))
+  const skip = (page - 1) * limit
+
+  const assignedLeadIds = await getAssignedLeadIds(req.user._id)
+  if (!assignedLeadIds.length) {
+    return success(res, { deliveries: [], total: 0, page, limit })
+  }
+
+  const baseFilter = buildDeliveryBaseFilter(req.query)
+  baseFilter.leadId = baseFilter.leadId || { $in: assignedLeadIds }
+  if (baseFilter.leadId?.$in) {
+    baseFilter.leadId = { $in: baseFilter.leadId.$in.filter((id) => assignedLeadIds.some((a) => String(a) === String(id))) }
+  } else if (!assignedLeadIds.some((a) => String(a) === String(baseFilter.leadId))) {
+    return success(res, { deliveries: [], total: 0, page, limit })
+  }
+
+  const searchFilter = buildDeliverySearchFilter(req.query.search)
+
+  const customerFilterId = baseFilter._customerId
+  delete baseFilter._customerId
+
+  const pipeline = [{ $match: baseFilter }]
+  pipeline.push({
+    $lookup: {
+      from: 'leads',
+      localField: 'leadId',
+      foreignField: '_id',
+      as: 'leadDoc',
+    },
+  })
+  pipeline.push({ $unwind: '$leadDoc' })
+  pipeline.push({
+    $lookup: {
+      from: 'customers',
+      localField: 'leadDoc.customerId',
+      foreignField: '_id',
+      as: 'customerDoc',
+    },
+  })
+  pipeline.push({ $unwind: { path: '$customerDoc', preserveNullAndEmptyArrays: true } })
+
+  if (customerFilterId) {
+    pipeline.push({
+      $match: { 'customerDoc._id': customerFilterId },
+    })
+  }
+
+  pipeline.push({
+    $lookup: {
+      from: 'freightbids',
+      localField: 'selectedCarrierBidId',
+      foreignField: '_id',
+      as: 'selectedBidDoc',
+    },
+  })
+  pipeline.push({ $unwind: { path: '$selectedBidDoc', preserveNullAndEmptyArrays: true } })
+  pipeline.push({
+    $lookup: {
+      from: 'freightcarriers',
+      localField: 'selectedBidDoc.carrierId',
+      foreignField: '_id',
+      as: 'selectedCarrierDoc',
+    },
+  })
+  pipeline.push({ $unwind: { path: '$selectedCarrierDoc', preserveNullAndEmptyArrays: true } })
+
+  if (req.query.carrierId) {
+    const carrierId = toObjectId(req.query.carrierId)
+    if (!carrierId) return badRequest(res, 'Invalid carrierId')
+    pipeline.push({ $match: { 'selectedCarrierDoc._id': carrierId } })
+  }
+
+  if (searchFilter || req.query.search) {
+    const keyword = String(req.query.search || '').trim()
+    const rx = keyword
+      ? new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+      : null
+    pipeline.push({
+      $match: {
+        $or: [
+          ...((searchFilter && searchFilter.$or) || []),
+          ...(rx
+            ? [
+                { 'leadDoc.projectName': rx },
+                { 'leadDoc.jobId': rx },
+                { 'customerDoc.firstName': rx },
+                { 'customerDoc.lastName': rx },
+                { 'customerDoc.email': rx },
+                { 'selectedCarrierDoc.carrierName': rx },
+              ]
+            : []),
+        ],
+      },
+    })
+  }
+
+  pipeline.push({ $sort: { createdAt: -1 } })
+
+  const [rows, totalRows] = await Promise.all([
+    Delivery.aggregate([...pipeline, { $skip: skip }, { $limit: limit }]),
+    Delivery.aggregate([...pipeline, { $count: 'total' }]),
+  ])
+  const total = totalRows[0]?.total || 0
+
+  const leadIds = [...new Set(rows.map((r) => String(r.leadDoc?._id || r.leadId)).filter(Boolean))]
+  const shipperMap = await fetchShipperVendorsByLeadIds(leadIds)
+
+  const deliveries = rows.map((row) =>
+    mapDeliveryListRow({
+      ...row,
+      leadId: {
+        _id: row.leadDoc?._id || row.leadId,
+        projectName: row.leadDoc?.projectName || '',
+        jobId: row.leadDoc?.jobId || '',
+        customerId: row.customerDoc
+          ? {
+              _id: row.customerDoc._id,
+              firstName: row.customerDoc.firstName || '',
+              lastName: row.customerDoc.lastName || '',
+              email: row.customerDoc.email || '',
+            }
+          : null,
+      },
+      selectedCarrierBidId: row.selectedBidDoc
+        ? {
+            ...row.selectedBidDoc,
+            carrierId: row.selectedCarrierDoc
+              ? {
+                  _id: row.selectedCarrierDoc._id,
+                  carrierName: row.selectedCarrierDoc.carrierName || '',
+                }
+              : null,
+          }
+        : null,
+      _shipperVendor: shipperMap.get(String(row.leadDoc?._id || row.leadId)) || null,
+    })
+  )
+
+  return success(res, { deliveries, total, page, limit })
+})
+
+exports.updateDeliveryStatus = asyncHandler(async (req, res) => {
+  const { deliveryId } = req.params
+  const { status } = req.body
+
+  const delivery = await Delivery.findById(deliveryId)
+  if (!delivery) return notFound(res, 'Delivery not found')
+
+  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const currentStatus = delivery.status
+  if (currentStatus === status) {
+    return success(res, { delivery }, 'Delivery status unchanged')
+  }
+
+  const allowed = DELIVERY_STATUS_TRANSITIONS[currentStatus] || []
+  if (!allowed.includes(status)) {
+    return badRequest(
+      res,
+      `Invalid status transition from ${currentStatus} to ${status}`,
+      { allowedTransitions: allowed }
+    )
+  }
+
+  delivery.status = status
+  await delivery.save()
+
+  return success(res, { delivery }, 'Delivery status updated')
 })

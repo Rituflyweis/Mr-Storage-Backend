@@ -9,6 +9,80 @@ router.get('/project/:leadId',
   ctrl.getProjectDeliveries
 )
 
+router.get('/freight/stats',
+  validate,
+  ctrl.getFreightLoadStats
+)
+
+router.get('/freight',
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('search').optional().isString().trim(),
+    query('status').optional().isString().trim(),
+    query('projectId').optional().isString().trim(),
+    query('carrierId').optional().isMongoId(),
+    query('customerId').optional().isMongoId(),
+    query('fromDate').optional().isISO8601(),
+    query('toDate').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getFreightLoads
+)
+
+router.get('/awarded/stats',
+  validate,
+  ctrl.getAwardedLoadStats
+)
+
+router.get('/awarded',
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('search').optional().isString().trim(),
+    query('status').optional().isString().trim(),
+    query('projectId').optional().isString().trim(),
+    query('carrierId').optional().isMongoId(),
+    query('customerId').optional().isMongoId(),
+    query('fromDate').optional().isISO8601(),
+    query('toDate').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getAwardedLoads
+)
+
+router.get('/calendar',
+  [
+    query('projectId').optional().isString().trim(),
+    query('customerId').optional().isMongoId(),
+    query('fromDate').optional().isISO8601(),
+    query('toDate').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getDeliveryCalendar
+)
+
+router.get('/stats',
+  validate,
+  ctrl.getAllDeliveryStats
+)
+
+router.get('/',
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('search').optional().isString().trim(),
+    query('status').optional().isString().trim(),
+    query('projectId').optional().isString().trim(),
+    query('carrierId').optional().isMongoId(),
+    query('customerId').optional().isMongoId(),
+    query('fromDate').optional().isISO8601(),
+    query('toDate').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getAllDeliveries
+)
+
 router.post('/',
   [
     body('leadId').isMongoId(),
@@ -67,6 +141,15 @@ router.get('/:deliveryId/bids',
   ],
   validate,
   ctrl.getDeliveryBids
+)
+
+router.patch('/:deliveryId/status',
+  [
+    param('deliveryId').isMongoId(),
+    body('status').isIn(['scheduled', 'confirmed', 'in_transit', 'delayed', 'delivered', 'cancelled']),
+  ],
+  validate,
+  ctrl.updateDeliveryStatus
 )
 
 module.exports = router
