@@ -1,6 +1,16 @@
 const router = require('express').Router()
+const { param } = require('express-validator')
+const validate = require('../../middleware/validate')
+const bundleCtrl = require('../../controllers/plant/bundle.controller')
 const verifyToken = require('../../middleware/auth')
 const roleGuard = require('../../middleware/roleGuard')
+
+// Public read endpoint by explicit request: no JWT required
+router.get('/bundles/:bundleId',
+  [param('bundleId').isMongoId()],
+  validate,
+  bundleCtrl.getBundlePublic
+)
 
 router.use(verifyToken, roleGuard(['plant']))
 

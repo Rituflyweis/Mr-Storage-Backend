@@ -2358,6 +2358,8 @@ Create manual/empty bundle (for manual regrouping).
 
 Full bundle with all item rows.
 
+Auth: **Public (no JWT required)**.
+
 ### Response `data`
 
 ```json

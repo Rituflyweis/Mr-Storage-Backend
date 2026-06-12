@@ -286,6 +286,16 @@ exports.getBundle = asyncHandler(async (req, res) => {
   })
 })
 
+exports.getBundlePublic = asyncHandler(async (req, res) => {
+  const bundle = await Bundle.findById(req.params.bundleId).lean()
+  if (!bundle) return notFound(res, 'Bundle not found')
+
+  return success(res, {
+    bundle: mapBundleDetail(bundle),
+    items: (bundle.items || []).map(mapBundleItemRow),
+  })
+})
+
 exports.updateBundle = asyncHandler(async (req, res) => {
   const bundle = await Bundle.findById(req.params.bundleId)
   if (!bundle) return notFound(res, 'Bundle not found')
