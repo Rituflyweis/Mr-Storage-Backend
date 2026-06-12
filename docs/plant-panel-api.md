@@ -1187,6 +1187,8 @@ None.
     "status": "draft",
     "fileUrl": "https://bucket.s3.region.amazonaws.com/consolidated/.../uuid.xlsx",
     "totalCost": 87450.25,
+    "totalWeight": 36280.4,
+    "totalPanelsArea": 12450.75,
     "itemCount": 48,
     "lineItemCount": 320
   }
@@ -1194,6 +1196,7 @@ None.
 ```
 
 `itemCount` = grouped part lines (by partCode + partColor), `lineItemCount` = raw priced BOM rows used in consolidation.
+`totalPanelsArea` = sum of grouped `totalLengthFeet` for categories containing `panel`/`sheet` (sq ft approximation based on available BOM data).
 
 ### Errors
 
@@ -1220,6 +1223,8 @@ View the consolidated BOM for the project (grouped items + vendor send history).
     "status": "draft",
     "fileUrl": "https://...",
     "totalCost": 87450.25,
+    "totalWeight": 36280.4,
+    "totalPanelsArea": 12450.75,
     "itemCount": 48,
     "items": [
       {

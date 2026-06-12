@@ -811,6 +811,8 @@ const formatConsolidatedBOMResponse = (doc) => ({
   status: doc.status,
   fileUrl: doc.fileUrl,
   totalCost: doc.totalCost,
+  totalWeight: doc.totalWeight ?? 0,
+  totalPanelsArea: doc.totalPanelsArea ?? 0,
   itemCount: doc.items?.length ?? 0,
   items: (doc.items || []).map((item) => ({
     _id: item._id,
@@ -835,6 +837,8 @@ const formatConsolidatedBOMResponse = (doc) => ({
   createdAt: doc.createdAt,
   updatedAt: doc.updatedAt,
 })
+
+const PANEL_AREA_CATEGORIES = /(panel|sheet)/i
 
 exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
   const access = await guardProject(req, res)
@@ -915,6 +919,12 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
 
   const groupedItems = groupItemsForConsolidation(allItems, buildingMap)
   const totalCost = groupedItems.reduce((sum, item) => sum + (item.totalCost || 0), 0)
+  const totalWeight = groupedItems.reduce((sum, item) => sum + (item.totalWeight || 0), 0)
+  const totalPanelsArea = groupedItems.reduce((sum, item) => {
+    // Approx area in sq ft from total panel/sheet linear feet.
+    if (!PANEL_AREA_CATEGORIES.test(String(item.category || ''))) return sum
+    return sum + (Number(item.totalLengthFeet) || 0)
+  }, 0)
 
   const { fileUrl } = await uploadConsolidatedExcelToS3(buffer, leadId)
 
@@ -928,6 +938,8 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
       status: 'draft',
       fileUrl,
       totalCost,
+      totalWeight,
+      totalPanelsArea,
       items: groupedItems,
       sentToVendors: [],
     },
@@ -947,6 +959,8 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
     metadata: {
       consolidatedBOMId: consolidatedBOM._id,
       totalCost,
+      totalWeight,
+      totalPanelsArea,
       itemCount: groupedItems.length,
       lineItemCount: allItems.length,
     },
@@ -958,6 +972,8 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
       status: consolidatedBOM.status,
       fileUrl: consolidatedBOM.fileUrl,
       totalCost: consolidatedBOM.totalCost,
+      totalWeight: consolidatedBOM.totalWeight ?? totalWeight,
+      totalPanelsArea: consolidatedBOM.totalPanelsArea ?? totalPanelsArea,
       itemCount: groupedItems.length,
       lineItemCount: allItems.length,
     },
