@@ -14,6 +14,10 @@ const { success, notFound, badRequest, forbidden } = require('../../utils/apiRes
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, BOM_ITEM_FILTERS } = require('../../config/constants')
 
+// FIX #5: round money values before sending to clients so float accumulation
+// (e.g. 124175.16000000002) never leaks into API responses.
+const roundMoney = (n) => (n == null ? 0 : Math.round(Number(n) * 100) / 100)
+
 const buildItemFilter = (filter) => {
   switch (filter) {
     case 'unpriced':
@@ -183,6 +187,9 @@ exports.getJobStatus = asyncHandler(async (req, res) => {
     errorMessage: job.errorMessage,
     processingStartedAt: job.processingStartedAt,
     processingEndedAt: job.processingEndedAt,
+    // FIX #6: expose parse audit fields added to BOMJob schema
+    parseSuspect: job.parseSuspect || false,
+    parseAudit: job.parseAudit || null,
   })
 })
 
@@ -216,6 +223,7 @@ exports.getJobsStatusBatch = asyncHandler(async (req, res) => {
       unmatchedItems: job.unmatchedItems ?? 0,
       errorMessage: job.errorMessage,
       processingEndedAt: job.processingEndedAt,
+      parseSuspect: job.parseSuspect || false, // FIX #6
     })
   }
 
@@ -248,10 +256,13 @@ exports.getBOMJob = asyncHandler(async (req, res) => {
   const allItems = await BOMItem.find({ bomJobId: job._id })
     .select('isPriced isFrameType finalTotalCost priceSource weight')
     .lean()
+
   const pricedItems = allItems.filter((i) => i.isPriced).length
   const bomPricedItems = allItems.filter((i) => i.priceSource === 'bom').length
-  const totalCost = allItems.reduce((sum, i) => sum + (i.finalTotalCost || 0), 0)
-  const totalWeight = allItems.reduce((sum, i) => sum + (Number(i.weight) || 0), 0)
+
+  // FIX #5: round money sums at the boundary — never leak float noise to client.
+  const totalCost = roundMoney(allItems.reduce((sum, i) => sum + (i.finalTotalCost || 0), 0))
+  const totalWeight = roundMoney(allItems.reduce((sum, i) => sum + (Number(i.weight) || 0), 0))
 
   const itemsByCategory = items.reduce((acc, item) => {
     const key = item.category || 'Unknown'
@@ -274,6 +285,8 @@ exports.getBOMJob = asyncHandler(async (req, res) => {
       frameItems: job.frameItems ?? 0,
       extractionMethod: job.extractionMethod,
       skippedSheets: job.skippedSheets || [],
+      parseSuspect: job.parseSuspect || false, // FIX #6
+      parseAudit: job.parseAudit || null,      // FIX #6
     },
     itemsByCategory,
     summary: {
@@ -282,8 +295,8 @@ exports.getBOMJob = asyncHandler(async (req, res) => {
       unpricedItems: allItems.length - pricedItems,
       bomPricedItems,
       frameItems: allItems.filter((i) => i.isFrameType).length,
-      totalWeight,
-      totalCost,
+      totalWeight,   // FIX #5: rounded
+      totalCost,     // FIX #5: rounded
       isFullyPriced: allItems.length > 0 && pricedItems === allItems.length,
     },
     total,
@@ -398,7 +411,8 @@ exports.confirmBuildingBOM = asyncHandler(async (req, res) => {
   }
 
   const allItems = await BOMItem.find({ bomJobId: job._id }).select('finalTotalCost').lean()
-  const totalCost = allItems.reduce((sum, i) => sum + (i.finalTotalCost || 0), 0)
+  // FIX #5: round the confirmed total before storing/returning
+  const totalCost = roundMoney(allItems.reduce((sum, i) => sum + (i.finalTotalCost || 0), 0))
 
   job.isConfirmed = true
   job.confirmedBy = req.user._id

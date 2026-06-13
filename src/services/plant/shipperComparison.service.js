@@ -1,4 +1,3 @@
-
 /**
  * Shipper quote extraction + comparison pipeline.
  *
@@ -402,10 +401,47 @@ const parseCentralStates = (text) => {
   let cur = null
   let pageNumber = 1
 
+  /**
+   * Defensive mark recovery for PDF line-merge failures.
+   *
+   * Central States PDFs structure each item as ~6 lines:
+   *   "1 C83516R Purlin,..."          <- head
+   *   "28 Pieces @ 6' 11.75''"        <- pieces
+   *   "Left Punch: PPEP"
+   *   "Right Punch: PPEP"
+   *   "Part Mark: DJ-1"               <- THIS line is the fragile one
+   *   "195.4167 LF 3.0006 586.37"     <- totals
+   *
+   * If the PDF renderer collapses lines (e.g. "Right Punch: PPEP Part Mark: DJ-1"
+   * or "Part Mark: DJ-1 195.4167 LF 3.0006 586.37"), the normal per-line regex
+   * misses the mark. flush() now scans rawText as a fallback so no mark is lost.
+   *
+   * The rawText fallback uses a permissive regex that handles:
+   *   - "Part Mark: DJ-1"            (normal)
+   *   - "Part Mark:DJ-1"             (no space)
+   *   - "PPEP Part Mark: DJ-1"       (merged with punch line)
+   *   - "Part Mark: DJ-1 195.4167"   (merged with totals line)
+   */
+  const recoverMarkFromRawText = (rawText) => {
+    const m = rawText.match(/Part\s+Mark\s*:\s*([A-Z0-9][A-Z0-9\-./]*)/i)
+    return m ? m[1].trim() : null
+  }
+
   const flush = () => {
     if (cur && (cur.mark || cur.pieceQty != null || cur.product)) {
       cur.rawText = (cur.rawParts || []).join('\n')
       delete cur.rawParts
+
+      // Fallback: if pieceQty was parsed but mark was lost due to PDF line-merge,
+      // scan rawText for "Part Mark: X" before giving up.
+      if (!cur.mark && cur.pieceQty != null && cur.rawText) {
+        const recovered = recoverMarkFromRawText(cur.rawText)
+        if (recovered) {
+          cur.mark = recovered
+          cur.markRecovered = true // flag for debugging/audit
+        }
+      }
+
       items.push(cur)
     }
     cur = null
@@ -461,6 +497,12 @@ const parseCentralStates = (text) => {
     if (lp && cur) {
       cur.leftPunch = lp[1].trim()
       cur.rawParts.push(line)
+
+      // Inline mark-merge recovery: "Left Punch: PPEP Part Mark: DJ-1"
+      if (!cur.mark) {
+        const inlineM = lp[1].match(/Part\s+Mark\s*:\s*([A-Z0-9][A-Z0-9\-./]*)/i)
+        if (inlineM) cur.mark = inlineM[1].trim()
+      }
       continue
     }
 
@@ -468,19 +510,33 @@ const parseCentralStates = (text) => {
     if (rp && cur) {
       cur.rightPunch = rp[1].trim()
       cur.rawParts.push(line)
+
+      // Inline mark-merge recovery: "Right Punch: PPEP Part Mark: DJ-1"
+      if (!cur.mark) {
+        const inlineM = rp[1].match(/Part\s+Mark\s*:\s*([A-Z0-9][A-Z0-9\-./]*)/i)
+        if (inlineM) cur.mark = inlineM[1].trim()
+      }
       continue
     }
 
     const mk = line.match(/^Part Mark:\s*(.+)$/i)
     if (mk && cur) {
-      cur.mark = mk[1].trim()
+      // Strip trailing numeric junk if mark was merged with the totals line:
+      // "DJ-1 195.4167 LF 3.0006 586.37" -> "DJ-1"
+      const raw_mark = mk[1].trim()
+      cur.mark = raw_mark.split(/\s+/)[0]
       cur.rawParts.push(line)
       continue
     }
 
-    // Description continuation fallback.
-    if (cur && !cur.pieceQty && !/^Total\b/i.test(line)) {
-      cur.description = `${cur.description} ${line}`.trim()
+    // Description continuation: append to description only before pieces are set.
+    // Always push to rawParts so the rawText fallback in flush() can scan every
+    // line, including ones that appeared after pieceQty (e.g. a mark buried in
+    // a stray continuation line due to PDF table collapse).
+    if (cur && !/^Total\b/i.test(line)) {
+      if (!cur.pieceQty) {
+        cur.description = `${cur.description} ${line}`.trim()
+      }
       cur.rawParts.push(line)
     }
   }
