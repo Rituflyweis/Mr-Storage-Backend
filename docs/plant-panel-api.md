@@ -308,6 +308,7 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21ZEH | GET | `/api/plant/deliveries/calendar` | Delivery calendar grouped by delivery date |
 | 21ZEI | GET | `/api/plant/deliveries/stats` | Delivery status counters |
 | 21ZEJ | GET | `/api/plant/deliveries` | Delivery list with status/project/customer/carrier filters |
+| 21ZEK2 | GET | `/api/plant/deliveries/:deliveryId/detail` | Full delivery detail card payload (project/customer/vendor/carrier/owner/history) |
 | 21ZEK | PATCH | `/api/plant/deliveries/:deliveryId/status` | Update delivery status (`scheduled/confirmed/in_transit/delayed/delivered/cancelled`) |
 | 21ZF | POST | `/api/plant/deliveries/:deliveryId/send-bids` | Legacy id-based: send bid requests to selected carriers |
 | 21ZG | GET | `/api/plant/deliveries/:deliveryId/bids` | Legacy id-based: freight bid detail + stats + sorted bids |
@@ -3023,6 +3024,78 @@ Same as §21ZEE.
 
 ---
 
+## 21ZEK2. `GET /api/plant/deliveries/:deliveryId/detail`
+
+Detailed delivery payload for detail screen.
+
+### Response `data`
+
+```json
+{
+  "delivery": {
+    "deliveryId": "...",
+    "deliveryNumber": "DEL-0012",
+    "status": "confirmed",
+    "statusHistory": [
+      { "status": "draft", "changedAt": "2026-06-10T09:10:00.000Z" },
+      { "status": "bidding_sent", "changedAt": "2026-06-10T11:05:00.000Z" },
+      { "status": "carrier_selected", "changedAt": "2026-06-11T08:30:00.000Z" },
+      { "status": "confirmed", "changedAt": "2026-06-11T10:00:00.000Z" }
+    ],
+    "project": {
+      "leadId": "...",
+      "projectName": "ABC Warehouse"
+    },
+    "customer": {
+      "customerId": "...",
+      "customerName": "John Doe"
+    },
+    "deliverySchedule": {
+      "deliveryDate": "2026-06-13T00:00:00.000Z",
+      "timeWindow": "Mon-Fri 8AM-6PM",
+      "pickupAddress": "Plant Yard, Houston",
+      "dropoffAddress": "ABC Site, Austin"
+    },
+    "deliveryInformation": {
+      "description": "18 bundle shipment",
+      "materialCategory": "framing, panels, trim",
+      "pickupDate": "2026-06-12T00:00:00.000Z"
+    },
+    "vendorDetails": {
+      "vendorName": "Metro Steel",
+      "personName": "Mike Johnson",
+      "number": "5551234567",
+      "email": "mike@metrosteel.com"
+    },
+    "deliveryCompanyDetails": {
+      "carrierName": "FastLine Logistics",
+      "personName": "Alex King",
+      "number": "5553219876",
+      "email": "ops@fastline.com"
+    },
+    "internalOwner": {
+      "userId": "...",
+      "name": "Plant Owner",
+      "email": "plant@flyweis.com",
+      "phone": "5551112222"
+    },
+    "siteCoordinationNotes": "Call 30 mins before arrival",
+    "equipmentRequirement": ["forklift", "crane"],
+    "deliveryTypeAndSize": {
+      "bundleCount": 18,
+      "packageCount": 2,
+      "totalWeight": 62400
+    },
+    "receivingPocDetails": {
+      "receivingPoc": "John Doe",
+      "pickupContactPhone": "+1-555-222-3344"
+    }
+  }
+}
+```
+
+---
+
 ## 21ZEK. `PATCH /api/plant/deliveries/:deliveryId/status`
 
 Update delivery status in the operational lifecycle.
@@ -4123,6 +4196,7 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Awarded loads stats/list | `GET /api/plant/deliveries/awarded/stats`, `GET /api/plant/deliveries/awarded` |
 | Delivery calendar | `GET /api/plant/deliveries/calendar` |
 | Delivery dashboard stats/list | `GET /api/plant/deliveries/stats`, `GET /api/plant/deliveries` |
+| Delivery detail card payload | `GET /api/plant/deliveries/:deliveryId/detail` |
 | Update delivery status | `PATCH /api/plant/deliveries/:deliveryId/status` |
 | **Primary: send bids by project** | `POST /api/plant/projects/:projectId/freight/send-bids` |
 | **Primary: bids view by project** | `GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high|high_to_low` |

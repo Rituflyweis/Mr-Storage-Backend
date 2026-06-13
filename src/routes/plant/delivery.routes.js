@@ -9,6 +9,12 @@ router.get('/project/:leadId',
   ctrl.getProjectDeliveries
 )
 
+router.get('/:deliveryId/detail',
+  [param('deliveryId').isMongoId()],
+  validate,
+  ctrl.getDeliveryDetail
+)
+
 router.get('/freight/stats',
   validate,
   ctrl.getFreightLoadStats

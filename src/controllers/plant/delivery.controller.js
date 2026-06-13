@@ -8,6 +8,7 @@ const FreightCarrier = require('../../models/FreightCarrier')
 const Lead = require('../../models/Lead')
 const POOrder = require('../../models/POOrder')
 const ShipperRequest = require('../../models/ShipperRequest')
+const Vendor = require('../../models/Vendor')
 const auditService = require('../../services/audit.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
@@ -25,6 +26,22 @@ const DELIVERY_STATUS_TRANSITIONS = {
   confirmed: ['in_transit', 'delayed', 'cancelled'],
   in_transit: ['delivered', 'delayed', 'cancelled'],
   delayed: ['scheduled', 'confirmed', 'in_transit', 'delivered', 'cancelled'],
+}
+
+const makeDeliveryStatusHistory = (delivery) => {
+  const rows = Array.isArray(delivery?.statusHistory) ? [...delivery.statusHistory] : []
+  if (!rows.length && delivery?.status) {
+    rows.push({
+      status: delivery.status,
+      changedAt: delivery.createdAt || new Date(),
+    })
+  }
+  return rows
+    .map((row) => ({
+      status: row.status,
+      changedAt: row.changedAt,
+    }))
+    .sort((a, b) => new Date(a.changedAt || 0).getTime() - new Date(b.changedAt || 0).getTime())
 }
 
 const getAssignedLeadIds = async (plantUserId) =>
@@ -384,6 +401,7 @@ exports.createDelivery = asyncHandler(async (req, res) => {
     pickupContactPhone: String(req.body.pickupContactPhone || '').trim(),
     specialRequirements: String(req.body.specialRequirements || '').trim(),
     additionalNotes: String(req.body.additionalNotes || '').trim(),
+    statusHistory: [{ status: 'draft', changedAt: new Date() }],
   })
 
   await auditService.log({
@@ -528,6 +546,10 @@ exports.sendDeliveryBids = asyncHandler(async (req, res) => {
 
   delivery.bidDeadline = deadline
   delivery.status = 'bidding_sent'
+  delivery.statusHistory = [
+    ...makeDeliveryStatusHistory(delivery),
+    { status: 'bidding_sent', changedAt: new Date() },
+  ]
   await delivery.save()
 
   await auditService.log({
@@ -637,6 +659,133 @@ exports.getDeliveryBidsByProject = asyncHandler(async (req, res) => {
 
   req.params.deliveryId = String(delivery._id)
   return exports.getDeliveryBids(req, res)
+})
+
+exports.getDeliveryDetail = asyncHandler(async (req, res) => {
+  const delivery = await Delivery.findById(req.params.deliveryId)
+    .populate({
+      path: 'leadId',
+      select: 'projectName jobId customerId',
+      populate: { path: 'customerId', select: 'firstName lastName email phone location' },
+    })
+    .populate({
+      path: 'selectedCarrierBidId',
+      select: 'quotedAmount carrierId status',
+      populate: { path: 'carrierId', select: 'carrierName contactName phone email' },
+    })
+    .lean()
+  if (!delivery) return notFound(res, 'Delivery not found')
+
+  const leadId = delivery.leadId?._id || delivery.leadId
+  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const [bundlePlan, packingListPlan, poOrder, latestShipperRequest] = await Promise.all([
+    BundlePlan.findOne({ leadId, status: { $ne: 'cancelled' } })
+      .sort({ updatedAt: -1 })
+      .select('_id totalBundles totalWeight')
+      .lean(),
+    PackingListPlan.findOne({ leadId, status: { $ne: 'cancelled' } })
+      .sort({ updatedAt: -1 })
+      .select('_id totalPackingLists')
+      .lean(),
+    POOrder.findOne({ leadId, assignedTo: req.user._id, status: 'approved' })
+      .sort({ createdAt: -1 })
+      .select('assignedTo')
+      .populate('assignedTo', 'name email phone')
+      .lean(),
+    ShipperRequest.findOne({ leadId, status: { $in: ['approved', 'submitted', 'sent', 'comparison_completed', 'resubmit_requested'] } })
+      .sort({ updatedAt: -1 })
+      .select('vendorId')
+      .lean(),
+  ])
+
+  const vendor = latestShipperRequest?.vendorId
+    ? await Vendor.findById(latestShipperRequest.vendorId)
+      .select('vendorName contactName phone email')
+      .lean()
+    : null
+
+  const carrier = delivery.selectedCarrierBidId?.carrierId || null
+  const customer = delivery.leadId?.customerId || null
+  const owner = poOrder?.assignedTo || null
+
+  return success(res, {
+    delivery: {
+      deliveryId: delivery._id,
+      deliveryNumber: delivery.deliveryNumber,
+      status: delivery.status,
+      statusHistory: makeDeliveryStatusHistory(delivery),
+
+      project: {
+        leadId,
+        projectName: delivery.leadId?.projectName || '',
+      },
+      customer: customer
+        ? {
+            customerId: customer._id,
+            customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+          }
+        : null,
+
+      deliverySchedule: {
+        deliveryDate: delivery.deliveryDate,
+        timeWindow: delivery.timings || '',
+        pickupAddress: delivery.pickupLocation || delivery.pickupLocationData?.address || '',
+        dropoffAddress: delivery.deliveryLocation || delivery.deliveryLocationData?.address || '',
+      },
+
+      deliveryInformation: {
+        description: delivery.loadDescription || delivery.description || '',
+        materialCategory: delivery.materialType || '',
+        pickupDate: delivery.pickupDate,
+      },
+
+      vendorDetails: vendor
+        ? {
+            vendorName: vendor.vendorName || '',
+            personName: vendor.contactName || '',
+            number: vendor.phone || '',
+            email: vendor.email || '',
+          }
+        : null,
+
+      deliveryCompanyDetails: carrier
+        ? {
+            carrierName: carrier.carrierName || '',
+            personName: carrier.contactName || '',
+            number: carrier.phone || '',
+            email: carrier.email || '',
+          }
+        : null,
+
+      internalOwner: owner
+        ? {
+            userId: owner._id,
+            name: owner.name || '',
+            email: owner.email || '',
+            phone: owner.phone || '',
+          }
+        : null,
+
+      siteCoordinationNotes: delivery.additionalNotes || '',
+      equipmentRequirement: delivery.loadingEquipment || [],
+
+      deliveryTypeAndSize: {
+        bundleCount: bundlePlan?.totalBundles ?? null,
+        packageCount: packingListPlan?.totalPackingLists ?? (delivery.packageCount ?? null),
+        totalWeight: bundlePlan?.totalWeight ?? delivery.loadWeight ?? null,
+      },
+
+      receivingPocDetails: {
+        receivingPoc: delivery.receivingPoc || '',
+        pickupContactPhone: delivery.pickupContactPhone || '',
+      },
+    },
+  })
 })
 
 exports.getFreightLoadStats = asyncHandler(async (req, res) => {
@@ -1132,6 +1281,10 @@ exports.updateDeliveryStatus = asyncHandler(async (req, res) => {
   }
 
   delivery.status = status
+  delivery.statusHistory = [
+    ...makeDeliveryStatusHistory(delivery),
+    { status, changedAt: new Date() },
+  ]
   await delivery.save()
 
   return success(res, { delivery }, 'Delivery status updated')
