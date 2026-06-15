@@ -8,6 +8,8 @@ const formatChatStatus = (lead) => {
   const isStaffChatActive = Boolean(lead?.isStaffChatActive)
   const isHandedToSales = Boolean(lead?.isHandedToSales)
   const isAiActive = !isChatEnded && !isStaffChatActive && !isHandedToSales
+  const customer = lead?.customerId && typeof lead.customerId === 'object' ? lead.customerId : null
+
   return {
     leadId: String(lead._id),
     isChatEnded,
@@ -18,12 +20,23 @@ const formatChatStatus = (lead) => {
     isAiActive,
     canCustomerSend: !isChatEnded,
     canStaffSend: !isChatEnded,
+    isCustomerOnline: Boolean(lead?.isOnline),
+    leadOnlineAt: lead?.onlineAt || null,
+    leadLastSeenAt: lead?.lastSeenAt || null,
+    customerOnline: customer
+      ? {
+          isOnline: Boolean(customer.isOnline),
+          onlineAt: customer.onlineAt || null,
+          lastSeenAt: customer.lastSeenAt || null,
+        }
+      : null,
   }
 }
 
 const getChatStatusByLeadId = async (leadId) => {
   const lead = await Lead.findById(leadId)
-    .select('isChatEnded chatEndedAt chatEndedBy isStaffChatActive isHandedToSales')
+    .select('isChatEnded chatEndedAt chatEndedBy isStaffChatActive isHandedToSales isOnline onlineAt lastSeenAt customerId')
+    .populate('customerId', 'isOnline onlineAt lastSeenAt')
     .lean()
   if (!lead) return null
   return formatChatStatus(lead)

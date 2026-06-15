@@ -36,6 +36,7 @@ const InvoiceSchema = new mongoose.Schema(
     lineItems:    { type: [LineItemSchema], default: [] },
     subtotal:     { type: Number, default: 0 },
     markupTotal:  { type: Number, default: 0 },
+    tax:          { type: Number, default: 0 },
     discount:     { type: Number, default: 0 },
     depositAmount:{ type: Number, default: 0 },
     totalAmount:  { type: Number, default: 0 },

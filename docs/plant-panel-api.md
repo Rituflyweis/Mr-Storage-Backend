@@ -257,7 +257,7 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 19 | GET | `/api/plant/projects/:leadId/consolidated-bom` | View consolidated BOM + grouped items |
 | 19B | GET | `/api/plant/bom/projects/:leadId/consolidated-url` | Get consolidated BOM URL readiness |
 | 19A | POST | `/api/plant/projects/:leadId/consolidated-bom/send` | Send consolidated BOM to selected vendors |
-| 20 | GET | `/api/plant/projects/:leadId/delivery` | Deliveries for project |
+| 20 | GET | `/api/plant/projects/:leadId/delivery` | Confirmed delivery detail for project (404 if none awarded) |
 | 21 | GET | `/api/plant/projects/:leadId/shipper-files` | Vendor shipper submissions |
 | 21A | GET | `/api/public/vendor-upload/:token` | Public upload link details for vendor |
 | 21B | POST | `/api/public/vendor-upload/:token/presigned-url` | Presigned URL for vendor quote file upload |
@@ -1450,21 +1450,116 @@ Polling ([§13](#13-get-apiplantbomjobjobidstatus), [§14](#14-post-apiplantbomj
 
 ## 20. `GET /api/plant/projects/:leadId/delivery`
 
+Returns the **latest confirmed delivery** for the project — i.e. a freight request with an awarded carrier (`selectedCarrierBidId` set, status not `draft`/`cancelled`).
+
+Use **`GET /api/plant/deliveries/project/:leadId` (§21ZE)** for the freight request **list** view.
+
+### Response `404`
+
+When no delivery has been awarded yet (still draft, bidding, or cancelled only).
+
 ### Response `data`
+
+Same shape as §21ZEK2, plus explicit `formDetails`, `shipperDetails`, and `selectedBid`:
 
 ```json
 {
-  "deliveries": [
-    {
-      "_id": "...",
-      "deliveryNumber": "DEL-0001",
-      "status": "draft",
-      "pickupLocation": "",
-      "deliveryLocation": "",
-      "createdAt": "...",
-      "updatedAt": "..."
+  "delivery": {
+    "deliveryId": "...",
+    "deliveryNumber": "DEL-0012",
+    "status": "carrier_selected",
+    "statusHistory": [
+      { "status": "draft", "changedAt": "2026-06-10T09:10:00.000Z" },
+      { "status": "bidding_sent", "changedAt": "2026-06-10T11:05:00.000Z" },
+      { "status": "carrier_selected", "changedAt": "2026-06-11T08:30:00.000Z" }
+    ],
+    "project": {
+      "leadId": "...",
+      "projectName": "ABC Warehouse",
+      "jobId": "PRO-019"
+    },
+    "customer": {
+      "customerId": "...",
+      "customerName": "John Doe"
+    },
+    "formDetails": {
+      "description": "",
+      "loadDescription": "18 bundle shipment",
+      "loadWeight": 62400,
+      "dimensions": { "lengthFeet": 53, "widthFeet": 8.5, "heightFeet": 13.5 },
+      "materialType": "framing, panels, trim",
+      "packageCount": 2,
+      "loadingEquipment": ["forklift", "crane"],
+      "bidDeadline": "2026-06-10T18:00:00.000Z",
+      "documentUrl": "https://...",
+      "pickupLocation": "Plant Yard, Houston",
+      "pickupLocationData": { "address": "Plant Yard, Houston", "coordinates": { "lat": 29.76, "lng": -95.36 } },
+      "deliveryLocation": "ABC Site, Austin",
+      "deliveryLocationData": { "address": "ABC Site, Austin", "coordinates": { "lat": 30.27, "lng": -97.74 } },
+      "pickupDate": "2026-06-12T00:00:00.000Z",
+      "pickupTime": "08:00",
+      "deliveryDate": "2026-06-13T00:00:00.000Z",
+      "deliveryTime": "14:00",
+      "timings": "Mon-Fri 8AM-6PM",
+      "receivingPoc": "John Doe",
+      "pickupContactPhone": "+1-555-222-3344",
+      "specialRequirements": "Gate code required",
+      "additionalNotes": "Call 30 mins before arrival"
+    },
+    "shipperDetails": {
+      "vendorId": "...",
+      "vendorName": "Metro Steel",
+      "personName": "Mike Johnson",
+      "number": "5551234567",
+      "email": "mike@metrosteel.com"
+    },
+    "deliveryCompanyDetails": {
+      "carrierId": "...",
+      "carrierName": "FastLine Logistics",
+      "personName": "Alex King",
+      "number": "5553219876",
+      "email": "ops@fastline.com"
+    },
+    "selectedBid": {
+      "bidId": "...",
+      "carrierId": "...",
+      "carrierName": "FastLine Logistics",
+      "quotedAmount": 2300,
+      "currency": "USD",
+      "carrierNotes": "Rate valid for 24h",
+      "submittedAt": "2026-06-09T11:20:00.000Z",
+      "selectedAt": "2026-06-11T08:30:00.000Z",
+      "status": "selected"
+    },
+    "deliverySchedule": {
+      "deliveryDate": "2026-06-13T00:00:00.000Z",
+      "timeWindow": "Mon-Fri 8AM-6PM",
+      "pickupAddress": "Plant Yard, Houston",
+      "dropoffAddress": "ABC Site, Austin"
+    },
+    "deliveryInformation": {
+      "description": "18 bundle shipment",
+      "materialCategory": "framing, panels, trim",
+      "pickupDate": "2026-06-12T00:00:00.000Z"
+    },
+    "internalOwner": {
+      "userId": "...",
+      "name": "Plant Owner",
+      "email": "plant@flyweis.com",
+      "phone": "5551112222"
+    },
+    "siteCoordinationNotes": "Call 30 mins before arrival",
+    "equipmentRequirement": ["forklift", "crane"],
+    "deliveryTypeAndSize": {
+      "bundleCount": 18,
+      "packageCount": 2,
+      "totalWeight": 62400
+    },
+    "receivingPocDetails": {
+      "receivingPoc": "John Doe",
+      "pickupContactPhone": "+1-555-222-3344"
     }
-  ]
+  }
 }
 ```
 
@@ -2680,7 +2775,9 @@ Create freight request (delivery) with editable freight fields.
 
 ## 21ZE. `GET /api/plant/deliveries/project/:leadId`
 
-Project freight request list (same view payload as project delivery endpoint).
+Project freight request **list** (summary rows for table views).
+
+For the single confirmed/awarded delivery card with full form + shipper + carrier + selected bid, use **`GET /api/plant/projects/:leadId/delivery` (§20)**.
 
 ### Response `data`
 
@@ -3026,7 +3123,7 @@ Same as §21ZEE.
 
 ## 21ZEK2. `GET /api/plant/deliveries/:deliveryId/detail`
 
-Detailed delivery payload for detail screen.
+Detailed delivery payload for detail screen. Same response shape as §20 (including `formDetails`, `shipperDetails`, `selectedBid`).
 
 ### Response `data`
 
@@ -3044,7 +3141,8 @@ Detailed delivery payload for detail screen.
     ],
     "project": {
       "leadId": "...",
-      "projectName": "ABC Warehouse"
+      "projectName": "ABC Warehouse",
+      "jobId": "PRO-019"
     },
     "customer": {
       "customerId": "...",
@@ -4190,7 +4288,7 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | **Primary: freight auto-fill by project** | `GET /api/plant/projects/:projectId/freight-autofill` |
 | Create freight request | `POST /api/plant/deliveries` |
 | Freight requests list by project | `GET /api/plant/deliveries/project/:leadId` |
-| Legacy project freight list | `GET /api/plant/projects/:leadId/delivery` |
+| Confirmed delivery detail by project | `GET /api/plant/projects/:leadId/delivery` |
 | Freight loads stats | `GET /api/plant/deliveries/freight/stats` *(excludes draft)* |
 | Freight loads list | `GET /api/plant/deliveries/freight` *(excludes draft by default)* |
 | Awarded loads stats/list | `GET /api/plant/deliveries/awarded/stats`, `GET /api/plant/deliveries/awarded` |

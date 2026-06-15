@@ -40,6 +40,7 @@ const leadEditFieldValidators = [
   body('insulation').optional({ nullable: true }).isNumeric(),
   body('door').optional({ nullable: true }).isNumeric(),
   body('window').optional({ nullable: true }).isNumeric(),
+  body('numberOfBuildings').optional({ nullable: true }).isInt({ min: 1 }),
   body('lifecycleStatus').optional().trim(),
   body('notes').optional().trim(),
 ]

@@ -11,6 +11,78 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, PO_STATUSES } = require('../../config/constants')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 
+const syncLeadOnPOStatus = async (order, status, adminUserId, adminNotes) => {
+  const update = { $set: { poStatus: status } }
+  if (status === 'approved') {
+    update.$set.lifecycleStatus = 'sent_to_admin'
+    update.$push = {
+      lifecycleHistory: {
+        stage: 'sent_to_admin',
+        changedAt: new Date(),
+        changedBy: adminUserId,
+      },
+    }
+  }
+  await Lead.findByIdAndUpdate(order.leadId, update)
+
+  await auditService.log({
+    type: 'po',
+    action: status === 'approved' ? AUDIT_ACTIONS.LEAD_PO_APPROVED : AUDIT_ACTIONS.LEAD_PO_REJECTED,
+    leadId: order.leadId,
+    customerId: order.customerId,
+    performedBy: adminUserId,
+    metadata: { poOrderId: order._id, status, adminNotes: adminNotes || '' },
+  })
+}
+
+const releasePOToPlant = async (order, assignedTo, adminUserId) => {
+  const lead = await Lead.findById(order.leadId)
+  const plantUser = await User.findById(assignedTo).select('name role').lean()
+  if (!plantUser) return { error: 'Plant user not found', code: 404 }
+  if (plantUser.role !== 'plant') return { error: 'assignedTo must be a plant user', code: 400 }
+
+  if (lead) {
+    const isFirstRelease = lead.lifecycleStatus !== 'released_to_plant'
+
+    if (isFirstRelease) {
+      lead.lifecycleStatus = 'released_to_plant'
+      lead.lifecycleHistory.push({
+        stage: 'released_to_plant',
+        changedAt: new Date(),
+        changedBy: adminUserId,
+      })
+      await lead.save()
+
+      await Building.updateMany({ leadId: order.leadId }, { status: 'drawing_pending' })
+
+      await auditService.log({
+        type: 'plant',
+        action: AUDIT_ACTIONS.LEAD_RELEASED_TO_PLANT,
+        leadId: order.leadId,
+        customerId: order.customerId,
+        performedBy: adminUserId,
+        metadata: {
+          poOrderId: order._id,
+          assignedTo,
+          assignedToName: plantUser.name || '',
+          projectName: lead.projectName || '',
+        },
+      })
+    }
+  }
+
+  if (global.io) {
+    const leadDoc = lead || await Lead.findById(order.leadId).select('projectName').lean()
+    global.io.of('/admin').to(`user:${assignedTo}`).emit('project_assigned', {
+      leadId: order.leadId,
+      poOrderId: order._id,
+      projectName: leadDoc?.projectName || '',
+    })
+  }
+
+  return { lead, plantUser }
+}
+
 exports.getAllPOOrders = asyncHandler(async (req, res) => {
   const { status } = req.query
   const dateFilter = buildDateFilter(req.query)
@@ -93,46 +165,48 @@ exports.assignPOOrder = asyncHandler(async (req, res) => {
   order.assignedTo = assignedTo
   await order.save()
 
-  const lead = await Lead.findById(order.leadId)
-  const plantUser = await User.findById(assignedTo).select('name').lean()
-  if (lead) {
-    lead.lifecycleStatus = 'released_to_plant'
-    lead.lifecycleHistory.push({
-      stage: 'released_to_plant',
-      changedAt: new Date(),
-      changedBy: req.user._id,
-    })
-    await lead.save()
-
-    await auditService.log({
-      type: 'plant',
-      action: AUDIT_ACTIONS.LEAD_RELEASED_TO_PLANT,
-      leadId: order.leadId,
-      customerId: order.customerId,
-      performedBy: req.user._id,
-      metadata: {
-        poOrderId: order._id,
-        assignedTo,
-        assignedToName: plantUser?.name || '',
-        projectName: lead.projectName || '',
-      },
-    })
-  }
-
-  // Transition all buildings for this project to drawing_pending
-  await Building.updateMany({ leadId: order.leadId }, { status: 'drawing_pending' })
-
-  // Notify the assigned plant user via socket
-  if (global.io) {
-    const leadDoc = lead || await Lead.findById(order.leadId).select('projectName').lean()
-    global.io.of('/admin').to(`user:${assignedTo}`).emit('project_assigned', {
-      leadId: order.leadId,
-      poOrderId: order._id,
-      projectName: leadDoc?.projectName || '',
-    })
+  const result = await releasePOToPlant(order, assignedTo, req.user._id)
+  if (result.error) {
+    return result.code === 404 ? notFound(res, result.error) : badRequest(res, result.error)
   }
 
   return success(res, { order })
+})
+
+exports.approveAndAssignPOOrder = asyncHandler(async (req, res) => {
+  const { poOrderId } = req.params
+  const { assignedTo, adminNotes } = req.body
+
+  if (!assignedTo) return badRequest(res, 'assignedTo is required')
+
+  const order = await POOrder.findById(poOrderId)
+  if (!order) return notFound(res, 'PO Order not found')
+  if (order.status === 'rejected') return badRequest(res, 'Cannot approve a rejected PO order')
+
+  if (order.status === 'pending') {
+    order.status = 'approved'
+    if (adminNotes) order.adminNotes = adminNotes
+    await order.save()
+    await syncLeadOnPOStatus(order, 'approved', req.user._id, adminNotes)
+  } else if (adminNotes) {
+    order.adminNotes = adminNotes
+    await order.save()
+  }
+
+  order.assignedTo = assignedTo
+  await order.save()
+
+  const result = await releasePOToPlant(order, assignedTo, req.user._id)
+  if (result.error) {
+    return result.code === 404 ? notFound(res, result.error) : badRequest(res, result.error)
+  }
+
+  const populated = await POOrder.findById(order._id)
+    .populate('assignedTo', 'name email role')
+    .populate('invoiceId', 'invoiceNumber status poNumber paidAt')
+    .lean()
+
+  return success(res, { order: populated }, 'PO Order approved and assigned to plant')
 })
 
 exports.updatePOStatus = asyncHandler(async (req, res) => {
@@ -148,24 +222,7 @@ exports.updatePOStatus = asyncHandler(async (req, res) => {
   if (adminNotes) order.adminNotes = adminNotes
   await order.save()
 
-  // Sync to lead
-  const leadUpdate = { poStatus: status }
-  if (status === 'approved') {
-    leadUpdate.lifecycleStatus = 'sent_to_admin'
-    leadUpdate.$push = {
-      lifecycleHistory: { stage: 'sent_to_admin', changedAt: new Date(), changedBy: req.user._id },
-    }
-  }
-  await Lead.findByIdAndUpdate(order.leadId, leadUpdate)
-
-  await auditService.log({
-    type: 'po',
-    action: status === 'approved' ? AUDIT_ACTIONS.LEAD_PO_APPROVED : AUDIT_ACTIONS.LEAD_PO_REJECTED,
-    leadId: order.leadId,
-    customerId: order.customerId,
-    performedBy: req.user._id,
-    metadata: { poOrderId, status, adminNotes },
-  })
+  await syncLeadOnPOStatus(order, status, req.user._id, adminNotes)
 
   return success(res, { order }, `PO Order ${status}`)
 })

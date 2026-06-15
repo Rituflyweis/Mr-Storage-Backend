@@ -82,7 +82,7 @@ router.post('/:leadId/consolidated-bom/send',
   validate,
   ctrl.sendConsolidatedBOM
 )
-router.get('/:leadId/delivery', ctrl.getProjectDelivery)
+router.get('/:leadId/delivery', deliveryCtrl.getProjectConfirmedDelivery)
 router.get('/:leadId/shipper-files', ctrl.getProjectShipperFiles)
 router.get('/:leadId/bundle-plan', bundleCtrl.getProjectBundlePlan)
 

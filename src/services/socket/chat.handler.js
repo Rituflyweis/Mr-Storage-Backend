@@ -1,16 +1,34 @@
 const { processCustomerMessage } = require('./processCustomerMessage')
 const chatLifecycle = require('../chat/chatLifecycle.service')
+const customerPresence = require('./customerPresence.service')
 
 const chatHandler = (socket, chatNS) => {
 
   socket.on('join_lead', async ({ leadId, customerId }) => {
-    if (!leadId) return
+    if (!leadId || !customerId) return
+
+    const presence = await customerPresence.registerJoin(socket, { leadId, customerId })
+    if (!presence.ok) {
+      if (presence.reason === 'customer_mismatch') {
+        socket.emit('chat_error', { message: 'Invalid customer for this project' })
+      } else if (presence.reason === 'lead_not_found') {
+        socket.emit('chat_error', { message: 'Project not found' })
+      }
+      return
+    }
+
     socket.join(`lead:${leadId}`)
     socket.data.leadId = leadId
     socket.data.customerId = customerId
 
     const status = await chatLifecycle.getChatStatusByLeadId(leadId)
     if (status) socket.emit('chat_status', status)
+  })
+
+  socket.on('leave_lead', async ({ leadId }) => {
+    if (!leadId) return
+    await customerPresence.leaveLead(socket, { leadId })
+    socket.leave(`lead:${leadId}`)
   })
 
   socket.on('typing_start', async ({ leadId }) => {

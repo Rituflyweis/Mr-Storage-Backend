@@ -15,8 +15,13 @@ router.put('/:poOrderId/status',
   validate,
   ctrl.updatePOStatus
 )
+router.put('/:poOrderId/approve-and-assign',
+  [body('assignedTo').notEmpty().isMongoId()],
+  validate,
+  ctrl.approveAndAssignPOOrder
+)
 router.put('/:poOrderId/assign',
-  [body('assignedTo').notEmpty()],
+  [body('assignedTo').notEmpty().isMongoId()],
   validate,
   ctrl.assignPOOrder
 )

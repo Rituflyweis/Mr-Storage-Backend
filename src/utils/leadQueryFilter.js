@@ -120,6 +120,8 @@ const mapLeadByScoreRow = (lead) => {
     score,
     quoteValue: lead.quoteValue ?? 0,
     temperature,
+    isOnline: lead.isOnline === true,
+    lastSeenAt: lead.lastSeenAt || null,
     updatedAt: lead.updatedAt,
   }
 }

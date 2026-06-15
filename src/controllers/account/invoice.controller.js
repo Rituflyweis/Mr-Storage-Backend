@@ -52,8 +52,8 @@ exports.markAsPaid = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findById(req.params.invoiceId)
   if (!invoice) return notFound(res, 'Invoice not found')
   if (invoice.status === 'paid') return badRequest(res, 'Invoice already paid')
-  if (['draft', 'cancelled'].includes(invoice.status)) {
-    return badRequest(res, 'Cannot mark a draft or cancelled invoice as paid')
+  if (invoice.status === 'cancelled') {
+    return badRequest(res, 'Cannot mark a cancelled invoice as paid')
   }
 
   invoice.status = 'paid'

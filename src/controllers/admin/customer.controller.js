@@ -428,7 +428,8 @@ exports.getProjectInvoices = asyncHandler(async (req, res) => {
   if (status) filter.status = status
 
   const invoices = await Invoice.find(filter)
-    .select('invoiceNumber status totalAmount date dueDate daysToPay paidAt createdAt')
+    .populate('createdBy', 'name email')
+    .populate('paidBy', 'name email')
     .sort({ createdAt: -1 })
     .lean()
 

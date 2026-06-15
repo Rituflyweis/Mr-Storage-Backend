@@ -4,8 +4,6 @@ const Lead = require('../../models/Lead')
 const User = require('../../models/User')
 const Building = require('../../models/Building')
 const Invoice = require('../../models/Invoice')
-const Delivery = require('../../models/Delivery')
-const FreightBid = require('../../models/FreightBid')
 const Vendor = require('../../models/Vendor')
 const ShipperRequest = require('../../models/ShipperRequest')
 const BOMJob = require('../../models/BOMJob')
@@ -723,61 +721,6 @@ exports.getProjectBomFiles = asyncHandler(async (req, res) => {
   })).sort((a, b) => a.buildingNumber - b.buildingNumber)
 
   return success(res, { bomFiles })
-})
-
-exports.getProjectDelivery = asyncHandler(async (req, res) => {
-  const access = await guardProject(req, res)
-  if (!access) return
-  const leadId = access.lead._id
-
-  const deliveries = await Delivery.find({ leadId })
-    .sort({ createdAt: -1 })
-    .lean()
-
-  const bids = await FreightBid.find({ deliveryId: { $in: deliveries.map((d) => d._id) } })
-    .populate('carrierId', 'carrierName')
-    .lean()
-
-  const bidsByDelivery = bids.reduce((acc, bid) => {
-    const key = String(bid.deliveryId)
-    if (!acc[key]) acc[key] = []
-    acc[key].push(bid)
-    return acc
-  }, {})
-
-  return success(res, {
-    deliveries: deliveries.map((d) => {
-      const deliveryBids = (bidsByDelivery[String(d._id)] || [])
-        .filter((row) => {
-          const status = String(row?.status || '').trim().toLowerCase()
-          if (status !== 'submitted' && status !== 'selected') return false
-          if (row?.quotedAmount == null || row?.quotedAmount === '') return false
-          return Number.isFinite(Number(row.quotedAmount))
-        })
-      const averageBid = deliveryBids.length
-        ? Math.round(
-          (deliveryBids.reduce((sum, row) => sum + Number(row.quotedAmount), 0) / deliveryBids.length) * 100
-        ) / 100
-        : null
-      const selectedBid = deliveryBids.find((row) => row.status === 'selected')
-      return {
-        requestId: d._id,
-        deliveryNumber: d.deliveryNumber,
-        projectName: access.lead.projectName || '',
-        description: d.loadDescription || d.description || '',
-        pickupLocation: d.pickupLocation || d.pickupLocationData?.address || '',
-        deliveryLocation: d.deliveryLocation || d.deliveryLocationData?.address || '',
-        pickupDate: d.pickupDate,
-        deliveryDate: d.deliveryDate,
-        carrier: selectedBid?.carrierId?.carrierName || null,
-        averageBid,
-        status: d.status,
-        loadWeight: d.loadWeight,
-        createdAt: d.createdAt,
-        updatedAt: d.updatedAt,
-      }
-    }),
-  })
 })
 
 exports.getProjectShipperFiles = asyncHandler(async (req, res) => {

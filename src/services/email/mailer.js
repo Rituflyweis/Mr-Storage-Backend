@@ -11,14 +11,16 @@ const transporter = nodemailer.createTransport({
   port: Number(SMTP_PORT),
   secure: Number(SMTP_PORT) === 465,
   family: 4,
-  connectionTimeout: 10000,  
-  greetingTimeout: 10000,   
-  socketTimeout: 30000,     
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 30000,
   auth: {
     user: SMTP_USER,
     pass: SMTP_PASS,
   },
 })
+
+const isSmtpConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS)
 
 const loadTemplate = (templateName) => {
   const filePath = path.join(__dirname, 'templates', `${templateName}.html`)
@@ -87,6 +89,7 @@ const buildInvoiceTotalsRows = (invoice) => {
   const rows = [
     ['Subtotal', invoice.subtotal],
     ['Markup total', invoice.markupTotal],
+    ['Tax', invoice.tax],
     ['Discount', invoice.discount],
     ['Deposit', invoice.depositAmount],
     ['Total due', invoice.totalAmount],
@@ -179,6 +182,7 @@ const sendInvoice = async ({ toEmail, customerName, invoice }) => {
     PO_NUMBER: escapeHtml(inv.poNumber || '—'),
     SUBTOTAL: formatInvoiceMoney(inv.subtotal),
     MARKUP_TOTAL: formatInvoiceMoney(inv.markupTotal),
+    TAX: formatInvoiceMoney(inv.tax),
     DISCOUNT: formatInvoiceMoney(inv.discount),
     DEPOSIT_AMOUNT: formatInvoiceMoney(inv.depositAmount),
     TOTAL_AMOUNT: formatInvoiceMoney(inv.totalAmount),
@@ -437,6 +441,7 @@ const sendFreightBidRejectedEmail = async ({
 }
 
 module.exports = {
+  isSmtpConfigured,
   sendQuotation,
   sendInvoice,
   sendOtp,

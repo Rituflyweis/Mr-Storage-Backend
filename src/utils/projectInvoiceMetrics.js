@@ -51,6 +51,18 @@ const mapProjectInvoiceRow = (inv, now = new Date()) => {
     amount: inv.totalAmount || 0,
     status: mapInvoiceDisplayStatus(inv, now),
     invoiceStatus: inv.status,
+    subtotal: inv.subtotal ?? 0,
+    markupTotal: inv.markupTotal ?? 0,
+    tax: inv.tax ?? 0,
+    discount: inv.discount ?? 0,
+    depositAmount: inv.depositAmount ?? 0,
+    totalAmount: inv.totalAmount ?? 0,
+    lineItems: inv.lineItems || [],
+    description: inv.description || '',
+    daysToPay: inv.daysToPay ?? null,
+    dueDate: inv.dueDate || null,
+    poNumber: inv.poNumber || '',
+    invoice: inv,
   }
 }
 

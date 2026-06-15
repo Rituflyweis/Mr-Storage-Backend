@@ -661,27 +661,73 @@ exports.getDeliveryBidsByProject = asyncHandler(async (req, res) => {
   return exports.getDeliveryBids(req, res)
 })
 
-exports.getDeliveryDetail = asyncHandler(async (req, res) => {
-  const delivery = await Delivery.findById(req.params.deliveryId)
-    .populate({
-      path: 'leadId',
-      select: 'projectName jobId customerId',
-      populate: { path: 'customerId', select: 'firstName lastName email phone location' },
-    })
-    .populate({
-      path: 'selectedCarrierBidId',
-      select: 'quotedAmount carrierId status',
-      populate: { path: 'carrierId', select: 'carrierName contactName phone email' },
-    })
-    .lean()
-  if (!delivery) return notFound(res, 'Delivery not found')
+const DELIVERY_DETAIL_POPULATE = [
+  {
+    path: 'leadId',
+    select: 'projectName jobId customerId',
+    populate: { path: 'customerId', select: 'firstName lastName email phone location' },
+  },
+  {
+    path: 'selectedCarrierBidId',
+    select: 'quotedAmount carrierId status carrierNotes selectedAt submittedAt currency',
+    populate: { path: 'carrierId', select: 'carrierName contactName phone email' },
+  },
+]
 
-  const leadId = delivery.leadId?._id || delivery.leadId
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
-  if (access.error) {
-    if (access.code === 404) return notFound(res, access.error)
-    return forbidden(res, access.error)
+const buildShipperDetails = (vendor) => (
+  vendor
+    ? {
+        vendorId: vendor._id,
+        vendorName: vendor.vendorName || '',
+        personName: vendor.contactName || '',
+        number: vendor.phone || '',
+        email: vendor.email || '',
+      }
+    : null
+)
+
+const buildSelectedBidDetails = (selectedBidDoc) => {
+  if (!selectedBidDoc) return null
+  return {
+    bidId: selectedBidDoc._id,
+    carrierId: selectedBidDoc.carrierId?._id || selectedBidDoc.carrierId,
+    carrierName: selectedBidDoc.carrierId?.carrierName || '',
+    quotedAmount: selectedBidDoc.quotedAmount ?? null,
+    currency: selectedBidDoc.currency || 'USD',
+    carrierNotes: selectedBidDoc.carrierNotes || '',
+    submittedAt: selectedBidDoc.submittedAt,
+    selectedAt: selectedBidDoc.selectedAt,
+    status: selectedBidDoc.status,
   }
+}
+
+const buildDeliveryFormDetails = (delivery) => ({
+  description: delivery.description || '',
+  loadDescription: delivery.loadDescription || '',
+  loadWeight: delivery.loadWeight ?? null,
+  dimensions: delivery.dimensions || {},
+  materialType: delivery.materialType || '',
+  packageCount: delivery.packageCount ?? null,
+  loadingEquipment: delivery.loadingEquipment || [],
+  bidDeadline: delivery.bidDeadline,
+  documentUrl: delivery.documentUrl || '',
+  pickupLocation: delivery.pickupLocation || '',
+  pickupLocationData: delivery.pickupLocationData || {},
+  deliveryLocation: delivery.deliveryLocation || '',
+  deliveryLocationData: delivery.deliveryLocationData || {},
+  pickupDate: delivery.pickupDate,
+  pickupTime: delivery.pickupTime || '',
+  deliveryDate: delivery.deliveryDate,
+  deliveryTime: delivery.deliveryTime || '',
+  timings: delivery.timings || '',
+  receivingPoc: delivery.receivingPoc || '',
+  pickupContactPhone: delivery.pickupContactPhone || '',
+  specialRequirements: delivery.specialRequirements || '',
+  additionalNotes: delivery.additionalNotes || '',
+})
+
+const buildDeliveryDetailPayload = async (delivery, plantUserId) => {
+  const leadId = delivery.leadId?._id || delivery.leadId
 
   const [bundlePlan, packingListPlan, poOrder, latestShipperRequest] = await Promise.all([
     BundlePlan.findOne({ leadId, status: { $ne: 'cancelled' } })
@@ -692,7 +738,7 @@ exports.getDeliveryDetail = asyncHandler(async (req, res) => {
       .sort({ updatedAt: -1 })
       .select('_id totalPackingLists')
       .lean(),
-    POOrder.findOne({ leadId, assignedTo: req.user._id, status: 'approved' })
+    POOrder.findOne({ leadId, assignedTo: plantUserId, status: 'approved' })
       .sort({ createdAt: -1 })
       .select('assignedTo')
       .populate('assignedTo', 'name email phone')
@@ -712,8 +758,10 @@ exports.getDeliveryDetail = asyncHandler(async (req, res) => {
   const carrier = delivery.selectedCarrierBidId?.carrierId || null
   const customer = delivery.leadId?.customerId || null
   const owner = poOrder?.assignedTo || null
+  const shipperDetails = buildShipperDetails(vendor)
+  const selectedBid = buildSelectedBidDetails(delivery.selectedCarrierBidId)
 
-  return success(res, {
+  return {
     delivery: {
       deliveryId: delivery._id,
       deliveryNumber: delivery.deliveryNumber,
@@ -723,6 +771,7 @@ exports.getDeliveryDetail = asyncHandler(async (req, res) => {
       project: {
         leadId,
         projectName: delivery.leadId?.projectName || '',
+        jobId: delivery.leadId?.jobId || '',
       },
       customer: customer
         ? {
@@ -730,6 +779,8 @@ exports.getDeliveryDetail = asyncHandler(async (req, res) => {
             customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
           }
         : null,
+
+      formDetails: buildDeliveryFormDetails(delivery),
 
       deliverySchedule: {
         deliveryDate: delivery.deliveryDate,
@@ -744,23 +795,20 @@ exports.getDeliveryDetail = asyncHandler(async (req, res) => {
         pickupDate: delivery.pickupDate,
       },
 
-      vendorDetails: vendor
-        ? {
-            vendorName: vendor.vendorName || '',
-            personName: vendor.contactName || '',
-            number: vendor.phone || '',
-            email: vendor.email || '',
-          }
-        : null,
+      shipperDetails,
+      vendorDetails: shipperDetails,
 
       deliveryCompanyDetails: carrier
         ? {
+            carrierId: carrier._id,
             carrierName: carrier.carrierName || '',
             personName: carrier.contactName || '',
             number: carrier.phone || '',
             email: carrier.email || '',
           }
         : null,
+
+      selectedBid,
 
       internalOwner: owner
         ? {
@@ -785,7 +833,49 @@ exports.getDeliveryDetail = asyncHandler(async (req, res) => {
         pickupContactPhone: delivery.pickupContactPhone || '',
       },
     },
+  }
+}
+
+exports.getProjectConfirmedDelivery = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const delivery = await Delivery.findOne({
+    leadId: access.lead._id,
+    selectedCarrierBidId: { $ne: null },
+    status: { $nin: ['draft', 'cancelled'] },
   })
+    .sort({ updatedAt: -1 })
+    .populate(DELIVERY_DETAIL_POPULATE)
+    .lean()
+
+  if (!delivery) {
+    return notFound(res, 'No confirmed delivery found for this project')
+  }
+
+  const payload = await buildDeliveryDetailPayload(delivery, req.user._id)
+  return success(res, payload)
+})
+
+exports.getDeliveryDetail = asyncHandler(async (req, res) => {
+  const delivery = await Delivery.findById(req.params.deliveryId)
+    .populate(DELIVERY_DETAIL_POPULATE)
+    .lean()
+  if (!delivery) return notFound(res, 'Delivery not found')
+
+  const leadId = delivery.leadId?._id || delivery.leadId
+  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const payload = await buildDeliveryDetailPayload(delivery, req.user._id)
+  return success(res, payload)
 })
 
 exports.getFreightLoadStats = asyncHandler(async (req, res) => {

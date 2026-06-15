@@ -1,5 +1,6 @@
 const Customer = require('../../models/Customer')
 const Lead = require('../../models/Lead')
+const POOrder = require('../../models/POOrder')
 const { success } = require('../../utils/apiResponse')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -56,6 +57,15 @@ exports.listCustomers = asyncHandler(async (req, res) => {
       return success(res, { customers: [], total: 0, page: parsedPage, limit: parsedLimit })
     }
     filter._id = { $in: customerIds }
+  } else if (req.user.role === 'plant') {
+    const customerIds = await POOrder.distinct('customerId', {
+      assignedTo: req.user._id,
+      status: 'approved',
+    })
+    if (!customerIds.length) {
+      return success(res, { customers: [], total: 0, page: parsedPage, limit: parsedLimit })
+    }
+    filter._id = { $in: customerIds }
   }
 
   const [customers, total] = await Promise.all([
@@ -80,6 +90,15 @@ exports.listLeads = asyncHandler(async (req, res) => {
   const filter = {}
   if (req.user.role === 'sales') {
     filter.assignedSales = req.user._id
+  } else if (req.user.role === 'plant') {
+    const leadIds = await POOrder.distinct('leadId', {
+      assignedTo: req.user._id,
+      status: 'approved',
+    })
+    if (!leadIds.length) {
+      return success(res, { leads: [], total: 0, page: parsedPage, limit: parsedLimit })
+    }
+    filter._id = { $in: leadIds }
   }
 
   const searchFilter = await buildLeadSearchFilter(search)

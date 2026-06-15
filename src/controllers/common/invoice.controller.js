@@ -6,7 +6,7 @@ const mailer = require('../../services/email/mailer')
 const auditService = require('../../services/audit.service')
 const generateInvoiceNumber = require('../../utils/generateInvoiceNumber')
 const generatePONumber = require('../../utils/generatePONumber')
-const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
+const { success, created, notFound, badRequest, forbidden, error } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { isInvoiceOverdue, resolveInvoiceLeadIds, getScopedLeadIds } = require('../../utils/invoiceScope')
@@ -14,9 +14,11 @@ const { AUDIT_ACTIONS, INVOICE_STATUSES } = require('../../config/constants')
 const { generateInvoiceListExcel, generateInvoiceListPdf } = require('../../utils/exportInvoices')
 
 const INVOICE_BODY_FIELDS = [
-  'date', 'daysToPay', 'lineItems','description',
-  'subtotal', 'markupTotal', 'discount', 'depositAmount', 'totalAmount',
+  'date', 'daysToPay', 'lineItems', 'description',
+  'subtotal', 'markupTotal', 'tax', 'discount', 'depositAmount', 'totalAmount',
 ]
+
+const INVOICE_EDITABLE_STATUSES = ['draft', 'sent']
 
 const checkLeadAccess = async (leadId, user) => {
   const lead = await Lead.findById(leadId)
@@ -46,6 +48,50 @@ const setPaymentScheduleStageInvoiced = async (leadId, paymentScheduleStageId, i
     { leadId, 'stages._id': paymentScheduleStageId },
     { $set: { 'stages.$.invoiceId': invoiceId, 'stages.$.status': 'invoiced' } }
   )
+}
+
+const unlinkInvoiceFromPaymentStage = async (leadId, paymentScheduleStageId, invoiceId) => {
+  if (!paymentScheduleStageId) return
+  const schedule = await PaymentSchedule.findOne({
+    leadId,
+    'stages._id': paymentScheduleStageId,
+    'stages.invoiceId': invoiceId,
+  }).lean()
+  if (!schedule) return
+
+  const stage = schedule.stages.find(s => String(s._id) === String(paymentScheduleStageId))
+  const resetStatus = stage?.status === 'invoiced' ? 'pending' : stage?.status
+
+  await PaymentSchedule.findOneAndUpdate(
+    { leadId, 'stages._id': paymentScheduleStageId },
+    {
+      $set: {
+        'stages.$.invoiceId': null,
+        ...(resetStatus ? { 'stages.$.status': resetStatus } : {}),
+      },
+    }
+  )
+}
+
+const applyPaymentScheduleStageLink = async (invoice, paymentScheduleStageId) => {
+  const previousStageId = invoice.paymentScheduleStageId
+
+  if (previousStageId && String(previousStageId) !== String(paymentScheduleStageId || '')) {
+    await unlinkInvoiceFromPaymentStage(invoice.leadId, previousStageId, invoice._id)
+  }
+
+  if (paymentScheduleStageId) {
+    const resolved = await resolvePaymentScheduleStage(invoice.leadId, paymentScheduleStageId)
+    if (resolved.error) return resolved
+    invoice.paymentScheduleId = resolved.paymentScheduleId
+    invoice.paymentScheduleStageId = resolved.paymentScheduleStageId
+    await setPaymentScheduleStageInvoiced(invoice.leadId, paymentScheduleStageId, invoice._id)
+  } else {
+    invoice.paymentScheduleId = null
+    invoice.paymentScheduleStageId = null
+  }
+
+  return {}
 }
 
 exports.createInvoice = asyncHandler(async (req, res) => {
@@ -115,6 +161,9 @@ exports.getInvoice = asyncHandler(async (req, res) => {
     .lean()
   if (!invoice) return notFound(res, 'Invoice not found')
 
+  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
+
   const paymentSchedule = await PaymentSchedule.findOne({ leadId: invoice.leadId }).lean()
   return success(res, { invoice, paymentSchedule })
 })
@@ -122,25 +171,28 @@ exports.getInvoice = asyncHandler(async (req, res) => {
 exports.updateInvoice = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findById(req.params.invoiceId)
   if (!invoice) return notFound(res, 'Invoice not found')
-  if (invoice.status !== 'draft') return badRequest(res, 'Only draft invoices can be edited')
+  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoices cannot be edited')
 
   const { error, code } = await checkLeadAccess(invoice.leadId, req.user)
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
 
-  applyInvoiceBodyFields(invoice, req.body)
+  const hasPaymentStageUpdate = req.body.paymentScheduleStageId !== undefined
+  const hasBodyFieldUpdates = INVOICE_BODY_FIELDS.some(k => req.body[k] !== undefined)
 
-  if (req.body.paymentScheduleStageId !== undefined) {
-    const { paymentScheduleStageId } = req.body
-    if (paymentScheduleStageId) {
-      const resolved = await resolvePaymentScheduleStage(invoice.leadId, paymentScheduleStageId)
-      if (resolved.error) return badRequest(res, resolved.error)
-      invoice.paymentScheduleId = resolved.paymentScheduleId
-      invoice.paymentScheduleStageId = resolved.paymentScheduleStageId
-      await setPaymentScheduleStageInvoiced(invoice.leadId, paymentScheduleStageId, invoice._id)
-    } else {
-      invoice.paymentScheduleId = null
-      invoice.paymentScheduleStageId = null
+  if (hasBodyFieldUpdates && !INVOICE_EDITABLE_STATUSES.includes(invoice.status)) {
+    return badRequest(res, 'Only draft and sent invoices can be edited')
+  }
+
+  if (hasBodyFieldUpdates) {
+    applyInvoiceBodyFields(invoice, req.body)
+  }
+
+  if (hasPaymentStageUpdate) {
+    if (!INVOICE_EDITABLE_STATUSES.includes(invoice.status)) {
+      return badRequest(res, 'Payment schedule stage can only be changed on draft or sent invoices')
     }
+    const linkResult = await applyPaymentScheduleStageLink(invoice, req.body.paymentScheduleStageId)
+    if (linkResult.error) return badRequest(res, linkResult.error)
   }
 
   await invoice.save()
@@ -159,11 +211,32 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
 
 
 exports.sendInvoice = asyncHandler(async (req, res) => {
+  if (!mailer.isSmtpConfigured()) {
+    return badRequest(res, 'Email service is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS.')
+  }
+
   const invoice = await Invoice.findById(req.params.invoiceId)
   if (!invoice) return notFound(res, 'Invoice not found')
+  if (invoice.status === 'paid') return badRequest(res, 'Paid invoices cannot be sent')
+  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoices cannot be sent')
+
+  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
 
   const customer = await Customer.findById(invoice.customerId)
   if (!customer) return notFound(res, 'Customer not found')
+  if (!customer.email) return badRequest(res, 'Customer has no email address on file')
+
+  try {
+    await mailer.sendInvoice({
+      toEmail: customer.email,
+      customerName: customer.firstName,
+      invoice,
+    })
+  } catch (err) {
+    console.error('[sendInvoice] Email failed for invoice', invoice.invoiceNumber, err.message)
+    return error(res, `Failed to send invoice email: ${err.message}`, 502)
+  }
 
   invoice.status = 'sent'
   invoice.sentAt = new Date()
@@ -178,13 +251,6 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
     metadata: { invoiceNumber: invoice.invoiceNumber, sentTo: customer.email },
   })
 
-  // Send email in background — don't block the HTTP response
-  mailer.sendInvoice({
-    toEmail: customer.email,
-    customerName: customer.firstName,
-    invoice,
-  }).catch(err => console.error('[sendInvoice] Email failed for invoice', invoice.invoiceNumber, err.message))
-
   return success(res, { invoice }, 'Invoice sent successfully')
 })
 
@@ -192,8 +258,8 @@ exports.markAsPaid = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findById(req.params.invoiceId)
   if (!invoice) return notFound(res, 'Invoice not found')
   if (invoice.status === 'paid') return badRequest(res, 'Invoice is already marked as paid')
-  if (['draft', 'cancelled'].includes(invoice.status)) {
-    return badRequest(res, 'Cannot mark a draft or cancelled invoice as paid')
+  if (invoice.status === 'cancelled') {
+    return badRequest(res, 'Cannot mark a cancelled invoice as paid')
   }
 
   // Check access for sales role
