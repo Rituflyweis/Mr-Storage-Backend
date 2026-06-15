@@ -15,6 +15,7 @@ const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
+const { setLeadLifecycleStage } = require('../../utils/leadLifecycle.util')
 const {
   AUDIT_ACTIONS,
   LIFECYCLE_STAGES,
@@ -109,12 +110,7 @@ exports.updateLifecycle = asyncHandler(async (req, res) => {
     return badRequest(res, 'Invalid lifecycle status')
   }
 
-  lead.lifecycleStatus = lifecycleStatus
-  lead.lifecycleHistory.push({
-    stage: lifecycleStatus,
-    changedAt: new Date(),
-    changedBy: req.user._id,
-  })
+  setLeadLifecycleStage(lead, lifecycleStatus, req.user._id)
   await lead.save()
 
   let addedNote = null
@@ -396,12 +392,7 @@ exports.editLead = asyncHandler(async (req, res) => {
   }
 
   if (lifecycleStatus && LIFECYCLE_STAGES.includes(lifecycleStatus)) {
-    lead.lifecycleStatus = lifecycleStatus
-    lead.lifecycleHistory.push({
-      stage: lifecycleStatus,
-      changedAt: new Date(),
-      changedBy: req.user._id,
-    })
+    setLeadLifecycleStage(lead, lifecycleStatus, req.user._id)
   }
 
   await lead.save()

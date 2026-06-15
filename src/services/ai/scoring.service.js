@@ -47,7 +47,19 @@ const scoreLead = async (messages, leadName = '') => {
   },
   "requirements": "<one sentence project summary>",
   "requirementsComplete": <true ONLY if ALL 10 are explicitly stated by the customer: (1) building type, (2) sqft/size, (3) location, (4) roof type, (5) wall type, (6) insulation, (7) doors/windows count or size, (8) timeline, (9) budget amount or range, (10) decision-maker confirmation OR explicit "no special requirements"; otherwise false>,
-  "projectLifecycleStage": "<EXACTLY one of: ${SALES_LIFECYCLE_FOR_SCORING.join(' | ')} | null>"
+  "projectLifecycleStage": "<EXACTLY one of: ${SALES_LIFECYCLE_FOR_SCORING.join(' | ')} | null>",
+  "projectFields": {
+    "buildingType": "<customer-stated building type e.g. garage, warehouse — empty string if unknown>",
+    "location": "<city/region — empty string if unknown>",
+    "sqft": "<numeric sqft as string — empty string if unknown>",
+    "roofStyle": "<roof type — empty string if unknown>",
+    "width": <number or null>,
+    "length": <number or null>,
+    "height": <number or null>,
+    "numDoors": <number or null>,
+    "numWindows": <number or null>,
+    "numInsulation": <number or null>
+  }
 }
 
 Scoring guide:
@@ -77,6 +89,7 @@ ${transcript}`,
       requirements: '',
       requirementsComplete: false,
       projectLifecycleStage: null,
+      projectFields: {},
     }
   }
 }

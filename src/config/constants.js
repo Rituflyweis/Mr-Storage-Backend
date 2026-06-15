@@ -50,6 +50,9 @@ const PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES = [
   'payment_done',
 ]
 
+/** Minimum lifecycle stage required to create an invoice on a lead */
+const INVOICE_CREATE_MIN_LIFECYCLE_STAGE = 'proposal_sent'
+
 const PRIORITY_LEVELS = ['low', 'medium', 'high', 'urgent']
 const QUOTATION_STATUSES = ['draft', 'sent', 'accepted', 'rejected']
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
@@ -217,6 +220,7 @@ module.exports = {
   LIFECYCLE_STAGES,
   CLOSED_STAGES,
   PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES,
+  INVOICE_CREATE_MIN_LIFECYCLE_STAGE,
   PRIORITY_LEVELS,
   QUOTATION_STATUSES,
   INVOICE_STATUSES,

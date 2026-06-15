@@ -10,7 +10,8 @@ const { success, created, notFound, badRequest, forbidden, error } = require('..
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { isInvoiceOverdue, resolveInvoiceLeadIds, getScopedLeadIds } = require('../../utils/invoiceScope')
-const { AUDIT_ACTIONS, INVOICE_STATUSES } = require('../../config/constants')
+const { AUDIT_ACTIONS, INVOICE_STATUSES, INVOICE_CREATE_MIN_LIFECYCLE_STAGE } = require('../../config/constants')
+const { isLifecycleAtLeast } = require('../../utils/leadLifecycle.util')
 const { generateInvoiceListExcel, generateInvoiceListPdf } = require('../../utils/exportInvoices')
 
 const INVOICE_BODY_FIELDS = [
@@ -100,6 +101,13 @@ exports.createInvoice = asyncHandler(async (req, res) => {
 
   const { lead, error, code } = await checkLeadAccess(leadId, req.user)
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
+
+  if (!isLifecycleAtLeast(lead.lifecycleStatus, INVOICE_CREATE_MIN_LIFECYCLE_STAGE)) {
+    return badRequest(
+      res,
+      `Invoice can only be created when the lead lifecycle is at least ${INVOICE_CREATE_MIN_LIFECYCLE_STAGE.replace(/_/g, ' ')}`
+    )
+  }
 
   const invoiceNumber = await generateInvoiceNumber()
 

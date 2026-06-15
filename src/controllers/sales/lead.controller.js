@@ -23,6 +23,7 @@ const {
   mapLeadByScoreRow,
 } = require('../../utils/leadQueryFilter')
 const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
+const { setLeadLifecycleStage } = require('../../utils/leadLifecycle.util')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
@@ -590,12 +591,7 @@ exports.editLead = asyncHandler(async (req, res) => {
   }
 
   if (lifecycleStatus && LIFECYCLE_STAGES.includes(lifecycleStatus)) {
-    lead.lifecycleStatus = lifecycleStatus
-    lead.lifecycleHistory.push({
-      stage: lifecycleStatus,
-      changedAt: new Date(),
-      changedBy: req.user._id,
-    })
+    setLeadLifecycleStage(lead, lifecycleStatus, req.user._id)
   }
 
   await lead.save()
@@ -704,12 +700,7 @@ exports.updateLifecycle = asyncHandler(async (req, res) => {
     return badRequest(res, 'Use POST /api/sales/leads/:leadId/po-order to convert a lead to PO')
   }
 
-  lead.lifecycleStatus = lifecycleStatus
-  lead.lifecycleHistory.push({
-    stage: lifecycleStatus,
-    changedAt: new Date(),
-    changedBy: req.user._id,
-  })
+  setLeadLifecycleStage(lead, lifecycleStatus, req.user._id)
   await lead.save()
 
   await auditService.log({

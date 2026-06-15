@@ -95,19 +95,112 @@ const buildFallbackQuoteData = (lead, scoreData = {}, messages = []) => {
   }
 }
 
-const syncLeadProjectFields = async (leadId, quoteData) => {
-  const d = quoteData?.details || {}
+const toTrimmedString = (value) => {
+  if (value === undefined || value === null) return ''
+  return String(value).trim()
+}
+
+const toNumberOrNull = (value) => {
+  if (value === undefined || value === null || value === '') return null
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
+/** Merge project field updates — only non-empty extracted values are applied. */
+const buildProjectFieldsUpdate = (fields = {}) => {
   const update = {}
-  if (d.sqft) update.sqft = String(d.sqft)
-  if (d.region) update.location = String(d.region)
-  if (d.roofType) update.roofStyle = String(d.roofType)
+  const buildingType = toTrimmedString(fields.buildingType)
+  const location = toTrimmedString(fields.location)
+  const sqft = toTrimmedString(fields.sqft)
+  const roofStyle = toTrimmedString(fields.roofStyle)
+
+  if (buildingType) update.buildingType = buildingType
+  if (location) update.location = location
+  if (sqft) update.sqft = sqft
+  if (roofStyle) update.roofStyle = roofStyle
+
+  const width = toNumberOrNull(fields.width)
+  const length = toNumberOrNull(fields.length)
+  const height = toNumberOrNull(fields.height)
+  const numDoors = toNumberOrNull(fields.numDoors)
+  const numWindows = toNumberOrNull(fields.numWindows)
+  const numInsulation = toNumberOrNull(fields.numInsulation)
+
+  if (width != null) update.width = width
+  if (length != null) update.length = length
+  if (height != null) update.height = height
+  if (numDoors != null) update.numDoors = numDoors
+  if (numWindows != null) update.numWindows = numWindows
+  if (numInsulation != null) update.numInsulation = numInsulation
+
+  return update
+}
+
+/** Fallback parsing when structured fields are missing from the scorer. */
+const inferProjectFieldsFromRequirements = (requirements = '') => {
+  const text = toTrimmedString(requirements)
+  if (!text) return {}
+
+  const inferred = {}
+  const sqftMatch = text.match(/(\d[\d,]*)\s*sq\s*ft/i)
+  if (sqftMatch) inferred.sqft = sqftMatch[1].replace(/,/g, '')
+
+  const locMatch = text.match(/\b(?:in|at)\s+([A-Za-z][A-Za-z\s.-]{1,40}?)(?:\s+with|\s+area|,|$)/i)
+  if (locMatch) inferred.location = locMatch[1].trim()
+
+  const typeMatch = text.match(
+    /\b(\d[\d,]*\s*sq\s*ft\s+)?([a-z][a-z\s-]{2,30}?)(?=\s+in\s+|\s+with\s+|,|$)/i
+  )
+  if (typeMatch?.[2]) {
+    const candidate = typeMatch[2].trim()
+    if (!/^\d/.test(candidate)) inferred.buildingType = candidate
+  }
+
+  const roofMatch = text.match(/\bwith\s+([a-z][a-z\s-]{2,30}?)\s+roofing/i)
+  if (roofMatch) inferred.roofStyle = roofMatch[1].trim()
+
+  return inferred
+}
+
+const syncLeadProjectFields = async (leadId, quoteData, extraFields = {}) => {
+  const d = quoteData?.details || {}
+  const fromQuote = {
+    sqft: d.sqft,
+    location: d.region,
+    roofStyle: d.roofType,
+    buildingType: d.buildingType,
+    width: d.width,
+    length: d.length,
+    height: d.height,
+    numDoors: d.doors,
+    numWindows: d.windows,
+    numInsulation: d.insulation,
+  }
+
   if (d.specialRequirements) {
     const lower = String(d.specialRequirements).toLowerCase()
-    if (lower.includes('warehouse')) update.buildingType = 'warehouse'
-    else if (lower.includes('car')) update.buildingType = 'car warehouse'
+    if (!fromQuote.buildingType) {
+      if (lower.includes('warehouse')) fromQuote.buildingType = 'warehouse'
+      else if (lower.includes('garage')) fromQuote.buildingType = 'garage'
+      else if (lower.includes('car')) fromQuote.buildingType = 'car warehouse'
+    }
   }
+
+  const update = buildProjectFieldsUpdate({ ...fromQuote, ...extraFields })
   if (Object.keys(update).length) {
-    await Lead.findByIdAndUpdate(leadId, update)
+    await Lead.findByIdAndUpdate(leadId, { $set: update })
+  }
+}
+
+/** Persist buildingType, location, etc. from AI scoring after each chat turn. */
+const syncLeadProjectFieldsFromScore = async (leadId, scoreData = {}) => {
+  const structured = scoreData.projectFields && typeof scoreData.projectFields === 'object'
+    ? scoreData.projectFields
+    : {}
+  const inferred = inferProjectFieldsFromRequirements(scoreData.requirements || '')
+  const update = buildProjectFieldsUpdate({ ...inferred, ...structured })
+  if (Object.keys(update).length) {
+    await Lead.findByIdAndUpdate(leadId, { $set: update })
   }
 }
 
@@ -223,4 +316,5 @@ module.exports = {
   advanceLifecycleIfNeeded,
   buildFallbackQuoteData,
   extractCustomerBudget,
+  syncLeadProjectFieldsFromScore,
 }
