@@ -58,6 +58,11 @@ const SHIPPER_SHEETS = [
  * across formats), part-code pattern second, source category last.
  */
 const SHIPPER_CLASSIFY_RULES = [
+  // Anything explicitly named "... Trim" is roof/wall trim, not a door part.
+  // Must precede the DOOR_JAMBS rule, whose \bjamb\b pattern would otherwise
+  // mis-route "Jamb Trim" (JA6) into DOOR JAMBS & HEADERS.
+  { sheet: 'TRIM', desc: /\btrim\b/i },
+
   { sheet: 'FRAMES', desc: /\b(rf|ew)\s+(column|rafter|int col)\b|wind column|ext beam|rigid frame/i },
   { sheet: 'FRAMES', part: /^(W\d+X\d+|P\d+X\d+|SP\d+)$/i, category: /frame/i },
 

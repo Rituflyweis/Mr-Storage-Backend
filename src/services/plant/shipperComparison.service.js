@@ -470,25 +470,48 @@ const parseCentralStates = (text) => {
       continue
     }
 
-    // New item starts as: 1 C83516R Purlin,Prime,R,Cee,8,3.5,16
-    const head = line.match(/^(\d+)\s+([A-Z0-9][A-Z0-9./-]{2,})\s+(.+)$/)
-    if (head && !/^\d+\s+Pieces?\b/i.test(line)) {
+    // New item line: "<lineNo> [<product>] <description...>".
+    //
+    // The product/catalog code is OPTIONAL. Rigid-frame members (RF Column,
+    // RF Rafter, etc.) ship with a BLANK product column, e.g. "1 RF Column".
+    // The previous regex required a >=3-char code token and silently discarded
+    // those lines (dropping real dollars from the comparison). We now accept any
+    // line that starts with a line number and decide product-vs-description by
+    // shape: a product code in this format always carries at least one digit
+    // (W8X10, C83516R, RLOC26, SP2, CL-100...), whereas a description-only line
+    // ("RF Column") does not.
+    const head = !/^\d+\s+Pieces?\b/i.test(line) && line.match(/^(\d+)\s+(.+)$/)
+    if (head) {
       flush()
+      const rest = head[2].trim()
+      const firstTok = rest.split(/\s+/)[0]
+      // A product/catalog code is an alphanumeric token containing at least one
+      // digit (W8X10, C83516R, 1EFAST, 114MM, AB750...). A description-only line
+      // ("RF Column", "RF Rafter") has no digit in its first word, so we keep the
+      // whole text as the description and leave product null.
+      const looksLikeProduct =
+        /^[A-Z0-9][A-Z0-9./-]*$/i.test(firstTok) && /\d/.test(firstTok)
       cur = {
         lineNo: head[1],
-        product: head[2],
-        description: head[3].trim(),
+        product: looksLikeProduct ? firstTok : null,
+        description: looksLikeProduct ? rest.slice(firstTok.length).trim() : rest,
         pageNumber,
         rawParts: [line],
       }
       continue
     }
 
-    const pcs = line.match(/^([\d,]+)\s+Pieces?\s*@\s*(.+)$/i)
+    // Pieces line. The "@ <length>" suffix is OPTIONAL: count-only lines such as
+    // fasteners print "84 Pieces" with no length, and without this the qty was
+    // never captured (dropping those lines from qty-filtered consumers like the
+    // load planner).
+    const pcs = line.match(/^([\d,]+)\s+Pieces?\b\s*(?:@\s*(.+))?$/i)
     if (pcs && cur) {
       cur.pieceQty = Number(pcs[1].replace(/,/g, ''))
-      cur.lengthText = pcs[2].trim()
-      cur.lengthFeet = lengthToFeet(cur.lengthText)
+      if (pcs[2]) {
+        cur.lengthText = pcs[2].trim()
+        cur.lengthFeet = lengthToFeet(cur.lengthText)
+      }
       cur.rawParts.push(line)
       continue
     }
