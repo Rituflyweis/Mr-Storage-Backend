@@ -217,6 +217,37 @@ exports.createCustomerWithLead = asyncHandler(async (req, res) => {
   return created(res, { customer, lead: enrichLeadDocument(lead) })
 })
 
+exports.createCustomerBasic = asyncHandler(async (req, res) => {
+  const { firstName, email, phone, countryCode } = req.body
+  const normalizedEmail = email.toLowerCase().trim()
+  const phoneNumber = String(phone).trim()
+
+  const existing = await Customer.findOne({ email: normalizedEmail })
+  if (existing) return badRequest(res, 'Customer with this email already exists')
+
+  const custId = await generateCustomerId()
+  const hashed = await bcrypt.hash(phoneNumber, 12)
+
+  const customer = await Customer.create({
+    customerId: custId,
+    firstName: firstName.trim(),
+    email: normalizedEmail,
+    phone: { number: phoneNumber, countryCode: countryCode?.trim() || '' },
+    password: hashed,
+    source: 'manual',
+  })
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.CUSTOMER_CREATED,
+    customerId: customer._id,
+    performedBy: req.user._id,
+    metadata: { email: customer.email, source: 'admin_basic_create' },
+  })
+
+  return created(res, { customer })
+})
+
 exports.updateCustomer = asyncHandler(async (req, res) => {
   const { customerId } = req.params
   const { firstName, email, phone, countryCode } = req.body

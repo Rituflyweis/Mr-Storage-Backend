@@ -49,6 +49,17 @@ router.post('/',
   ctrl.createCustomerWithLead
 )
 
+router.post('/basic',
+  [
+    body('firstName').notEmpty().trim(),
+    body('email').isEmail(),
+    body('phone').notEmpty().trim(),
+    body('countryCode').optional().trim(),
+  ],
+  validate,
+  ctrl.createCustomerBasic
+)
+
 // ── Parameterised routes ───────────────────────────────────────────────────────
 router.put('/:customerId',
   [
