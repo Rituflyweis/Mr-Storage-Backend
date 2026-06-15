@@ -1,4 +1,5 @@
 const Lead = require('../models/Lead')
+const roundRobinService = require('./roundRobin.service')
 const auditService = require('./audit.service')
 const leadListSocket = require('./leadListSocket.service')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
@@ -110,14 +111,75 @@ const syncLeadProjectFields = async (leadId, quoteData) => {
   }
 }
 
+const loadLeadForHandoff = (leadId) =>
+  Lead.findById(leadId).populate('customerId').populate('assignedSales').lean()
+
 /**
- * Mark lead quote-ready and notify admin. Does not assign sales — admin assigns manually.
+ * Round-robin assign sales when AI completes handoff.
+ * Skipped when admin/sales already intervened or lead is already assigned.
+ */
+const attemptSalesHandoff = async (leadId, customerId) => {
+  const state = await Lead.findById(leadId)
+    .select('isStaffChatActive isHandedToSales assignedSales')
+    .lean()
+
+  if (!state) return null
+
+  if (state.isHandedToSales) {
+    return loadLeadForHandoff(leadId)
+  }
+
+  if (state.isStaffChatActive) {
+    console.info('[LeadQuoteReady] Staff chat active — skipping auto-assign for lead', leadId)
+    return loadLeadForHandoff(leadId)
+  }
+
+  if (state.assignedSales) {
+    await Lead.findByIdAndUpdate(leadId, { isHandedToSales: true })
+    return loadLeadForHandoff(leadId)
+  }
+
+  const assignedId = await roundRobinService.assignNextSales(leadId, customerId)
+  const updatedLead = await loadLeadForHandoff(leadId)
+
+  if (!updatedLead?.isHandedToSales) {
+    console.warn('[LeadQuoteReady] Quote ready but sales handoff pending — no active sales user?', leadId)
+    return updatedLead
+  }
+
+  const assignedName = updatedLead?.assignedSales?.name || 'a sales representative'
+
+  if (global.io) {
+    global.io.of('/chat').to(`lead:${leadId}`).emit('lead_handed_to_sales', {
+      assignedSales: assignedName,
+    })
+  }
+
+  if (assignedId) {
+    await auditService.log({
+      type: 'lead',
+      action: AUDIT_ACTIONS.LEAD_HANDED_TO_SALES,
+      leadId,
+      customerId,
+      performedBy: null,
+      metadata: { assignedTo: assignedId },
+    })
+  }
+
+  return updatedLead
+}
+
+/**
+ * Mark lead quote-ready, notify admin, and auto-assign sales via round-robin
+ * unless staff already intervened in chat.
  */
 const handleQuoteReady = async (leadId, customerId, quoteData, options = {}) => {
   const { messages = [], scoreData = {} } = options
 
   try {
-    const existing = await Lead.findById(leadId).select('isQuoteReady quoteValue isStaffChatActive').lean()
+    const existing = await Lead.findById(leadId)
+      .select('isQuoteReady isHandedToSales quoteValue isStaffChatActive assignedSales')
+      .lean()
     if (!existing) return null
 
     const quoteValue = extractCustomerBudget(messages, quoteData, scoreData)
@@ -149,7 +211,7 @@ const handleQuoteReady = async (leadId, customerId, quoteData, options = {}) => 
       await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'quote_ready', includeScoreRow: true })
     }
 
-    return Lead.findById(leadId).lean()
+    return attemptSalesHandoff(leadId, customerId)
   } catch (err) {
     console.error('[LeadQuoteReady] handleQuoteReady error:', err.message)
     return null

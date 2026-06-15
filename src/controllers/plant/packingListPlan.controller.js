@@ -43,9 +43,15 @@ exports.getPackingListPlan = asyncHandler(async (req, res) => {
   }
 
   const { packingListPlan } = loaded
-  const packingLists = await PackingList.find({ packingListPlanId: packingListPlan._id })
-    .sort({ truckNo: 1, packingListNo: 1 })
-    .lean()
+  const [packingLists, bundles] = await Promise.all([
+    PackingList.find({ packingListPlanId: packingListPlan._id })
+      .sort({ truckNo: 1, packingListNo: 1 })
+      .lean(),
+    Bundle.find({ bundlePlanId: packingListPlan.bundlePlanId })
+      .sort({ loadSequence: 1, bundleNo: 1 })
+      .select('_id bundleNo bundleType title status packingListId totalQty totalWeight maxLengthFeet loadSequence warnings')
+      .lean(),
+  ])
 
   const summary = {
     totalWeight: packingListPlan.totalWeight,
@@ -58,6 +64,37 @@ exports.getPackingListPlan = asyncHandler(async (req, res) => {
   return success(res, {
     packingListPlan,
     packingLists,
+    bundles,
+    summary,
+  })
+})
+
+exports.getPackingListPlanPublic = asyncHandler(async (req, res) => {
+  const packingListPlan = await PackingListPlan.findById(req.params.packingListPlanId).lean()
+  if (!packingListPlan) return notFound(res, 'Packing list plan not found')
+
+  const [packingLists, bundles] = await Promise.all([
+    PackingList.find({ packingListPlanId: packingListPlan._id })
+      .sort({ truckNo: 1, packingListNo: 1 })
+      .lean(),
+    Bundle.find({ bundlePlanId: packingListPlan.bundlePlanId })
+      .sort({ loadSequence: 1, bundleNo: 1 })
+      .select('_id bundleNo bundleType title status packingListId totalQty totalWeight maxLengthFeet loadSequence warnings')
+      .lean(),
+  ])
+
+  const summary = {
+    totalWeight: packingListPlan.totalWeight,
+    totalBundles: packingListPlan.totalBundles,
+    totalPackingLists: packingListPlan.totalPackingLists,
+    truckSummary: packingListPlan.truckSummary,
+    warnings: packingListPlan.warnings || [],
+  }
+
+  return success(res, {
+    packingListPlan,
+    packingLists,
+    bundles,
     summary,
   })
 })

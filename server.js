@@ -20,6 +20,9 @@ initSocket(io)
 connectDB().then(async() => {
   await initFollowUpScheduler()   // pending followups schedule
 
+  const customerPresence = require('./src/services/socket/customerPresence.service')
+  await customerPresence.resetAllPresenceOnStartup()
+
   server.listen(PORT, () => {
     console.log(`[Server] Running on port ${PORT} (${NODE_ENV})`)
     console.log(`[Socket] /chat and /admin namespaces ready`)

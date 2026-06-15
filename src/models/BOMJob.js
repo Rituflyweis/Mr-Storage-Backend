@@ -45,6 +45,24 @@ const BOMJobSchema = new mongoose.Schema(
     frameItems: { type: Number, default: 0 },
     skippedRows: { type: Number, default: 0 },
 
+    // FIX #6: parse audit fields.
+    // parseAudit stores the cost/weight delta between what the parser extracted
+    // and what the .out file's own section Total rows report. A costDelta > 0.5
+    // means at least one item was likely missed during extraction.
+    // parseSuspect is the boolean flag derived from that delta — surfaced in
+    // the UI and socket events so users know to re-check a suspicious parse
+    // without having to inspect raw numbers.
+    // Both are null/false for xlsx and claude_fallback jobs (no built-in totals
+    // to compare against).
+    parseAudit: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    parseSuspect: {
+      type: Boolean,
+      default: false,
+    },
+
     errorMessage: { type: String, default: null },
 
     isConfirmed: { type: Boolean, default: false },

@@ -183,7 +183,7 @@ const PACKING_LIST_STATUSES = ['draft', 'confirmed', 'delivery_created', 'dispat
 const TRUCK_TYPES = ['SEMI_53', 'HOTSHOT_40']
 const DELIVERY_STATUSES = [
   'draft', 'bidding_sent', 'carrier_selected', 'scheduled',
-  'in_transit', 'delivered', 'cancelled',
+  'confirmed', 'in_transit', 'delayed', 'delivered', 'cancelled',
 ]
 
 const SMDT_COST_UNITS = ['FT', 'LB', 'EA']
@@ -199,7 +199,7 @@ const BOM_JOB_STATUSES = ['queued', 'processing', 'completed', 'failed']
 const BOM_FILE_FORMATS = ['ods', 'xlsx', 'xls', 'out', 'txt']
 const BOM_MATCH_STATUSES = ['matched', 'unmatched', 'ambiguous', 'skipped']
 const BOM_MATCH_CONFIDENCE = ['exact', 'part_alias', 'color_fallback', 'part_only', 'none']
-const BOM_ITEM_FILTERS = ['all', 'unpriced', 'frames', 'matched']
+const BOM_ITEM_FILTERS = ['all', 'unpriced', 'frames', 'matched', 'bom_priced']
 const BOM_PRICE_SOURCES = ['smdt', 'bom', 'manual']
 
 const CONSOLIDATED_BOM_STATUSES = ['draft', 'sent_to_vendor', 'vendor_submitted', 'approved']

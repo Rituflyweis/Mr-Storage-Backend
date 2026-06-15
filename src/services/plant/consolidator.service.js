@@ -58,6 +58,11 @@ const SHIPPER_SHEETS = [
  * across formats), part-code pattern second, source category last.
  */
 const SHIPPER_CLASSIFY_RULES = [
+  // Anything explicitly named "... Trim" is roof/wall trim, not a door part.
+  // Must precede the DOOR_JAMBS rule, whose \bjamb\b pattern would otherwise
+  // mis-route "Jamb Trim" (JA6) into DOOR JAMBS & HEADERS.
+  { sheet: 'TRIM', desc: /\btrim\b/i },
+
   { sheet: 'FRAMES', desc: /\b(rf|ew)\s+(column|rafter|int col)\b|wind column|ext beam|rigid frame/i },
   { sheet: 'FRAMES', part: /^(W\d+X\d+|P\d+X\d+|SP\d+)$/i, category: /frame/i },
 
@@ -196,6 +201,8 @@ const groupItemsForShipper = (items, buildingMap) => {
       group.marks.add(mark)
     }
 
+    // FIX #3: don't add a fallback 0 — if the buildingId isn't in the map,
+    // skip rather than polluting buildings with a phantom building 0.
     const bNum = buildingMap[String(item.buildingId)]
     if (bNum != null) group.buildings.add(bNum)
 
@@ -356,20 +363,47 @@ const generateConsolidatedExcel = async (lead, buildingsWithJobs, allItems) => {
 }
 
 /**
- * Important:
- * Grouping includes lengthFeet.
- * Otherwise same part/color with different lengths can get wrongly merged.
+ * Groups BOM items for DB persistence in ConsolidatedBOM.items.
+ *
+ * FIX #2: The old key included raw `category` and `description`, which broke
+ * cross-building merges when buildings had files from different sources
+ * (e.g. one .out and one .xlsx). The same Z82516 purlin from two buildings
+ * would produce two ConsolidatedBOM rows instead of one because:
+ *   - .out category: "PURLINS, EAVE STRUTS, WALL GIRTS"
+ *   - .xlsx sheetname: "Purlins" (or any other name the customer uses)
+ *
+ * Fix: use classifyShipperSheet() result (the normalized shipper sheet ID)
+ * as the category key. This is the same bucketing the Excel file uses, so
+ * the DB and the file are always consistent, and cross-format merges work.
+ *
+ * description is also removed from the key — it varies per-mark for frame
+ * members and is not stable enough to key on. The partCode + color + length
+ * tuple already uniquely identifies a stockable item; for no-part-code items
+ * the description is used as the identity (see `identity` below).
+ *
+ * FIX #3: buildings tracking — removed `|| 0` fallback that added a phantom
+ * building 0 when buildingId wasn't in buildingMap.
  */
 const groupItemsForConsolidation = (items, buildingMap) => {
   const map = new Map()
 
   items.forEach((item) => {
+    // FIX #2: normalize category to shipper sheet ID so cross-building,
+    // cross-format merges work correctly.
+    const normalizedCategory = classifyShipperSheet(item)
+
+    // Identity: for items with a part code, key on that.
+    // For no-part-code items (custom frames, buyouts), key on description
+    // so distinct members don't wrongly merge.
+    const identity =
+      item.partCode ||
+      `DESC:${(item.description || '').toUpperCase().trim()}`
+
     const key = [
-      item.partCode || '_',
+      identity,
       item.partColor || '_',
       item.costUnit || '_',
-      item.category || '_',
-      item.description || '_',
+      normalizedCategory,
       item.lengthFeet != null ? Number(item.lengthFeet).toFixed(4) : '_',
     ].join('|')
 
@@ -378,7 +412,8 @@ const groupItemsForConsolidation = (items, buildingMap) => {
         partCode: item.partCode,
         partColor: item.partColor,
         description: item.description,
-        category: item.category,
+        // FIX #2: store the normalized category so the DB record matches the Excel sheet.
+        category: normalizedCategory,
         costUnit: item.costUnit,
 
         unitCost: item.finalUnitCost ?? null,
@@ -404,8 +439,7 @@ const groupItemsForConsolidation = (items, buildingMap) => {
 
     group.totalQty += qty
     // Store TOTAL linear feet, not single-piece length.
-    // This is critical because shipper comparison later derives
-    // piece length as totalLengthFeet / totalQty when needed.
+    // Shipper reconciliation derives piece length as totalLengthFeet / totalQty.
     group.totalLengthFeet += qty * pieceLengthFeet
     group.totalWeight += safeNumber(item.weight)
     group.totalCost += safeNumber(item.finalTotalCost)
@@ -414,7 +448,12 @@ const groupItemsForConsolidation = (items, buildingMap) => {
       group.unitCost = item.finalUnitCost
     }
 
-    group.buildings.add(buildingMap[String(item.buildingId)] || 0)
+    // FIX #3: only add building number if it's actually in the map.
+    // The old `|| 0` fallback added a phantom building 0 when lookup failed.
+    const bNum = buildingMap[String(item.buildingId)]
+    if (bNum != null) {
+      group.buildings.add(bNum)
+    }
 
     for (const mark of splitMarkIds(item.markId)) {
       group.markIds.push(mark)
@@ -445,7 +484,7 @@ const groupItemsForConsolidation = (items, buildingMap) => {
     totalWeight: group.totalWeight,
     totalCost: group.totalCost,
 
-    buildings: [...group.buildings].filter(Boolean).sort((a, b) => a - b),
+    buildings: [...group.buildings].filter((b) => b != null).sort((a, b) => a - b),
     markIds: [...new Set(group.markIds)],
     bomItemIds: group.bomItemIds,
 

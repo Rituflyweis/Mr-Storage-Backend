@@ -14,7 +14,11 @@ const BOMJob = require('../../models/BOMJob')
 const auditService = require('../../services/audit.service')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { normalizeCode } = require('./smdt.service')
-const { parseOutFile } = require('./outparser.service')
+const {
+  parseOutFile,
+  verifyAgainstReportTotals, // FIX #6: was imported but not used — wired in below
+  parseOutLengthToFeet,      // FIX #7: needed for MBS sixteenths fix in parseLengthToFeet
+} = require('./outparser.service')
 
 const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
 
@@ -87,14 +91,47 @@ const isExampleOrInstructionRow = (joinedText) => {
   )
 }
 
+// ---------------------------------------------------------------------------
+// FIX #4: Single source of truth for frame/buyout flags.
+//
+// Previously isFrameType had three different definitions depending on
+// ingestion path:
+//   - xlsx path: regex on sheet name -> flags all 29 frame items
+//   - claude path: same regex on category -> same over-count
+//   - out parser: "frames section AND no part code" -> correct 4 custom members
+//
+// Unified semantic: isFrameType = frame-category section AND no real part code
+//   = custom-fabbed member that will never match SMDT.
+// Applied centrally after all extraction paths so the count is consistent
+// regardless of file format.
+// ---------------------------------------------------------------------------
+const FRAME_CATEGORY_RE = /frame|column|rafter|opening framing/i
+const BUYOUT_PART_CODES = new Set(['BUYOUT', '-', 'N/A', 'NA', '<BLANK>', 'BLANK'])
+
+const applyFrameFlags = (item) => {
+  const category = item.category || item.sourceSheetName || ''
+  const normalized = item.partCodeNormalized || normalizeCode(item.partCode)
+  const hasRealPart = !!item.partCode && !BUYOUT_PART_CODES.has(normalized)
+
+  item.isFrameType = FRAME_CATEGORY_RE.test(category) && !hasRealPart
+  item.isBuyout = !hasRealPart && !item.isFrameType
+  return item
+}
+
 /**
- * Handles:
- * 22'-1 1/2"
- * 16'-1 7/8"
- * 3'-0"
- * 20'-4"
- * 11 1/2"
- * 3"
+ * FIX #7: parseLengthToFeet — handle MBS sixteenths notation before generic parsing.
+ *
+ * MBS format: FF'II-SS" where SS is SIXTEENTHS of an inch (not hundredths).
+ * Example: 40'02-12" = 40ft 2 and 12/16 inches = 40.2292ft.
+ *
+ * Without the MBS check, the generic parser strips the "-12" part
+ * and silently returns 40.1667, corrupting FT-based SMDT pricing and
+ * consolidation length keys for any MBS-style file reaching this parser
+ * (e.g. via the Claude fallback path or Excel uploads that carry MBS strings).
+ *
+ * parseOutLengthToFeet handles MBS; we delegate to it first.
+ * All legacy fraction/inch formats (22'-1 1/2", 3'-0", 11 1/2", 3") fall
+ * through to the original logic unchanged.
  */
 const parseLengthToFeet = (value) => {
   if (!value) return null
@@ -106,6 +143,10 @@ const parseLengthToFeet = (value) => {
     .trim()
 
   if (!str) return null
+
+  // FIX #7: delegate MBS sixteenths notation to the dedicated parser first.
+  const mbsResult = parseOutLengthToFeet(str)
+  if (mbsResult != null) return mbsResult
 
   let feet = 0
   let inches = 0
@@ -254,8 +295,6 @@ const sheetRowsFromExcelJs = async (buffer, fileFormat) => {
 }
 
 const loadSheetRows = async (buffer) => {
-  // All spreadsheet formats route through SheetJS for consistency.
-  // sheetRowsFromExcelJs retained as a manual fallback utility.
   return sheetRowsFromSheetJsBuffer(buffer)
 }
 
@@ -386,10 +425,11 @@ const parseRowsToItems = (sheetName, rows, headerIdx) => {
             : null,
       bomSourceTotalCost,
 
-      isFrameType: /frame|column|rafter|opening framing/i.test(sheetName),
-      isBuyout:
-        !partCode ||
-        ['BUYOUT', '-', 'N/A', 'NA', '<BLANK>', 'BLANK'].includes(partCodeNormalized),
+      // NOTE: isFrameType and isBuyout are intentionally NOT set here.
+      // applyFrameFlags() is called centrally in processBOMJob after all
+      // extraction paths, so the definition is consistent regardless of format.
+      isFrameType: false,
+      isBuyout: false,
 
       rawRow: row,
     })
@@ -502,9 +542,7 @@ Return JSON in this exact shape:
       "angle": "",
       "type": "",
       "unitCost": null,
-      "totalCost": null,
-      "isFrameType": false,
-      "isBuyout": false
+      "totalCost": null
     }
   ]
 }
@@ -514,8 +552,6 @@ Rules:
 - skip totals, headers, blank rows, and example rows
 - skip rows containing "<-Example Data"
 - treat <BLANK>, BLANK, N/A, NA, and "-" as missing partCode
-- isFrameType true when sheet name suggests frames/columns/rafters/opening framing
-- isBuyout true when part is missing or BUYOUT/N/A/-
 - unitCost / totalCost only when the sheet has explicit price columns; otherwise null
 - Include every valid data row.
 
@@ -558,7 +594,7 @@ ${text.slice(0, 120000)}`,
         partColorNormalized: normalizeColor(item.partColor),
 
         lengthRaw: cleanStr(item.lengthRaw),
-        lengthFeet: parseLengthToFeet(item.lengthRaw),
+        lengthFeet: parseLengthToFeet(item.lengthRaw), // FIX #7 benefits here too
 
         weight: toNum(item.weight),
         gauge: cleanStr(item.gauge),
@@ -573,14 +609,9 @@ ${text.slice(0, 120000)}`,
               : null,
         bomSourceTotalCost,
 
-        isFrameType:
-          item.isFrameType === true ||
-          /frame|column|rafter|opening framing/i.test(item.category || ''),
-
-        isBuyout:
-          item.isBuyout === true ||
-          !partCode ||
-          ['BUYOUT', '-', 'N/A', 'NA', '<BLANK>', 'BLANK'].includes(normalizeCode(partCode)),
+        // NOTE: isFrameType and isBuyout NOT set here — applyFrameFlags() handles it.
+        isFrameType: false,
+        isBuyout: false,
 
         rawRow: item,
       }
@@ -600,6 +631,17 @@ const extractBOMItemsFromWorkbook = async (buffer, fileName, fileFormat) => {
   if (format === 'out' || (format === 'txt' && looksLikeOutReport(buffer))) {
     const { items, sections, skippedRows } = parseOutFile(buffer)
 
+    // FIX #6: cross-check parsed totals against the report's own section totals.
+    // verifyAgainstReportTotals existed but was never called. Now it is.
+    const parseAudit = verifyAgainstReportTotals(buffer, items)
+
+    // costDelta threshold: per-section Total rows are rounded to cents, so a
+    // few cents of drift is normal rounding noise (observed 0.09 on a clean
+    // 428-line file). 0.50 catches a genuinely missed line (cheapest items
+    // are anchor bolts at ~$2) without false alarms.
+    const parseSuspect =
+      parseAudit.costDelta > 0.5 || parseAudit.weightDelta > 2
+
     const normalized = items.map((item) => ({
       ...item,
       partCodeNormalized: normalizeCode(item.partCode),
@@ -607,8 +649,8 @@ const extractBOMItemsFromWorkbook = async (buffer, fileName, fileFormat) => {
       gauge: null,
       angle: null,
       type: null,
-      isBuyout: item.isBuyout === true,
-      rawRow: null,
+      // isFrameType and isBuyout already set by outparser; applyFrameFlags()
+      // in processBOMJob will re-apply unified logic over the top.
     }))
 
     return {
@@ -618,6 +660,8 @@ const extractBOMItemsFromWorkbook = async (buffer, fileName, fileFormat) => {
         .filter((s) => s.items === 0)
         .map((s) => ({ name: s.name, reason: 'No line items in section' })),
       extractionMethod: 'out_parser',
+      parseAudit,
+      parseSuspect,
     }
   }
 
@@ -633,12 +677,16 @@ const extractBOMItemsFromWorkbook = async (buffer, fileName, fileFormat) => {
       skippedRows: result.skippedRows,
       skippedSheets: result.skippedSheets,
       extractionMethod: 'claude_fallback',
+      parseAudit: null,
+      parseSuspect: false,
     }
   }
 
   return {
     ...result,
     extractionMethod: 'xlsx',
+    parseAudit: null,
+    parseSuspect: false,
   }
 }
 
@@ -672,7 +720,6 @@ const buildMatchContext = async (costVersionId) => {
     colorAliasMap.set(alias.inputColorNormalized, alias.smdtColorNormalized)
   }
 
-  // input part -> [{ category, smdtPartNameNormalized }]
   const partAliasMap = new Map()
   for (const alias of partAliases) {
     if (!partAliasMap.has(alias.inputPartNormalized)) {
@@ -719,12 +766,10 @@ const matchBOMItemWithContext = (ctx, item) => {
   const color = resolveColorInMemory(ctx, item.partColorNormalized)
   const usedAlias = part !== item.partCodeNormalized
 
-  // 1. Exact part + color (color '' covers SMDT items with null color, e.g. frames sheet)
   let match = ctx.byPartAndColor.get(`${part}|${color || ''}`)
   let matchConfidence = match ? (usedAlias ? 'part_alias' : 'exact') : 'none'
   let matchReason = match ? 'Matched by part and color' : ''
 
-  // 2. Part + "--" color fallback
   if (!match) {
     match = ctx.byPartAndColor.get(`${part}|${normalizeColor('--')}`)
     if (match) {
@@ -733,7 +778,6 @@ const matchBOMItemWithContext = (ctx, item) => {
     }
   }
 
-  // 3. Part-only when unambiguous
   if (!match) {
     const candidates = ctx.byPart.get(part) || []
 
@@ -793,8 +837,9 @@ const matchBOMItemWithContext = (ctx, item) => {
  * 2. BOM file's own price -> priceSource 'bom' (fallback when SMDT has no usable match)
  * 3. Neither              -> unpriced, manual pricing required
  *
- * Both prices are always stored on the item when available; only the
- * final* fields and priceSource record which one was selected.
+ * FIX #1: hasBomPrice previously used > 0, which treated legitimate $0.00 items
+ * (e.g. anchor bolts included at no charge) as unpriced, blocking confirmation
+ * and consolidation. Changed to != null — zero is a valid price.
  */
 const resolveFinalPricing = (item, match) => {
   const smdtPriced = match.matchStatus === 'matched' && match.smdtTotalCost != null
@@ -808,8 +853,8 @@ const resolveFinalPricing = (item, match) => {
     }
   }
 
-  const hasBomPrice =
-    item.bomSourceTotalCost != null && item.bomSourceTotalCost > 0
+  // FIX #1: was `item.bomSourceTotalCost > 0` — excluded valid $0.00 lines.
+  const hasBomPrice = item.bomSourceTotalCost != null
 
   if (hasBomPrice) {
     return {
@@ -867,6 +912,8 @@ const processBOMJob = async (
       skippedRows,
       skippedSheets,
       extractionMethod,
+      parseAudit,   // FIX #6
+      parseSuspect, // FIX #6
     } = await extractBOMItemsFromWorkbook(buffer, fileName, fileFormat)
 
     if (!rawItems.length) {
@@ -876,6 +923,10 @@ const processBOMJob = async (
     const ctx = await buildMatchContext(activeVersion._id)
 
     const docs = rawItems.map((item) => {
+      // FIX #4: apply unified frame/buyout flags after extraction,
+      // regardless of which parser produced the item.
+      applyFrameFlags(item)
+
       const match = matchBOMItemWithContext(ctx, item)
       const pricing = resolveFinalPricing(item, match)
 
@@ -921,6 +972,11 @@ const processBOMJob = async (
       frameItems,
       skippedRows,
 
+      // FIX #6: persist parse audit so suspicious parses surface in the UI.
+      // Requires parseAudit: Mixed and parseSuspect: Boolean on BOMJob schema.
+      parseAudit: parseAudit || null,
+      parseSuspect: parseSuspect || false,
+
       processingEndedAt: new Date(),
       errorMessage: null,
     })
@@ -941,6 +997,7 @@ const processBOMJob = async (
           ambiguousItems,
           bomPricedItems,
           unpricedItems,
+          parseSuspect: parseSuspect || false,
         },
       })
     }
@@ -956,6 +1013,9 @@ const processBOMJob = async (
         bomPricedItems,
         unpricedItems,
         frameItems,
+        // FIX #6: surface parse suspect flag in real-time so UI can warn.
+        parseSuspect: parseSuspect || false,
+        parseAudit: parseAudit || null,
       })
     }
   } catch (err) {
@@ -1000,4 +1060,5 @@ module.exports = {
   parseLengthToFeet,
   calculateTotalCost,
   inferFileFormat,
+  applyFrameFlags,
 }

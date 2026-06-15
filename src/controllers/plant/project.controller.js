@@ -4,8 +4,6 @@ const Lead = require('../../models/Lead')
 const User = require('../../models/User')
 const Building = require('../../models/Building')
 const Invoice = require('../../models/Invoice')
-const Delivery = require('../../models/Delivery')
-const FreightBid = require('../../models/FreightBid')
 const Vendor = require('../../models/Vendor')
 const ShipperRequest = require('../../models/ShipperRequest')
 const BOMJob = require('../../models/BOMJob')
@@ -725,61 +723,6 @@ exports.getProjectBomFiles = asyncHandler(async (req, res) => {
   return success(res, { bomFiles })
 })
 
-exports.getProjectDelivery = asyncHandler(async (req, res) => {
-  const access = await guardProject(req, res)
-  if (!access) return
-  const leadId = access.lead._id
-
-  const deliveries = await Delivery.find({ leadId })
-    .sort({ createdAt: -1 })
-    .lean()
-
-  const bids = await FreightBid.find({ deliveryId: { $in: deliveries.map((d) => d._id) } })
-    .populate('carrierId', 'carrierName')
-    .lean()
-
-  const bidsByDelivery = bids.reduce((acc, bid) => {
-    const key = String(bid.deliveryId)
-    if (!acc[key]) acc[key] = []
-    acc[key].push(bid)
-    return acc
-  }, {})
-
-  return success(res, {
-    deliveries: deliveries.map((d) => {
-      const deliveryBids = (bidsByDelivery[String(d._id)] || [])
-        .filter((row) => {
-          const status = String(row?.status || '').trim().toLowerCase()
-          if (status !== 'submitted' && status !== 'selected') return false
-          if (row?.quotedAmount == null || row?.quotedAmount === '') return false
-          return Number.isFinite(Number(row.quotedAmount))
-        })
-      const averageBid = deliveryBids.length
-        ? Math.round(
-          (deliveryBids.reduce((sum, row) => sum + Number(row.quotedAmount), 0) / deliveryBids.length) * 100
-        ) / 100
-        : null
-      const selectedBid = deliveryBids.find((row) => row.status === 'selected')
-      return {
-        requestId: d._id,
-        deliveryNumber: d.deliveryNumber,
-        projectName: access.lead.projectName || '',
-        description: d.loadDescription || d.description || '',
-        pickupLocation: d.pickupLocation || d.pickupLocationData?.address || '',
-        deliveryLocation: d.deliveryLocation || d.deliveryLocationData?.address || '',
-        pickupDate: d.pickupDate,
-        deliveryDate: d.deliveryDate,
-        carrier: selectedBid?.carrierId?.carrierName || null,
-        averageBid,
-        status: d.status,
-        loadWeight: d.loadWeight,
-        createdAt: d.createdAt,
-        updatedAt: d.updatedAt,
-      }
-    }),
-  })
-})
-
 exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
   const access = await guardProject(req, res)
   if (!access) return
@@ -811,6 +754,8 @@ const formatConsolidatedBOMResponse = (doc) => ({
   status: doc.status,
   fileUrl: doc.fileUrl,
   totalCost: doc.totalCost,
+  totalWeight: doc.totalWeight ?? 0,
+  totalPanelsArea: doc.totalPanelsArea ?? 0,
   itemCount: doc.items?.length ?? 0,
   items: (doc.items || []).map((item) => ({
     _id: item._id,
@@ -835,6 +780,8 @@ const formatConsolidatedBOMResponse = (doc) => ({
   createdAt: doc.createdAt,
   updatedAt: doc.updatedAt,
 })
+
+const PANEL_AREA_CATEGORIES = /(panel|sheet)/i
 
 exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
   const access = await guardProject(req, res)
@@ -915,6 +862,12 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
 
   const groupedItems = groupItemsForConsolidation(allItems, buildingMap)
   const totalCost = groupedItems.reduce((sum, item) => sum + (item.totalCost || 0), 0)
+  const totalWeight = groupedItems.reduce((sum, item) => sum + (item.totalWeight || 0), 0)
+  const totalPanelsArea = groupedItems.reduce((sum, item) => {
+    // Approx area in sq ft from total panel/sheet linear feet.
+    if (!PANEL_AREA_CATEGORIES.test(String(item.category || ''))) return sum
+    return sum + (Number(item.totalLengthFeet) || 0)
+  }, 0)
 
   const { fileUrl } = await uploadConsolidatedExcelToS3(buffer, leadId)
 
@@ -928,6 +881,8 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
       status: 'draft',
       fileUrl,
       totalCost,
+      totalWeight,
+      totalPanelsArea,
       items: groupedItems,
       sentToVendors: [],
     },
@@ -947,6 +902,8 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
     metadata: {
       consolidatedBOMId: consolidatedBOM._id,
       totalCost,
+      totalWeight,
+      totalPanelsArea,
       itemCount: groupedItems.length,
       lineItemCount: allItems.length,
     },
@@ -958,6 +915,8 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
       status: consolidatedBOM.status,
       fileUrl: consolidatedBOM.fileUrl,
       totalCost: consolidatedBOM.totalCost,
+      totalWeight: consolidatedBOM.totalWeight ?? totalWeight,
+      totalPanelsArea: consolidatedBOM.totalPanelsArea ?? totalPanelsArea,
       itemCount: groupedItems.length,
       lineItemCount: allItems.length,
     },
@@ -1047,7 +1006,7 @@ exports.sendConsolidatedBOM = asyncHandler(async (req, res) => {
       await request.save()
     }
 
-    const uploadUrl = `${CLIENT_URL}/vendor-upload/${request.token}`
+    const uploadUrl = `${CLIENT_URL}/vendor/${request.token}`
 
     try {
       await sendConsolidatedBOMToVendor({

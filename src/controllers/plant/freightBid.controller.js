@@ -38,6 +38,10 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
 
   delivery.selectedCarrierBidId = selectedBid._id
   delivery.status = 'carrier_selected'
+  delivery.statusHistory = [
+    ...(Array.isArray(delivery.statusHistory) ? delivery.statusHistory : []),
+    { status: 'carrier_selected', changedAt: now },
+  ]
   await delivery.save()
 
   const lead = await Lead.findById(delivery.leadId).select('customerId projectName jobId').lean()

@@ -24,6 +24,18 @@ router.get('/by-score',
 )
 router.get('/scored', ctrl.getScoredLeads)
 router.get('/escalated', ctrl.getEscalatedLeads)
+router.get('/with-po',
+  [
+    query('poStatus').optional().isIn(['pending', 'approved', 'rejected']),
+    query('search').optional().trim(),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getLeadsWithPo
+)
 router.get('/export', ctrl.exportLeads)
 router.get('/export/excel', ctrl.exportLeadsExcel)
 

@@ -104,10 +104,14 @@ const LeadSchema = new mongoose.Schema(
     isQuoteReady:       { type: Boolean, default: false },
     isHandedToSales:    { type: Boolean, default: false },
     isStaffChatActive:  { type: Boolean, default: false },
+    isOnline:        { type: Boolean, default: false, index: true },
+    onlineAt:        { type: Date, default: null },
+    lastSeenAt:      { type: Date, default: null },
     isChatEnded:     { type: Boolean, default: false },
     chatEndedAt:     { type: Date, default: null },
     chatEndedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     isRaisedToPO:    { type: Boolean, default: false },
+    poNumber:        { type: String, default: null },
     // poStatus: only validated when non-null — mongoose enum won't run on null
     poStatus:        { type: String, enum: PO_STATUSES, default: null },
 

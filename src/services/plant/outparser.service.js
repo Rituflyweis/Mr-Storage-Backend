@@ -103,6 +103,39 @@ const sliceCol = (line, start, end) => {
 }
 
 /**
+ * Locate the first whitespace-delimited token at or after a header column index.
+ *
+ * Fixed-width .out reports frequently print the Part/Clr DATA shifted several
+ * characters to the RIGHT of the header label (observed: Angles & Trim sections
+ * are offset ~9 chars). The old fixed-window slice [colStart, colStart+N] then
+ * landed in whitespace and silently dropped the value. This scans rightward to
+ * the actual token instead.
+ *
+ * `tailStartIdx` is the column where the trailing numeric block (length/weight/
+ * cost) begins. A token that starts inside that block is NOT a text-column value
+ * (e.g. a frame member with a blank Part column), so we return null in that case.
+ */
+const findColumnToken = (line, startIdx, tailStartIdx) => {
+  if (startIdx == null || startIdx < 0) return null
+
+  let s = startIdx
+  // If the header label sits a char or two to the right of the data and we land
+  // mid-token, walk left to the token start.
+  while (s > 0 && line[s] && line[s] !== ' ' && line[s - 1] && line[s - 1] !== ' ') {
+    s--
+  }
+  // Skip whitespace rightward to the first real token at/after the column.
+  while (s < line.length && line[s] === ' ') s++
+  if (s >= line.length) return null
+  // Only the numeric tail lives here => this column is empty on this row.
+  if (tailStartIdx != null && s >= tailStartIdx) return null
+
+  let e = s
+  while (e < line.length && line[e] !== ' ') e++
+  return { token: line.slice(s, e), start: s, end: e }
+}
+
+/**
  * Parse one data row using the column map plus right-anchored numeric parsing.
  */
 const parseDataRow = (line, cols, sectionName, rowNumber) => {
@@ -126,36 +159,57 @@ const parseDataRow = (line, cols, sectionName, rowNumber) => {
     lengthRaw = maybeLength
   }
 
-  // Left-aligned text columns sliced by header positions.
-  const markEnd = cols.description ?? undefined
-  const descEnd = cols.part ?? undefined
-  const partEnd =
-    cols.color ?? cols.length ?? undefined
+  // Index-aware token spans on the RAW line so we can bound text-column scans
+  // by the start of the trailing numeric block and never mistake a length/
+  // weight/cost token for a Part or Color value.
+  const spans = []
+  {
+    const re = /\S+/g
+    let mm
+    while ((mm = re.exec(line)) !== null) spans.push({ tok: mm[0], start: mm.index })
+  }
 
-  const markId = sliceCol(line, cols.mark, markEnd)
-  const description = sliceCol(line, cols.description, descEnd)
-  let partCode = sliceCol(line, cols.part, partEnd)
+  let tailStartIdx = null
+  if (spans.length >= 3) {
+    const weightSpan = spans[spans.length - 2]
+    const thirdSpan = spans[spans.length - 3]
+    tailStartIdx =
+      lengthRaw && thirdSpan && thirdSpan.tok === lengthRaw
+        ? thirdSpan.start
+        : weightSpan.start
+  }
 
-  // Color: sliced narrowly; legend codes are 1-2 chars ("RO", "M", "CQ", "--").
-  // Some sections stack other data in the same area (Punch, A325 bolt grades,
-  // 0.625 diameters), so only accept short alpha/dash codes.
+  // Left-aligned text columns: Mark and Description are reliably positioned, so
+  // slice them by header index as before.
+  const markId = sliceCol(line, cols.mark, cols.description ?? undefined)
+  const description = sliceCol(line, cols.description, cols.part ?? undefined)
+
+  // Part: scan rightward from the Part header index to the first real token,
+  // bounded by the numeric tail. Handles data shifted right of the label and
+  // correctly yields null when the Part column is genuinely blank (frame members).
+  const partTok = findColumnToken(line, cols.part, tailStartIdx)
+  let partCode = partTok ? partTok.token : null
+
+  // Color: the token immediately following the Part token, validated as a short
+  // legend code ("RO", "SO", "M", "CQ", "--"). Taking the whole token (instead of
+  // a fixed 4-char window) fixes truncation like "CQ" -> "C".
   let partColor = null
-  if (cols.color != null) {
-    const rawColor = sliceCol(line, cols.color, cols.color + 4)
-    if (rawColor) {
-      const candidate = rawColor.split(/\s+/)[0]
+  if (cols.color != null && partTok) {
+    const re2 = /\S+/g
+    re2.lastIndex = partTok.end
+    const cm = re2.exec(line)
+    if (cm && (tailStartIdx == null || cm.index < tailStartIdx)) {
+      const candidate = cm[0]
       if (/^(--|[A-Z]{1,2})$/.test(candidate)) {
         partColor = candidate
       }
     }
   }
 
-  // Part column can bleed into adjacent numeric data on long part codes;
-  // keep only the first token.
   if (partCode) {
     partCode = partCode.split(/\s+/)[0]
 
-    // Guard against junk caught in the slice when the Part column is empty:
+    // Guard against junk if the Part column is empty on a row:
     // - length fragments like 11' or 11'11-09"
     // - pure numeric pitch/dia values like 3.00 / 0.625
     const isLengthFragment =

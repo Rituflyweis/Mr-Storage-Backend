@@ -88,23 +88,27 @@ Implication: if you need strict lifecycle FSM behavior, implement explicit trans
 - lifecycle must be in `PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES`
 - creates `POOrder`, sets:
   - `lead.isRaisedToPO = true`
+  - `lead.poNumber` from latest invoice
+  - `lead.poStatus = 'pending'`
   - `lead.lifecycleStatus = 'converted_to_po'`
   - lifecycle history append
 
-This is where "proposal_sent gate for PO raise" is enforced (plus the other eligible statuses).
+Sales PO list should use `GET /api/sales/leads/with-po` (returns lead + nested `po.status`) — not `isRaisedToPO` alone. Filter with `?poStatus=pending|approved|rejected`.
+
+Manual lifecycle update to `converted_to_po` is blocked; use the PO raise endpoint.
 
 ### 4.2 Admin PO actions
 
 In `src/routes/admin/po.routes.js` + `src/controllers/admin/po.controller.js`:
 
+- `GET /` — all PO orders; pass `?status=pending` for approval queue only
 - `PUT /status` with `approved|rejected`
   - always syncs `lead.poStatus`
   - if approved, also sets lead stage to `sent_to_admin`
-- `PUT /assign`
-  - only allowed when PO status is approved
-  - sets assigned plant user
-  - updates lead stage to `released_to_plant`
-  - updates all project buildings to `drawing_pending`
+- `PUT /approve-and-assign` (**preferred**) — approves (if pending) and assigns plant user in one call
+  - body: `{ "assignedTo": "<plantUserId>", "adminNotes": "optional" }`
+  - sets `released_to_plant`, buildings → `drawing_pending`, socket `project_assigned`
+- `PUT /assign` — assign only (PO must already be `approved`)
 
 ---
 
@@ -152,8 +156,11 @@ Behavior details:
 
 - one payment schedule per lead (stages list)
 - invoice can optionally tie to a payment schedule stage
+- send invoice (`POST /api/invoices/:invoiceId/send`) emails customer **before** marking `sent`; returns 502 if SMTP fails
+- SMTP must be configured (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`); email template includes line-item `markup` and `markupTotal`
 - mark invoice paid updates invoice and payment stage status
 - invoice paid does not automatically force lead stage to `payment_done`
+- admin project invoices (`GET /api/admin/customers/:customerId/projects/:leadId/invoices`) return full invoice payload including `lineItems` and `markupTotal`
 
 Key files:
 

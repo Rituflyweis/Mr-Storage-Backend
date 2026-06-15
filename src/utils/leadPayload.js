@@ -15,6 +15,7 @@ const LEAD_EDIT_BODY_KEYS = [
   'insulation',
   'door',
   'window',
+  'numberOfBuildings',
   'lifecycleStatus',
   'notes',
 ]
@@ -142,6 +143,10 @@ const applyLeadUpdateFromBody = (lead, body) => {
   if (body.windows !== undefined) lead.numWindows = toNumberOrNull(body.windows)
   else if (body.window !== undefined) lead.numWindows = toNumberOrNull(body.window)
   if (body.insulation !== undefined) lead.numInsulation = toNumberOrNull(body.insulation)
+  if (body.numberOfBuildings !== undefined) {
+    const n = toNumberOrNull(body.numberOfBuildings)
+    if (n != null && n >= 1) lead.numberOfBuildings = n
+  }
   if (body.notes !== undefined) {
     lead.notes = body.notes === null ? '' : String(body.notes).trim()
   }

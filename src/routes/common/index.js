@@ -1,10 +1,12 @@
 const router = require('express').Router()
-const { body, query } = require('express-validator')
+const { query } = require('express-validator')
 const verifyToken = require('../../middleware/auth')
 const roleGuard = require('../../middleware/roleGuard')
 const validate = require('../../middleware/validate')
+const { invoiceCreateValidators } = require('../../utils/invoiceRouteValidators')
 
 const guard = [verifyToken, roleGuard(['admin', 'sales'])]
+const lookupGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant'])]
 const uploadGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant'])]
 const smdtGuard = [verifyToken, roleGuard(['admin', 'plant'])]
 
@@ -14,10 +16,10 @@ const lookupValidators = [
   query('limit').optional().isInt({ min: 1, max: 100 }),
 ]
 
-// Filter / dropdown lookups (admin + sales)
+// Filter / dropdown lookups (admin all, sales/plant scoped)
 const lookupCtrl = require('../../controllers/common/lookup.controller')
-router.get('/customers', ...guard, lookupValidators, validate, lookupCtrl.listCustomers)
-router.get('/leads', ...guard, lookupValidators, validate, lookupCtrl.listLeads)
+router.get('/customers', ...lookupGuard, lookupValidators, validate, lookupCtrl.listCustomers)
+router.get('/leads', ...lookupGuard, lookupValidators, validate, lookupCtrl.listLeads)
 
 // Lead-scoped list routes
 const quotationCtrl = require('../../controllers/common/quotation.controller')
@@ -27,12 +29,7 @@ router.get('/leads/:leadId/quotations', ...guard, quotationCtrl.getLeadQuotation
 router.get('/leads/:leadId/invoices', ...guard, invoiceCtrl.getLeadInvoices)
 router.post('/leads/:leadId/invoices',
   ...guard,
-  [
-    body('totalAmount').isNumeric(),
-    body('date').optional().isISO8601(),
-    body('daysToPay').optional().isNumeric(),
-    body('paymentScheduleStageId').optional().isMongoId(),
-  ],
+  invoiceCreateValidators,
   validate,
   invoiceCtrl.createInvoice
 )

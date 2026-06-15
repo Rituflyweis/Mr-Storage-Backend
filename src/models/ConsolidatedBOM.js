@@ -87,6 +87,16 @@ const ConsolidatedBOMSchema = new mongoose.Schema(
       default: 0,
     },
 
+    totalWeight: {
+      type: Number,
+      default: 0,
+    },
+
+    totalPanelsArea: {
+      type: Number,
+      default: 0,
+    },
+
     items: {
       type: [ConsolidatedItemSchema],
       default: [],

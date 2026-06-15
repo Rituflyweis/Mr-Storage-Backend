@@ -4,6 +4,7 @@ const ShipperComparisonJob = require('../../models/ShipperComparisonJob')
 const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const QuoteComparisonResult = require('../../models/QuoteComparisonResult')
 const VendorQuoteLine = require('../../models/VendorQuoteLine')
+const BOMItem = require('../../models/BOMItem')
 const BundlePlan = require('../../models/BundlePlan')
 const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
@@ -412,7 +413,7 @@ exports.requestShipperResubmit = asyncHandler(async (req, res) => {
   request.reviewedAt = new Date()
   await request.save()
 
-  const uploadUrl = `${CLIENT_URL}/vendor-upload/${request.token}`
+  const uploadUrl = `${CLIENT_URL}/vendor/${request.token}`
   const emailFailures = []
   try {
     if (request.vendorId?.email) {
@@ -468,6 +469,9 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
   const summary = request.comparisonSummary || null
   const blockers = getComparisonBlockers(summary)
   const canProceedToApproval = request.comparisonStatus === 'completed' && blockers.length === 0
+  const results = await QuoteComparisonResult.find({ shipperRequestId: request._id })
+    .sort({ createdAt: -1 })
+    .lean()
 
   return success(res, {
     requestId: request._id,
@@ -483,6 +487,19 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
     comparisonError: request.comparisonError,
     summary,
     exceptionsCount: Array.isArray(request.exceptions) ? request.exceptions.length : 0,
+    resultCount: results.length,
+    results: results.map((row) => ({
+      resultId: row._id,
+      status: row.status,
+      severity: row.severity,
+      expected: row.expected,
+      received: row.received,
+      difference: row.difference,
+      matchMethod: row.matchMethod,
+      matchConfidence: row.matchConfidence,
+      reason: row.reason,
+      createdAt: row.createdAt,
+    })),
     canProceedToApproval,
     blockers,
   })
@@ -634,6 +651,83 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
 
   if (!vendorLines.length) {
     return badRequest(res, 'No valid vendor quote lines found for this shipper request')
+  }
+
+  /**
+   * Weight backfill for the load planner.
+   *
+   * Some vendor quote formats (notably Central States) have NO weight column,
+   * so every parsed line lands with weight = null. Load planning keys truck/
+   * bundle limits off weight, producing an all-zero, "not trustworthy" plan.
+   *
+   * The real per-mark weights live in the BOM the request was built from. We
+   * join them back by part-mark (the consolidated BOM stores the source
+   * bomItemIds; we fall back to the lead's BOM items if those are absent).
+   */
+  const normMark = (v) => String(v || '').trim().toUpperCase().replace(/\s+/g, '')
+
+  const someWeightMissing = vendorLines.some((line) => {
+    const w = Number(line.weight)
+    return !Number.isFinite(w) || w <= 0
+  })
+
+  if (someWeightMissing) {
+    const consolidated = await ConsolidatedBOM.findById(request.consolidatedBOMId)
+      .select('items.bomItemIds')
+      .lean()
+
+    const bomItemIds = (consolidated?.items || []).flatMap((it) => it.bomItemIds || [])
+
+    const bomQuery = bomItemIds.length
+      ? { _id: { $in: bomItemIds } }
+      : { leadId: request.leadId }
+
+    const bomItems = await BOMItem.find(bomQuery)
+      .select('markId partCode quantity weight')
+      .lean()
+
+    const normPart = (v) => String(v || '').trim().toUpperCase()
+
+    // Exact, length-correct weights keyed by mark (BOM line weight is the total
+    // for that line, which equals the vendor line's piece set).
+    const weightByMark = new Map()
+    // Fallback: per-piece weight by part code, for lines that share no mark with
+    // the BOM (e.g. fasteners, which carry a part code but no mark). Estimated
+    // as totalWeight / totalQty for that part, then scaled by the vendor qty.
+    const partAgg = new Map()
+
+    for (const bi of bomItems) {
+      const w = Number(bi.weight)
+      if (!Number.isFinite(w) || w <= 0) continue
+
+      const markKey = normMark(bi.markId)
+      if (markKey) weightByMark.set(markKey, (weightByMark.get(markKey) || 0) + w)
+
+      const partKey = normPart(bi.partCode)
+      if (partKey) {
+        const agg = partAgg.get(partKey) || { weight: 0, qty: 0 }
+        agg.weight += w
+        agg.qty += Number(bi.quantity) || 0
+        partAgg.set(partKey, agg)
+      }
+    }
+
+    for (const line of vendorLines) {
+      const w = Number(line.weight)
+      if (Number.isFinite(w) && w > 0) continue
+
+      const byMark = weightByMark.get(normMark(line.pieceMark))
+      if (byMark != null) {
+        line.weight = byMark
+        continue
+      }
+
+      const agg = partAgg.get(normPart(line.partCode))
+      if (agg && agg.qty > 0) {
+        const qty = Number(line.qty ?? line.pieceQty) || 1
+        line.weight = (agg.weight / agg.qty) * qty
+      }
+    }
   }
 
   const missingWeightLines = vendorLines.filter((line) => {

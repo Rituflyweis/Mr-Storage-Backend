@@ -30,8 +30,8 @@ const getLeadForAdminList = async (leadId) => {
 
 const getLeadForSalesList = async (leadId) => {
   const lead = await Lead.findById(leadId)
-    .select('_id jobId projectName customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO assignedSales')
-    .populate({ path: 'customerId', select: 'firstName email' })
+    .select('_id jobId projectName customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO assignedSales isOnline onlineAt lastSeenAt')
+    .populate({ path: 'customerId', select: 'firstName email isOnline onlineAt lastSeenAt' })
     .lean()
   if (!lead) return null
 
@@ -48,8 +48,14 @@ const getLeadForSalesList = async (leadId) => {
         _id: lead.customerId._id,
         firstName: lead.customerId.firstName || '',
         email: lead.customerId.email || '',
+        isOnline: lead.customerId.isOnline === true,
+        onlineAt: lead.customerId.onlineAt || null,
+        lastSeenAt: lead.customerId.lastSeenAt || null,
       }
       : null,
+    isOnline: lead.isOnline === true,
+    onlineAt: lead.onlineAt || null,
+    lastSeenAt: lead.lastSeenAt || null,
     lifecycleStatus: lead.lifecycleStatus,
     quoteValue: lead.quoteValue || 0,
     leadScoring: { score: lead.leadScoring?.score || 0 },

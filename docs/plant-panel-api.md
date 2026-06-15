@@ -257,7 +257,7 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 19 | GET | `/api/plant/projects/:leadId/consolidated-bom` | View consolidated BOM + grouped items |
 | 19B | GET | `/api/plant/bom/projects/:leadId/consolidated-url` | Get consolidated BOM URL readiness |
 | 19A | POST | `/api/plant/projects/:leadId/consolidated-bom/send` | Send consolidated BOM to selected vendors |
-| 20 | GET | `/api/plant/projects/:leadId/delivery` | Deliveries for project |
+| 20 | GET | `/api/plant/projects/:leadId/delivery` | Confirmed delivery detail for project (404 if none awarded) |
 | 21 | GET | `/api/plant/projects/:leadId/shipper-files` | Vendor shipper submissions |
 | 21A | GET | `/api/public/vendor-upload/:token` | Public upload link details for vendor |
 | 21B | POST | `/api/public/vendor-upload/:token/presigned-url` | Presigned URL for vendor quote file upload |
@@ -270,7 +270,7 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21I | POST | `/api/plant/shipper-requests/compare-jobs/status` | Batch poll comparison job statuses |
 | 21J | POST | `/api/plant/shipper-requests/:requestId/approve` | Approve selected vendor request and auto-reject others |
 | 21K | POST | `/api/plant/shipper-requests/:requestId/request-resubmit` | Ask vendor to submit corrected quote |
-| 21L | GET | `/api/plant/shipper-requests/:requestId/comparison-summary` | Summary + `canProceedToApproval` decision |
+| 21L | GET | `/api/plant/shipper-requests/:requestId/comparison-summary` | Summary + row-level items + `canProceedToApproval` |
 | 21M | GET | `/api/plant/shipper-requests/:requestId/comparison-results` | Paginated row-level comparison results |
 | 21N | POST | `/api/plant/shipper-requests/:requestId/bundle-plan/generate` | Generate bundle plan from approved vendor lines |
 | 21O | GET | `/api/plant/projects/:leadId/bundle-plan` | Get latest non-cancelled bundle plan for project (legacy project route) |
@@ -287,11 +287,11 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21R | GET | `/api/plant/bundle-plans/:bundlePlanId/coverage` | Legacy id-based: vendor-line assignment coverage |
 | 21S | POST | `/api/plant/bundle-plans/:bundlePlanId/confirm` | Legacy id-based: confirm bundle plan |
 | 21T | POST | `/api/plant/bundle-plans/:bundlePlanId/bundles` | Create manual/empty bundle |
-| 21U | GET | `/api/plant/bundles/:bundleId` | Bundle detail + items |
+| 21U | GET | `/api/plant/bundles/:bundleId` | Bundle detail + items (**public**) |
 | 21V | PUT | `/api/plant/bundles/:bundleId` | Edit bundle items/stacking/metadata |
 | 21W | DELETE | `/api/plant/bundles/:bundleId` | Delete editable unassigned bundle |
 | 21X | POST | `/api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate` | Legacy id-based: generate packing list / truck load plan |
-| 21Y | GET | `/api/plant/packing-list-plans/:packingListPlanId` | Legacy id-based: packing list plan detail + truck rows |
+| 21Y | GET | `/api/plant/packing-list-plans/:packingListPlanId` | Legacy id-based: packing list plan detail + truck rows + bundles (**public**) |
 | 21Z | POST | `/api/plant/packing-list-plans/:packingListPlanId/confirm` | Legacy id-based: confirm packing list plan |
 | 21ZA | GET | `/api/plant/packing-lists/:packingListId` | Legacy id-based: single truck-wise packing list detail |
 | 21ZB | PUT | `/api/plant/packing-lists/:packingListId` | Legacy id-based: edit truck assignment/layout/details |
@@ -301,6 +301,15 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21ZEA | GET | `/api/plant/projects/:projectId/freight-autofill` | **Primary FE endpoint**: freight auto-fill by project |
 | 21ZEB | POST | `/api/plant/projects/:projectId/freight/send-bids` | **Primary FE endpoint**: send bids for latest project delivery |
 | 21ZEC | GET | `/api/plant/projects/:projectId/freight/bids` | **Primary FE endpoint**: freight bid detail by project |
+| 21ZED | GET | `/api/plant/deliveries/freight/stats` | Freight loads stats (total/requested/pending/in-transit/delivered/spent) |
+| 21ZEE | GET | `/api/plant/deliveries/freight` | Freight loads list with pagination/search/filter |
+| 21ZEF | GET | `/api/plant/deliveries/awarded/stats` | Awarded loads stats |
+| 21ZEG | GET | `/api/plant/deliveries/awarded` | Awarded loads list with carrier populated |
+| 21ZEH | GET | `/api/plant/deliveries/calendar` | Delivery calendar grouped by delivery date |
+| 21ZEI | GET | `/api/plant/deliveries/stats` | Delivery status counters |
+| 21ZEJ | GET | `/api/plant/deliveries` | Delivery list with status/project/customer/carrier filters |
+| 21ZEK2 | GET | `/api/plant/deliveries/:deliveryId/detail` | Full delivery detail card payload (project/customer/vendor/carrier/owner/history) |
+| 21ZEK | PATCH | `/api/plant/deliveries/:deliveryId/status` | Update delivery status (`scheduled/confirmed/in_transit/delayed/delivered/cancelled`) |
 | 21ZF | POST | `/api/plant/deliveries/:deliveryId/send-bids` | Legacy id-based: send bid requests to selected carriers |
 | 21ZG | GET | `/api/plant/deliveries/:deliveryId/bids` | Legacy id-based: freight bid detail + stats + sorted bids |
 | 21ZH | POST | `/api/plant/freight-bids/:bidId/select` | Award one freight bid and reject others |
@@ -1100,7 +1109,7 @@ List latest BOM row per building for assigned projects.
 
 BOM line items for pricing/review.
 
-**Query:** `filter=all|unpriced|frames|matched`, `page`, `limit` (default 50, max 200)
+**Query:** `filter=all|unpriced|frames|matched|bom_priced`, `page`, `limit` (default 50, max 200)
 
 ### Response `data` (summary)
 
@@ -1108,7 +1117,7 @@ BOM line items for pricing/review.
 |-------|----------|
 | `bomJob` | Job metadata + counts |
 | `itemsByCategory` | Paginated items grouped by sheet/category |
-| `summary` | `totalItems`, `pricedItems`, `unpricedItems`, `totalCost`, `isFullyPriced` |
+| `summary` | `totalItems`, `pricedItems`, `unpricedItems`, `bomPricedItems`, `frameItems`, `totalWeight`, `totalCost`, `isFullyPriced` |
 
 ---
 
@@ -1179,6 +1188,8 @@ None.
     "status": "draft",
     "fileUrl": "https://bucket.s3.region.amazonaws.com/consolidated/.../uuid.xlsx",
     "totalCost": 87450.25,
+    "totalWeight": 36280.4,
+    "totalPanelsArea": 12450.75,
     "itemCount": 48,
     "lineItemCount": 320
   }
@@ -1186,6 +1197,7 @@ None.
 ```
 
 `itemCount` = grouped part lines (by partCode + partColor), `lineItemCount` = raw priced BOM rows used in consolidation.
+`totalPanelsArea` = sum of grouped `totalLengthFeet` for categories containing `panel`/`sheet` (sq ft approximation based on available BOM data).
 
 ### Errors
 
@@ -1212,6 +1224,8 @@ View the consolidated BOM for the project (grouped items + vendor send history).
     "status": "draft",
     "fileUrl": "https://...",
     "totalCost": 87450.25,
+    "totalWeight": 36280.4,
+    "totalPanelsArea": 12450.75,
     "itemCount": 48,
     "items": [
       {
@@ -1436,21 +1450,116 @@ Polling ([§13](#13-get-apiplantbomjobjobidstatus), [§14](#14-post-apiplantbomj
 
 ## 20. `GET /api/plant/projects/:leadId/delivery`
 
+Returns the **latest confirmed delivery** for the project — i.e. a freight request with an awarded carrier (`selectedCarrierBidId` set, status not `draft`/`cancelled`).
+
+Use **`GET /api/plant/deliveries/project/:leadId` (§21ZE)** for the freight request **list** view.
+
+### Response `404`
+
+When no delivery has been awarded yet (still draft, bidding, or cancelled only).
+
 ### Response `data`
+
+Same shape as §21ZEK2, plus explicit `formDetails`, `shipperDetails`, and `selectedBid`:
 
 ```json
 {
-  "deliveries": [
-    {
-      "_id": "...",
-      "deliveryNumber": "DEL-0001",
-      "status": "draft",
-      "pickupLocation": "",
-      "deliveryLocation": "",
-      "createdAt": "...",
-      "updatedAt": "..."
+  "delivery": {
+    "deliveryId": "...",
+    "deliveryNumber": "DEL-0012",
+    "status": "carrier_selected",
+    "statusHistory": [
+      { "status": "draft", "changedAt": "2026-06-10T09:10:00.000Z" },
+      { "status": "bidding_sent", "changedAt": "2026-06-10T11:05:00.000Z" },
+      { "status": "carrier_selected", "changedAt": "2026-06-11T08:30:00.000Z" }
+    ],
+    "project": {
+      "leadId": "...",
+      "projectName": "ABC Warehouse",
+      "jobId": "PRO-019"
+    },
+    "customer": {
+      "customerId": "...",
+      "customerName": "John Doe"
+    },
+    "formDetails": {
+      "description": "",
+      "loadDescription": "18 bundle shipment",
+      "loadWeight": 62400,
+      "dimensions": { "lengthFeet": 53, "widthFeet": 8.5, "heightFeet": 13.5 },
+      "materialType": "framing, panels, trim",
+      "packageCount": 2,
+      "loadingEquipment": ["forklift", "crane"],
+      "bidDeadline": "2026-06-10T18:00:00.000Z",
+      "documentUrl": "https://...",
+      "pickupLocation": "Plant Yard, Houston",
+      "pickupLocationData": { "address": "Plant Yard, Houston", "coordinates": { "lat": 29.76, "lng": -95.36 } },
+      "deliveryLocation": "ABC Site, Austin",
+      "deliveryLocationData": { "address": "ABC Site, Austin", "coordinates": { "lat": 30.27, "lng": -97.74 } },
+      "pickupDate": "2026-06-12T00:00:00.000Z",
+      "pickupTime": "08:00",
+      "deliveryDate": "2026-06-13T00:00:00.000Z",
+      "deliveryTime": "14:00",
+      "timings": "Mon-Fri 8AM-6PM",
+      "receivingPoc": "John Doe",
+      "pickupContactPhone": "+1-555-222-3344",
+      "specialRequirements": "Gate code required",
+      "additionalNotes": "Call 30 mins before arrival"
+    },
+    "shipperDetails": {
+      "vendorId": "...",
+      "vendorName": "Metro Steel",
+      "personName": "Mike Johnson",
+      "number": "5551234567",
+      "email": "mike@metrosteel.com"
+    },
+    "deliveryCompanyDetails": {
+      "carrierId": "...",
+      "carrierName": "FastLine Logistics",
+      "personName": "Alex King",
+      "number": "5553219876",
+      "email": "ops@fastline.com"
+    },
+    "selectedBid": {
+      "bidId": "...",
+      "carrierId": "...",
+      "carrierName": "FastLine Logistics",
+      "quotedAmount": 2300,
+      "currency": "USD",
+      "carrierNotes": "Rate valid for 24h",
+      "submittedAt": "2026-06-09T11:20:00.000Z",
+      "selectedAt": "2026-06-11T08:30:00.000Z",
+      "status": "selected"
+    },
+    "deliverySchedule": {
+      "deliveryDate": "2026-06-13T00:00:00.000Z",
+      "timeWindow": "Mon-Fri 8AM-6PM",
+      "pickupAddress": "Plant Yard, Houston",
+      "dropoffAddress": "ABC Site, Austin"
+    },
+    "deliveryInformation": {
+      "description": "18 bundle shipment",
+      "materialCategory": "framing, panels, trim",
+      "pickupDate": "2026-06-12T00:00:00.000Z"
+    },
+    "internalOwner": {
+      "userId": "...",
+      "name": "Plant Owner",
+      "email": "plant@flyweis.com",
+      "phone": "5551112222"
+    },
+    "siteCoordinationNotes": "Call 30 mins before arrival",
+    "equipmentRequirement": ["forklift", "crane"],
+    "deliveryTypeAndSize": {
+      "bundleCount": 18,
+      "packageCount": 2,
+      "totalWeight": 62400
+    },
+    "receivingPocDetails": {
+      "receivingPoc": "John Doe",
+      "pickupContactPhone": "+1-555-222-3344"
     }
-  ]
+  }
 }
 ```
 
@@ -1839,7 +1948,7 @@ Request corrected quote from a vendor using the same public upload token/link.
 
 ## 21L. `GET /api/plant/shipper-requests/:requestId/comparison-summary`
 
-Returns comparison status, aggregate summary, and approval gate signal for frontend flow.
+Returns comparison status, aggregate summary, part-level comparison rows, and approval gate signal for frontend flow.
 
 ### Response `data`
 
@@ -1869,6 +1978,34 @@ Returns comparison status, aggregate summary, and approval gate signal for front
     "ambiguousMatches": 0
   },
   "exceptionsCount": 4,
+  "resultCount": 6,
+  "results": [
+    {
+      "resultId": "...",
+      "status": "missing_in_vendor_quote",
+      "severity": "critical",
+      "expected": {
+        "partCode": "C62514",
+        "partColor": "RO",
+        "qty": 25,
+        "lengthFeet": 6.9792,
+        "weight": 621,
+        "unitCost": 1.28
+      },
+      "received": null,
+      "difference": {
+        "qtyDiff": null,
+        "lengthDiff": null,
+        "weightDiff": null,
+        "unitPriceDiff": null,
+        "amountDiff": null
+      },
+      "matchMethod": "none",
+      "matchConfidence": null,
+      "reason": "Missing in vendor quote",
+      "createdAt": "2026-06-04T05:10:01.000Z"
+    }
+  ],
   "canProceedToApproval": false,
   "blockers": ["missing_items", "qty_mismatch"]
 }
@@ -2322,6 +2459,8 @@ Create manual/empty bundle (for manual regrouping).
 
 Full bundle with all item rows.
 
+Auth: **Public (no JWT required)**.
+
 ### Response `data`
 
 ```json
@@ -2463,12 +2602,15 @@ Generate truck-wise packing list plan from confirmed bundles.
 
 Get generated packing-list plan + truck rows.
 
+Auth: **Public (no JWT required)**.
+
 ### Response `data`
 
 ```json
 {
   "packingListPlan": { "_id": "...", "status": "generated", "totalPackingLists": 2, "totalBundles": 18, "totalWeight": 62400 },
   "packingLists": [{ "_id": "...", "packingListNo": "PL-001", "truckType": "SEMI_53", "totalWeight": 44200 }],
+  "bundles": [{ "_id": "...", "bundleNo": "B-001", "status": "assigned_to_truck", "packingListId": "...", "totalWeight": 6200 }],
   "summary": {
     "totalWeight": 62400,
     "totalBundles": 18,
@@ -2633,7 +2775,9 @@ Create freight request (delivery) with editable freight fields.
 
 ## 21ZE. `GET /api/plant/deliveries/project/:leadId`
 
-Project freight request list (same view payload as project delivery endpoint).
+Project freight request **list** (summary rows for table views).
+
+For the single confirmed/awarded delivery card with full form + shipper + carrier + selected bid, use **`GET /api/plant/projects/:leadId/delivery` (§20)**.
 
 ### Response `data`
 
@@ -2690,6 +2834,403 @@ Behavior:
 | `sort` | `low_to_high` \| `high_to_low` | `low_to_high` |
 
 Same response shape as §21ZG.
+
+---
+
+## 21ZED. `GET /api/plant/deliveries/freight/stats`
+
+Freight loads dashboard counters across all plant-assigned projects.
+
+`draft` deliveries are excluded from this endpoint.
+
+### Response `data`
+
+```json
+{
+  "totalLoads": 12,
+  "requestedLoads": 10,
+  "bidsPending": 4,
+  "inTransit": 3,
+  "delivered": 5,
+  "totalSpent": 18450
+}
+```
+
+---
+
+## 21ZEE. `GET /api/plant/deliveries/freight`
+
+Freight loads list with pagination, global search, and filters.
+
+By default this endpoint excludes `draft` deliveries (unsent loads).
+
+### Query params
+
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `page` | number | `1` | Min `1` |
+| `limit` | number | `20` | Min `1`, max `200` |
+| `search` | string | — | Searches request/project/location/POC/equipment fields |
+| `status` | string | — | Delivery status filter |
+| `projectId` | string | — | Mongo lead `_id` |
+| `customerId` | string | — | Mongo customer `_id` |
+| `carrierId` | string | — | Mongo freight carrier `_id` (selected carrier) |
+| `fromDate` | ISO date | — | Delivery date range start |
+| `toDate` | ISO date | — | Delivery date range end |
+
+### Response `data`
+
+```json
+{
+  "requests": [
+    {
+      "_id": "66a100000000000000000301",
+      "requestId": "66a100000000000000000301",
+      "deliveryNumber": "DEL-0012",
+      "status": "in_transit",
+      "deliveryTime": "13:00",
+      "project": {
+        "_id": "665a00000000000000000001",
+        "jobId": "PRO-012",
+        "projectName": "ABC Warehouse"
+      },
+      "customer": {
+        "_id": "665a00000000000000001001",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "shipperVendor": {
+        "_id": "665a00000000000000002001",
+        "vendorName": "Metro Steel",
+        "vendorCode": "VND-0012"
+      },
+      "carrier": {
+        "_id": "665a00000000000000003001",
+        "carrierName": "FastLine Logistics"
+      },
+      "description": "18 bundle shipment",
+      "pickupLocation": "Plant Yard, Houston",
+      "deliveryLocation": "ABC Site, Austin",
+      "awardedBidAmount": 2450,
+      "loadSize": {
+        "weight": 62400,
+        "dimensions": { "lengthFeet": 51, "widthFeet": 8.5, "heightFeet": 8 },
+        "packageCount": 18
+      },
+      "poc": {
+        "receivingPoc": "John Doe",
+        "pickupContactPhone": "+1-555-222-3344"
+      },
+      "equipment": ["forklift", "crane"],
+      "pickupDate": "2026-06-12T00:00:00.000Z",
+      "deliveryDate": "2026-06-13T00:00:00.000Z",
+      "createdAt": "2026-06-10T10:00:00.000Z",
+      "updatedAt": "2026-06-11T12:00:00.000Z"
+    }
+  ],
+  "total": 12,
+  "page": 1,
+  "limit": 20
+}
+```
+
+---
+
+## 21ZEF. `GET /api/plant/deliveries/awarded/stats`
+
+Counters only for deliveries with an awarded/selected carrier bid.
+
+### Response `data`
+
+```json
+{
+  "totalAwarded": 8,
+  "inTransit": 3,
+  "delivered": 4,
+  "totalSpent": 15200
+}
+```
+
+---
+
+## 21ZEG. `GET /api/plant/deliveries/awarded`
+
+Awarded-load list (same structure as §21ZEE) plus awarded carrier id.
+
+### Query params
+
+Same as §21ZEE.
+
+### Response `data`
+
+```json
+{
+  "requests": [
+    {
+      "_id": "66a100000000000000000302",
+      "requestId": "66a100000000000000000302",
+      "deliveryNumber": "DEL-0013",
+      "status": "scheduled",
+      "project": {
+        "_id": "665a00000000000000000002",
+        "jobId": "PRO-013",
+        "projectName": "North Storage"
+      },
+      "carrier": {
+        "_id": "665a00000000000000003002",
+        "carrierName": "Metro Freight"
+      },
+      "awardedCarrierId": "665a00000000000000003002",
+      "awardedBidAmount": 2300,
+      "description": "Trim + accessories load",
+      "pickupLocation": "Plant Yard, Houston",
+      "deliveryLocation": "North Storage Site",
+      "loadSize": {
+        "weight": 38800,
+        "dimensions": { "lengthFeet": 48, "widthFeet": 8.5, "heightFeet": 7.5 },
+        "packageCount": 11
+      }
+    }
+  ],
+  "total": 8,
+  "page": 1,
+  "limit": 20
+}
+```
+
+---
+
+## 21ZEH. `GET /api/plant/deliveries/calendar`
+
+Delivery calendar grouped by `deliveryDate`.
+
+### Query params
+
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `projectId` | string | — | Mongo lead `_id` |
+| `customerId` | string | — | Mongo customer `_id` |
+| `fromDate` | ISO date | — | Date range start |
+| `toDate` | ISO date | — | Date range end |
+
+### Response `data`
+
+```json
+{
+  "dates": [
+    {
+      "date": "2026-06-13",
+      "totalDeliveries": 2,
+      "deliveries": [
+        {
+          "_id": "66a100000000000000000301",
+          "requestId": "66a100000000000000000301",
+          "status": "in_transit",
+          "project": { "_id": "665a00000000000000000001", "jobId": "PRO-012", "projectName": "ABC Warehouse" },
+          "customer": { "_id": "665a00000000000000001001", "name": "John Doe", "email": "john@example.com" },
+          "carrier": { "_id": "665a00000000000000003001", "carrierName": "FastLine Logistics" },
+          "description": "18 bundle shipment",
+          "pickupLocation": "Plant Yard, Houston",
+          "deliveryLocation": "ABC Site, Austin",
+          "awardedBidAmount": 2450,
+          "delivery": {
+            "_id": "66a100000000000000000301",
+            "deliveryNumber": "DEL-0012",
+            "status": "in_transit"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## 21ZEI. `GET /api/plant/deliveries/stats`
+
+Master delivery status counters for plant panel.
+
+### Response `data`
+
+```json
+{
+  "totalCount": 18,
+  "draftCount": 2,
+  "scheduledCount": 4,
+  "confirmedCount": 3,
+  "inTransitCount": 3,
+  "deliveredCount": 4,
+  "delayedCount": 1,
+  "cancelledCount": 1
+}
+```
+
+---
+
+## 21ZEJ. `GET /api/plant/deliveries`
+
+General delivery list for operations table.
+
+### Query params
+
+Same as §21ZEE.
+
+### Response `data`
+
+```json
+{
+  "deliveries": [
+    {
+      "_id": "66a100000000000000000301",
+      "requestId": "66a100000000000000000301",
+      "deliveryNumber": "DEL-0012",
+      "status": "in_transit",
+      "deliveryTime": "13:00",
+      "project": {
+        "_id": "665a00000000000000000001",
+        "jobId": "PRO-012",
+        "projectName": "ABC Warehouse"
+      },
+      "customer": {
+        "_id": "665a00000000000000001001",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "shipperVendor": {
+        "_id": "665a00000000000000002001",
+        "vendorName": "Metro Steel",
+        "vendorCode": "VND-0012"
+      },
+      "carrier": {
+        "_id": "665a00000000000000003001",
+        "carrierName": "FastLine Logistics"
+      },
+      "poc": {
+        "receivingPoc": "John Doe",
+        "pickupContactPhone": "+1-555-222-3344"
+      },
+      "equipment": ["forklift", "crane"]
+    }
+  ],
+  "total": 18,
+  "page": 1,
+  "limit": 20
+}
+```
+
+---
+
+## 21ZEK2. `GET /api/plant/deliveries/:deliveryId/detail`
+
+Detailed delivery payload for detail screen. Same response shape as §20 (including `formDetails`, `shipperDetails`, `selectedBid`).
+
+### Response `data`
+
+```json
+{
+  "delivery": {
+    "deliveryId": "...",
+    "deliveryNumber": "DEL-0012",
+    "status": "confirmed",
+    "statusHistory": [
+      { "status": "draft", "changedAt": "2026-06-10T09:10:00.000Z" },
+      { "status": "bidding_sent", "changedAt": "2026-06-10T11:05:00.000Z" },
+      { "status": "carrier_selected", "changedAt": "2026-06-11T08:30:00.000Z" },
+      { "status": "confirmed", "changedAt": "2026-06-11T10:00:00.000Z" }
+    ],
+    "project": {
+      "leadId": "...",
+      "projectName": "ABC Warehouse",
+      "jobId": "PRO-019"
+    },
+    "customer": {
+      "customerId": "...",
+      "customerName": "John Doe"
+    },
+    "deliverySchedule": {
+      "deliveryDate": "2026-06-13T00:00:00.000Z",
+      "timeWindow": "Mon-Fri 8AM-6PM",
+      "pickupAddress": "Plant Yard, Houston",
+      "dropoffAddress": "ABC Site, Austin"
+    },
+    "deliveryInformation": {
+      "description": "18 bundle shipment",
+      "materialCategory": "framing, panels, trim",
+      "pickupDate": "2026-06-12T00:00:00.000Z"
+    },
+    "vendorDetails": {
+      "vendorName": "Metro Steel",
+      "personName": "Mike Johnson",
+      "number": "5551234567",
+      "email": "mike@metrosteel.com"
+    },
+    "deliveryCompanyDetails": {
+      "carrierName": "FastLine Logistics",
+      "personName": "Alex King",
+      "number": "5553219876",
+      "email": "ops@fastline.com"
+    },
+    "internalOwner": {
+      "userId": "...",
+      "name": "Plant Owner",
+      "email": "plant@flyweis.com",
+      "phone": "5551112222"
+    },
+    "siteCoordinationNotes": "Call 30 mins before arrival",
+    "equipmentRequirement": ["forklift", "crane"],
+    "deliveryTypeAndSize": {
+      "bundleCount": 18,
+      "packageCount": 2,
+      "totalWeight": 62400
+    },
+    "receivingPocDetails": {
+      "receivingPoc": "John Doe",
+      "pickupContactPhone": "+1-555-222-3344"
+    }
+  }
+}
+```
+
+---
+
+## 21ZEK. `PATCH /api/plant/deliveries/:deliveryId/status`
+
+Update delivery status in the operational lifecycle.
+
+### Request body
+
+```json
+{
+  "status": "confirmed"
+}
+```
+
+Allowed target values:
+- `scheduled`
+- `confirmed`
+- `in_transit`
+- `delayed`
+- `delivered`
+- `cancelled`
+
+### Response `data`
+
+```json
+{
+  "delivery": {
+    "_id": "66a100000000000000000301",
+    "deliveryNumber": "DEL-0012",
+    "status": "confirmed",
+    "leadId": "665a00000000000000000001",
+    "updatedAt": "2026-06-12T07:00:00.000Z"
+  }
+}
+```
+
+Invalid transition returns `400` with:
+- `message`: transition error
+- `errors.allowedTransitions`: allowed next statuses from current state
 
 ---
 
@@ -3739,15 +4280,22 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Bundle coverage check | `GET /api/plant/bundle-plans/:bundlePlanId/coverage` |
 | Confirm bundle plan | `POST /api/plant/bundle-plans/:bundlePlanId/confirm` |
 | Add manual bundle | `POST /api/plant/bundle-plans/:bundlePlanId/bundles` |
-| Bundle detail/edit/delete | `GET/PUT/DELETE /api/plant/bundles/:bundleId` |
+| Bundle detail/edit/delete | `GET/PUT/DELETE /api/plant/bundles/:bundleId` *(GET is public)* |
 | Generate packing list plan | `POST /api/plant/bundle-plans/:bundlePlanId/packing-list-plan/generate` |
-| Packing list plan detail | `GET /api/plant/packing-list-plans/:packingListPlanId` |
+| Packing list plan detail | `GET /api/plant/packing-list-plans/:packingListPlanId` *(public; includes bundles)* |
 | Confirm packing list plan | `POST /api/plant/packing-list-plans/:packingListPlanId/confirm` |
 | Single packing list detail/edit | `GET/PUT /api/plant/packing-lists/:packingListId` |
 | **Primary: freight auto-fill by project** | `GET /api/plant/projects/:projectId/freight-autofill` |
 | Create freight request | `POST /api/plant/deliveries` |
 | Freight requests list by project | `GET /api/plant/deliveries/project/:leadId` |
-| Legacy project freight list | `GET /api/plant/projects/:leadId/delivery` |
+| Confirmed delivery detail by project | `GET /api/plant/projects/:leadId/delivery` |
+| Freight loads stats | `GET /api/plant/deliveries/freight/stats` *(excludes draft)* |
+| Freight loads list | `GET /api/plant/deliveries/freight` *(excludes draft by default)* |
+| Awarded loads stats/list | `GET /api/plant/deliveries/awarded/stats`, `GET /api/plant/deliveries/awarded` |
+| Delivery calendar | `GET /api/plant/deliveries/calendar` |
+| Delivery dashboard stats/list | `GET /api/plant/deliveries/stats`, `GET /api/plant/deliveries` |
+| Delivery detail card payload | `GET /api/plant/deliveries/:deliveryId/detail` |
+| Update delivery status | `PATCH /api/plant/deliveries/:deliveryId/status` |
 | **Primary: send bids by project** | `POST /api/plant/projects/:projectId/freight/send-bids` |
 | **Primary: bids view by project** | `GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high|high_to_low` |
 | Send freight bid links | `POST /api/plant/deliveries/:deliveryId/send-bids` |

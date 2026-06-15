@@ -15,7 +15,7 @@ const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES, LEAD_TEMPERATURES, PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES } = require('../../config/constants')
+const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES, LEAD_TEMPERATURES, PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES, PO_STATUSES } = require('../../config/constants')
 const { buildLeadCreatePayload, applyLeadUpdateFromBody, escapeRegex } = require('../../utils/leadPayload')
 const {
   buildSalesLeadFilter,
@@ -700,6 +700,10 @@ exports.updateLifecycle = asyncHandler(async (req, res) => {
 
   if (!LIFECYCLE_STAGES.includes(lifecycleStatus)) return badRequest(res, 'Invalid lifecycle status')
 
+  if (lifecycleStatus === 'converted_to_po') {
+    return badRequest(res, 'Use POST /api/sales/leads/:leadId/po-order to convert a lead to PO')
+  }
+
   lead.lifecycleStatus = lifecycleStatus
   lead.lifecycleHistory.push({
     stage: lifecycleStatus,
@@ -788,6 +792,8 @@ exports.raisePOOrder = asyncHandler(async (req, res) => {
   })
 
   lead.isRaisedToPO = true
+  lead.poNumber = latestInvoice.poNumber
+  lead.poStatus = 'pending'
   lead.lifecycleStatus = 'converted_to_po'
   lead.lifecycleHistory.push({ stage: 'converted_to_po', changedAt: new Date(), changedBy: req.user._id })
   await lead.save()
@@ -802,6 +808,86 @@ exports.raisePOOrder = asyncHandler(async (req, res) => {
   })
 
   return success(res, { order }, 'PO Order raised successfully')
+})
+
+exports.getLeadsWithPo = asyncHandler(async (req, res) => {
+  const { poStatus, search, page = 1, limit = 20 } = req.query
+  const dateFilter = buildDateFilter(req.query)
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+
+  if (poStatus && !PO_STATUSES.includes(poStatus)) {
+    return badRequest(res, `Invalid poStatus. Use: ${PO_STATUSES.join(', ')}`)
+  }
+
+  const orderFilter = { raisedBy: req.user._id, ...dateFilter }
+  if (poStatus) orderFilter.status = poStatus
+
+  const allOrders = await POOrder.find(orderFilter)
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const latestByLead = new Map()
+  for (const order of allOrders) {
+    const key = String(order.leadId)
+    if (!latestByLead.has(key)) latestByLead.set(key, order)
+  }
+
+  let ordersList = [...latestByLead.values()]
+
+  const leadIds = ordersList.map((o) => o.leadId)
+  if (!leadIds.length) {
+    return success(res, { leads: [], total: 0, page: parsedPage, limit: parsedLimit })
+  }
+
+  const leadFilter = { _id: { $in: leadIds }, assignedSales: req.user._id }
+  if (search && search.trim()) {
+    leadFilter.projectName = new RegExp(escapeRegex(search.trim()), 'i')
+  }
+
+  const leads = await Lead.find(leadFilter)
+    .populate('customerId', 'firstName lastName email')
+    .lean()
+
+  const leadMap = new Map(leads.map((l) => [String(l._id), l]))
+
+  const rows = ordersList
+    .filter((o) => leadMap.has(String(o.leadId)))
+    .map((o) => {
+      const lead = enrichLeadDocument(leadMap.get(String(o.leadId)))
+      return {
+        _id: lead._id,
+        projectId: lead.jobId || null,
+        projectName: lead.projectName || '',
+        location: lead.location || '',
+        lifecycleStatus: lead.lifecycleStatus,
+        quoteValue: lead.quoteValue || 0,
+        isRaisedToPO: lead.isRaisedToPO === true,
+        poNumber: lead.poNumber || o.poNumber,
+        poStatus: lead.poStatus || o.status,
+        customerId: lead.customerId,
+        po: {
+          _id: o._id,
+          poNumber: o.poNumber,
+          status: o.status,
+          adminNotes: o.adminNotes || '',
+          assignedTo: o.assignedTo || null,
+          createdAt: o.createdAt,
+        },
+      }
+    })
+    .sort((a, b) => new Date(b.po.createdAt) - new Date(a.po.createdAt))
+
+  const total = rows.length
+  const skip = (parsedPage - 1) * parsedLimit
+  const leadsPage = rows.slice(skip, skip + parsedLimit)
+
+  return success(res, {
+    leads: leadsPage,
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
 })
 
 exports.getMyPOOrders = asyncHandler(async (req, res) => {

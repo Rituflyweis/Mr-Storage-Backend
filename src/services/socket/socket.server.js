@@ -3,6 +3,7 @@ const { JWT_ACCESS_SECRET } = require('../../config/env')
 const chatHandler = require('./chat.handler')
 const adminHandler = require('./admin.handler')
 const aiScriptHandler = require('./aiScript.handler')
+const customerPresence = require('./customerPresence.service')
 
 const initSocket = (io) => {
   global.io = io
@@ -15,6 +16,9 @@ const initSocket = (io) => {
     chatHandler(socket, chatNS)
 
     socket.on('disconnect', () => {
+      customerPresence.unregisterSocket(socket.id).catch((err) => {
+        console.error('[Socket /chat] Presence cleanup error:', err.message)
+      })
       console.log('[Socket /chat] Disconnected:', socket.id)
     })
   })

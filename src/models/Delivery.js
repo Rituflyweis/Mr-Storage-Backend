@@ -28,6 +28,18 @@ const DimensionsSchema = new mongoose.Schema(
 
 const DeliverySchema = new mongoose.Schema(
   {
+    statusHistory: {
+      type: [
+        new mongoose.Schema(
+          {
+            status: { type: String, enum: DELIVERY_STATUSES, required: true },
+            changedAt: { type: Date, default: Date.now },
+          },
+          { _id: true }
+        ),
+      ],
+      default: [],
+    },
     leadId:         { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
     deliveryNumber: { type: String, required: true, unique: true, trim: true },
     status:         { type: String, enum: DELIVERY_STATUSES, default: 'draft', index: true },
