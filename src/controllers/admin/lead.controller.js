@@ -11,6 +11,7 @@ const POOrder = require('../../models/POOrder')
 const ProjectBudget = require('../../models/ProjectBudget')
 const FollowUp = require('../../models/FollowUp')
 const auditService = require('../../services/audit.service')
+const { syncLeadBuildings } = require('../../services/leadBuilding.service')
 const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -317,6 +318,8 @@ exports.createLead = asyncHandler(async (req, res) => {
   })
   await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'admin_create_lead' })
 
+  await syncLeadBuildings(lead, { createdBy: req.user._id })
+
   return created(res, { lead: enrichLeadDocument(lead) })
 })
 
@@ -355,7 +358,8 @@ exports.importLeads = asyncHandler(async (req, res) => {
         })
       }
 
-      await Lead.create({ customerId: customer._id, buildingType: projectType || '', source: 'import' })
+      const lead = await Lead.create({ customerId: customer._id, buildingType: projectType || '', source: 'import' })
+      await syncLeadBuildings(lead, { createdBy: req.user._id })
       results.created++
     } catch (err) {
       results.errors.push({ row, error: err.message })
@@ -396,6 +400,13 @@ exports.editLead = asyncHandler(async (req, res) => {
   }
 
   await lead.save()
+
+  if (req.body.numberOfBuildings !== undefined) {
+    await syncLeadBuildings(lead, {
+      numberOfBuildings: lead.numberOfBuildings,
+      createdBy: req.user._id,
+    })
+  }
 
   await auditService.log({
     type: 'lead',
@@ -761,6 +772,8 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
     metadata: { source: lead.source, projectName: lead.projectName, assignedSales: salesEmployeeId },
   })
   await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'admin_create_project' })
+
+  await syncLeadBuildings(lead, { createdBy: req.user._id })
 
   return created(res, { lead: enrichLeadDocument(lead) })
 })

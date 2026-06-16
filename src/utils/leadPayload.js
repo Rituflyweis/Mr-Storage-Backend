@@ -63,6 +63,7 @@ const buildLeadCreatePayload = (body, options = {}) => {
     insulation,
     door,
     window,
+    numberOfBuildings,
   } = body
 
   let resolvedSource = defaultSource
@@ -73,6 +74,8 @@ const buildLeadCreatePayload = (body, options = {}) => {
   }
 
   const salesId = forceAssignedSales ?? assignedSales ?? null
+  const buildingCount = toNumberOrNull(numberOfBuildings)
+  const resolvedBuildingCount = buildingCount != null && buildingCount >= 1 ? buildingCount : 1
 
   return {
     payload: {
@@ -89,6 +92,7 @@ const buildLeadCreatePayload = (body, options = {}) => {
       numDoors: toNumberOrNull(doors ?? door),
       numWindows: toNumberOrNull(windows ?? window),
       numInsulation: toNumberOrNull(insulation),
+      numberOfBuildings: resolvedBuildingCount,
       assignedSales: salesId,
       isHandedToSales: !!salesId,
       assigningHistory: salesId

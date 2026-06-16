@@ -10,6 +10,7 @@ const ShipperRequest = require('../models/ShipperRequest')
 const ConsolidatedBOM = require('../models/ConsolidatedBOM')
 const auditService = require('../services/audit.service')
 const leadListSocket = require('../services/leadListSocket.service')
+const { syncLeadBuildings } = require('../services/leadBuilding.service')
 const generateCustomerId = require('../utils/generateCustomerId')
 const { success, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
@@ -26,18 +27,32 @@ const s3 = new S3Client({
 
 const VENDOR_UPLOAD_ALLOWED_STATUSES = new Set(['sent', 'resubmit_requested', 'submitted'])
 
-const buildVendorUploadSummary = (request) => ({
-  requestId: request._id,
-  status: request.status,
-  vendorName: request.vendorId?.vendorName || '',
-  projectName: request.leadId?.projectName || '',
-  jobId: request.leadId?.jobId || '',
-  consolidatedBOMFileUrl: request.ourFileUrl || '',
-  submittedFileUrl: request.submittedFileUrl || null,
-  submittedFileName: request.submittedFileName || '',
-  submittedAt: request.submittedAt || null,
-  quoteValue: request.quoteValue ?? null,
-})
+const buildVendorUploadSummary = (request) => {
+  const isResubmit = request.status === 'resubmit_requested'
+  const exceptionSummary = isResubmit ? request.vendorExceptionSummary || null : null
+  const priorQuoteValue = exceptionSummary?.priorQuoteValue ?? null
+
+  return {
+    requestId: request._id,
+    status: request.status,
+    vendorName: request.vendorId?.vendorName || '',
+    projectName: request.leadId?.projectName || '',
+    jobId: request.leadId?.jobId || '',
+    consolidatedBOMFileUrl: request.ourFileUrl || '',
+    submittedFileUrl: request.submittedFileUrl || null,
+    submittedFileName: request.submittedFileName || '',
+    submittedAt: request.submittedAt || null,
+    quoteValue: request.quoteValue ?? null,
+    isResubmit,
+    resubmitCount: request.resubmitCount || 0,
+    resubmitRequestedAt: request.resubmitRequestedAt || null,
+    resubmitNote: isResubmit ? request.manualReviewNote || '' : '',
+    priorQuoteValue: isResubmit ? priorQuoteValue : null,
+    requiresQuoteValue: true,
+    exceptionSummary,
+    submissionHistoryCount: Array.isArray(request.submissionHistory) ? request.submissionHistory.length : 0,
+  }
+}
 
 const notifyPlantUsersForLead = async (leadId, eventName, payload) => {
   if (!global.io) return
@@ -114,6 +129,7 @@ exports.chatInit = asyncHandler(async (req, res) => {
     })
 
     await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'chat_init' })
+    await syncLeadBuildings(lead, { createdBy: null })
   }
 
   return success(res, {
@@ -227,6 +243,12 @@ exports.submitVendorUpload = asyncHandler(async (req, res) => {
   request.quoteValue = Number(quoteValue)
   request.submittedAt = new Date()
   request.status = 'submitted'
+  request.vendorExceptionSummary = null
+  request.comparisonStatus = 'idle'
+  request.comparisonSummary = null
+  request.comparisonError = null
+  request.comparisonRanAt = null
+  request.exceptions = []
   await request.save()
 
   const consolidatedBOM = await ConsolidatedBOM.findById(request.consolidatedBOMId).lean()

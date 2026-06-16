@@ -1,4 +1,5 @@
 const POOrder = require('../../models/POOrder')
+const crypto = require('crypto')
 const ShipperRequest = require('../../models/ShipperRequest')
 const ShipperComparisonJob = require('../../models/ShipperComparisonJob')
 const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
@@ -17,7 +18,13 @@ const {
   sendShipperResubmitRequestEmail,
 } = require('../../services/email/mailer')
 const auditService = require('../../services/audit.service')
-const { CLIENT_URL } = require('../../config/env')
+const {
+  buildVendorUploadPageUrl,
+  getComparisonBlockers,
+  buildVendorExceptionSummary,
+  buildAutoResubmitNote,
+  RESUBMIT_ALLOWED_STATUSES,
+} = require('../../utils/vendorUpload.util')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -30,17 +37,6 @@ const resolveFileReceivedStatus = (total, received) => {
   if (received <= 0) return 'none'
   if (received >= total) return 'all'
   return 'partial'
-}
-
-const getComparisonBlockers = (summary = null) => {
-  if (!summary) return ['comparison_not_run']
-  const blockers = []
-  if ((summary.missingItems || 0) > 0) blockers.push('missing_items')
-  if ((summary.qtyMismatches || 0) > 0) blockers.push('qty_mismatch')
-  if ((summary.lengthMismatches || 0) > 0) blockers.push('length_mismatch')
-  if ((summary.weightMismatches || 0) > 0) blockers.push('weight_mismatch')
-  if ((summary.ambiguousMatches || 0) > 0) blockers.push('ambiguous_match')
-  return blockers
 }
 
 const getNextBundlePlanNumber = async () => {
@@ -128,6 +124,10 @@ exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
       uploadedDate: r.submittedAt || null,
       rates: r.quoteValue ?? null,
       fileStatus: r.status,
+      comparisonStatus: r.comparisonStatus || 'idle',
+      resubmitCount: r.resubmitCount || 0,
+      resubmitRequestedAt: r.resubmitRequestedAt || null,
+      canRequestResubmit: ['submitted', 'comparison_completed', 'comparison_failed', 'resubmit_requested'].includes(r.status),
     })),
     total: requests.length,
   })
@@ -394,7 +394,7 @@ exports.approveShipperRequest = asyncHandler(async (req, res) => {
 
 exports.requestShipperResubmit = asyncHandler(async (req, res) => {
   const { requestId } = req.params
-  const { note } = req.body
+  const { note, includeComparisonExceptions = true } = req.body
   const request = await ShipperRequest.findById(requestId)
     .populate('vendorId', 'vendorName email')
     .populate('leadId', 'projectName jobId customerId')
@@ -407,13 +407,71 @@ exports.requestShipperResubmit = asyncHandler(async (req, res) => {
     return forbidden(res, access.error)
   }
 
+  if (request.status === 'approved' || request.status === 'rejected') {
+    return badRequest(res, 'Cannot request resubmit for an approved or rejected vendor request')
+  }
+
+  if (request.status === 'comparison_processing') {
+    return badRequest(res, 'Comparison is still running. Wait for completion before requesting resubmit.')
+  }
+
+  if (!RESUBMIT_ALLOWED_STATUSES.has(request.status)) {
+    return badRequest(res, `Cannot request resubmit while status is ${request.status}`)
+  }
+
+  const exceptionSummary = includeComparisonExceptions
+    ? buildVendorExceptionSummary(request)
+    : null
+
+  const trimmedNote = String(note || '').trim()
+  const resubmitNote = trimmedNote || (exceptionSummary ? buildAutoResubmitNote(exceptionSummary) : '')
+  if (!resubmitNote) {
+    return badRequest(res, 'note is required when comparison exceptions are not included')
+  }
+
+  const priorToken = request.token
+  const vendorExceptionSummary = exceptionSummary || {
+    priorQuoteValue: request.quoteValue ?? null,
+    priorSubmittedFileName: request.submittedFileName || '',
+    priorSubmittedAt: request.submittedAt || null,
+  }
+
+  if (request.submittedFileUrl || request.submittedAt) {
+    request.submissionHistory.push({
+      submittedFileUrl: request.submittedFileUrl || null,
+      submittedFileName: request.submittedFileName || '',
+      quoteValue: request.quoteValue ?? null,
+      submittedAt: request.submittedAt || null,
+      token: priorToken,
+      comparisonSummary: request.comparisonSummary || null,
+      exceptionsCount: Array.isArray(request.exceptions) ? request.exceptions.length : 0,
+    })
+  }
+
+  request.token = crypto.randomBytes(32).toString('hex')
+  request.tokenExpiresAt = null
   request.status = 'resubmit_requested'
-  request.manualReviewNote = String(note || '').trim()
+  request.manualReviewNote = resubmitNote
+  request.vendorExceptionSummary = vendorExceptionSummary
   request.reviewedBy = req.user._id
   request.reviewedAt = new Date()
+  request.resubmitRequestedAt = new Date()
+  request.resubmitCount = (request.resubmitCount || 0) + 1
+  request.submittedFileUrl = null
+  request.submittedFileName = ''
+  request.submittedAt = null
+  request.quoteValue = null
+  request.comparisonStatus = 'idle'
+  request.comparisonSummary = null
+  request.comparisonError = null
+  request.comparisonRanAt = null
+  request.exceptions = []
   await request.save()
 
-  const uploadUrl = `${CLIENT_URL}/vendor/${request.token}`
+  await QuoteComparisonResult.deleteMany({ shipperRequestId: request._id })
+  await VendorQuoteLine.deleteMany({ shipperRequestId: request._id })
+
+  const uploadUrl = buildVendorUploadPageUrl(request.token)
   const emailFailures = []
   try {
     if (request.vendorId?.email) {
@@ -424,6 +482,7 @@ exports.requestShipperResubmit = asyncHandler(async (req, res) => {
         jobId: request.leadId.jobId,
         note: request.manualReviewNote,
         uploadUrl,
+        exceptionSummary: vendorExceptionSummary,
       })
     }
   } catch (err) {
@@ -440,6 +499,11 @@ exports.requestShipperResubmit = asyncHandler(async (req, res) => {
       shipperRequestId: request._id,
       vendorId: request.vendorId?._id || request.vendorId,
       note: request.manualReviewNote,
+      priorToken,
+      newToken: request.token,
+      resubmitCount: request.resubmitCount,
+      exceptionCount: vendorExceptionSummary?.exceptionCount ?? 0,
+      blockers: vendorExceptionSummary?.blockers || [],
     },
   })
 
@@ -447,9 +511,14 @@ exports.requestShipperResubmit = asyncHandler(async (req, res) => {
     requestId: request._id,
     status: request.status,
     reviewedAt: request.reviewedAt,
+    resubmitCount: request.resubmitCount,
     uploadUrl,
+    priorToken,
+    token: request.token,
+    note: request.manualReviewNote,
+    exceptionSummary: vendorExceptionSummary,
     emailFailures,
-  }, 'Resubmit requested')
+  }, 'Resubmit requested with new upload link')
 })
 
 exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
@@ -502,6 +571,10 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
     })),
     canProceedToApproval,
     blockers,
+    resubmitAvailable: RESUBMIT_ALLOWED_STATUSES.has(request.status),
+    resubmitCount: request.resubmitCount || 0,
+    resubmitRequestedAt: request.resubmitRequestedAt || null,
+    vendorExceptionSummary: request.vendorExceptionSummary || null,
   })
 })
 

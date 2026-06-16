@@ -26,7 +26,7 @@ const {
   loadBomItemsForJobs,
 } = require('../../services/plant/consolidator.service')
 const { sendConsolidatedBOMToVendor } = require('../../services/email/mailer')
-const { CLIENT_URL } = require('../../config/env')
+const { buildVendorUploadPageUrl } = require('../../utils/vendorUpload.util')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -1007,7 +1007,7 @@ exports.sendConsolidatedBOM = asyncHandler(async (req, res) => {
       await request.save()
     }
 
-    const uploadUrl = `${CLIENT_URL}/vendor/${request.token}`
+    const uploadUrl = buildVendorUploadPageUrl(request.token)
 
     try {
       await sendConsolidatedBOMToVendor({

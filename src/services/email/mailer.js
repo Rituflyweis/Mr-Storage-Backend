@@ -4,6 +4,10 @@ const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
 const path = require('path')
 const fs = require('fs')
 const { generateInvoicePdf } = require('./generateInvoiceHelper')
+const {
+  formatExceptionsForEmailHtml,
+  formatExceptionsForEmailText,
+} = require('../../utils/vendorUpload.util')
 
 
 const transporter = nodemailer.createTransport({
@@ -307,14 +311,35 @@ const sendShipperResubmitRequestEmail = async ({
   jobId,
   note,
   uploadUrl,
+  exceptionSummary = null,
 }) => {
   const template = loadTemplate('vendor-shipper-resubmit')
+  const summary = exceptionSummary?.comparisonSummary
+  const exceptionLines = []
+  if (summary) {
+    if (summary.missingItems) exceptionLines.push(`${summary.missingItems} missing item(s)`)
+    if (summary.extraItems) exceptionLines.push(`${summary.extraItems} extra item(s)`)
+    if (summary.qtyMismatches) exceptionLines.push(`${summary.qtyMismatches} quantity mismatch(es)`)
+    if (summary.lengthMismatches) exceptionLines.push(`${summary.lengthMismatches} length mismatch(es)`)
+    if (summary.ambiguousMatches) exceptionLines.push(`${summary.ambiguousMatches} ambiguous match(es)`)
+    if (summary.partMismatches) exceptionLines.push(`${summary.partMismatches} part mismatch(es)`)
+  }
+  const exceptionSummaryText = exceptionLines.length
+    ? exceptionLines.join('; ')
+    : 'See upload page for comparison details.'
+  const exceptionDetailsHtml = formatExceptionsForEmailHtml(exceptionSummary)
+  const exceptionDetailsText = formatExceptionsForEmailText(exceptionSummary)
+
   const html = fillTemplate(template, {
     VENDOR_NAME: vendorName || 'Vendor',
     PROJECT_NAME: projectName || '',
     JOB_ID: jobId || '',
     NOTE: note || '',
     UPLOAD_URL: uploadUrl || '',
+    EXCEPTION_SUMMARY: exceptionSummaryText,
+    EXCEPTION_DETAILS_HTML: exceptionDetailsHtml,
+    PRIOR_QUOTE_VALUE:
+      exceptionSummary?.priorQuoteValue != null ? String(exceptionSummary.priorQuoteValue) : 'N/A',
   })
 
   await transporter.sendMail({
@@ -322,6 +347,21 @@ const sendShipperResubmitRequestEmail = async ({
     to: toEmail,
     subject: `Action Required: Updated Quote Needed for ${projectName || 'Project'}`,
     html,
+    text: [
+      `Hello ${vendorName || 'Vendor'},`,
+      '',
+      `Project: ${projectName || ''}`,
+      `Job ID: ${jobId || ''}`,
+      '',
+      `Plant note: ${note || ''}`,
+      `Previous quote amount: ${exceptionSummary?.priorQuoteValue ?? 'N/A'}`,
+      '',
+      exceptionSummaryText,
+      '',
+      exceptionDetailsText,
+      '',
+      `Upload revised quote: ${uploadUrl || ''}`,
+    ].join('\n'),
   })
 }
 

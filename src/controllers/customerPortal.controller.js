@@ -12,6 +12,7 @@ const asyncHandler = require('../utils/asyncHandler')
 const bcrypt = require('bcryptjs')
 const env = require('../config/env')
 const auditService = require('../services/audit.service')
+const { syncLeadBuildings } = require('../services/leadBuilding.service')
 const { AUDIT_ACTIONS } = require('../config/constants')
 const { enrichLeadDocument } = require('../utils/leadProjectId')
 
@@ -213,6 +214,8 @@ exports.createProject = asyncHandler(async (req, res) => {
     customerId: req.customer._id,
     metadata:   { buildingType, location },
   })
+
+  await syncLeadBuildings(lead, { createdBy: null })
 
   return created(res, {
     lead: {

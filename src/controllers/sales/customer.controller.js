@@ -4,6 +4,7 @@ const Invoice = require('../../models/Invoice')
 const Building = require('../../models/Building')
 const ProjectBudget = require('../../models/ProjectBudget')
 const auditService = require('../../services/audit.service')
+const { syncLeadBuildings } = require('../../services/leadBuilding.service')
 const generateCustomerId = require('../../utils/generateCustomerId')
 const bcrypt = require('bcryptjs')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
@@ -250,6 +251,8 @@ exports.createProject = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { source: lead.source, projectName: lead.projectName },
   })
+
+  await syncLeadBuildings(lead, { createdBy: req.user._id })
 
   return created(res, { lead: enrichLeadDocument(lead) })
 })
