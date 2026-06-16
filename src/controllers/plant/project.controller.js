@@ -17,7 +17,6 @@ const { formatLog } = require('../../services/auditActivity.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { validatePlantLifecycleTransition } = require('../../utils/plantLifecycle')
 const { getLatestBomJobsByBuilding, formatBomJobSummary } = require('../../utils/plantBomAccess')
-const { getActiveCostVersion } = require('../../services/plant/smdt.service')
 const { processBOMJob, inferFileFormat } = require('../../services/plant/bom.service')
 const {
   generateConsolidatedExcel,
@@ -26,7 +25,7 @@ const {
   loadBomItemsForJobs,
 } = require('../../services/plant/consolidator.service')
 const { sendConsolidatedBOMToVendor } = require('../../services/email/mailer')
-const { CLIENT_URL } = require('../../config/env')
+const { buildVendorUploadPageUrl } = require('../../utils/vendorUpload.util')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -584,10 +583,11 @@ exports.uploadProjectBom = asyncHandler(async (req, res) => {
   const leadId = lead._id
   const { bomFiles: bomEntries } = req.body
 
-  const activeVersion = await getActiveCostVersion()
-  if (!activeVersion) {
-    return badRequest(res, 'No active SMDT cost version. Upload SMDT cost list first.')
-  }
+  // TEMP: SMDT validation disabled — allow BOM upload without active cost version
+  // const activeVersion = await getActiveCostVersion()
+  // if (!activeVersion) {
+  //   return badRequest(res, 'No active SMDT cost version. Upload SMDT cost list first.')
+  // }
 
   const buildingIds = bomEntries.map((d) => String(d.buildingId))
   const uniqueIds = new Set(buildingIds)
@@ -831,23 +831,24 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
     return badRequest(res, 'No BOM items found for this project')
   }
 
-  const unpricedItems = allItems.filter((item) => item.isPriced !== true)
-
-  if (unpricedItems.length) {
-    return badRequest(res, 'All BOM items must be priced before consolidation', {
-      unpricedCount: unpricedItems.length,
-      sample: unpricedItems.slice(0, 10).map((item) => ({
-        _id: item._id,
-        buildingId: item.buildingId,
-        category: item.category,
-        markId: item.markId,
-        partCode: item.partCode,
-        description: item.description,
-        matchStatus: item.matchStatus,
-        matchReason: item.matchReason,
-      })),
-    })
-  }
+  // TEMP: SMDT/pricing validation disabled — allow consolidation with unpriced items
+  // const unpricedItems = allItems.filter((item) => item.isPriced !== true)
+  //
+  // if (unpricedItems.length) {
+  //   return badRequest(res, 'All BOM items must be priced before consolidation', {
+  //     unpricedCount: unpricedItems.length,
+  //     sample: unpricedItems.slice(0, 10).map((item) => ({
+  //       _id: item._id,
+  //       buildingId: item.buildingId,
+  //       category: item.category,
+  //       markId: item.markId,
+  //       partCode: item.partCode,
+  //       description: item.description,
+  //       matchStatus: item.matchStatus,
+  //       matchReason: item.matchReason,
+  //     })),
+  //   })
+  // }
 
   const buildingMap = {}
 
@@ -1007,7 +1008,7 @@ exports.sendConsolidatedBOM = asyncHandler(async (req, res) => {
       await request.save()
     }
 
-    const uploadUrl = `${CLIENT_URL}/vendor/${request.token}`
+    const uploadUrl = buildVendorUploadPageUrl(request.token)
 
     try {
       await sendConsolidatedBOMToVendor({

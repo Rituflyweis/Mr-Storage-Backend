@@ -27,7 +27,7 @@ const generateScripts = async (followUpsWithContext) => {
       ].filter(Boolean).join('\n')
 
       const response = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: env.ANTHROPIC_MODEL,
         max_tokens: 400,
         system: 'You write concise outbound call scripts for construction sales reps. Professional, warm, and direct. Plain text only. 5–8 sentences max.',
         messages: [{

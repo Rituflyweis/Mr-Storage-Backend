@@ -1,26 +1,3 @@
-// /**
-//  * Shipper quote extraction + comparison pipeline.
-//  *
-//  * Demo-safe / same-schema version.
-//  * VERSION: shipper-comparison-v4.2-production-comparison-fixes
-//  *
-//  * What this version does:
-//  *   - Keeps the existing model schemas unchanged.
-//  *   - Uses deterministic parsers for Central States and Quicken Steel.
-//  *   - Uses Claude/Sonnet only as extraction fallback, not as final judge.
-//  *   - Compares vendor quote against ConsolidatedBOM using:
-//  *       normalized piece mark + piece length tolerance + qty
-//  *   - Normalizes incompatible vendor part codes into a canonical material key:
-//  *       C83516R       -> CEE|16GA|8|3.5|RED_OXIDE
-//  *       PC16-RO-8X3.5 -> CEE|16GA|8|3.5|RED_OXIDE
-//  *   - Stores canonical material details inside rawRow / expected / received Mixed fields
-//  *     so no schema migration is required.
-//  *
-//  * Public contract preserved:
-//  *   - processShipperComparisonJob(jobId)
-//  *   - compareShipperRequest(requestId)
-//  */
-
 // const Anthropic = require('@anthropic-ai/sdk')
 // const https = require('https')
 // const http = require('http')
@@ -41,7 +18,7 @@
 //  * ========================================================= */
 // const LENGTH_TOLERANCE_INCH = 0.5
 // const LENGTH_TOL_FEET = LENGTH_TOLERANCE_INCH / 12
-// const SERVICE_VERSION = 'shipper-comparison-v4.3-anonymous-alpha-product-fixes'
+// const SERVICE_VERSION = 'shipper-comparison-v4.7-row-preserved-duplicate-qty-pairing'
 // const DEFAULT_SONNET_MODEL = env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514'
 
 // let anthropicClient = null
@@ -1099,7 +1076,7 @@
 //           qtyShared: marks.length > 1,
 //           sharedMarkCount: marks.length,
 //           sharedGroupQty: group.totalQty,
-//           expectedSource: 'bom_items_shipper_group',
+//           expectedSource: 'bom_items_shipper_group_row_audited',
 //         })
 //       }
 //     } else {
@@ -1117,7 +1094,7 @@
 //         material: group.material,
 //         sourceLineCount: group.sourceLineCount,
 //         qtyShared: false,
-//         expectedSource: 'bom_items_shipper_group',
+//         expectedSource: 'bom_items_shipper_group_row_audited',
 //       })
 //     }
 //   }
@@ -1125,7 +1102,42 @@
 //   return rows
 // }
 
-// const buildExpectedRowsForComparison = async (consolidatedBOM) => {
+
+// const normalizeExpectedFromBomItemsRowPreserved = (bomItems) => {
+//   return (bomItems || []).map((item) => {
+//     const parsedLengthFeet =
+//       item.lengthFeet != null && Number.isFinite(Number(item.lengthFeet))
+//         ? Number(item.lengthFeet)
+//         : lengthToFeet(item.lengthRaw)
+
+//     const marks = splitMarkList(item.markId)
+//     const material = normalizeMaterial({
+//       partCode: item.partCode,
+//       description: item.description,
+//       color: item.partColor,
+//       partColor: item.partColor,
+//     })
+
+//     return {
+//       _id: item._id || null,
+//       bomItemIds: item._id ? [item._id] : [],
+//       markId: marks[0] || '_',
+//       partCode: item.partCode || null,
+//       partColor: item.partColor || null,
+//       description: item.description || '',
+//       category: item.category || item.sourceSheetName || '',
+//       lengthFeet: parsedLengthFeet ?? null,
+//       totalQty: safe(item.quantity),
+//       totalWeight: safe(item.weight),
+//       material,
+//       sourceLineCount: 1,
+//       qtyShared: false,
+//       expectedSource: 'bom_items_row_preserved',
+//     }
+//   })
+// }
+
+// const buildExpectedRowsForComparison = async (consolidatedBOM, options = {}) => {
 //   const bomItemIds = uniq(
 //     (consolidatedBOM.items || [])
 //       .flatMap((item) => item.bomItemIds || [])
@@ -1135,10 +1147,13 @@
 //   if (bomItemIds.length) {
 //     const bomItems = await BOMItem.find({ _id: { $in: bomItemIds } }).lean()
 //     if (bomItems.length) {
+//       const rowPreserved = Boolean(options.rowPreserved)
 //       return {
-//         rows: normalizeExpectedFromBomItemsForShipper(bomItems),
+//         rows: rowPreserved
+//           ? normalizeExpectedFromBomItemsRowPreserved(bomItems)
+//           : normalizeExpectedFromBomItemsForShipper(bomItems),
 //         meta: {
-//           expectedSource: 'bom_items_shipper_group',
+//           expectedSource: rowPreserved ? 'bom_items_row_preserved' : 'bom_items_shipper_group_row_audited',
 //           bomItemIdsFound: bomItemIds.length,
 //           bomItemsLoaded: bomItems.length,
 //         },
@@ -1257,6 +1272,52 @@
 //   return map
 // }
 
+
+// const groupSideRowPreserved = (rows, { mark, len, qty, id, materialGetter }) => {
+//   const map = new Map()
+//   const occurrenceByBaseKey = new Map()
+
+//   for (const r of rows || []) {
+//     const material = materialGetter ? materialGetter(r) : r.material || null
+//     const anonKey = anonymousMaterialKey(r, material)
+//     const baseKey = keyOf(r[mark], r[len], anonKey)
+//     const occurrence = (occurrenceByBaseKey.get(baseKey) || 0) + 1
+//     occurrenceByBaseKey.set(baseKey, occurrence)
+//     const k = `${baseKey}|ROW:${occurrence}`
+//     const normalizedMark = effectiveMarkForKey(r[mark])
+
+//     const group = {
+//       key: k,
+//       baseKey,
+//       rowOccurrence: occurrence,
+//       mark: r[mark] || '',
+//       markNormalized: normalizedMark,
+//       lengthFeet: r[len] ?? null,
+//       lengthBucketInches: lengthBucketInches(r[len]),
+//       totalQty: Number(r[qty] || 0),
+//       ids: r[id] != null ? [r[id]] : [],
+//       partCodes: new Set(),
+//       descriptions: new Set(),
+//       materials: [],
+//       sampleDescription: r.description || '',
+//       samplePartCode: r.partCode || r.product || '',
+//       sourceLineCount: 1,
+//       qtyShared: Boolean(r.qtyShared),
+//     }
+
+//     const pc = normCode(r.partCode || r.product)
+//     if (pc) group.partCodes.add(pc)
+//     if (r.description) group.descriptions.add(r.description)
+//     if (material) group.materials.push(material)
+//     if (r.material) group.materials.push(r.material)
+//     if (r.rawRow?.canonicalMaterial) group.materials.push(r.rawRow.canonicalMaterial)
+
+//     map.set(k, group)
+//   }
+
+//   return map
+// }
+
 // const representativeMaterial = (materials) => {
 //   const clean = (materials || []).filter(Boolean)
 //   if (!clean.length) return null
@@ -1337,6 +1398,77 @@
 //   return false
 // }
 
+
+// const scoreRowPreservedCandidate = (exp, rec) => {
+//   // Lower score is better. In row-preserved mode, multiple rows can legitimately
+//   // share the same mark/length/material base key. Occurrence order from the BOM
+//   // and occurrence order from PDF extraction are not guaranteed to be identical,
+//   // so we pair duplicates by strongest business signal first: quantity.
+//   let score = 0
+
+//   const qtyDiff = Math.abs(Number(rec.totalQty || 0) - Number(exp.totalQty || 0))
+//   score += qtyDiff * 100000
+
+//   const expPartCodes = [...(exp.partCodes || [])].filter(Boolean)
+//   const recPartCodes = [...(rec.partCodes || [])].filter(Boolean)
+//   const partHit =
+//     expPartCodes.length > 0 &&
+//     recPartCodes.length > 0 &&
+//     expPartCodes.some((code) => recPartCodes.includes(code))
+
+//   if (partHit) score -= 1000
+//   else if (expPartCodes.length && recPartCodes.length) score += 1000
+
+//   const expMat = representativeMaterial(exp.materials)
+//   const recMat = representativeMaterial(rec.materials)
+//   const mat = materialCompatibility(expMat, recMat)
+//   if (mat.compatible === true) score -= 500
+//   if (mat.compatible === false) score += 500
+
+//   const expDesc = normCode(exp.sampleDescription)
+//   const recDesc = normCode(rec.sampleDescription)
+//   if (expDesc && recDesc) {
+//     if (expDesc === recDesc) score -= 250
+//     else if (expDesc.includes(recDesc) || recDesc.includes(expDesc)) score -= 100
+//   }
+
+//   const lengthDiff = lengthDiffInches(exp.lengthFeet, rec.lengthFeet)
+//   if (lengthDiff != null) score += lengthDiff * 10
+
+//   // Occurrence order is only a tie-breaker, never the primary matching signal.
+//   score += Math.abs(Number(exp.rowOccurrence || 0) - Number(rec.rowOccurrence || 0)) / 1000
+
+//   return score
+// }
+
+// const findReceivedMatchRowPreserved = (exp, receivedMap, used) => {
+//   // First, handle duplicate rows that share the same row-preserved base key.
+//   // This fixes cases like two 114MM screw rows where occurrence order is swapped
+//   // between BOM and PDF extraction. We should match 1250 to 1250 and 4750 to 4750,
+//   // not ROW:1 to ROW:1 blindly.
+//   if (exp.baseKey) {
+//     const sameBaseCandidates = [...receivedMap.values()].filter(
+//       (r) => !used.has(r.key) && r.baseKey && r.baseKey === exp.baseKey
+//     )
+
+//     if (sameBaseCandidates.length) {
+//       const ranked = sameBaseCandidates
+//         .map((group) => ({ group, score: scoreRowPreservedCandidate(exp, group) }))
+//         .sort((a, b) => a.score - b.score)
+
+//       return {
+//         type: ranked[0].group.key === exp.key ? 'exact' : 'row_preserved_best_occurrence',
+//         group: ranked[0].group,
+//         duplicatePairingScore: ranked[0].score,
+//       }
+//     }
+//   }
+
+//   // Fall back to the stable v4.3/v4.5 matcher for parser edge cases where the
+//   // base key differs due to vendor formatting but the row is still comparable.
+//   return findReceivedMatch(exp, receivedMap, used)
+// }
+
 // const findReceivedMatch = (exp, receivedMap, used) => {
 //   const exact = receivedMap.get(exp.key)
 //   if (exact && !used.has(exact.key)) {
@@ -1410,8 +1542,11 @@
 //  * Comparison engine
 //  * No AI final judgement. Deterministic only.
 //  * ========================================================= */
-// const compareMaterials = (expectedRows, receivedRows, request) => {
-//   const expected = groupSide(expectedRows, {
+// const compareMaterials = (expectedRows, receivedRows, request, options = {}) => {
+//   const enforceRowPreservedAudit = Boolean(options.enforceRowPreservedAudit)
+//   const sideGrouper = enforceRowPreservedAudit ? groupSideRowPreserved : groupSide
+
+//   const expected = sideGrouper(expectedRows, {
 //     mark: 'markId',
 //     len: 'lengthFeet',
 //     qty: 'totalQty',
@@ -1419,7 +1554,7 @@
 //     materialGetter: (r) => r.material,
 //   })
 
-//   const received = groupSide(receivedRows, {
+//   const received = sideGrouper(receivedRows, {
 //     mark: 'pieceMark',
 //     len: 'lengthFeet',
 //     qty: 'pieceQty',
@@ -1427,12 +1562,17 @@
 //     materialGetter: (r) => r.rawRow?.canonicalMaterial,
 //   })
 
+//   const expectedInputLineCount = Array.isArray(expectedRows) ? expectedRows.length : expected.size
+//   const vendorComparisonLineCount = received.size
+
 //   const results = []
 //   const exceptions = []
 //   const used = new Set()
 
 //   for (const exp of expected.values()) {
-//     const match = findReceivedMatch(exp, received, used)
+//     const match = enforceRowPreservedAudit
+//       ? findReceivedMatchRowPreserved(exp, received, used)
+//       : findReceivedMatch(exp, received, used)
 //     const rec = match.group
 
 //     if (!rec) {
@@ -1601,11 +1741,70 @@
 //     exceptions.push({ issueType: 'extra', severity: 'medium', reason, mark: rec.mark })
 //   }
 
+//   // Row-preserved audit:
+//   // v4.3 intentionally grouped some comparison rows by mark+length to avoid false
+//   // material mismatches. That was useful for matching, but it hid cases where a
+//   // single-building consolidated BOM had 79 separate lines while the vendor quote
+//   // effectively represented only 76 comparable lines.
+//   //
+//   // In row-preserved mode, if multiple expected input rows collapsed into one
+//   // matched comparison group, we keep the robust match for the first line and add
+//   // synthetic missing rows for the hidden source lines. This makes the summary
+//   // fail correctly as 79 expected vs 76 vendor lines, without exploding into
+//   // false missing+extra pairs.
+//   if (enforceRowPreservedAudit && expectedInputLineCount > expected.size) {
+//     const auditRows = []
+
+//     for (const r of results) {
+//       if (r.status !== 'matched') continue
+
+//       const hiddenExpectedRows = Math.max(0, Number(r.expected?.sourceLineCount || 1) - 1)
+//       if (!hiddenExpectedRows) continue
+
+//       for (let i = 0; i < hiddenExpectedRows; i += 1) {
+//         const markLabel = r.expected?.mark || 'n/a'
+//         const reason = `Vendor quote collapsed multiple row-preserved BOM items into one comparable line for mark ${markLabel}. Separate vendor line missing for source BOM row ${i + 2} of ${hiddenExpectedRows + 1}.`
+
+//         auditRows.push(buildResult(request, {
+//           consolidatedItemId: r.consolidatedItemId || null,
+//           vendorQuoteLineIds: [],
+//           vendorQuoteLineId: null,
+//           status: 'missing_in_vendor_quote',
+//           severity: 'critical',
+//           matchMethod: 'row_preserved_line_audit',
+//           matchConfidence: 0,
+//           reason,
+//           expected: {
+//             ...(r.expected || {}),
+//             rowPreservedAudit: true,
+//             collapsedComparisonSourceLineCount: r.expected?.sourceLineCount || null,
+//           },
+//           received: null,
+//           difference: {
+//             qtyDiff: 0,
+//             rowPreservedMissingLine: true,
+//             hiddenExpectedRows,
+//           },
+//         }))
+
+//         exceptions.push({
+//           issueType: 'missing',
+//           severity: 'critical',
+//           reason,
+//           mark: markLabel,
+//           auditType: 'row_preserved_line_audit',
+//         })
+//       }
+//     }
+
+//     results.push(...auditRows)
+//   }
+
 //   const count = (status) => results.filter((r) => r.status === status).length
 
 //   const summary = {
-//     expectedLines: expected.size,
-//     vendorLines: received.size,
+//     expectedLines: enforceRowPreservedAudit ? expectedInputLineCount : expected.size,
+//     vendorLines: vendorComparisonLineCount,
 //     matchedLines: count('matched'),
 //     missingItems: count('missing_in_vendor_quote'),
 //     extraItems: count('extra_in_vendor_quote'),
@@ -1618,7 +1817,7 @@
 //     manualReviewRequired: results.filter((r) =>
 //       ['ambiguous_match', 'missing_in_vendor_quote', 'extra_in_vendor_quote', 'part_mismatch', 'length_mismatch', 'qty_mismatch'].includes(r.status)
 //     ).length,
-//     extractionNote: `${SERVICE_VERSION}: compared against BOMItem shipper-style grouping, not priced ConsolidatedBOM item summary.`,
+//     extractionNote: `${SERVICE_VERSION}: row-preserved BOM matching with duplicate quantity-aware pairing. Single-building row-preserved BOMs pass only when vendor preserves separate comparable lines.`,
 //   }
 
 //   return { results, summary, exceptions }
@@ -1684,7 +1883,15 @@
 //       { ordered: false }
 //     )
 
-//     const { rows: expectedRows, meta: expectedMeta } = await buildExpectedRowsForComparison(consolidatedBOM)
+//     const consolidatedItems = consolidatedBOM.items || []
+//     const rowPreservedConsolidated =
+//       consolidatedItems.length > 0 &&
+//       consolidatedItems.every((item) => Number(item.sourceLineCount || 1) === 1 && (item.bomItemIds || []).length <= 1)
+
+//     const { rows: expectedRows, meta: expectedMeta } = await buildExpectedRowsForComparison(consolidatedBOM, {
+//       rowPreserved: rowPreservedConsolidated,
+//     })
+
 //     const receivedRows = expandReceivedRows(vendorDocs.map((d) => ({
 //       _id: d._id,
 //       pieceMark: d.pieceMark,
@@ -1695,7 +1902,10 @@
 //       rawRow: d.rawRow,
 //     })))
 
-//     const { results, summary, exceptions } = compareMaterials(expectedRows, receivedRows, request)
+//     const { results, summary, exceptions } = compareMaterials(expectedRows, receivedRows, request, {
+//       enforceRowPreservedAudit: rowPreservedConsolidated,
+//       consolidatedItemCount: consolidatedItems.length,
+//     })
 
 //     if (results.length) {
 //       await QuoteComparisonResult.insertMany(results, { ordered: false })
@@ -1803,6 +2013,10 @@
 //   compareMaterials,
 //   expandReceivedRows,
 //   normalizeExpected,
+//   normalizeExpectedFromBomItemsRowPreserved,
+//   groupSideRowPreserved,
+//   findReceivedMatchRowPreserved,
+//   scoreRowPreservedCandidate,
 //   normalizeMaterial,
 //   materialCompatibility,
 //   expectedPieceLengthFeet,
@@ -1812,98 +2026,6 @@
 //   parseCentralStates,
 //   parseQuicken,
 // }
-
-/**
- * Shipper quote extraction + comparison pipeline.
- *
- * Demo-safe / same-schema version.
- * VERSION: shipper-comparison-v4.2-production-comparison-fixes
- *
- * What this version does:
- *   - Keeps the existing model schemas unchanged.
- *   - Uses deterministic parsers for Central States and Quicken Steel.
- *   - Uses Claude/Sonnet only as extraction fallback, not as final judge.
- *   - Compares vendor quote against ConsolidatedBOM using:
- *       normalized piece mark + piece length tolerance + qty
- *   - Normalizes incompatible vendor part codes into a canonical material key:
- *       C83516R       -> CEE|16GA|8|3.5|RED_OXIDE
- *       PC16-RO-8X3.5 -> CEE|16GA|8|3.5|RED_OXIDE
- *   - Stores canonical material details inside rawRow / expected / received Mixed fields
- *     so no schema migration is required.
- *
- * Public contract preserved:
- *   - processShipperComparisonJob(jobId)
- *   - compareShipperRequest(requestId)
- */
-
-/**
- * Shipper quote extraction + comparison pipeline.
- *
- * Demo-safe / same-schema version.
- * VERSION: shipper-comparison-v4.2-production-comparison-fixes
- *
- * What this version does:
- *   - Keeps the existing model schemas unchanged.
- *   - Uses deterministic parsers for Central States and Quicken Steel.
- *   - Uses Claude/Sonnet only as extraction fallback, not as final judge.
- *   - Compares vendor quote against ConsolidatedBOM using:
- *       normalized piece mark + piece length tolerance + qty
- *   - Normalizes incompatible vendor part codes into a canonical material key:
- *       C83516R       -> CEE|16GA|8|3.5|RED_OXIDE
- *       PC16-RO-8X3.5 -> CEE|16GA|8|3.5|RED_OXIDE
- *   - Stores canonical material details inside rawRow / expected / received Mixed fields
- *     so no schema migration is required.
- *
- * Public contract preserved:
- *   - processShipperComparisonJob(jobId)
- *   - compareShipperRequest(requestId)
- */
-
-/**
- * Shipper quote extraction + comparison pipeline.
- *
- * Demo-safe / same-schema version.
- * VERSION: shipper-comparison-v4.2-production-comparison-fixes
- *
- * What this version does:
- *   - Keeps the existing model schemas unchanged.
- *   - Uses deterministic parsers for Central States and Quicken Steel.
- *   - Uses Claude/Sonnet only as extraction fallback, not as final judge.
- *   - Compares vendor quote against ConsolidatedBOM using:
- *       normalized piece mark + piece length tolerance + qty
- *   - Normalizes incompatible vendor part codes into a canonical material key:
- *       C83516R       -> CEE|16GA|8|3.5|RED_OXIDE
- *       PC16-RO-8X3.5 -> CEE|16GA|8|3.5|RED_OXIDE
- *   - Stores canonical material details inside rawRow / expected / received Mixed fields
- *     so no schema migration is required.
- *
- * Public contract preserved:
- *   - processShipperComparisonJob(jobId)
- *   - compareShipperRequest(requestId)
- */
-
-/**
- * Shipper quote extraction + comparison pipeline.
- *
- * Demo-safe / same-schema version.
- * VERSION: shipper-comparison-v4.2-production-comparison-fixes
- *
- * What this version does:
- *   - Keeps the existing model schemas unchanged.
- *   - Uses deterministic parsers for Central States and Quicken Steel.
- *   - Uses Claude/Sonnet only as extraction fallback, not as final judge.
- *   - Compares vendor quote against ConsolidatedBOM using:
- *       normalized piece mark + piece length tolerance + qty
- *   - Normalizes incompatible vendor part codes into a canonical material key:
- *       C83516R       -> CEE|16GA|8|3.5|RED_OXIDE
- *       PC16-RO-8X3.5 -> CEE|16GA|8|3.5|RED_OXIDE
- *   - Stores canonical material details inside rawRow / expected / received Mixed fields
- *     so no schema migration is required.
- *
- * Public contract preserved:
- *   - processShipperComparisonJob(jobId)
- *   - compareShipperRequest(requestId)
- */
 
 const Anthropic = require('@anthropic-ai/sdk')
 const https = require('https')
@@ -1925,8 +2047,8 @@ const ShipperComparisonJob = require('../../models/ShipperComparisonJob')
  * ========================================================= */
 const LENGTH_TOLERANCE_INCH = 0.5
 const LENGTH_TOL_FEET = LENGTH_TOLERANCE_INCH / 12
-const SERVICE_VERSION = 'shipper-comparison-v4.7-row-preserved-duplicate-qty-pairing'
-const DEFAULT_SONNET_MODEL = env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514'
+const SERVICE_VERSION = 'shipper-comparison-v4.8-row-preserved-no-length-normalization'
+const DEFAULT_SONNET_MODEL = env.ANTHROPIC_MODEL
 
 let anthropicClient = null
 const getAnthropicClient = () => {
@@ -2010,7 +2132,16 @@ const toNum = (v) => {
 
 const safe = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0)
 const round = (n, d = 4) => Math.round(Number(n || 0) * 10 ** d) / 10 ** d
-const fmtFt = (f) => (f == null ? 'n/a' : `${safe(f).toFixed(3)}ft`)
+
+// Treat null/undefined/blank and real zero as the same NO_LENGTH value.
+// This fixes accessory/hardware rows where BOM stores 0 but PDF extraction stores null.
+const isNoLengthValue = (value) => {
+  if (value === null || value === undefined || value === '') return true
+  const n = Number(value)
+  return !Number.isFinite(n) || Math.abs(n) < 0.0001
+}
+
+const fmtFt = (f) => (isNoLengthValue(f) ? 'n/a' : `${safe(f).toFixed(3)}ft`)
 const uniq = (arr) => [...new Set((arr || []).filter((x) => x != null && x !== ''))]
 
 const downloadBuffer = (url) =>
@@ -2132,13 +2263,16 @@ const lengthToFeet = (value) => {
 }
 
 const lengthBucketInches = (feet) => {
-  if (feet == null || !Number.isFinite(Number(feet))) return null
+  if (isNoLengthValue(feet)) return null
   const inches = Number(feet) * 12
   return Math.round(inches / LENGTH_TOLERANCE_INCH) * LENGTH_TOLERANCE_INCH
 }
 
+const sameNoLength = (aFeet, bFeet) => isNoLengthValue(aFeet) && isNoLengthValue(bFeet)
+
 const lengthDiffInches = (aFeet, bFeet) => {
-  if (aFeet == null || bFeet == null) return null
+  if (sameNoLength(aFeet, bFeet)) return 0
+  if (isNoLengthValue(aFeet) || isNoLengthValue(bFeet)) return null
   return Math.abs(Number(aFeet) * 12 - Number(bFeet) * 12)
 }
 
@@ -3724,7 +3858,7 @@ const compareMaterials = (expectedRows, receivedRows, request, options = {}) => 
     manualReviewRequired: results.filter((r) =>
       ['ambiguous_match', 'missing_in_vendor_quote', 'extra_in_vendor_quote', 'part_mismatch', 'length_mismatch', 'qty_mismatch'].includes(r.status)
     ).length,
-    extractionNote: `${SERVICE_VERSION}: row-preserved BOM matching with duplicate quantity-aware pairing. Single-building row-preserved BOMs pass only when vendor preserves separate comparable lines.`,
+    extractionNote: `${SERVICE_VERSION}: row-preserved BOM matching with duplicate quantity-aware pairing and no-length normalization. Single-building row-preserved BOMs pass only when vendor preserves separate comparable lines.`,
   }
 
   return { results, summary, exceptions }
@@ -3929,6 +4063,7 @@ module.exports = {
   expectedPieceLengthFeet,
   lengthToFeet,
   lengthBucketInches,
+  isNoLengthValue,
   detectVendorFormat,
   parseCentralStates,
   parseQuicken,

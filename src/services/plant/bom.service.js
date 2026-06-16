@@ -528,7 +528,7 @@ const extractBOMItemsWithClaude = async (sheets) => {
   const text = sheetsToText(sheets)
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: env.ANTHROPIC_MODEL,
     max_tokens: 16000,
     system:
       'You extract BOM line items from spreadsheet text. Return ONLY valid JSON. No markdown.',
@@ -922,9 +922,10 @@ const processBOMJob = async (
       .sort({ createdAt: -1 })
       .lean()
 
-    if (!activeVersion) {
-      throw new Error('No active SMDT cost version found')
-    }
+    // TEMP: SMDT validation disabled — allow extraction without active cost version
+    // if (!activeVersion) {
+    //   throw new Error('No active SMDT cost version found')
+    // }
 
     const {
       items: rawItems,
@@ -939,7 +940,7 @@ const processBOMJob = async (
       throw new Error('No BOM line items could be extracted from file')
     }
 
-    const ctx = await buildMatchContext(activeVersion._id)
+    const ctx = await buildMatchContext(activeVersion?._id)
 
     const docs = rawItems.map((item) => {
       // FIX #4: apply unified frame/buyout flags after extraction,
@@ -953,7 +954,7 @@ const processBOMJob = async (
         leadId,
         buildingId,
         bomJobId: jobId,
-        smdtCostVersionId: activeVersion._id,
+        smdtCostVersionId: activeVersion?._id || null,
 
         ...item,
         ...match,

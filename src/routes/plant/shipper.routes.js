@@ -42,7 +42,11 @@ router.post('/:requestId/approve',
 )
 
 router.post('/:requestId/request-resubmit',
-  [param('requestId').isMongoId(), body('note').notEmpty().trim()],
+  [
+    param('requestId').isMongoId(),
+    body('note').optional().trim(),
+    body('includeComparisonExceptions').optional().isBoolean(),
+  ],
   validate,
   ctrl.requestShipperResubmit
 )

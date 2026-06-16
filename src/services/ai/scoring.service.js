@@ -30,7 +30,7 @@ const scoreLead = async (messages, leadName = '') => {
     .slice(0, maxChars)
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: env.ANTHROPIC_MODEL,
     max_tokens: 512,
     system: 'You are a B2B construction lead scoring engine. Analyse conversations and return ONLY valid JSON — no markdown, no explanation, just the JSON object.',
     messages: [{

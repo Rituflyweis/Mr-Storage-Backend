@@ -11,6 +11,7 @@ const AuditLog = require('../../models/AuditLog')
 const Building = require('../../models/Building')
 const ProjectBudget = require('../../models/ProjectBudget')
 const auditService = require('../../services/audit.service')
+const { syncLeadBuildings } = require('../../services/leadBuilding.service')
 const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -215,6 +216,8 @@ exports.createLead = asyncHandler(async (req, res) => {
   })
   await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'sales_create_lead' })
 
+  await syncLeadBuildings(lead, { createdBy: req.user._id })
+
   return created(res, { lead: enrichLeadDocument(lead) })
 })
 
@@ -254,7 +257,7 @@ exports.importLeads = asyncHandler(async (req, res) => {
         })
       }
 
-      await Lead.create({
+      const lead = await Lead.create({
         customerId: customer._id,
         projectName,
         buildingType,
@@ -267,6 +270,7 @@ exports.importLeads = asyncHandler(async (req, res) => {
         isHandedToSales: true,
         assigningHistory: [{ employeeId: req.user._id, method: 'manual', assignedBy: req.user._id, assignedAt: new Date() }],
       })
+      await syncLeadBuildings(lead, { createdBy: req.user._id })
       results.imported++
     } catch (err) {
       results.errors.push({ row: i + 2, reason: err.message })
@@ -596,6 +600,13 @@ exports.editLead = asyncHandler(async (req, res) => {
 
   await lead.save()
 
+  if (req.body.numberOfBuildings !== undefined) {
+    await syncLeadBuildings(lead, {
+      numberOfBuildings: lead.numberOfBuildings,
+      createdBy: req.user._id,
+    })
+  }
+
   await auditService.log({
     type: 'lead',
     action: AUDIT_ACTIONS.LEAD_EDITED,
@@ -643,38 +654,33 @@ exports.createBuildings = asyncHandler(async (req, res) => {
   const num = parseInt(numberOfBuildings, 10)
   if (!num || num < 1) return badRequest(res, 'numberOfBuildings must be >= 1')
 
-  const existingCount = await Building.countDocuments({ leadId })
-  if (existingCount > 0) return badRequest(res, 'Buildings already exist for this lead')
+  const { buildings, numberOfBuildings: effectiveCount, createdCount, createdBuildingNumbers } =
+    await syncLeadBuildings(lead, {
+      numberOfBuildings: num,
+      createdBy: req.user._id,
+    })
 
-  const latestQuotation = await Quotation.findOne({ leadId }).sort({ versionNumber: -1, createdAt: -1 }).lean()
-  const quotationId = latestQuotation?._id || null
-
-  const buildingDocs = []
-  for (let i = 1; i <= num; i++) {
-    buildingDocs.push({
+  if (createdCount > 0) {
+    await auditService.log({
+      type: 'lead',
+      action: AUDIT_ACTIONS.BUILDINGS_CREATED,
       leadId,
       customerId: lead.customerId,
-      buildingNumber: i,
-      quotationId: quotationId || null,
-      createdBy: req.user._id,
+      performedBy: req.user._id,
+      metadata: {
+        numberOfBuildings: effectiveCount,
+        createdCount,
+        createdBuildingNumbers,
+      },
     })
   }
 
-  const buildings = await Building.insertMany(buildingDocs)
-
-  lead.numberOfBuildings = num
-  await lead.save()
-
-  await auditService.log({
-    type: 'lead',
-    action: AUDIT_ACTIONS.BUILDINGS_CREATED,
-    leadId,
-    customerId: lead.customerId,
-    performedBy: req.user._id,
-    metadata: { numberOfBuildings: num },
+  return created(res, {
+    buildings,
+    numberOfBuildings: effectiveCount,
+    createdCount,
+    createdBuildingNumbers,
   })
-
-  return created(res, { buildings, numberOfBuildings: num })
 })
 
 exports.getBuildings = asyncHandler(async (req, res) => {
