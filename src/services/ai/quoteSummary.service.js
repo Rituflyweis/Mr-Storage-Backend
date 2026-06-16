@@ -25,7 +25,7 @@ const generateAndSave = async (quotation, leadId, customerId) => {
     ].filter(Boolean).join('\n')
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: env.ANTHROPIC_MODEL,
       max_tokens: 512,
       system: 'You write brief plain-text summaries of construction quotations for a CRM. Be factual, concise, and clear. No markdown. Anyone reading this should understand the quote in 30 seconds.',
       messages: [{

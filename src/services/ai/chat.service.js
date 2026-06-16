@@ -187,7 +187,7 @@ const mergeContextSummary = async ({ previousSummary = '', newUserContent = '', 
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: env.ANTHROPIC_MODEL,
       max_tokens: 768,
       system: `You maintain a compact MEMORY SUMMARY for a construction sales CRM. Output plain text only — short labeled lines or bullets. No markdown headings. Preserve EVERY concrete fact from the previous summary (names, numbers, sqft, locations, quotes, materials, timeline). Merge in the new exchange; do not drop prior facts unless the customer explicitly corrected them. Max length: about ${Math.floor(maxOut / 5)} words. Be dense.`,
       messages: [{
@@ -244,7 +244,7 @@ const chat = async (currentMessages, options = {}) => {
   const claudeMessages = buildMessages(currentMessages, currentConversationSummary)
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: env.ANTHROPIC_MODEL,
     max_tokens: 1024,
     system: systemPrompt,
     messages: claudeMessages,

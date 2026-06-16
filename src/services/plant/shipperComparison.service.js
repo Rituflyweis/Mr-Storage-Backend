@@ -2048,7 +2048,7 @@ const ShipperComparisonJob = require('../../models/ShipperComparisonJob')
 const LENGTH_TOLERANCE_INCH = 0.5
 const LENGTH_TOL_FEET = LENGTH_TOLERANCE_INCH / 12
 const SERVICE_VERSION = 'shipper-comparison-v4.8-row-preserved-no-length-normalization'
-const DEFAULT_SONNET_MODEL = env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514'
+const DEFAULT_SONNET_MODEL = env.ANTHROPIC_MODEL
 
 let anthropicClient = null
 const getAnthropicClient = () => {

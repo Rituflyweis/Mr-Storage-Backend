@@ -3,7 +3,7 @@ const AIScriptSession = require('../../models/AIScriptSession')
 const Lead = require('../../models/Lead')
 const env = require('../../config/env')
 
-const MODEL = 'claude-sonnet-4-20250514'
+const MODEL = env.ANTHROPIC_MODEL
 const MAX_TOKENS = 1024
 
 const buildLeadContext = async (leadId) => {

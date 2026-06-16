@@ -528,7 +528,7 @@ const extractBOMItemsWithClaude = async (sheets) => {
   const text = sheetsToText(sheets)
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: env.ANTHROPIC_MODEL,
     max_tokens: 16000,
     system:
       'You extract BOM line items from spreadsheet text. Return ONLY valid JSON. No markdown.',
