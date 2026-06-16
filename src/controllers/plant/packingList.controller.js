@@ -1,6 +1,7 @@
 const PackingList = require('../../models/PackingList')
 const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
+const POOrder = require('../../models/POOrder')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { TRUCK_TYPES } = require('../../services/plant/loadPlanning.service')
 const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
@@ -62,6 +63,54 @@ const syncPackingListPlanSummary = async (packingListPlanId) => {
   await PackingListPlan.findByIdAndUpdate(packingListPlanId, summary)
   return summary
 }
+
+const getAssignedLeadIds = async (plantUserId) =>
+  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+
+exports.getPackingListPlanProjects = asyncHandler(async (req, res) => {
+  const leadIds = await getAssignedLeadIds(req.user._id)
+  if (!leadIds.length) return success(res, { projects: [], total: 0 })
+
+  const plans = await PackingListPlan.find({
+    leadId: { $in: leadIds },
+    status: { $ne: 'cancelled' },
+  })
+    .populate('leadId', 'projectName jobId')
+    .sort({ updatedAt: -1 })
+    .lean()
+
+  if (!plans.length) return success(res, { projects: [], total: 0 })
+
+  const projectMap = new Map()
+
+  // plans is sorted by updatedAt desc, so the first plan seen per lead is the latest
+  for (const plan of plans) {
+    const lead = plan.leadId
+    if (!lead?._id) continue
+    const key = String(lead._id)
+    if (projectMap.has(key)) continue
+
+    projectMap.set(key, {
+      leadId: lead._id,
+      projectId: lead.jobId || '',
+      jobId: lead.jobId || '',
+      projectName: lead.projectName || '',
+      packingListPlanId: plan._id,
+      listGeneratedAt: plan.createdAt || null,
+      totalPackingList: plan.totalPackingLists || 0,
+      status: plan.status,
+      updatedAt: plan.updatedAt,
+    })
+  }
+
+  const projects = [...projectMap.values()].sort((a, b) => {
+    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
+    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
+    return bTime - aTime
+  })
+
+  return success(res, { projects, total: projects.length })
+})
 
 exports.getPackingList = asyncHandler(async (req, res) => {
   const packingList = await PackingList.findById(req.params.packingListId).lean()
