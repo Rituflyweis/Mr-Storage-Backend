@@ -23,7 +23,7 @@ const {
   generateConsolidatedExcel,
   groupItemsForConsolidation,
   uploadConsolidatedExcelToS3,
-  loadBomItemsForBuildings,
+  loadBomItemsForJobs,
 } = require('../../services/plant/consolidator.service')
 const { sendConsolidatedBOMToVendor } = require('../../services/email/mailer')
 const { CLIENT_URL } = require('../../config/env')
@@ -817,14 +817,15 @@ exports.generateConsolidatedBOM = asyncHandler(async (req, res) => {
     )
   }
 
-  const buildingIds = buildings.map((building) => building._id)
+  const bomJobIds = buildings
+    .map((building) => bomJobMap.get(String(building._id))?._id)
+    .filter(Boolean)
 
   /**
    * Important:
-   * Load all BOM items first.
-   * Do not silently load only priced items.
+   * Load items for the latest confirmed BOM jobs only (not all rows on buildingId).
    */
-  const allItems = await loadBomItemsForBuildings(buildingIds)
+  const allItems = await loadBomItemsForJobs(bomJobIds)
 
   if (!allItems.length) {
     return badRequest(res, 'No BOM items found for this project')

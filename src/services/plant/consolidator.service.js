@@ -25,6 +25,19 @@ const formatNumber = (value, decimals = 2) => {
   return n.toFixed(decimals)
 }
 
+const normalizeCode = (value) => {
+  if (value == null) return ''
+
+  return String(value)
+    .replace(/^'+/, '')
+    .replace(/'+$/, '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '')
+}
+
+const normalizeColor = (value) => normalizeCode(value)
+
 /* ------------------------------------------------------------------
  * SHIPPER-FORMAT CONSOLIDATED BOM (the deliverable file)
  *
@@ -105,20 +118,53 @@ const SHIPPER_CLASSIFY_RULES = [
 const classifyShipperSheet = (item) => {
   const desc = item.description || ''
   const part = item.partCode || ''
-  const category = item.category || ''
+  const category = item.category || item.sourceSheetName || ''
 
-  for (const rule of SHIPPER_CLASSIFY_RULES) {
-    if (rule.desc && rule.desc.test(desc)) {
-      if (rule.category && !rule.category.test(category)) continue
-      return rule.sheet
+  // Source section wins when the .out parser already knows the section.
+  // This prevents CBL Hardware / Butyl / RLoc-style accessories from being
+  // incorrectly moved into cable bracing or roof sheets by generic regexes.
+  if (/accessories/i.test(category)) {
+    return 'ACCESSORIES_AND_SEALANT'
+  }
+
+  if (/diagonal bracing|sealant/i.test(category)) {
+    if (/\bcable\b|\bcbl\b|\brod\b/i.test(desc) || /^(CB\d|RD\d|RHW)$/i.test(part)) {
+      return 'CABLE_BRACING'
     }
-    if (rule.part && rule.part.test(part)) {
-      if (rule.category && !rule.category.test(category)) continue
-      return rule.sheet
-    }
-    if (!rule.desc && !rule.part && rule.category && rule.category.test(category)) {
-      return rule.sheet
-    }
+
+    return 'ACCESSORIES_AND_SEALANT'
+  }
+
+  if (/rigid|endwall|frame/i.test(category)) return 'FRAMES'
+  if (/door jamb|headers?/i.test(category)) return 'DOOR_JAMBS_AND_HEADERS'
+  if (/purlin|girt|eave strut/i.test(category)) return 'PURLINS_AND_GIRTS'
+  if (/roof|wall sheeting/i.test(category)) return 'ROOF_AND_WALL_SHEETING'
+  if (/connection plates?/i.test(category)) return 'CONNECTION_PLATES'
+  if (/angles?/i.test(category)) return 'ANGLES'
+  if (/trim/i.test(category)) return 'TRIM'
+  if (/fasteners?/i.test(category)) return 'FASTENERS'
+  if (/stud/i.test(category)) return 'STUDS'
+  if (/top channel/i.test(category)) return 'TOP_CHANNEL'
+
+  // Fallback for Excel/manual sheets where category is not reliable.
+  if (/\btrim\b|gutter|downspout|rake|peak box|ridge|drip cap|corner|eave t|panel cap/i.test(desc)) {
+    return 'TRIM'
+  }
+
+  if (/\b(rf|ew)\s+(column|rafter|int col)\b|wind column|ext beam|rigid frame/i.test(desc)) {
+    return 'FRAMES'
+  }
+
+  if (/\bstud\b/i.test(desc)) return 'STUDS'
+  if (/top channel/i.test(desc)) return 'TOP_CHANNEL'
+  if (/door (jamb|header|sill)|\bjamb\b|\bheader\b/i.test(desc)) return 'DOOR_JAMBS_AND_HEADERS'
+  if (/purlin|girt|eave strut|\bstrut\b/i.test(desc) || /^Z\d/i.test(part)) return 'PURLINS_AND_GIRTS'
+  if (/sheet|liner|soffit|panel/i.test(desc) || /^(RLOC|PLOC|CD\d|CL244)/i.test(part)) return 'ROOF_AND_WALL_SHEETING'
+  if (/\bplt\b|plate/i.test(desc)) return 'CONNECTION_PLATES'
+  if (/flg brc|flange brace|angle|strapping|back up|rake suppor|float eave|sliding cli|gable channel/i.test(desc)) return 'ANGLES'
+  if (/bolt|screw|driller|tek|rivet|washer|\blap\b|fastener/i.test(desc)) return 'FASTENERS'
+  if (/sealant|butyl|closure|\bclos\b|grayflex|\bjoi\b|roll-up|\bdoor\b|mastic|tape|metal roof s|rloc inside|tri bea/i.test(desc)) {
+    return 'ACCESSORIES_AND_SEALANT'
   }
 
   return 'MISC'
@@ -146,32 +192,65 @@ const sortMarkIds = (marks) => {
   )
 }
 
+const normalizedMarkKey = (value) => {
+  const marks = sortMarkIds(splitMarkIds(value).map((mark) => normalizeCode(mark)).filter(Boolean))
+  return marks.length ? marks.join(',') : '_'
+}
+
+const selectedBuildingCount = (items = [], buildingMap = {}) => {
+  const mappedCount = Object.keys(buildingMap || {}).length
+  if (mappedCount > 0) return mappedCount
+
+  const ids = new Set()
+  for (const item of items || []) {
+    if (item?.buildingId != null) ids.add(String(item.buildingId))
+  }
+  return ids.size
+}
+
+const shouldPreserveSourceRows = (items, buildingMap, options = {}) => {
+  if (typeof options.preserveSourceRows === 'boolean') return options.preserveSourceRows
+  return selectedBuildingCount(items, buildingMap) <= 1
+}
+
 /**
  * Merge identical items across buildings: same part code, color, and length
  * become one row with summed QTY and weight. Items with no part code key on
  * description, so distinct custom members never wrongly merge.
  * buildingMap maps buildingId -> buildingNumber.
  */
-const groupItemsForShipper = (items, buildingMap) => {
+const groupItemsForShipper = (items, buildingMap, options = {}) => {
+  const preserveSourceRows = shouldPreserveSourceRows(items, buildingMap, options)
   const bySheet = new Map()
 
-  items.forEach((item) => {
+  items.forEach((item, index) => {
     const sheetId = classifyShipperSheet(item)
 
     if (!bySheet.has(sheetId)) bySheet.set(sheetId, new Map())
     const sheetMap = bySheet.get(sheetId)
 
+    const normalizedPart = item.partCodeNormalized || normalizeCode(item.partCode)
+    const normalizedColor = item.partColorNormalized || normalizeColor(item.partColor)
+
     const lengthKey =
-      item.lengthFeet != null ? Number(item.lengthFeet).toFixed(4) : item.lengthRaw || '_'
+      item.lengthFeet != null
+        ? Number(item.lengthFeet).toFixed(4)
+        : normalizeCode(item.lengthRaw) || '_'
 
     const identity =
-      item.partCodeNormalized ||
-      item.partCode ||
-      `DESC:${(item.description || '').toUpperCase()}`
+      normalizedPart ||
+      `DESC:${normalizeCode(item.description) || String(item.description || '').toUpperCase().trim()}`
 
-    const colorKey = item.partColorNormalized || item.partColor || '_'
+    const colorKey = normalizedColor || '_'
 
-    const key = [identity, colorKey, lengthKey].join('|')
+    const markKey = normalizedMarkKey(item.markId)
+
+    // Single-building output must not collapse source BOM rows.
+    // Multi-building output may merge the same mark/material across buildings,
+    // but different marks remain separate rows for traceability.
+    const key = preserveSourceRows
+      ? ['SOURCE', item._id ? String(item._id) : String(index)].join('|')
+      : [sheetId, markKey, identity, colorKey, lengthKey].join('|')
 
     if (!sheetMap.has(key)) {
       sheetMap.set(key, {
@@ -201,12 +280,14 @@ const groupItemsForShipper = (items, buildingMap) => {
       group.marks.add(mark)
     }
 
-    // FIX #3: don't add a fallback 0 — if the buildingId isn't in the map,
-    // skip rather than polluting buildings with a phantom building 0.
     const bNum = buildingMap[String(item.buildingId)]
     if (bNum != null) group.buildings.add(bNum)
 
     if (!group.description && item.description) group.description = item.description
+    if (!group.partCode && item.partCode) group.partCode = item.partCode
+    if (!group.partColor && item.partColor) group.partColor = item.partColor
+    if (!group.lengthRaw && item.lengthRaw) group.lengthRaw = item.lengthRaw
+    if (group.lengthFeet == null && item.lengthFeet != null) group.lengthFeet = item.lengthFeet
     if (!group.gauge && item.gauge) group.gauge = item.gauge
     if (!group.type && item.type) group.type = item.type
     if (!group.angle && item.angle) group.angle = item.angle
@@ -266,7 +347,8 @@ const generateConsolidatedExcel = async (lead, buildingsWithJobs, allItems) => {
     buildingMap[String(b._id)] = b.buildingNumber
   })
 
-  const grouped = groupItemsForShipper(allItems, buildingMap)
+  const preserveSourceRows = buildingsWithJobs.length <= 1
+  const grouped = groupItemsForShipper(allItems, buildingMap, { preserveSourceRows })
 
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'StoragePro'
@@ -384,35 +466,73 @@ const generateConsolidatedExcel = async (lead, buildingsWithJobs, allItems) => {
  * FIX #3: buildings tracking — removed `|| 0` fallback that added a phantom
  * building 0 when buildingId wasn't in buildingMap.
  */
-const groupItemsForConsolidation = (items, buildingMap) => {
+const mapItemsForConsolidationWithoutGrouping = (items, buildingMap = {}) => {
+  return (items || []).map((item) => {
+    const qty = safeNumber(item.quantity)
+    const pieceLengthFeet = safeNumber(item.lengthFeet)
+    const bNum = buildingMap[String(item.buildingId)]
+
+    return {
+      partCode: item.partCode || null,
+      partColor: item.partColor || null,
+      description: item.description || '',
+      category: classifyShipperSheet(item),
+      costUnit: item.costUnit || null,
+
+      unitCost: item.finalUnitCost ?? null,
+
+      totalQty: qty,
+      totalLengthFeet: qty * pieceLengthFeet,
+      totalWeight: safeNumber(item.weight),
+      totalCost: safeNumber(item.finalTotalCost),
+
+      buildings: bNum != null ? [bNum] : [],
+      markIds: splitMarkIds(item.markId),
+      bomItemIds: item._id ? [item._id] : [],
+
+      sourceLineCount: 1,
+      isFullyPriced: item.isPriced === true,
+    }
+  })
+}
+
+const groupItemsForConsolidation = (items, buildingMap, options = {}) => {
+  if (shouldPreserveSourceRows(items, buildingMap, options)) {
+    return mapItemsForConsolidationWithoutGrouping(items, buildingMap)
+  }
+
   const map = new Map()
 
   items.forEach((item) => {
-    // FIX #2: normalize category to shipper sheet ID so cross-building,
-    // cross-format merges work correctly.
     const normalizedCategory = classifyShipperSheet(item)
 
-    // Identity: for items with a part code, key on that.
-    // For no-part-code items (custom frames, buyouts), key on description
-    // so distinct members don't wrongly merge.
-    const identity =
-      item.partCode ||
-      `DESC:${(item.description || '').toUpperCase().trim()}`
+    const normalizedPart = item.partCodeNormalized || normalizeCode(item.partCode)
+    const normalizedColor = item.partColorNormalized || normalizeColor(item.partColor)
 
-    const key = [
-      identity,
-      item.partColor || '_',
-      item.costUnit || '_',
-      normalizedCategory,
-      item.lengthFeet != null ? Number(item.lengthFeet).toFixed(4) : '_',
-    ].join('|')
+    const identity =
+      normalizedPart ||
+      `DESC:${normalizeCode(item.description) || String(item.description || '').toUpperCase().trim()}`
+
+    const colorKey = normalizedColor || '_'
+
+    const lengthKey =
+      item.lengthFeet != null
+        ? Number(item.lengthFeet).toFixed(4)
+        : normalizeCode(item.lengthRaw) || '_'
+
+    const markKey = normalizedMarkKey(item.markId)
+
+    // Multi-building consolidation key.
+    // Include mark identity so different BOM line items from the same building
+    // are not hidden inside one row just because material/length matches.
+    // Rows with the same mark/material can still merge across buildings.
+    const key = [normalizedCategory, markKey, identity, colorKey, lengthKey].join('|')
 
     if (!map.has(key)) {
       map.set(key, {
         partCode: item.partCode,
         partColor: item.partColor,
         description: item.description,
-        // FIX #2: store the normalized category so the DB record matches the Excel sheet.
         category: normalizedCategory,
         costUnit: item.costUnit,
 
@@ -438,8 +558,6 @@ const groupItemsForConsolidation = (items, buildingMap) => {
     const pieceLengthFeet = safeNumber(item.lengthFeet)
 
     group.totalQty += qty
-    // Store TOTAL linear feet, not single-piece length.
-    // Shipper reconciliation derives piece length as totalLengthFeet / totalQty.
     group.totalLengthFeet += qty * pieceLengthFeet
     group.totalWeight += safeNumber(item.weight)
     group.totalCost += safeNumber(item.finalTotalCost)
@@ -448,8 +566,10 @@ const groupItemsForConsolidation = (items, buildingMap) => {
       group.unitCost = item.finalUnitCost
     }
 
-    // FIX #3: only add building number if it's actually in the map.
-    // The old `|| 0` fallback added a phantom building 0 when lookup failed.
+    if (!group.costUnit && item.costUnit) {
+      group.costUnit = item.costUnit
+    }
+
     const bNum = buildingMap[String(item.buildingId)]
     if (bNum != null) {
       group.buildings.add(bNum)
@@ -523,8 +643,24 @@ const uploadConsolidatedExcelToS3 = async (buffer, leadId) => {
 }
 
 /**
- * Safer than loadPricedBomItemsForBuildings.
- * We load all BOM items, then controller validates if any are unpriced.
+ * Correct loader for consolidation.
+ *
+ * Consolidated BOM must be built from the selected/latest BOM jobs, not every
+ * historical BOM row under the same buildingId. Loading by buildingId silently
+ * mixes old failed uploads and re-uploads into the new consolidated file.
+ */
+const loadBomItemsForJobs = (bomJobIds) => {
+  return BOMItem.find({
+    bomJobId: { $in: bomJobIds },
+  })
+    .sort({ category: 1, markId: 1 })
+    .lean()
+}
+
+/**
+ * Backward-compatible fallback. Keep this only so old controllers do not crash.
+ * Do not use it for new consolidation flow unless the user explicitly chooses
+ * to consolidate all rows for a building.
  */
 const loadBomItemsForBuildings = (buildingIds) => {
   return BOMItem.find({
@@ -538,10 +674,13 @@ module.exports = {
   generateConsolidatedExcel,
   groupItemsForConsolidation,
   uploadConsolidatedExcelToS3,
+  loadBomItemsForJobs,
   loadBomItemsForBuildings,
 
   // Shipper-format helpers (the file is shipper format; these support it)
   groupItemsForShipper,
+  mapItemsForConsolidationWithoutGrouping,
+  shouldPreserveSourceRows,
   classifyShipperSheet,
   splitMarkIds,
   SHIPPER_SHEETS,

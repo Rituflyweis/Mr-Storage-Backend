@@ -233,16 +233,29 @@ const downloadBuffer = (url) =>
   })
 
 const inferFileFormat = (fileName, fileFormat) => {
-  if (fileFormat) return String(fileFormat).toLowerCase()
-
   const ext = String(fileName || '')
     .split('.')
     .pop()
     ?.toLowerCase()
 
+  // Extension is the best signal for .out uploads. Browsers/S3 often send
+  // .out as text/plain or application/octet-stream, so do not trust MIME first.
   if (['ods', 'xlsx', 'xls', 'out', 'txt'].includes(ext)) return ext
 
-  return 'xlsx'
+  const fmt = String(fileFormat || '').toLowerCase().trim()
+
+  const mimeMap = {
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+    'text/plain': 'txt',
+    'application/octet-stream': '',
+  }
+
+  if (mimeMap[fmt]) return mimeMap[fmt]
+  if (['ods', 'xlsx', 'xls', 'out', 'txt'].includes(fmt)) return fmt
+
+  return ''
 }
 
 const sheetRowsFromSheetJsBuffer = (buffer) => {
@@ -620,15 +633,21 @@ ${text.slice(0, 120000)}`,
 }
 
 const looksLikeOutReport = (buffer) => {
-  const head = buffer.slice(0, 4000).toString('utf8')
-  return /={20,}/.test(head) && /\bQuan\b/.test(head) && /\bCost\b/.test(head)
+  const head = buffer.slice(0, 8000).toString('utf8')
+
+  return (
+    /={20,}/.test(head) &&
+    /\bQuan\b/i.test(head) &&
+    /\bCost\b/i.test(head) &&
+    (/\bMark\b/i.test(head) || /\bPart\b/i.test(head) || /\bLength\b/i.test(head))
+  )
 }
 
 const extractBOMItemsFromWorkbook = async (buffer, fileName, fileFormat) => {
   const format = inferFileFormat(fileName, fileFormat)
 
   // Fixed-width MBS-style .out cost reports
-  if (format === 'out' || (format === 'txt' && looksLikeOutReport(buffer))) {
+  if (format === 'out' || looksLikeOutReport(buffer)) {
     const { items, sections, skippedRows } = parseOutFile(buffer)
 
     // FIX #6: cross-check parsed totals against the report's own section totals.
