@@ -1,4 +1,4 @@
-const BUNDLE_PLANNING_SERVICE_VERSION = 'bundle-planning-v4-bom-weight-controller-wiring-and-shipping-length'
+const BUNDLE_PLANNING_SERVICE_VERSION = 'bundle-planning-v5-bom-weight-required-no-zero-save'
 
 
 /* =========================================================
@@ -1252,6 +1252,128 @@ const toPlainVendorLine = (line) => {
 
 const getLineId = (line) => getIdString(line?._id || line?.id || line?.vendorQuoteLineId)
 
+const normalizeMatchText = (value) => normalizeText(value).replace(/[^A-Z0-9]/g, '')
+
+const almostSameLengthFeet = (a, b, toleranceFeet = 0.08) => {
+  const x = toNumber(a, 0)
+  const y = toNumber(b, 0)
+
+  if (x <= 0 && y <= 0) return true
+  if (x <= 0 || y <= 0) return false
+
+  return Math.abs(x - y) <= toleranceFeet
+}
+
+const sameQty = (a, b) => {
+  const x = toNumber(a, 0)
+  const y = toNumber(b, 0)
+
+  if (x <= 0 || y <= 0) return false
+  return Math.abs(x - y) < 0.0001
+}
+
+const scoreDirectBomCandidate = (line, bomItem) => {
+  let score = 0
+
+  const lineMark = normalizeMatchText(line.pieceMark || line.pieceMarkNormalized)
+  const bomMark = normalizeMatchText(bomItem.markId)
+  const linePart = normalizeMatchText(line.partCode || line.vendorProductCode || line.partCodeNormalized || line.vendorProductCodeNormalized)
+  const bomPart = normalizeMatchText(bomItem.partCode || bomItem.partCodeNormalized)
+  const lineDescription = normalizeMatchText(line.description)
+  const bomDescription = normalizeMatchText(bomItem.description)
+
+  if (lineMark && bomMark && lineMark === bomMark) score += 100
+  if (linePart && bomPart && linePart === bomPart) score += 35
+  if (sameQty(line.pieceQty || line.qty, bomItem.quantity)) score += 25
+  if (almostSameLengthFeet(line.lengthFeet, bomItem.lengthFeet)) score += 25
+
+  if (lineDescription && bomDescription) {
+    if (lineDescription === bomDescription) score += 15
+    else if (lineDescription.includes(bomDescription) || bomDescription.includes(lineDescription)) score += 8
+  }
+
+  // Without a mark, require stronger physical identity to avoid wrong weights.
+  if (!lineMark || !bomMark) {
+    const hasStrongNonMarkMatch =
+      (linePart && bomPart && linePart === bomPart) &&
+      sameQty(line.pieceQty || line.qty, bomItem.quantity) &&
+      almostSameLengthFeet(line.lengthFeet, bomItem.lengthFeet)
+
+    if (!hasStrongNonMarkMatch) return 0
+  }
+
+  return score
+}
+
+const fillMissingWeightsByDirectBomMatch = async ({
+  weightByVendorLineId,
+  vendorLines = [],
+} = {}) => {
+  const BOMItem = getBOMItemModel()
+  if (!BOMItem || !Array.isArray(vendorLines) || !vendorLines.length) return weightByVendorLineId
+
+  const missingVendorLines = vendorLines.filter((line) => {
+    const lineId = getLineId(line)
+    return lineId && !weightByVendorLineId.has(lineId)
+  })
+
+  if (!missingVendorLines.length) return weightByVendorLineId
+
+  const leadIds = uniqueIdStrings(missingVendorLines.map((line) => line.leadId))
+  if (!leadIds.length) return weightByVendorLineId
+
+  const bomItems = await BOMItem.find({ leadId: { $in: leadIds } })
+    .select('_id leadId weight quantity lengthFeet lengthRaw partCode partCodeNormalized description markId')
+    .lean()
+
+  const validBomItems = (bomItems || []).filter((item) => toNumber(item.weight, 0) > 0)
+  if (!validBomItems.length) return weightByVendorLineId
+
+  const usedBomIds = new Set()
+
+  for (const line of missingVendorLines) {
+    const lineId = getLineId(line)
+    if (!lineId) continue
+
+    let best = null
+    let bestScore = 0
+
+    for (const bomItem of validBomItems) {
+      const bomId = getIdString(bomItem._id)
+      if (!bomId || usedBomIds.has(bomId)) continue
+
+      if (getIdString(bomItem.leadId) !== getIdString(line.leadId)) continue
+
+      const score = scoreDirectBomCandidate(line, bomItem)
+      if (score > bestScore) {
+        best = bomItem
+        bestScore = score
+      }
+    }
+
+    // 100+ means exact mark match. 150+ is strong mark/qty/length/description.
+    // 85+ allows non-mark exact part+qty+length rows.
+    if (!best || bestScore < 85) continue
+
+    const totalWeight = roundNumber(best.weight, 4)
+    const totalQty = toNumber(best.quantity, 0)
+    const unitWeight = totalQty > 0 ? roundNumber(totalWeight / totalQty, 6) : null
+    const bomId = getIdString(best._id)
+
+    usedBomIds.add(bomId)
+    weightByVendorLineId.set(lineId, {
+      totalWeight,
+      groupTotalWeight: totalWeight,
+      unitWeight,
+      matchedBomItemIds: [bomId],
+      weightSource: 'bom_direct_fallback',
+      comparisonResultId: null,
+    })
+  }
+
+  return weightByVendorLineId
+}
+
 const buildBomWeightLookupFromComparisonResults = async ({
   shipperRequestId,
   comparisonResults = null,
@@ -1267,24 +1389,32 @@ const buildBomWeightLookupFromComparisonResults = async ({
       return weightByVendorLineId
     }
 
-    const vendorLineIds = uniqueIdStrings(vendorLines.map(getLineId))
     const query = {
       status: 'matched',
     }
 
     if (shipperRequestId) query.shipperRequestId = shipperRequestId
-    if (vendorLineIds.length) {
-      query.$or = [
-        { vendorQuoteLineId: { $in: vendorLineIds } },
-        { vendorQuoteLineIds: { $in: vendorLineIds } },
-      ]
-    }
 
+    // Important: do not pre-filter with vendorQuoteLineId here.
+    // Some projects had ObjectId/string casting mismatch or old array-field shape,
+    // which returned zero comparison rows and silently created 0-weight bundles.
+    // Pull matched rows for the shipper request first, then filter in memory.
     results = await QuoteComparisonResult.find(query).lean()
   }
 
-  const matchedResults = (results || []).filter((result) => result && result.status === 'matched')
-  if (!matchedResults.length) return weightByVendorLineId
+  const vendorLineIds = new Set(uniqueIdStrings(vendorLines.map(getLineId)))
+  let matchedResults = (results || []).filter((result) => result && result.status === 'matched')
+
+  if (vendorLineIds.size) {
+    matchedResults = matchedResults.filter((result) => {
+      const ids = getVendorIdsFromComparisonResult(result)
+      return ids.some((id) => vendorLineIds.has(id))
+    })
+  }
+
+  if (!matchedResults.length) {
+    return fillMissingWeightsByDirectBomMatch({ weightByVendorLineId, vendorLines })
+  }
 
   const bomIdsNeeded = uniqueIdStrings(matchedResults.flatMap(getBomIdsFromComparisonResult))
   const bomWeightById = new Map()
@@ -1343,6 +1473,8 @@ const buildBomWeightLookupFromComparisonResults = async ({
       })
     }
   }
+
+  await fillMissingWeightsByDirectBomMatch({ weightByVendorLineId, vendorLines })
 
   return weightByVendorLineId
 }

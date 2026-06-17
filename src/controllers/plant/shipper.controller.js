@@ -11,7 +11,10 @@ const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { processShipperComparisonJob } = require('../../services/plant/shipperComparison.service')
-const { generateBundlesFromVendorLinesWithBomWeights } = require('../../services/plant/loadPlanning.service')
+const {
+  BUNDLE_PLANNING_SERVICE_VERSION,
+  generateBundlesFromVendorLinesWithBomWeights,
+} = require('../../services/plant/loadPlanning.service')
 const {
   sendShipperApprovalEmail,
   sendShipperRejectionEmail,
@@ -771,6 +774,28 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
         : []),
     ]),
   ]
+
+  if (totalWeight <= 0) {
+    return badRequest(res, 'Bundle plan generation failed: BOM matched weight was not applied, so generated total weight is zero. Nothing was saved.', {
+      serviceVersion: BUNDLE_PLANNING_SERVICE_VERSION,
+      shipperRequestId: request._id,
+      vendorLineCount: vendorLines.length,
+      generatedBundleCount: generatedBundles.length,
+      missingWeightItemCount,
+      hint: 'Check QuoteComparisonResult matched rows and BOMItem.weight for this shipperRequestId. The controller must call generateBundlesFromVendorLinesWithBomWeights.',
+    })
+  }
+
+  if (missingWeightItemCount >= vendorLines.length) {
+    return badRequest(res, 'Bundle plan generation failed: all vendor lines still have zero/missing weight after BOM matching. Nothing was saved.', {
+      serviceVersion: BUNDLE_PLANNING_SERVICE_VERSION,
+      shipperRequestId: request._id,
+      vendorLineCount: vendorLines.length,
+      generatedBundleCount: generatedBundles.length,
+      totalWeight,
+      missingWeightItemCount,
+    })
+  }
 
   let bundlePlan
   const wasRegenerated = Boolean(existingPlan)
