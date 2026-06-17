@@ -1,0 +1,829 @@
+{
+  "meta": {
+    "leadId": "6a325752139de88291a62842",
+    "jobId": "PRO-027",
+    "shipperRequestId": "6a325759139de88291a628fe",
+    "bundlePlanId": "",
+    "bomItems": 79,
+    "bomItemWeightTotal": 58475.399999999994,
+    "consolidatedTotalWeight": 58475.4,
+    "compareSummary": {
+      "expectedLines": 79,
+      "vendorLines": 79,
+      "matchedLines": 79,
+      "missingItems": 0,
+      "extraItems": 0,
+      "qtyMismatches": 0,
+      "lengthMismatches": 0,
+      "weightMismatches": 0,
+      "priceMismatches": 0,
+      "partMismatches": 0,
+      "ambiguousMatches": 0,
+      "manualReviewRequired": 0,
+      "extractionNote": "shipper-comparison-v4.8-row-preserved-no-length-normalization: row-preserved BOM matching with duplicate quantity-aware pairing and no-length normalization. Single-building row-preserved BOMs pass only when vendor preserves separate comparable lines.",
+      "expectedSource": "bom_items_row_preserved",
+      "bomItemIdsFound": 79,
+      "bomItemsLoaded": 79,
+      "serviceVersion": "shipper-comparison-v4.8-row-preserved-no-length-normalization",
+      "extractionFormat": "central_states",
+      "extractionMethod": "pdf_text",
+      "extractedVendorLines": 79
+    }
+  },
+  "loadPlanningAfterGenerate": {
+    "bundlePlanStatus": "generated",
+    "bundlePlanNumber": "BP-0003",
+    "totalBundles": 44,
+    "totalWeight": 10369.6,
+    "maxLengthFeet": 300,
+    "bundleCount": 44,
+    "packingListPlanStatus": null,
+    "packingListCount": 0,
+    "trucks": [],
+    "warnings": [
+      "1 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate.",
+      "Bundle has no valid physical weight. Truck/load plan is not trustworthy until weight is reviewed.",
+      "Bundle length exceeds 53 ft truck limit",
+      "6 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate.",
+      "3 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate.",
+      "Keep dry",
+      "Edge protection required",
+      "Must stay flat",
+      "Do not stack other bundles on this bundle",
+      "1 item(s) use assumed legacy weight basis. Verify before final dispatch.",
+      "2 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate.",
+      "Bundle exceeds recommended 6,000 lbs weight",
+      "14 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate."
+    ]
+  },
+  "loadPlanningFinal": {
+    "bundlePlanStatus": "confirmed",
+    "bundlePlanNumber": "BP-0003",
+    "totalBundles": 44,
+    "totalWeight": 10369.6,
+    "maxLengthFeet": 300,
+    "bundleCount": 44,
+    "packingListPlanStatus": "generated",
+    "packingListCount": 3,
+    "trucks": [
+      {
+        "packingListNo": "PL-001",
+        "truckType": "SEMI_53",
+        "totalWeight": 0
+      },
+      {
+        "packingListNo": "PL-002",
+        "truckType": "SEMI_53",
+        "totalWeight": 0
+      },
+      {
+        "packingListNo": "PL-003",
+        "truckType": "SEMI_53",
+        "totalWeight": 10369.6
+      }
+    ],
+    "warnings": [
+      "1 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate.",
+      "Bundle has no valid physical weight. Truck/load plan is not trustworthy until weight is reviewed.",
+      "Bundle length exceeds 53 ft truck limit",
+      "6 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate.",
+      "3 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate.",
+      "Keep dry",
+      "Edge protection required",
+      "Must stay flat",
+      "Do not stack other bundles on this bundle",
+      "1 item(s) use assumed legacy weight basis. Verify before final dispatch.",
+      "2 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate.",
+      "Bundle exceeds recommended 6,000 lbs weight",
+      "14 item(s) in this bundle have missing/invalid physical weight. Bundle weight and truck plan may be inaccurate."
+    ]
+  },
+  "coverage": {
+    "rows": [
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8c1",
+        "partCode": "",
+        "description": "RF Column",
+        "expectedQty": 9,
+        "assignedQty": 9,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8c2",
+        "partCode": "",
+        "description": "RF Rafter",
+        "expectedQty": 9,
+        "assignedQty": 9,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8c3",
+        "partCode": "",
+        "description": "RF Rafter",
+        "expectedQty": 9,
+        "assignedQty": 9,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8c4",
+        "partCode": "",
+        "description": "RF Column",
+        "expectedQty": 7,
+        "assignedQty": 7,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8c5",
+        "partCode": "",
+        "description": "RF Column",
+        "expectedQty": 2,
+        "assignedQty": 2,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8c6",
+        "partCode": "W14X38",
+        "description": "Wind Column",
+        "expectedQty": 2,
+        "assignedQty": 2,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8c7",
+        "partCode": "W8X24",
+        "description": "EW Column",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8c8",
+        "partCode": "W8X18",
+        "description": "EW Column",
+        "expectedQty": 2,
+        "assignedQty": 2,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8c9",
+        "partCode": "W8X24",
+        "description": "EW Column",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8ca",
+        "partCode": "W12X26",
+        "description": "EW Rafter",
+        "expectedQty": 2,
+        "assignedQty": 2,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8cb",
+        "partCode": "Z82514",
+        "description": "Roof Purlin",
+        "expectedQty": 12,
+        "assignedQty": 12,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8cc",
+        "partCode": "Z82516",
+        "description": "Roof Purlin",
+        "expectedQty": 12,
+        "assignedQty": 12,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8cd",
+        "partCode": "Z82516",
+        "description": "Roof Purlin",
+        "expectedQty": 72,
+        "assignedQty": 72,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8ce",
+        "partCode": "Z82516",
+        "description": "Roof Purlin",
+        "expectedQty": 12,
+        "assignedQty": 12,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8cf",
+        "partCode": "Z82514",
+        "description": "Roof Purlin",
+        "expectedQty": 12,
+        "assignedQty": 12,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d0",
+        "partCode": "08534DU0",
+        "description": "Eave Strut",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d1",
+        "partCode": "08534DU0",
+        "description": "Eave Strut",
+        "expectedQty": 8,
+        "assignedQty": 8,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d2",
+        "partCode": "08534DU0",
+        "description": "Eave Strut",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d3",
+        "partCode": "08534DD0",
+        "description": "Eave Strut",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d4",
+        "partCode": "08534DD0",
+        "description": "Eave Strut",
+        "expectedQty": 8,
+        "assignedQty": 8,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d5",
+        "partCode": "08534DD0",
+        "description": "Eave Strut",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d6",
+        "partCode": "Z82514",
+        "description": "Wall Girt",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d7",
+        "partCode": "Z82516",
+        "description": "Wall Girt",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d8",
+        "partCode": "Z82514",
+        "description": "Wall Girt",
+        "expectedQty": 2,
+        "assignedQty": 2,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8d9",
+        "partCode": "Z82516",
+        "description": "Wall Girt",
+        "expectedQty": 24,
+        "assignedQty": 24,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8da",
+        "partCode": "Z82514",
+        "description": "Wall Girt",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8db",
+        "partCode": "Z82516",
+        "description": "Wall Girt",
+        "expectedQty": 1,
+        "assignedQty": 1,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8dc",
+        "partCode": "Z82514",
+        "description": "Wall Girt",
+        "expectedQty": 2,
+        "assignedQty": 2,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8dd",
+        "partCode": "RLOC26",
+        "description": "Roof Sheet",
+        "expectedQty": 74,
+        "assignedQty": 74,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8de",
+        "partCode": "RLOC26",
+        "description": "Roof Sheet",
+        "expectedQty": 74,
+        "assignedQty": 74,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8df",
+        "partCode": "RLOC26",
+        "description": "B_SW Sheet",
+        "expectedQty": 74,
+        "assignedQty": 74,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e0",
+        "partCode": "CL-18",
+        "description": "Eav Plt",
+        "expectedQty": 13,
+        "assignedQty": 13,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e1",
+        "partCode": "2X2X14Ga",
+        "description": "RF Flg Brc",
+        "expectedQty": 9,
+        "assignedQty": 9,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e2",
+        "partCode": "2X2X14Ga",
+        "description": "EW Flg Brc",
+        "expectedQty": 12,
+        "assignedQty": 12,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e3",
+        "partCode": "2X2X14Ga",
+        "description": "RF Flg Brc",
+        "expectedQty": 9,
+        "assignedQty": 9,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e4",
+        "partCode": "2X2X14Ga",
+        "description": "RF Flg Brc",
+        "expectedQty": 36,
+        "assignedQty": 36,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e5",
+        "partCode": "2X2X14Ga",
+        "description": "RF Flg Brc",
+        "expectedQty": 9,
+        "assignedQty": 9,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e6",
+        "partCode": "2X2X14Ga",
+        "description": "RF Flg Brc",
+        "expectedQty": 9,
+        "assignedQty": 9,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e7",
+        "partCode": "B4214",
+        "description": "L4x2x14g Angle",
+        "expectedQty": 23,
+        "assignedQty": 23,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e8",
+        "partCode": "BANDS4W",
+        "description": "PURLIN STRAPPI",
+        "expectedQty": 12,
+        "assignedQty": 12,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8e9",
+        "partCode": "HI6",
+        "description": "Hi-Side Eave T",
+        "expectedQty": 11,
+        "assignedQty": 11,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8ea",
+        "partCode": "LEA6",
+        "description": "Long Trim",
+        "expectedQty": 11,
+        "assignedQty": 11,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8eb",
+        "partCode": "RA6",
+        "description": "Rake Trim",
+        "expectedQty": 12,
+        "assignedQty": 12,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8ec",
+        "partCode": "REND6",
+        "description": "Rake Trim End",
+        "expectedQty": 8,
+        "assignedQty": 8,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8ed",
+        "partCode": "OA678610",
+        "description": "Outside Angle",
+        "expectedQty": 12,
+        "assignedQty": 12,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8ee",
+        "partCode": "RLGU6",
+        "description": "Standard Gutte",
+        "expectedQty": 11,
+        "assignedQty": 11,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8ef",
+        "partCode": "GEN6",
+        "description": "Gutter End Cap",
+        "expectedQty": 2,
+        "assignedQty": 2,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f0",
+        "partCode": "OCB6",
+        "description": "Outside Corner",
+        "expectedQty": 2,
+        "assignedQty": 2,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f1",
+        "partCode": "RLGS96",
+        "description": "Gutter Strap",
+        "expectedQty": 110,
+        "assignedQty": 110,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f2",
+        "partCode": "DK6102",
+        "description": "Downspout(w/KO",
+        "expectedQty": 11,
+        "assignedQty": 11,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f3",
+        "partCode": "DK6",
+        "description": "Downspout(w/KO",
+        "expectedQty": 11,
+        "assignedQty": 11,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f4",
+        "partCode": "DSS6",
+        "description": "Downspout Stra",
+        "expectedQty": 33,
+        "assignedQty": 33,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f5",
+        "partCode": "DSLVE6",
+        "description": "Downspout Conn",
+        "expectedQty": 11,
+        "assignedQty": 11,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f6",
+        "partCode": "HR6",
+        "description": "Outside Corner",
+        "expectedQty": 4,
+        "assignedQty": 4,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f7",
+        "partCode": "CB0375",
+        "description": "SW Cable",
+        "expectedQty": 4,
+        "assignedQty": 4,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f8",
+        "partCode": "CB0250",
+        "description": "Roof Cable",
+        "expectedQty": 4,
+        "assignedQty": 4,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8f9",
+        "partCode": "CHW250",
+        "description": "Cbl Hardware C",
+        "expectedQty": 4,
+        "assignedQty": 4,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8fa",
+        "partCode": "CHW375",
+        "description": "Cbl Hardware C",
+        "expectedQty": 4,
+        "assignedQty": 4,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8fb",
+        "partCode": "RLCLINGL",
+        "description": "RLoc Inside",
+        "expectedQty": 152,
+        "assignedQty": 152,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8fc",
+        "partCode": "BTL",
+        "description": "7/8\" Butyl T",
+        "expectedQty": 125,
+        "assignedQty": 125,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8fd",
+        "partCode": "RLCLOUTG",
+        "description": "RLoc-Out Clo",
+        "expectedQty": 76,
+        "assignedQty": 76,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8fe",
+        "partCode": "MRS",
+        "description": "Metal Roof S",
+        "expectedQty": 11,
+        "assignedQty": 11,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e8ff",
+        "partCode": "GFLEX115",
+        "description": "Grayflex Joi",
+        "expectedQty": 17,
+        "assignedQty": 17,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e900",
+        "partCode": "BN58114",
+        "description": "Bolts",
+        "expectedQty": 8,
+        "assignedQty": 8,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e901",
+        "partCode": "BN12100M",
+        "description": "Bolts",
+        "expectedQty": 1150,
+        "assignedQty": 1150,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e902",
+        "partCode": "BN12100F",
+        "description": "Bolts",
+        "expectedQty": 50,
+        "assignedQty": 50,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e903",
+        "partCode": "BN12114M",
+        "description": "Bolts",
+        "expectedQty": 100,
+        "assignedQty": 100,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e904",
+        "partCode": "BN58134",
+        "description": "Bolts",
+        "expectedQty": 92,
+        "assignedQty": 92,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e905",
+        "partCode": "BN58200",
+        "description": "Bolts",
+        "expectedQty": 73,
+        "assignedQty": 73,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e906",
+        "partCode": "BN34200",
+        "description": "Bolts",
+        "expectedQty": 73,
+        "assignedQty": 73,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e907",
+        "partCode": "BN58112",
+        "description": "Bolts",
+        "expectedQty": 20,
+        "assignedQty": 20,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e908",
+        "partCode": "AB750",
+        "description": "Anchor Bolt",
+        "expectedQty": 52,
+        "assignedQty": 52,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e909",
+        "partCode": "AB114",
+        "description": "Anchor Bolt",
+        "expectedQty": 36,
+        "assignedQty": 36,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e90a",
+        "partCode": "8X12LATH",
+        "description": "1/4-12x1/2 TEK",
+        "expectedQty": 7750,
+        "assignedQty": 7750,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e90b",
+        "partCode": "78LAP",
+        "description": "M/M SCREW #12",
+        "expectedQty": 3500,
+        "assignedQty": 3500,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e90c",
+        "partCode": "114MM",
+        "description": "M/M SCREW #12",
+        "expectedQty": 4750,
+        "assignedQty": 4750,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e90d",
+        "partCode": "114MM",
+        "description": "M/M SCREW #12",
+        "expectedQty": 1250,
+        "assignedQty": 1250,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e90e",
+        "partCode": "POP",
+        "description": "1/8\" Pop Rivet",
+        "expectedQty": 300,
+        "assignedQty": 300,
+        "diff": 0,
+        "status": "exact"
+      },
+      {
+        "vendorQuoteLineId": "6a32575ba7e59f2c5664e90f",
+        "partCode": "78LAP",
+        "description": "M/M SCREW #12",
+        "expectedQty": 1250,
+        "assignedQty": 1250,
+        "diff": 0,
+        "status": "exact"
+      }
+    ],
+    "summary": {
+      "totalVendorLines": 79,
+      "exactCount": 79,
+      "unassignedCount": 0,
+      "overAssignedCount": 0,
+      "canConfirm": true
+    }
+  },
+  "weightCheck": {
+    "bomItemWeightTotal": 58475.399999999994,
+    "bundlePlanWeight": 10369.6,
+    "truckPlanWeight": 10369.6,
+    "match": false
+  }
+}

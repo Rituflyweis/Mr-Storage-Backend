@@ -15,6 +15,7 @@ const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.se
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog } = require('../../services/auditActivity.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
 const { validatePlantLifecycleTransition } = require('../../utils/plantLifecycle')
 const { getLatestBomJobsByBuilding, formatBomJobSummary } = require('../../utils/plantBomAccess')
 const { processBOMJob, inferFileFormat } = require('../../services/plant/bom.service')
@@ -728,10 +729,11 @@ exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
   if (!access) return
   const leadId = access.lead._id
 
-  const requests = await ShipperRequest.find({ leadId })
-    .populate('vendorId', 'vendorName vendorCode email')
-    .sort({ createdAt: -1 })
-    .lean()
+  const requests = sortShipperRequestsByLowestBid(
+    await ShipperRequest.find({ leadId })
+      .populate('vendorId', 'vendorName vendorCode email')
+      .lean()
+  )
 
   return success(res, {
     shipperFiles: requests.map((r) => ({

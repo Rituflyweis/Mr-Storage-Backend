@@ -95,21 +95,27 @@ exports.getAllPOOrders = asyncHandler(async (req, res) => {
     .populate('customerId')
     .populate('raisedBy')
     .populate('assignedTo', 'name email role')
-    .populate('invoiceId', 'invoiceNumber status poNumber paidAt')
+    .populate('invoiceId', 'invoiceNumber status poNumber paidAt totalAmount')
     .populate('quotationId')
     .sort({ createdAt: -1 })
     .lean()
 
-  const ordersWithPayment = orders.map((o) => ({
-    ...o,
-    leadId: o.leadId && typeof o.leadId === 'object' ? enrichLeadDocument(o.leadId) : o.leadId,
-    invoicePayment: o.invoiceId
-      ? {
-          status: o.invoiceId.status,
-          isPaid: o.invoiceId.status === 'paid',
-        }
-      : null,
-  }))
+  const ordersWithPayment = orders.map((o) => {
+    const invoiceAmount = o.invoiceId?.totalAmount ?? null
+
+    return {
+      ...o,
+      leadId: o.leadId && typeof o.leadId === 'object' ? enrichLeadDocument(o.leadId) : o.leadId,
+      invoiceAmount,
+      invoicePayment: o.invoiceId
+        ? {
+            status: o.invoiceId.status,
+            isPaid: o.invoiceId.status === 'paid',
+            amount: invoiceAmount,
+          }
+        : null,
+    }
+  })
 
   return success(res, { orders: ordersWithPayment })
 })
@@ -203,7 +209,7 @@ exports.approveAndAssignPOOrder = asyncHandler(async (req, res) => {
 
   const populated = await POOrder.findById(order._id)
     .populate('assignedTo', 'name email role')
-    .populate('invoiceId', 'invoiceNumber status poNumber paidAt')
+    .populate('invoiceId', 'invoiceNumber status poNumber paidAt totalAmount')
     .lean()
 
   return success(res, { order: populated }, 'PO Order approved and assigned to plant')

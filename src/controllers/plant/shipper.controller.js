@@ -11,7 +11,7 @@ const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { processShipperComparisonJob } = require('../../services/plant/shipperComparison.service')
-const { generateBundlesFromVendorLines } = require('../../services/plant/loadPlanning.service')
+const { generateBundlesFromVendorLinesWithBomWeights } = require('../../services/plant/loadPlanning.service')
 const {
   sendShipperApprovalEmail,
   sendShipperRejectionEmail,
@@ -26,6 +26,7 @@ const {
   RESUBMIT_ALLOWED_STATUSES,
 } = require('../../utils/vendorUpload.util')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const { SHIPPER_REQUEST_LATEST_FIRST_SORT, sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -55,7 +56,7 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
 
   const requests = await ShipperRequest.find({ leadId: { $in: leadIds } })
     .populate('leadId', 'projectName jobId')
-    .sort({ createdAt: -1 })
+    .sort(SHIPPER_REQUEST_LATEST_FIRST_SORT)
     .lean()
 
   const projectMap = new Map()
@@ -106,10 +107,11 @@ exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
     return forbidden(res, access.error)
   }
 
-  const requests = await ShipperRequest.find({ leadId })
-    .populate('vendorId', 'vendorName vendorCode')
-    .sort({ createdAt: -1 })
-    .lean()
+  const requests = sortShipperRequestsByLowestBid(
+    await ShipperRequest.find({ leadId })
+      .populate('vendorId', 'vendorName vendorCode')
+      .lean()
+  )
 
   return success(res, {
     leadId,
@@ -726,89 +728,15 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
     return badRequest(res, 'No valid vendor quote lines found for this shipper request')
   }
 
-  /**
-   * Weight backfill for the load planner.
-   *
-   * Some vendor quote formats (notably Central States) have NO weight column,
-   * so every parsed line lands with weight = null. Load planning keys truck/
-   * bundle limits off weight, producing an all-zero, "not trustworthy" plan.
-   *
-   * The real per-mark weights live in the BOM the request was built from. We
-   * join them back by part-mark (the consolidated BOM stores the source
-   * bomItemIds; we fall back to the lead's BOM items if those are absent).
-   */
-  const normMark = (v) => String(v || '').trim().toUpperCase().replace(/\s+/g, '')
-
-  const someWeightMissing = vendorLines.some((line) => {
-    const w = Number(line.weight)
-    return !Number.isFinite(w) || w <= 0
+  const generatedBundles = await generateBundlesFromVendorLinesWithBomWeights(vendorLines, {
+    shipperRequestId: request._id,
   })
 
-  if (someWeightMissing) {
-    const consolidated = await ConsolidatedBOM.findById(request.consolidatedBOMId)
-      .select('items.bomItemIds')
-      .lean()
-
-    const bomItemIds = (consolidated?.items || []).flatMap((it) => it.bomItemIds || [])
-
-    const bomQuery = bomItemIds.length
-      ? { _id: { $in: bomItemIds } }
-      : { leadId: request.leadId }
-
-    const bomItems = await BOMItem.find(bomQuery)
-      .select('markId partCode quantity weight')
-      .lean()
-
-    const normPart = (v) => String(v || '').trim().toUpperCase()
-
-    // Exact, length-correct weights keyed by mark (BOM line weight is the total
-    // for that line, which equals the vendor line's piece set).
-    const weightByMark = new Map()
-    // Fallback: per-piece weight by part code, for lines that share no mark with
-    // the BOM (e.g. fasteners, which carry a part code but no mark). Estimated
-    // as totalWeight / totalQty for that part, then scaled by the vendor qty.
-    const partAgg = new Map()
-
-    for (const bi of bomItems) {
-      const w = Number(bi.weight)
-      if (!Number.isFinite(w) || w <= 0) continue
-
-      const markKey = normMark(bi.markId)
-      if (markKey) weightByMark.set(markKey, (weightByMark.get(markKey) || 0) + w)
-
-      const partKey = normPart(bi.partCode)
-      if (partKey) {
-        const agg = partAgg.get(partKey) || { weight: 0, qty: 0 }
-        agg.weight += w
-        agg.qty += Number(bi.quantity) || 0
-        partAgg.set(partKey, agg)
-      }
-    }
-
-    for (const line of vendorLines) {
-      const w = Number(line.weight)
-      if (Number.isFinite(w) && w > 0) continue
-
-      const byMark = weightByMark.get(normMark(line.pieceMark))
-      if (byMark != null) {
-        line.weight = byMark
-        continue
-      }
-
-      const agg = partAgg.get(normPart(line.partCode))
-      if (agg && agg.qty > 0) {
-        const qty = Number(line.qty ?? line.pieceQty) || 1
-        line.weight = (agg.weight / agg.qty) * qty
-      }
-    }
-  }
-
-  const missingWeightLines = vendorLines.filter((line) => {
-    const weight = Number(line.weight)
-    return !Number.isFinite(weight) || weight <= 0
-  })
-
-  const generatedBundles = generateBundlesFromVendorLines(vendorLines)
+  const missingWeightItemCount = generatedBundles.reduce((sum, bundle) => {
+    return sum + (bundle.items || []).filter((item) => {
+      return item.sourceLineSnapshot?.weightMissing === true || Number(item.weight || 0) <= 0
+    }).length
+  }, 0)
 
   if (!generatedBundles.length) {
     return badRequest(res, 'No bundles could be generated from vendor lines')
@@ -830,9 +758,9 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
     ...new Set([
       ...generatedBundles.flatMap((bundle) => bundle.warnings || []),
 
-      ...(missingWeightLines.length
+      ...(missingWeightItemCount
         ? [
-            `${missingWeightLines.length} vendor line(s) have missing/zero weight. Bundle weight and truck planning may be inaccurate.`,
+            `${missingWeightItemCount} bundle item(s) have missing/zero weight after BOM matching. Bundle weight and truck planning may be inaccurate.`,
           ]
         : []),
 
@@ -916,7 +844,7 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
       totalBundles: bundles.length,
       totalWeight,
       maxLengthFeet,
-      missingWeightLineCount: missingWeightLines.length,
+      missingWeightItemCount: missingWeightItemCount,
       regenerated: wasRegenerated,
     },
   })
@@ -932,8 +860,8 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
       totalWeight: bundlePlan.totalWeight,
       maxLengthFeet: bundlePlan.maxLengthFeet,
 
-      missingWeightLineCount: missingWeightLines.length,
-      hasWeightWarning: missingWeightLines.length > 0 || totalWeight <= 0,
+      missingWeightItemCount: missingWeightItemCount,
+      hasWeightWarning: missingWeightItemCount > 0 || totalWeight <= 0,
 
       warnings: bundlePlan.warnings || [],
     },

@@ -767,6 +767,13 @@ exports.raisePOOrder = asyncHandler(async (req, res) => {
   const latestInvoice = await Invoice.findOne({ leadId }).sort({ createdAt: -1 }).lean()
   if (!latestInvoice) return badRequest(res, 'No invoice found. Create an invoice first.')
 
+  if (latestInvoice.status !== 'paid') {
+    return badRequest(res, 'Latest invoice must be marked as paid before raising a PO', {
+      invoiceId: latestInvoice._id,
+      invoiceStatus: latestInvoice.status,
+    })
+  }
+
   if (!PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES.includes(lead.lifecycleStatus)) {
     return badRequest(
       res,

@@ -15,6 +15,7 @@ const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
 const { CLIENT_URL } = require('../../config/env')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
+const { SHIPPER_REQUEST_LATEST_FIRST_SORT } = require('../../utils/shipperRequestSort')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -230,7 +231,7 @@ const fetchShipperVendorsByLeadIds = async (leadIds) => {
     status: { $in: ['sent', 'submitted', 'comparison_processing', 'comparison_completed', 'approved', 'resubmit_requested'] },
   })
     .populate('vendorId', 'vendorName vendorCode')
-    .sort({ createdAt: -1 })
+    .sort(SHIPPER_REQUEST_LATEST_FIRST_SORT)
     .lean()
 
   const map = new Map()

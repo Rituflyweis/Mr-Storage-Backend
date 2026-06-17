@@ -9,7 +9,7 @@ const RESUBMIT_ALLOWED_STATUSES = new Set([
 
 const buildVendorUploadPageUrl = (token) => {
   const base = String(CLIENT_URL || '').replace(/\/$/, '')
-  return `${base}/vendor-upload/${token}`
+  return `${base}/vendor/${token}`
 }
 
 const getComparisonBlockers = (summary = null) => {
