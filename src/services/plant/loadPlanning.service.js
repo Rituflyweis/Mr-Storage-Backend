@@ -46,8 +46,14 @@ const getQuoteComparisonResultModel = () => {
 const getIdString = (value) => {
   if (!value) return ''
   if (typeof value === 'string') return value
-  if (value._id) return getIdString(value._id)
-  if (value.$oid) return String(value.$oid)
+  if (value && typeof value === 'object' && value.$oid) return String(value.$oid)
+  if (value && typeof value === 'object' && typeof value.toString === 'function') {
+    const asString = value.toString()
+    if (/^[a-f0-9]{24}$/i.test(asString)) return asString
+  }
+  if (value && typeof value === 'object' && value._id != null && value._id !== value) {
+    return getIdString(value._id)
+  }
   return String(value)
 }
 
