@@ -600,7 +600,13 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
   const summary = request.comparisonSummary || null
   const blockers = getComparisonBlockers(summary)
   const canProceedToApproval = request.comparisonStatus === 'completed' && blockers.length === 0
-  const stats = await aggregateComparisonStats(QuoteComparisonResult, request._id)
+
+  const [stats, results] = await Promise.all([
+    aggregateComparisonStats(QuoteComparisonResult, request._id),
+    QuoteComparisonResult.find({ shipperRequestId: request._id })
+      .sort({ createdAt: -1 })
+      .lean(),
+  ])
 
   return success(res, {
     requestId: request._id,
@@ -617,6 +623,8 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
     summary,
     stats,
     exceptionsCount: Array.isArray(request.exceptions) ? request.exceptions.length : 0,
+    resultCount: results.length,
+    results: results.map(mapComparisonResultRow),
     canProceedToApproval,
     blockers,
     resubmitAvailable: RESUBMIT_ALLOWED_STATUSES.has(request.status),

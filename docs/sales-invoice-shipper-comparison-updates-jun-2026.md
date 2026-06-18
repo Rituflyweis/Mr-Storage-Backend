@@ -146,9 +146,9 @@ Comparison UI tabs: **Matched**, **Unmatched**, **Extra**, **All**.
 
 Also available at `/api/plant/shipper-files/:requestId/comparison-summary`.
 
-**New:** `stats` object with per-tab counts.
+**New:** `stats` object with per-tab counts (for tab badges).
 
-**Removed:** Flat `results[]` and `resultCount` from summary (use comparison-results with `category` for lists).
+**Kept:** Full `results[]` table and `resultCount` (backward compatible with existing comparison UI).
 
 **Response `data` (partial):**
 
@@ -175,7 +175,22 @@ Also available at `/api/plant/shipper-files/:requestId/comparison-summary`.
     }
   },
   "canProceedToApproval": false,
-  "blockers": ["missing_items", "qty_mismatch"]
+  "blockers": ["missing_items", "qty_mismatch"],
+  "resultCount": 49,
+  "results": [
+    {
+      "resultId": "...",
+      "status": "missing_in_vendor_quote",
+      "severity": "critical",
+      "expected": { "partCode": "C62514", "qty": 25 },
+      "received": null,
+      "difference": { "qtyDiff": null },
+      "matchMethod": "none",
+      "matchConfidence": null,
+      "reason": "Missing in vendor quote",
+      "createdAt": "2026-06-04T05:10:01.000Z"
+    }
+  ]
 }
 ```
 
@@ -252,10 +267,9 @@ If both `category` (other than `all`) and `status` are sent → `400`: use one f
 
 ### Shipper comparison
 
-- [ ] Tab badges: `GET .../comparison-summary` → `stats.matched|unmatched|extra|all.count`
-- [ ] Tab table: `GET .../comparison-results?category=...`
-- [ ] Remove reliance on summary `results[]` (removed)
-- [ ] Do not send `category` + `status` together
+- [ ] Tab badges: `GET .../comparison-summary` → `stats.*.count`
+- [ ] Full table: same response `results[]` (or paginated `comparison-results?category=...` for large lists)
+- [ ] Do not send `category` + `status` together on comparison-results
 
 ---
 
