@@ -207,9 +207,9 @@ exports.confirmPackingListPlan = asyncHandler(async (req, res) => {
     if ((row.totalWeight || 0) > (row.hardMaxTruckWeight || row.maxTruckWeight || 0)) {
       return badRequest(res, `Packing list ${row.packingListNo} exceeds hard truck weight limit`)
     }
-    if ((row.maxLengthFeet || 0) > (row.maxTruckLengthFeet || 0)) {
-      return badRequest(res, `Packing list ${row.packingListNo} exceeds truck length limit`)
-    }
+    // if ((row.maxLengthFeet || 0) > (row.maxTruckLengthFeet || 0)) {
+    //   return badRequest(res, `Packing list ${row.packingListNo} exceeds truck length limit`)
+    // }
 
     for (const bundleId of row.bundleIds || []) {
       const key = String(bundleId)
