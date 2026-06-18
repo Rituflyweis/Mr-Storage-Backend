@@ -1,5 +1,4 @@
-const BUNDLE_PLANNING_SERVICE_VERSION = 'bundle-planning-v5-bom-weight-required-no-zero-save'
-
+const BUNDLE_PLANNING_SERVICE_VERSION = 'bundle-planning-v5.1-bom-unit-total-weight-fields'
 
 /* =========================================================
  * Optional model loading
@@ -44,17 +43,64 @@ const getQuoteComparisonResultModel = () => {
 }
 
 const getIdString = (value) => {
-  if (!value) return ''
+  if (value === null || value === undefined || value === '') return ''
+
   if (typeof value === 'string') return value
-  if (value && typeof value === 'object' && value.$oid) return String(value.$oid)
-  if (value && typeof value === 'object' && typeof value.toString === 'function') {
-    const asString = value.toString()
-    if (/^[a-f0-9]{24}$/i.test(asString)) return asString
+  if (typeof value === 'number') return String(value)
+
+  // Mongo export shape: { "$oid": "..." }
+  if (value && typeof value === 'object' && value.$oid) {
+    return String(value.$oid)
   }
-  if (value && typeof value === 'object' && value._id != null && value._id !== value) {
-    return getIdString(value._id)
+
+  // Native MongoDB / Mongoose ObjectId.
+  // IMPORTANT: handle this before reading value._id.
+  if (value && typeof value === 'object' && typeof value.toHexString === 'function') {
+    try {
+      return value.toHexString()
+    } catch (_) {
+      // fall through
+    }
   }
-  return String(value)
+
+  // Some ObjectId versions expose _bsontype.
+  if (
+    value &&
+    typeof value === 'object' &&
+    (value._bsontype === 'ObjectId' || value._bsontype === 'ObjectID')
+  ) {
+    try {
+      return String(value)
+    } catch (_) {
+      return ''
+    }
+  }
+
+  // Mongoose document / populated object.
+  // Only access _id after ObjectId handling above.
+  if (value && typeof value === 'object') {
+    const hasOwnId = Object.prototype.hasOwnProperty.call(value, '_id')
+
+    if (hasOwnId && value._id !== value) {
+      return getIdString(value._id)
+    }
+
+    if (hasOwnId && value._id === value) {
+      try {
+        return String(value)
+      } catch (_) {
+        return ''
+      }
+    }
+  }
+
+  try {
+    const asString = String(value)
+    if (asString === '[object Object]') return ''
+    return asString
+  } catch (_) {
+    return ''
+  }
 }
 
 const TRUCK_TYPES = {
@@ -131,6 +177,8 @@ const firstPositiveNumber = (...values) => {
   }
   return 0
 }
+
+const getItemTotalWeight = (item) => Number(item?.totalWeight ?? item?.weight ?? 0)
 
 const getBomMatchedWeight = (line) => {
   const rawRow = line.rawRow || {}
@@ -293,7 +341,6 @@ const classifyBundleType = (line) => {
 
   return 'mixed'
 }
-
 
 const isFlexibleOrRolledMaterial = (line) => {
   const text = normalizeText(`
@@ -700,6 +747,25 @@ const toBundleItem = (line) => {
   const weightResolution = resolveBundleItemWeight(line)
   const weightMissing = isMissingWeight(weightResolution.resolvedWeight)
 
+  const qty = getPhysicalQty(line)
+
+  const totalWeight = weightMissing
+    ? 0
+    : Number(weightResolution.resolvedWeight || 0)
+
+  const unitWeight =
+    Number(weightResolution.source?.unitWeight || 0) > 0
+      ? Number(weightResolution.source.unitWeight)
+      : qty > 0 && totalWeight > 0
+        ? roundNumber(totalWeight / qty, 6)
+        : 0
+
+  const weightSource =
+    weightResolution.source?.weightSource ||
+    line.weightSource ||
+    line.rawRow?.bomMatchedWeightSource ||
+    ''
+
   return {
     vendorQuoteLineId: line._id,
 
@@ -708,16 +774,20 @@ const toBundleItem = (line) => {
     category: line.category || '',
     color: line.color || '',
 
-    qty: getPhysicalQty(line),
+    qty,
 
     lengthFeet: line.lengthFeet || null,
     widthFeet: line.widthFeet || null,
     heightFeet: line.heightFeet || null,
 
-    // IMPORTANT:
-    // No schema change. This existing field now stores the resolved TOTAL line weight.
-    // It is no longer a blind copy of VendorQuoteLine.weight.
-    weight: weightMissing ? 0 : Number(weightResolution.resolvedWeight || 0),
+    // Backward compatibility: keep as total line weight.
+    weight: totalWeight,
+
+    // New clear fields.
+    unitWeight,
+    totalWeight,
+    weightBasis: weightResolution.basis,
+    weightSource,
 
     markIds: line.pieceMark ? [line.pieceMark] : [],
 
@@ -744,13 +814,17 @@ const toBundleItem = (line) => {
 
       weight: line.weight,
       rawWeight: weightResolution.rawWeight,
-      resolvedWeight: weightResolution.resolvedWeight,
+      resolvedWeight: totalWeight,
+      unitWeight,
+      totalWeight,
+
       weightMultiplier: weightResolution.multiplier,
       weightBasis: weightResolution.basis,
       weightConfidence: weightResolution.confidence,
       weightMissing,
       weightWarnings: weightResolution.warnings,
-      weightSource: weightResolution.source?.weightSource || line.weightSource || line.rawRow?.bomMatchedWeightSource || null,
+      weightSource,
+
       bomMatchedTotalWeight: weightResolution.source?.totalWeight || line.rawRow?.bomMatchedTotalWeight || null,
       bomMatchedUnitWeight: weightResolution.source?.unitWeight || line.rawRow?.bomMatchedUnitWeight || null,
       matchedBomItemIds: weightResolution.source?.matchedBomItemIds || line.rawRow?.matchedBomItemIds || [],
@@ -776,7 +850,7 @@ const getBundleWarnings = (bundle) => {
       item.sourceLineSnapshot?.weightMissing === true ||
       item.sourceLineSnapshot?.weightBasis === WEIGHT_BASIS.MISSING ||
       item.sourceLineSnapshot?.weightBasis === WEIGHT_BASIS.PRICE_OR_COST_DETECTED ||
-      Number(item.weight || 0) <= 0
+      getItemTotalWeight(item) <= 0
     )
   })
 
@@ -787,7 +861,7 @@ const getBundleWarnings = (bundle) => {
   }
 
   const assumedWeightItems = (bundle.items || []).filter((item) => {
-    const basis = item.sourceLineSnapshot?.weightBasis
+    const basis = item.sourceLineSnapshot?.weightBasis || item.weightBasis
     const confidence = Number(item.sourceLineSnapshot?.weightConfidence || 0)
 
     return (
@@ -915,7 +989,7 @@ const generateBundlesFromVendorLines = (vendorLines) => {
     for (const line of sorted) {
       const item = toBundleItem(line)
 
-      const lineWeight = Number(item.weight || 0)
+      const lineWeight = getItemTotalWeight(item)
       const lineLength = getShippingLengthFeet(line)
 
       const exceedsWeight =
@@ -1189,7 +1263,7 @@ const recalculateBundleMetrics = (bundle) => {
 
   for (const item of items) {
     totalQty += Number(item.qty || 0)
-    totalWeight += Number(item.weight || 0)
+    totalWeight += getItemTotalWeight(item)
     maxLengthFeet = Math.max(maxLengthFeet, Number(item.lengthFeet || 0))
     estimatedWidthFeet = Math.max(estimatedWidthFeet, Number(item.widthFeet || 0))
     estimatedHeightFeet = Math.max(estimatedHeightFeet, Number(item.heightFeet || 0))
@@ -1204,7 +1278,6 @@ const recalculateBundleMetrics = (bundle) => {
     estimatedHeightFeet,
   })
 }
-
 
 /* =========================================================
  * BOM weight enrichment for load planning
@@ -1503,7 +1576,7 @@ const enrichVendorLinesWithBomWeights = async (vendorLines = [], options = {}) =
       // top-level and rawRow for BOM-matched weights.
       bomMatchedTotalWeight: weight.totalWeight,
       bomMatchedUnitWeight: weight.unitWeight,
-      weightSource: 'bom_matched',
+      weightSource: weight.weightSource || 'bom_matched',
       matchedBomItemIds: weight.matchedBomItemIds,
       rawRow: {
         ...(plainLine.rawRow || {}),
@@ -1511,7 +1584,7 @@ const enrichVendorLinesWithBomWeights = async (vendorLines = [], options = {}) =
         bomMatchedGroupTotalWeight: weight.groupTotalWeight,
         bomMatchedUnitWeight: weight.unitWeight,
         bomMatchedQty: line.pieceQty || line.qty || null,
-        bomMatchedWeightSource: 'bom_matched',
+        bomMatchedWeightSource: weight.weightSource || 'bom_matched',
         matchedBomItemIds: weight.matchedBomItemIds,
         comparisonResultId: weight.comparisonResultId,
       },

@@ -12,7 +12,18 @@ const BundleItemSchema = new mongoose.Schema(
     lengthFeet: { type: Number, default: null },
     widthFeet: { type: Number, default: null },
     heightFeet: { type: Number, default: null },
+
+    // Backward compatible field.
+    // Keep this as TOTAL LINE WEIGHT because existing bundle calculations use it.
     weight: { type: Number, default: 0 },
+
+    // New clear fields.
+    unitWeight: { type: Number, default: 0 },
+    totalWeight: { type: Number, default: 0 },
+
+    weightBasis: { type: String, default: '' },
+    weightSource: { type: String, default: '' },
+
     markIds: { type: [String], default: [] },
     sourceLineSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   },
