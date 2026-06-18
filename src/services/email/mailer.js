@@ -62,14 +62,43 @@ const formatInvoiceDate = (value) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toDateString()
 }
 
+const normalizeInvoiceValueType = (type) =>
+  String(type || 'amount').trim().toLowerCase() === 'percentage' ? 'percentage' : 'amount'
+
+const formatInvoiceRateCell = (li) => {
+  const effectiveRate = li.effectiveRate != null ? li.effectiveRate : li.rate
+  return formatInvoiceMoney(effectiveRate)
+}
+
+const formatInvoiceTaxCell = (li) => {
+  const taxType = normalizeInvoiceValueType(li.taxType)
+  const taxInput = li.tax
+  const taxAmount =
+    li.taxAmount != null
+      ? li.taxAmount
+      : taxType === 'amount'
+        ? taxInput
+        : null
+
+  if (taxType === 'percentage' && taxInput != null && taxInput !== '') {
+    const amountLine = taxAmount != null ? formatInvoiceMoney(taxAmount) : '—'
+    return amountLine
+  }
+
+  return formatInvoiceMoney(taxAmount != null ? taxAmount : taxInput)
+}
+
 const buildInvoiceLineItemsRows = (lineItems = []) => {
   if (!lineItems.length) {
-    return '<tr><td colspan="7" style="text-align:center;color:#888;padding:16px">No line items on this invoice</td></tr>'
+    return '<tr><td colspan="6" style="text-align:center;color:#888;padding:16px">No line items on this invoice</td></tr>'
   }
 
   return lineItems
     .map((li, index) => {
-      const description = (li.items || []).filter(Boolean).map(escapeHtml).join('<br/>') || '—'
+      const description =
+        (li.description && String(li.description).trim())
+          ? escapeHtml(li.description)
+          : (li.items || []).filter(Boolean).map(escapeHtml).join('<br/>') || '—'
       const images = (li.images || []).filter(Boolean)
       const imagesHtml = images.length
         ? `<div style="margin-top:6px;font-size:11px">${images
@@ -83,10 +112,9 @@ const buildInvoiceLineItemsRows = (lineItems = []) => {
       return `<tr>
         <td style="padding:10px 6px;border-bottom:1px solid #eee;vertical-align:top;color:#666">${index + 1}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top">${description}${imagesHtml}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceMoney(li.rate)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceMoney(li.markup)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceRateCell(li)}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;vertical-align:top">${li.quantity ?? '—'}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceMoney(li.tax)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceTaxCell(li)}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;vertical-align:top">${formatInvoiceMoney(li.total)}</td>
       </tr>`
     })
@@ -95,16 +123,15 @@ const buildInvoiceLineItemsRows = (lineItems = []) => {
 
 const buildInvoiceTotalsRows = (invoice) => {
   const rows = [
-    ['Subtotal', invoice.subtotal],
-    ['Markup total', invoice.markupTotal],
-    ['Tax', invoice.tax],
-    ['Discount', invoice.discount],
-    ['Deposit', invoice.depositAmount],
-    ['Total due', invoice.totalAmount],
+    ['Subtotal', invoice.subtotal, false],
+    ['Discount', invoice.discount, true],
+    ['Tax', invoice.tax, false],
+    ['Deposit', invoice.depositAmount, false],
+    ['Total due', invoice.totalAmount, false],
   ]
 
   return rows
-    .map(([label, amount], i) => {
+    .map(([label, amount, isDiscount], i) => {
       const isGrand = i === rows.length - 1
       const rowClass = isGrand ? ' class="grand"' : ''
       const labelStyle = isGrand
@@ -114,7 +141,7 @@ const buildInvoiceTotalsRows = (invoice) => {
         ? 'text-align:right;font-weight:700;font-size:18px;color:#1a2e4a;width:120px;padding:10px 8px 6px'
         : 'text-align:right;font-weight:600;width:120px;padding:6px 8px'
       const displayAmount =
-        label === 'Discount' && amount != null && Number(amount) !== 0
+        isDiscount && amount != null && Number(amount) !== 0
           ? `−${formatInvoiceMoney(amount)}`
           : formatInvoiceMoney(amount)
       return `<tr${rowClass}>
@@ -180,6 +207,7 @@ const sendQuotation = async ({ toEmail, customerName, quotation }) => {
 const sendInvoice = async ({ toEmail, customerName, invoice }) => {
   const inv = invoice?.toObject ? invoice.toObject() : invoice
   const template = loadTemplate('invoice')
+  const hasDeposit = inv.depositAmount != null && Number(inv.depositAmount) !== 0
   const html = fillTemplate(template, {
     CUSTOMER_NAME: escapeHtml(customerName),
     INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || '—'),
@@ -196,6 +224,7 @@ const sendInvoice = async ({ toEmail, customerName, invoice }) => {
     TOTAL_AMOUNT: formatInvoiceMoney(inv.totalAmount),
     LINE_ITEMS: buildInvoiceLineItemsRows(inv.lineItems),
     TOTALS_ROWS: buildInvoiceTotalsRows(inv),
+    DEPOSIT_NOTE: hasDeposit ? ' (deposit shown separately)' : '',
   })
 
   // Generate PDF from the same HTML used for the email body

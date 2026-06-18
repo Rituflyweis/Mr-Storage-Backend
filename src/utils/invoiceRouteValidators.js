@@ -20,7 +20,11 @@ const invoiceCreateValidators = [
   body('date').optional().isISO8601(),
   optionalNumeric('daysToPay'),
   optionalNumeric('tax'),
+  optionalNumeric('discount'),
   optionalPaymentScheduleStageId(),
+  body('lineItems').optional().isArray(),
+  body('lineItems.*.markupType').optional().isIn(['percentage', 'amount']),
+  body('lineItems.*.taxType').optional().isIn(['percentage', 'amount']),
 ]
 
 const invoiceBodyValidators = [
@@ -28,7 +32,11 @@ const invoiceBodyValidators = [
   body('date').optional().isISO8601(),
   optionalNumeric('daysToPay'),
   optionalNumeric('tax'),
+  optionalNumeric('discount'),
   optionalPaymentScheduleStageId(),
+  body('lineItems').optional().isArray(),
+  body('lineItems.*.markupType').optional().isIn(['percentage', 'amount']),
+  body('lineItems.*.taxType').optional().isIn(['percentage', 'amount']),
 ]
 
 module.exports = {

@@ -33,6 +33,12 @@ const {
   buildAutoResubmitNote,
   RESUBMIT_ALLOWED_STATUSES,
 } = require('../../utils/vendorUpload.util')
+const {
+  COMPARISON_RESULT_CATEGORIES,
+  getStatusesForCategory,
+  mapComparisonResultRow,
+  aggregateComparisonStats,
+} = require('../../utils/shipperComparisonCategories')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { SHIPPER_REQUEST_LATEST_FIRST_SORT, sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
@@ -594,9 +600,7 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
   const summary = request.comparisonSummary || null
   const blockers = getComparisonBlockers(summary)
   const canProceedToApproval = request.comparisonStatus === 'completed' && blockers.length === 0
-  const results = await QuoteComparisonResult.find({ shipperRequestId: request._id })
-    .sort({ createdAt: -1 })
-    .lean()
+  const stats = await aggregateComparisonStats(QuoteComparisonResult, request._id)
 
   return success(res, {
     requestId: request._id,
@@ -611,20 +615,8 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
     comparisonRanAt: request.comparisonRanAt,
     comparisonError: request.comparisonError,
     summary,
+    stats,
     exceptionsCount: Array.isArray(request.exceptions) ? request.exceptions.length : 0,
-    resultCount: results.length,
-    results: results.map((row) => ({
-      resultId: row._id,
-      status: row.status,
-      severity: row.severity,
-      expected: row.expected,
-      received: row.received,
-      difference: row.difference,
-      matchMethod: row.matchMethod,
-      matchConfidence: row.matchConfidence,
-      reason: row.reason,
-      createdAt: row.createdAt,
-    })),
     canProceedToApproval,
     blockers,
     resubmitAvailable: RESUBMIT_ALLOWED_STATUSES.has(request.status),
@@ -640,6 +632,15 @@ exports.getShipperComparisonResults = asyncHandler(async (req, res) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20))
   const status = req.query.status ? String(req.query.status).trim() : null
   const severity = req.query.severity ? String(req.query.severity).trim() : null
+  const category = req.query.category ? String(req.query.category).trim().toLowerCase() : 'all'
+
+  if (status && category && category !== 'all') {
+    return badRequest(res, 'Use either category or status filter, not both')
+  }
+
+  if (category && category !== 'all' && !COMPARISON_RESULT_CATEGORIES.includes(category)) {
+    return badRequest(res, `Invalid category. Use: ${COMPARISON_RESULT_CATEGORIES.join(', ')}`)
+  }
 
   const request = await ShipperRequest.findById(requestId)
     .populate('vendorId', 'vendorName vendorCode')
@@ -654,8 +655,17 @@ exports.getShipperComparisonResults = asyncHandler(async (req, res) => {
   }
 
   const filter = { shipperRequestId: request._id }
-  if (status) filter.status = status
   if (severity) filter.severity = severity
+
+  if (status) {
+    filter.status = status
+  } else if (category && category !== 'all') {
+    const statuses = getStatusesForCategory(category)
+    if (!statuses) {
+      return badRequest(res, `Invalid category. Use: ${COMPARISON_RESULT_CATEGORIES.join(', ')}`)
+    }
+    filter.status = { $in: statuses }
+  }
 
   const [total, rows] = await Promise.all([
     QuoteComparisonResult.countDocuments(filter),
@@ -676,25 +686,15 @@ exports.getShipperComparisonResults = asyncHandler(async (req, res) => {
     vendorCode: request.vendorId?.vendorCode || '',
     status: request.status,
     comparisonStatus: request.comparisonStatus,
-    filters: { status, severity },
+    category: category || 'all',
+    filters: { status, severity, category: category || 'all' },
     pagination: {
       page,
       limit,
       total,
-      pages: Math.ceil(total / limit),
+      pages: Math.ceil(total / limit) || 0,
     },
-    results: rows.map((row) => ({
-      resultId: row._id,
-      status: row.status,
-      severity: row.severity,
-      expected: row.expected,
-      received: row.received,
-      difference: row.difference,
-      matchMethod: row.matchMethod,
-      matchConfidence: row.matchConfidence,
-      reason: row.reason,
-      createdAt: row.createdAt,
-    })),
+    results: rows.map(mapComparisonResultRow),
   })
 })
 

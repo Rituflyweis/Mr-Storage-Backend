@@ -455,6 +455,7 @@ Optional subtitle: always show `jobId` / `projectId` when the primary title uses
 | [vendor-upload-resubmit-api.md](./vendor-upload-resubmit-api.md) | Vendor resubmit flow, public vendor upload routes |
 | [plant-panel-api.md](./plant-panel-api.md) | Full plant API catalog |
 | [plant-freight-load-details-api.md](./plant-freight-load-details-api.md) | Freight form, delivery detail, carrier bid — bundles & packing lists |
+| [sales-invoice-shipper-comparison-updates-jun-2026.md](./sales-invoice-shipper-comparison-updates-jun-2026.md) | Invoice pass-through totals + shipper comparison tab stats |
 
 ---
 

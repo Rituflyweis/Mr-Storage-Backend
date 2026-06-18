@@ -19,6 +19,8 @@
     .line-items th { background: #f0f4f8; color: #1a2e4a; padding: 10px 8px; text-align: left; border-bottom: 2px solid #d8e2ec; font-size: 11px; text-transform: uppercase; }
     .line-items th.num { text-align: right; }
     .line-items th.qty { text-align: center; }
+    .line-items .cell-sub { font-size: 10px; color: #888; margin-top: 2px; }
+    .line-items-note { font-size: 11px; color: #888; margin: 8px 0 0; line-height: 1.4; }
     .totals-wrap { margin-top: 20px; border-top: 2px solid #1a2e4a; padding-top: 12px; }
     .totals-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .totals-table td { padding: 7px 0; }
@@ -64,18 +66,23 @@
             <th style="width:28px">#</th>
             <th>Description</th>
             <th class="num">Rate</th>
-            <th class="num">Markup</th>
             <th class="qty">Qty</th>
             <th class="num">Tax</th>
-            <th class="num">Line total</th>
+            <th class="num">Amount</th>
           </tr>
         </thead>
         <tbody>
           {{LINE_ITEMS}}
         </tbody>
       </table>
+      <p class="line-items-note">
+        Line amounts exclude tax; invoice tax is summarized below.
+      </p>
 
       <div class="section-title">Summary</div>
+      <p class="line-items-note" style="margin-top:0;margin-bottom:12px">
+        Total due = Subtotal − Discount + Tax{{DEPOSIT_NOTE}}
+      </p>
       <div class="totals-wrap">
         <table class="totals-table">
           {{TOTALS_ROWS}}

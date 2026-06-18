@@ -56,6 +56,8 @@ const INVOICE_CREATE_MIN_LIFECYCLE_STAGE = 'proposal_sent'
 const PRIORITY_LEVELS = ['low', 'medium', 'high', 'urgent']
 const QUOTATION_STATUSES = ['draft', 'sent', 'accepted', 'rejected']
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
+/** Line-item markup/tax input mode: percentage (of rate / line subtotal) or flat amount */
+const INVOICE_VALUE_TYPES = ['percentage', 'amount']
 const FOLLOW_UP_STATUSES = ['pending', 'completed']
 const FOLLOW_UP_MODES = ['call', 'email', 'meeting']
 const MEETING_MODES = ['online', 'offline']
@@ -224,6 +226,7 @@ module.exports = {
   PRIORITY_LEVELS,
   QUOTATION_STATUSES,
   INVOICE_STATUSES,
+  INVOICE_VALUE_TYPES,
   FOLLOW_UP_STATUSES,
   FOLLOW_UP_MODES,
   MEETING_MODES,
