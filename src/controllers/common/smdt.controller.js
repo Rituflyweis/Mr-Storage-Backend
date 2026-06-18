@@ -6,6 +6,10 @@ const {
   cleanStr,
   normalizeCode,
 } = require('../../services/plant/smdt.service')
+const {
+  exportActiveSMDTToExcelBuffer,
+  getActiveSMDTStats,
+} = require('../../services/plant/smdtExport.service')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const {
@@ -119,6 +123,18 @@ exports.listSMDT = asyncHandler(async (req, res) => {
     limit: parsedLimit,
     categories: SMDT_CATEGORIES,
   })
+})
+
+exports.getSMDTStats = asyncHandler(async (req, res) => {
+  const stats = await getActiveSMDTStats()
+  return success(res, stats)
+})
+
+exports.exportSMDTExcel = asyncHandler(async (req, res) => {
+  const buffer = await exportActiveSMDTToExcelBuffer(req.query)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="smdt-cost-list.xlsx"')
+  return res.send(buffer)
 })
 
 exports.getSMDTItem = asyncHandler(async (req, res) => {

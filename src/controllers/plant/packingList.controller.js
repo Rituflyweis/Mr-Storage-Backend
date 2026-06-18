@@ -3,6 +3,11 @@ const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
 const POOrder = require('../../models/POOrder')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const {
+  mapProjectNameFallbackFields,
+  LEAD_PROJECT_LIST_SELECT,
+  LEAD_PROJECT_LIST_POPULATE,
+} = require('../../utils/plantProjectListFields')
 const { TRUCK_TYPES } = require('../../services/plant/loadPlanning.service')
 const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -75,7 +80,11 @@ exports.getPackingListPlanProjects = asyncHandler(async (req, res) => {
     leadId: { $in: leadIds },
     status: { $ne: 'cancelled' },
   })
-    .populate('leadId', 'projectName jobId')
+    .populate({
+      path: 'leadId',
+      select: LEAD_PROJECT_LIST_SELECT,
+      populate: LEAD_PROJECT_LIST_POPULATE,
+    })
     .sort({ updatedAt: -1 })
     .lean()
 
@@ -95,6 +104,7 @@ exports.getPackingListPlanProjects = asyncHandler(async (req, res) => {
       projectId: lead.jobId || '',
       jobId: lead.jobId || '',
       projectName: lead.projectName || '',
+      ...mapProjectNameFallbackFields(lead),
       packingListPlanId: plan._id,
       listGeneratedAt: plan.createdAt || null,
       totalPackingList: plan.totalPackingLists || 0,

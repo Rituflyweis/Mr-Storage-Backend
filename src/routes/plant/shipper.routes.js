@@ -3,6 +3,8 @@ const { body, param, query } = require('express-validator')
 const ctrl = require('../../controllers/plant/shipper.controller')
 const validate = require('../../middleware/validate')
 
+router.get('/stats', ctrl.getShipperFilesStats)
+
 router.get('/projects', ctrl.getShipperProjects)
 
 router.get('/projects/:leadId/requests',

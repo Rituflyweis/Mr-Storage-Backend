@@ -10,6 +10,11 @@ const BundlePlan = require('../../models/BundlePlan')
 const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const {
+  mapProjectNameFallbackFields,
+  LEAD_PROJECT_LIST_SELECT,
+  LEAD_PROJECT_LIST_POPULATE,
+} = require('../../utils/plantProjectListFields')
 const { processShipperComparisonJob } = require('../../services/plant/shipperComparison.service')
 const {
   BUNDLE_PLANNING_SERVICE_VERSION,
@@ -58,7 +63,11 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
   if (!leadIds.length) return success(res, { projects: [], total: 0 })
 
   const requests = await ShipperRequest.find({ leadId: { $in: leadIds } })
-    .populate('leadId', 'projectName jobId')
+    .populate({
+      path: 'leadId',
+      select: LEAD_PROJECT_LIST_SELECT,
+      populate: LEAD_PROJECT_LIST_POPULATE,
+    })
     .sort(SHIPPER_REQUEST_LATEST_FIRST_SORT)
     .lean()
 
@@ -75,6 +84,7 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
         projectId: lead.jobId || '',
         jobId: lead.jobId || '',
         projectName: lead.projectName || '',
+        ...mapProjectNameFallbackFields(lead),
         totalShipperFiles: 0,
         receivedShipperFiles: 0,
         fileReceivedStatus: 'none',
@@ -100,6 +110,47 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
   })
 
   return success(res, { projects, total: projects.length })
+})
+
+exports.getShipperFilesStats = asyncHandler(async (req, res) => {
+  const leadIds = await getAssignedLeadIds(req.user._id)
+  if (!leadIds.length) {
+    return success(res, {
+      totalFiles: 0,
+      filesReceived: 0,
+      ordersSent: 0,
+      revisionsSent: 0,
+    })
+  }
+
+  const requests = await ShipperRequest.find({ leadId: { $in: leadIds } })
+    .select('status submittedFileUrl sentAt resubmitCount')
+    .lean()
+
+  const ordersSentStatuses = new Set([
+    'sent',
+    'submitted',
+    'comparison_processing',
+    'comparison_completed',
+    'comparison_failed',
+    'approved',
+    'rejected',
+    'resubmit_requested',
+  ])
+
+  const totalFiles = requests.length
+  const filesReceived = requests.filter((row) => Boolean(row.submittedFileUrl)).length
+  const ordersSent = requests.filter((row) => {
+    return Boolean(row.sentAt) && ordersSentStatuses.has(row.status)
+  }).length
+  const revisionsSent = requests.reduce((sum, row) => sum + Number(row.resubmitCount || 0), 0)
+
+  return success(res, {
+    totalFiles,
+    filesReceived,
+    ordersSent,
+    revisionsSent,
+  })
 })
 
 exports.getProjectShipperRequests = asyncHandler(async (req, res) => {

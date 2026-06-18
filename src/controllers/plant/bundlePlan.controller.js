@@ -8,6 +8,11 @@ const ShipperRequest = require('../../models/ShipperRequest')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
 const {
+  mapProjectNameFallbackFields,
+  LEAD_PROJECT_LIST_SELECT,
+  LEAD_PROJECT_LIST_POPULATE,
+} = require('../../utils/plantProjectListFields')
+const {
   TRUCK_TYPES,
   generateMixedTruckPackingLists,
   aggregateBundlePlanSummary,
@@ -171,7 +176,11 @@ exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
     leadId: { $in: leadIds },
     status: { $ne: 'cancelled' },
   })
-    .populate('leadId', 'projectName jobId')
+    .populate({
+      path: 'leadId',
+      select: LEAD_PROJECT_LIST_SELECT,
+      populate: LEAD_PROJECT_LIST_POPULATE,
+    })
     .sort({ updatedAt: -1 })
     .lean()
 
@@ -201,6 +210,7 @@ exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
       projectId: lead.jobId || '',
       jobId: lead.jobId || '',
       projectName: lead.projectName || '',
+      ...mapProjectNameFallbackFields(lead),
       bundlePlanId: bundlePlan._id,
       fileReceivedAt: shipperRequest?.submittedAt || bundlePlan.createdAt || null,
       totalLoadPlanning: bundlePlan.totalBundles || 0,

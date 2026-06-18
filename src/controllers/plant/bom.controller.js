@@ -10,6 +10,11 @@ const { processBOMJob, calculateTotalCost, inferFileFormat } = require('../../se
 const { getActiveCostVersion, normalizeCode } = require('../../services/plant/smdt.service')
 const { assertBomJobAccess } = require('../../utils/plantBomAccess')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const {
+  mapProjectNameFallbackFields,
+  LEAD_PROJECT_LIST_SELECT,
+  LEAD_PROJECT_LIST_POPULATE,
+} = require('../../utils/plantProjectListFields')
 const { success, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, BOM_ITEM_FILTERS } = require('../../config/constants')
@@ -100,7 +105,8 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
 
   const leadIdSet = [...new Set(latestJobs.map((j) => String(j.leadId)))]
   const leads = await Lead.find({ _id: { $in: leadIdSet } })
-    .select('_id projectName jobId')
+    .select(`_id ${LEAD_PROJECT_LIST_SELECT}`)
+    .populate(LEAD_PROJECT_LIST_POPULATE)
     .lean()
   const leadMap = new Map(leads.map((l) => [String(l._id), l]))
 
@@ -112,6 +118,7 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
         leadId: lead._id,
         projectId: lead.jobId || '',
         projectName: lead.projectName || '',
+        ...mapProjectNameFallbackFields(lead),
         buildingId: job.buildingId,
         buildingNumber: job.buildingNumber,
         uploadDate: job.createdAt,

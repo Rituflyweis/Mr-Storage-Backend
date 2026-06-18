@@ -12,6 +12,10 @@ const Vendor = require('../../models/Vendor')
 const auditService = require('../../services/audit.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
+const {
+  loadFreightLoadDetailsByLeadId,
+  loadFreightLoadDetailsByBundlePlanId,
+} = require('../../services/plant/freightLoadDetails.service')
 const { CLIENT_URL } = require('../../config/env')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
@@ -224,23 +228,45 @@ const mapDeliveryListRow = (delivery) => {
   }
 }
 
+const SELECTED_DELIVERY_STATUSES = [
+  'carrier_selected',
+  'scheduled',
+  'confirmed',
+  'in_transit',
+  'delayed',
+  'delivered',
+]
+
+const CALENDAR_DELIVERY_STATUSES = ['confirmed']
+
 const fetchShipperVendorsByLeadIds = async (leadIds) => {
   if (!leadIds.length) return new Map()
   const requests = await ShipperRequest.find({
     leadId: { $in: leadIds },
-    status: { $in: ['sent', 'submitted', 'comparison_processing', 'comparison_completed', 'approved', 'resubmit_requested'] },
+    status: { $in: ['approved', 'submitted', 'comparison_completed', 'comparison_failed', 'sent', 'resubmit_requested'] },
   })
     .populate('vendorId', 'vendorName vendorCode')
-    .sort(SHIPPER_REQUEST_LATEST_FIRST_SORT)
+    .sort({ updatedAt: -1 })
     .lean()
 
   const map = new Map()
   for (const row of requests) {
     const key = String(row.leadId)
-    if (!map.has(key)) {
-      map.set(key, row.vendorId || null)
+    if (map.has(key)) continue
+
+  // Prefer approved vendor, then latest non-rejected request.
+    if (row.status === 'approved' && row.vendorId) {
+      map.set(key, row.vendorId)
     }
   }
+
+  for (const row of requests) {
+    const key = String(row.leadId)
+    if (!map.has(key) && row.vendorId) {
+      map.set(key, row.vendorId)
+    }
+  }
+
   return map
 }
 
@@ -269,7 +295,7 @@ const buildDeliveryStats = (deliveries) => {
   return counts
 }
 
-const buildFreightAutofill = (bundlePlan, packingListPlan, bundles) => {
+const buildFreightAutofill = (bundlePlan, packingListPlan, bundles, loadDetails = {}) => {
   const totalWeight = bundles.reduce((sum, row) => sum + Number(row.totalWeight || 0), 0)
   const maxLengthFeet = bundles.reduce((max, row) => Math.max(max, Number(row.maxLengthFeet || 0)), 0)
   const maxWidthFeet = bundles.reduce((max, row) => Math.max(max, Number(row.estimatedWidthFeet || 0)), 0)
@@ -288,6 +314,10 @@ const buildFreightAutofill = (bundlePlan, packingListPlan, bundles) => {
     },
     metalType: bundleTypes.join(', '),
     packageCount: packingListPlan?.totalBundles || bundles.length,
+    bundlePlan: loadDetails.bundlePlan || null,
+    packingListPlan: loadDetails.packingListPlan || null,
+    bundles: loadDetails.bundles || [],
+    packingLists: loadDetails.packingLists || [],
   }
 }
 
@@ -330,12 +360,13 @@ exports.getFreightAutofill = asyncHandler(async (req, res) => {
     return forbidden(res, access.error)
   }
 
-  const [packingListPlan, bundles] = await Promise.all([
+  const [packingListPlan, bundles, loadDetails] = await Promise.all([
     PackingListPlan.findOne({ bundlePlanId }).lean(),
     Bundle.find({ bundlePlanId }).lean(),
+    loadFreightLoadDetailsByBundlePlanId(bundlePlanId),
   ])
 
-  return success(res, buildFreightAutofill(bundlePlan, packingListPlan, bundles))
+  return success(res, buildFreightAutofill(bundlePlan, packingListPlan, bundles, loadDetails))
 })
 
 exports.getFreightAutofillByProject = asyncHandler(async (req, res) => {
@@ -353,12 +384,13 @@ exports.getFreightAutofillByProject = asyncHandler(async (req, res) => {
     .lean()
   if (!bundlePlan) return notFound(res, 'No bundle plan found for this project')
 
-  const [packingListPlan, bundles] = await Promise.all([
+  const [packingListPlan, bundles, loadDetails] = await Promise.all([
     PackingListPlan.findOne({ bundlePlanId: bundlePlan._id }).lean(),
     Bundle.find({ bundlePlanId: bundlePlan._id }).lean(),
+    loadFreightLoadDetailsByBundlePlanId(bundlePlan._id),
   ])
 
-  return success(res, buildFreightAutofill(bundlePlan, packingListPlan, bundles))
+  return success(res, buildFreightAutofill(bundlePlan, packingListPlan, bundles, loadDetails))
 })
 
 exports.createDelivery = asyncHandler(async (req, res) => {
@@ -445,8 +477,10 @@ exports.getProjectDeliveries = asyncHandler(async (req, res) => {
   const rows = deliveries.map((delivery) => {
     const stats = buildDeliveryBidStats(bidsByDelivery[String(delivery._id)] || [])
     const selectedBid = delivery.selectedCarrierBidId ? selectedMap.get(String(delivery.selectedCarrierBidId)) : null
+    const isSelected = Boolean(delivery.selectedCarrierBidId)
     return {
       requestId: delivery._id,
+      deliveryId: delivery._id,
       projectName: access.lead.projectName || '',
       description: delivery.loadDescription || delivery.description || '',
       pickupLocation: delivery.pickupLocation || delivery.pickupLocationData?.address || '',
@@ -457,10 +491,21 @@ exports.getProjectDeliveries = asyncHandler(async (req, res) => {
       averageBid: stats.averageBid,
       status: delivery.status,
       loadWeight: delivery.loadWeight,
+      isSelected,
+      hasSelectedCarrier: isSelected,
     }
   })
 
-  return success(res, { requests: rows, total: rows.length })
+  const selectedDelivery = deliveries.find((delivery) => {
+    return delivery.selectedCarrierBidId &&
+      SELECTED_DELIVERY_STATUSES.includes(delivery.status)
+  }) || deliveries.find((delivery) => delivery.selectedCarrierBidId) || null
+
+  return success(res, {
+    requests: rows,
+    total: rows.length,
+    selectedDeliveryId: selectedDelivery?._id || null,
+  })
 })
 
 exports.sendDeliveryBids = asyncHandler(async (req, res) => {
@@ -497,6 +542,7 @@ exports.sendDeliveryBids = asyncHandler(async (req, res) => {
   }
 
   const lead = await Lead.findById(delivery.leadId).select('projectName jobId customerId').lean()
+  const loadDetails = await loadFreightLoadDetailsByLeadId(delivery.leadId)
   const sent = []
   const failures = []
 
@@ -537,6 +583,8 @@ exports.sendDeliveryBids = asyncHandler(async (req, res) => {
           loadWeight: delivery.loadWeight,
           pickupLocation: delivery.pickupLocation || delivery.pickupLocationData?.address || '',
           deliveryLocation: delivery.deliveryLocation || delivery.deliveryLocationData?.address || '',
+          bundles: loadDetails.bundles,
+          packingLists: loadDetails.packingLists,
         })
       }
       sent.push({ bidId: bid._id, carrierId: carrier._id, carrierName: carrier.carrierName, expiresAt: bid.expiresAt })
@@ -730,7 +778,7 @@ const buildDeliveryFormDetails = (delivery) => ({
 const buildDeliveryDetailPayload = async (delivery, plantUserId) => {
   const leadId = delivery.leadId?._id || delivery.leadId
 
-  const [bundlePlan, packingListPlan, poOrder, latestShipperRequest] = await Promise.all([
+  const [bundlePlan, packingListPlan, poOrder, latestShipperRequest, loadDetails] = await Promise.all([
     BundlePlan.findOne({ leadId, status: { $ne: 'cancelled' } })
       .sort({ updatedAt: -1 })
       .select('_id totalBundles totalWeight')
@@ -744,17 +792,22 @@ const buildDeliveryDetailPayload = async (delivery, plantUserId) => {
       .select('assignedTo')
       .populate('assignedTo', 'name email phone')
       .lean(),
-    ShipperRequest.findOne({ leadId, status: { $in: ['approved', 'submitted', 'sent', 'comparison_completed', 'resubmit_requested'] } })
+    ShipperRequest.findOne({
+      leadId,
+      status: 'approved',
+    })
       .sort({ updatedAt: -1 })
       .select('vendorId')
+      .populate('vendorId', 'vendorName contactName phone email')
       .lean(),
+    loadFreightLoadDetailsByLeadId(leadId),
   ])
 
-  const vendor = latestShipperRequest?.vendorId
-    ? await Vendor.findById(latestShipperRequest.vendorId)
-      .select('vendorName contactName phone email')
-      .lean()
-    : null
+  const vendor =
+    latestShipperRequest?.vendorId &&
+    typeof latestShipperRequest.vendorId === 'object'
+      ? latestShipperRequest.vendorId
+      : null
 
   const carrier = delivery.selectedCarrierBidId?.carrierId || null
   const customer = delivery.leadId?.customerId || null
@@ -829,6 +882,11 @@ const buildDeliveryDetailPayload = async (delivery, plantUserId) => {
         totalWeight: bundlePlan?.totalWeight ?? delivery.loadWeight ?? null,
       },
 
+      bundlePlan: loadDetails.bundlePlan,
+      packingListPlan: loadDetails.packingListPlan,
+      bundles: loadDetails.bundles,
+      packingLists: loadDetails.packingLists,
+
       receivingPocDetails: {
         receivingPoc: delivery.receivingPoc || '',
         pickupContactPhone: delivery.pickupContactPhone || '',
@@ -848,14 +906,14 @@ exports.getProjectConfirmedDelivery = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findOne({
     leadId: access.lead._id,
     selectedCarrierBidId: { $ne: null },
-    status: { $nin: ['draft', 'cancelled'] },
+    status: { $in: SELECTED_DELIVERY_STATUSES },
   })
     .sort({ updatedAt: -1 })
     .populate(DELIVERY_DETAIL_POPULATE)
     .lean()
 
   if (!delivery) {
-    return notFound(res, 'No confirmed delivery found for this project')
+    return notFound(res, 'No selected/confirmed delivery found for this project')
   }
 
   const payload = await buildDeliveryDetailPayload(delivery, req.user._id)
@@ -1132,6 +1190,7 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
   const customerFilterId = baseFilter._customerId
   delete baseFilter._customerId
   baseFilter.leadId = baseFilter.leadId || { $in: leadIds }
+  baseFilter.status = { $in: CALENDAR_DELIVERY_STATUSES }
   if (baseFilter.leadId?.$in) {
     baseFilter.leadId = { $in: baseFilter.leadId.$in.filter((id) => leadIds.some((a) => String(a) === String(id))) }
   } else if (!leadIds.some((a) => String(a) === String(baseFilter.leadId))) {

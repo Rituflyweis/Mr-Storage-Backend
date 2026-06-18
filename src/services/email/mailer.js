@@ -8,6 +8,10 @@ const {
   formatExceptionsForEmailHtml,
   formatExceptionsForEmailText,
 } = require('../../utils/vendorUpload.util')
+const {
+  formatFreightLoadDetailsHtml,
+  formatFreightLoadDetailsText,
+} = require('../plant/freightLoadDetails.service')
 
 
 const transporter = nodemailer.createTransport({
@@ -377,6 +381,8 @@ const sendFreightBidRequestEmail = async ({
   loadWeight,
   pickupLocation,
   deliveryLocation,
+  bundles = [],
+  packingLists = [],
 }) => {
   const safeCarrier = escapeHtml(carrierName || 'Carrier')
   const safeProject = escapeHtml(projectName || '')
@@ -388,6 +394,8 @@ const sendFreightBidRequestEmail = async ({
   const safeDelivery = escapeHtml(deliveryLocation || '')
   const safeWeight = loadWeight != null ? `${formatInvoiceMoney(loadWeight)} lbs` : '—'
   const safeDeadline = formatInvoiceDate(bidDeadline)
+  const loadDetailsHtml = formatFreightLoadDetailsHtml({ bundles, packingLists })
+  const loadDetailsText = formatFreightLoadDetailsText({ bundles, packingLists })
 
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
@@ -404,6 +412,7 @@ const sendFreightBidRequestEmail = async ({
         <li><strong>Delivery location:</strong> ${safeDelivery}</li>
         <li><strong>Bid deadline:</strong> ${safeDeadline}</li>
       </ul>
+      ${loadDetailsHtml}
       <p>
         Submit your bid here:<br/>
         <a href="${safeBidUrl}" target="_blank" rel="noopener">${safeBidUrl}</a>
@@ -417,6 +426,23 @@ const sendFreightBidRequestEmail = async ({
     to: toEmail,
     subject: `Freight Bid Request: ${projectName || 'Project'}${deliveryNumber ? ` (${deliveryNumber})` : ''}`,
     html,
+    text: [
+      `Hi ${carrierName || 'Carrier'},`,
+      '',
+      'You have received a freight bid request:',
+      `Project: ${projectName || ''}`,
+      `Job ID: ${jobId || ''}`,
+      `Freight Request #: ${deliveryNumber || ''}`,
+      `Load description: ${loadDescription || ''}`,
+      `Load weight: ${loadWeight != null ? `${loadWeight} lbs` : '—'}`,
+      `Pickup: ${pickupLocation || ''}`,
+      `Delivery: ${deliveryLocation || ''}`,
+      `Bid deadline: ${safeDeadline}`,
+      '',
+      loadDetailsText,
+      '',
+      `Submit bid: ${bidUrl || ''}`,
+    ].join('\n'),
   })
 }
 

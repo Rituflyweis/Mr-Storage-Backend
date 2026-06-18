@@ -2,6 +2,7 @@ const FreightBid = require('../../models/FreightBid')
 const Delivery = require('../../models/Delivery')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Lead = require('../../models/Lead')
+const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
 const { success, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -31,6 +32,10 @@ exports.getFreightBidInfo = asyncHandler(async (req, res) => {
     return badRequest(res, `This bid link is not active (status: ${bid.status})`)
   }
 
+  const loadDetails = delivery.leadId
+    ? await loadFreightLoadDetailsByLeadId(delivery.leadId)
+    : { bundlePlan: null, packingListPlan: null, bundles: [], packingLists: [] }
+
   return success(res, {
     bidId: bid._id,
     status: bid.status,
@@ -39,11 +44,19 @@ exports.getFreightBidInfo = asyncHandler(async (req, res) => {
     jobId: lead?.jobId || '',
     deliveryNumber: delivery.deliveryNumber || '',
     description: delivery.loadDescription || delivery.description || '',
+    loadWeight: delivery.loadWeight ?? null,
+    dimensions: delivery.dimensions || {},
+    materialType: delivery.materialType || '',
+    packageCount: delivery.packageCount ?? null,
     pickupLocation: delivery.pickupLocation || delivery.pickupLocationData?.address || '',
     deliveryLocation: delivery.deliveryLocation || delivery.deliveryLocationData?.address || '',
     bidDeadline: bid.expiresAt,
     quotedAmount: bid.quotedAmount,
     carrierNotes: bid.carrierNotes || '',
+    bundlePlan: loadDetails.bundlePlan,
+    packingListPlan: loadDetails.packingListPlan,
+    bundles: loadDetails.bundles,
+    packingLists: loadDetails.packingLists,
   })
 })
 

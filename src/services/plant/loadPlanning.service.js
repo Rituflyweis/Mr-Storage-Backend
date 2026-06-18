@@ -1029,31 +1029,32 @@ const generateBundlesFromVendorLines = (vendorLines) => {
   return assignLoadSequence(bundles)
 }
 
-const selectTruckTypeForBundle = (bundle) => {
+const resolveTruckConfigForBundle = (bundle) => {
   const weight = Number(bundle.totalWeight || 0)
   const length = Number(bundle.maxLengthFeet || 0)
 
-  // Do not crash truck planning for exceptional/oversize rows. Assign a SEMI_53
-  // and let warnings clearly mark the length/weight exception for manual review.
-  if (length > 53 || weight > TRUCK_TYPES.SEMI_53.maxWeight) {
-    return TRUCK_TYPES.SEMI_53
-  }
+  const hotshotFits =
+    length <= TRUCK_TYPES.HOTSHOT_40.maxLengthFeet &&
+    (weight <= 0 || weight <= TRUCK_TYPES.HOTSHOT_40.maxWeight)
 
-  if (weight <= 0) {
-    if (length <= 40) return TRUCK_TYPES.HOTSHOT_40
-    return TRUCK_TYPES.SEMI_53
-  }
-
-  if (length <= 40 && weight <= 18000) return TRUCK_TYPES.HOTSHOT_40
-  return TRUCK_TYPES.SEMI_53
+  return hotshotFits ? TRUCK_TYPES.HOTSHOT_40 : TRUCK_TYPES.SEMI_53
 }
 
+const selectTruckTypeForBundle = (bundle) => resolveTruckConfigForBundle(bundle)
+
 const canFitBundleInPackingList = (packingList, bundle) => {
-  const newWeight = packingList.totalWeight + Number(bundle.totalWeight || 0)
+  const bundleLength = Number(bundle.maxLengthFeet || 0)
+  const bundleWeight = Number(bundle.totalWeight || 0)
+
+  if (bundleLength > Number(packingList.maxTruckLengthFeet || 0)) {
+    return false
+  }
+
+  const newWeight = Number(packingList.totalWeight || 0) + bundleWeight
 
   const newLength = Math.max(
     packingList.maxLengthFeet || 0,
-    bundle.maxLengthFeet || 0
+    bundleLength
   )
 
   return (
@@ -1240,7 +1241,7 @@ const generateMixedTruckPackingLists = (bundles) => {
 
     if (placed) continue
 
-    const truckConfig = selectTruckTypeForBundle(bundle)
+    const truckConfig = resolveTruckConfigForBundle(bundle)
 
     const safeTruckConfig = truckConfig || TRUCK_TYPES.SEMI_53
 

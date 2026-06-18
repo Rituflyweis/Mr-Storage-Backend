@@ -1,3 +1,4 @@
+const Lead = require('../../models/Lead')
 const PackingListPlan = require('../../models/PackingListPlan')
 const PackingList = require('../../models/PackingList')
 const Bundle = require('../../models/Bundle')
@@ -35,6 +36,36 @@ const loadPackingListPlanByProjectWithAccess = async (projectRef, plantUserId) =
   return { lead, packingListPlan }
 }
 
+const loadProjectSummary = async (leadId) => {
+  const lead = await Lead.findById(leadId)
+    .select('projectName jobId buildingType location lifecycleStatus customerId')
+    .populate('customerId', 'firstName lastName email customerId')
+    .lean()
+
+  if (!lead) return null
+
+  const customer = lead.customerId || null
+
+  return {
+    _id: lead._id,
+    leadId: lead._id,
+    projectId: lead.jobId || '',
+    jobId: lead.jobId || '',
+    projectName: lead.projectName || '',
+    buildingType: lead.buildingType || '',
+    location: lead.location || '',
+    lifecycleStatus: lead.lifecycleStatus || '',
+    customer: customer
+      ? {
+          _id: customer._id,
+          customerId: customer.customerId || '',
+          name: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+          email: customer.email || '',
+        }
+      : null,
+  }
+}
+
 exports.getPackingListPlan = asyncHandler(async (req, res) => {
   const loaded = await loadPackingListPlanWithAccess(req.params.packingListPlanId, req.user._id)
   if (loaded.error) {
@@ -43,6 +74,7 @@ exports.getPackingListPlan = asyncHandler(async (req, res) => {
   }
 
   const { packingListPlan } = loaded
+  const project = await loadProjectSummary(packingListPlan.leadId)
   const [packingLists, bundles] = await Promise.all([
     PackingList.find({ packingListPlanId: packingListPlan._id })
       .sort({ truckNo: 1, packingListNo: 1 })
@@ -62,6 +94,7 @@ exports.getPackingListPlan = asyncHandler(async (req, res) => {
   }
 
   return success(res, {
+    project,
     packingListPlan,
     packingLists,
     bundles,
@@ -73,6 +106,7 @@ exports.getPackingListPlanPublic = asyncHandler(async (req, res) => {
   const packingListPlan = await PackingListPlan.findById(req.params.packingListPlanId).lean()
   if (!packingListPlan) return notFound(res, 'Packing list plan not found')
 
+  const project = await loadProjectSummary(packingListPlan.leadId)
   const [packingLists, bundles] = await Promise.all([
     PackingList.find({ packingListPlanId: packingListPlan._id })
       .sort({ truckNo: 1, packingListNo: 1 })
@@ -104,6 +138,7 @@ exports.getPackingListPlanPublic = asyncHandler(async (req, res) => {
   }
 
   return success(res, {
+    project,
     packingListPlan,
     packingLists: packingListsWithBundles,
     bundles,
@@ -149,6 +184,26 @@ exports.confirmPackingListPlan = asyncHandler(async (req, res) => {
     if (!row.truckType) {
       return badRequest(res, `Packing list ${row.packingListNo} has no truckType`)
     }
+
+    // Defensive upgrade for legacy truck plans that placed long bundles on hotshot trucks.
+    if (
+      (row.maxLengthFeet || 0) > (row.maxTruckLengthFeet || 0) &&
+      (row.maxLengthFeet || 0) <= 53
+    ) {
+      await PackingList.findByIdAndUpdate(row._id, {
+        truckType: 'SEMI_53',
+        truckLabel: '53 ft Semi',
+        maxTruckWeight: 45000,
+        hardMaxTruckWeight: 48000,
+        maxTruckLengthFeet: 53,
+      })
+      row.truckType = 'SEMI_53'
+      row.truckLabel = '53 ft Semi'
+      row.maxTruckWeight = 45000
+      row.hardMaxTruckWeight = 48000
+      row.maxTruckLengthFeet = 53
+    }
+
     if ((row.totalWeight || 0) > (row.hardMaxTruckWeight || row.maxTruckWeight || 0)) {
       return badRequest(res, `Packing list ${row.packingListNo} exceeds hard truck weight limit`)
     }
