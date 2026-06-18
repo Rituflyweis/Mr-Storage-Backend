@@ -4,6 +4,9 @@ const ctrl = require('../../controllers/plant/packingList.controller')
 const validate = require('../../middleware/validate')
 const { TRUCK_TYPES } = require('../../config/constants')
 
+// Global packing list overview across all projects (must be registered before the :packingListId route below)
+router.get('/projects', ctrl.getPackingListPlanProjects)
+
 router.get('/:packingListId',
   [param('packingListId').isMongoId()],
   validate,

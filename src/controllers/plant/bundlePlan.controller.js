@@ -3,6 +3,8 @@ const Bundle = require('../../models/Bundle')
 const VendorQuoteLine = require('../../models/VendorQuoteLine')
 const PackingListPlan = require('../../models/PackingListPlan')
 const PackingList = require('../../models/PackingList')
+const POOrder = require('../../models/POOrder')
+const ShipperRequest = require('../../models/ShipperRequest')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
 const {
@@ -157,6 +159,64 @@ const loadBundlePlanWithAccess = async (bundlePlanId, plantUserId) => {
 
   return { bundlePlan }
 }
+
+const getAssignedLeadIds = async (plantUserId) =>
+  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+
+exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
+  const leadIds = await getAssignedLeadIds(req.user._id)
+  if (!leadIds.length) return success(res, { projects: [], total: 0 })
+
+  const bundlePlans = await BundlePlan.find({
+    leadId: { $in: leadIds },
+    status: { $ne: 'cancelled' },
+  })
+    .populate('leadId', 'projectName jobId')
+    .sort({ updatedAt: -1 })
+    .lean()
+
+  if (!bundlePlans.length) return success(res, { projects: [], total: 0 })
+
+  const shipperRequestIds = bundlePlans.map((bp) => bp.shipperRequestId).filter(Boolean)
+  const shipperRequests = shipperRequestIds.length
+    ? await ShipperRequest.find({ _id: { $in: shipperRequestIds } })
+        .select('_id submittedAt')
+        .lean()
+    : []
+  const shipperRequestMap = new Map(shipperRequests.map((sr) => [String(sr._id), sr]))
+
+  const projectMap = new Map()
+
+  // bundlePlans is sorted by updatedAt desc, so the first plan seen per lead is the latest
+  for (const bundlePlan of bundlePlans) {
+    const lead = bundlePlan.leadId
+    if (!lead?._id) continue
+    const key = String(lead._id)
+    if (projectMap.has(key)) continue
+
+    const shipperRequest = shipperRequestMap.get(String(bundlePlan.shipperRequestId))
+
+    projectMap.set(key, {
+      leadId: lead._id,
+      projectId: lead.jobId || '',
+      jobId: lead.jobId || '',
+      projectName: lead.projectName || '',
+      bundlePlanId: bundlePlan._id,
+      fileReceivedAt: shipperRequest?.submittedAt || bundlePlan.createdAt || null,
+      totalLoadPlanning: bundlePlan.totalBundles || 0,
+      status: bundlePlan.status,
+      updatedAt: bundlePlan.updatedAt,
+    })
+  }
+
+  const projects = [...projectMap.values()].sort((a, b) => {
+    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
+    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
+    return bTime - aTime
+  })
+
+  return success(res, { projects, total: projects.length })
+})
 
 const loadBundlePlanByProjectWithAccess = async (projectRef, plantUserId) => {
   const lead = await resolveLeadByProjectRef(projectRef)

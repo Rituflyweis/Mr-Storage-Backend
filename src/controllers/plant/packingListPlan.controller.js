@@ -79,9 +79,21 @@ exports.getPackingListPlanPublic = asyncHandler(async (req, res) => {
       .lean(),
     Bundle.find({ bundlePlanId: packingListPlan.bundlePlanId })
       .sort({ loadSequence: 1, bundleNo: 1 })
-      .select('_id bundleNo bundleType title status packingListId totalQty totalWeight maxLengthFeet loadSequence warnings')
+      .select('_id bundleNo bundleType title status packingListId totalQty totalWeight maxLengthFeet loadSequence warnings stacking items')
       .lean(),
   ])
+
+  const bundlesByPackingListId = bundles.reduce((acc, bundle) => {
+    const key = bundle.packingListId ? String(bundle.packingListId) : 'unassigned'
+    if (!acc[key]) acc[key] = []
+    acc[key].push(bundle)
+    return acc
+  }, {})
+
+  const packingListsWithBundles = packingLists.map((packingList) => ({
+    ...packingList,
+    bundles: bundlesByPackingListId[String(packingList._id)] || [],
+  }))
 
   const summary = {
     totalWeight: packingListPlan.totalWeight,
@@ -93,7 +105,7 @@ exports.getPackingListPlanPublic = asyncHandler(async (req, res) => {
 
   return success(res, {
     packingListPlan,
-    packingLists,
+    packingLists: packingListsWithBundles,
     bundles,
     summary,
   })
