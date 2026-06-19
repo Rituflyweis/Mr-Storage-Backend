@@ -3,11 +3,12 @@ const Delivery = require('../../models/Delivery')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Lead = require('../../models/Lead')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
+const { mapPublicFreightBidRevisionNote } = require('../../utils/freightBidDisplay')
 const { success, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
 const isBidLinkActive = (bid, delivery) => {
-  const activeStatuses = new Set(['sent', 'submitted'])
+  const activeStatuses = new Set(['sent', 'submitted', 'resubmit_requested'])
   if (!activeStatuses.has(bid.status)) return false
   if (delivery.status === 'cancelled') return false
   if (bid.expiresAt && new Date(bid.expiresAt).getTime() < Date.now()) return false
@@ -36,6 +37,8 @@ exports.getFreightBidInfo = asyncHandler(async (req, res) => {
     ? await loadFreightLoadDetailsByLeadId(delivery.leadId)
     : { bundlePlan: null, packingListPlan: null, bundles: [], packingLists: [] }
 
+  const revisionNote = mapPublicFreightBidRevisionNote(bid)
+
   return success(res, {
     bidId: bid._id,
     status: bid.status,
@@ -53,6 +56,10 @@ exports.getFreightBidInfo = asyncHandler(async (req, res) => {
     bidDeadline: bid.expiresAt,
     quotedAmount: bid.quotedAmount,
     carrierNotes: bid.carrierNotes || '',
+    resubmitNote: revisionNote,
+    plantNote: revisionNote,
+    resubmitRequestedAt: bid.resubmitRequestedAt || null,
+    resubmitCount: bid.resubmitCount || 0,
     bundlePlan: loadDetails.bundlePlan,
     packingListPlan: loadDetails.packingListPlan,
     bundles: loadDetails.bundles,

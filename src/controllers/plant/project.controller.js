@@ -16,6 +16,7 @@ const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog } = require('../../services/auditActivity.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
+const { computeShipperFilesStats } = require('../../utils/shipperFilesStats')
 const { validatePlantLifecycleTransition } = require('../../utils/plantLifecycle')
 const { getLatestBomJobsByBuilding, formatBomJobSummary } = require('../../utils/plantBomAccess')
 const { processBOMJob, inferFileFormat } = require('../../services/plant/bom.service')
@@ -736,6 +737,7 @@ exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
   )
 
   return success(res, {
+    stats: computeShipperFilesStats(requests),
     shipperFiles: requests.map((r) => ({
       _id: r._id,
       vendorId: r.vendorId?._id || r.vendorId,

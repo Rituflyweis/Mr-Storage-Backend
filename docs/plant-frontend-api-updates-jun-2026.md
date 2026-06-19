@@ -1,6 +1,6 @@
 # Plant panel — frontend API reference (June 2026 updates)
 
-Reference for frontend integration of recent backend changes: SMDT export/KPIs, shipper file KPIs, delivery calendar filtering, packing list project context, delivery selection fixes, load-planning weight fields, and project list name fallback fields.
+Reference for frontend integration of recent backend changes: SMDT export/KPIs, shipper file KPIs (dashboard + per project), freight request detail, carrier bid revision, payment schedule edit, delivery calendar filtering, packing list project context, delivery selection fixes, load-planning weight fields, and project list name fallback fields.
 
 **Auth:** All plant endpoints require `Authorization: Bearer <accessToken>` and `plant` role unless marked **Public**.
 
@@ -28,8 +28,10 @@ Errors: `success: false`, `message` string, optional `data` with validation deta
 6. [Load planning — bundle weights](#6-load-planning--bundle-weights)
 7. [Truck plan confirm — length limit note](#7-truck-plan-confirm--length-limit-note)
 8. [Project lists — name fallback fields](#8-project-lists--name-fallback-fields)
-9. [Related docs](#9-related-docs)
-10. [Frontend checklist](#10-frontend-checklist)
+9. [Freight — request detail, bids & revision](#9-freight--request-detail-bids--revision)
+10. [Payment schedule — edit (admin / sales)](#10-payment-schedule--edit-admin--sales)
+11. [Related docs](#11-related-docs)
+12. [Frontend checklist](#12-frontend-checklist)
 
 ---
 
@@ -114,6 +116,12 @@ const blob = await res.blob()
 - `GET /api/plant/shipper-requests/stats`
 - `GET /api/plant/shipper-files/stats`
 
+**Single project (same KPI fields):**
+
+- `GET /api/plant/shipper-files/projects/:leadId/stats`
+- `GET /api/plant/shipper-requests/projects/:leadId/stats`
+- `stats` block also on `GET /api/plant/shipper-files/projects/:leadId/requests` and `GET /api/plant/projects/:leadId/shipper-files`
+
 Scoped to projects assigned to the logged-in plant user (approved PO).
 
 **Response `data`:**
@@ -134,7 +142,25 @@ Scoped to projects assigned to the logged-in plant user (approved PO).
 | `ordersSent` | Orders sent | Request sent to vendor (`sentAt` + valid status) |
 | `revisionsSent` | Revisions sent | Sum of `resubmitCount` (total resubmit rounds requested) |
 
+**Single-project KPI response** (`GET .../projects/:leadId/stats`):
+
+```json
+{
+  "leadId": "6a337c4fedd83b0390b87007",
+  "projectId": "PRO-029",
+  "projectName": "Twin Creek Load",
+  "totalFiles": 3,
+  "filesReceived": 2,
+  "ordersSent": 3,
+  "revisionsSent": 1
+}
+```
+
+Alternatively, read `stats` from `GET /api/plant/shipper-files/projects/:leadId/requests` or `GET /api/plant/projects/:leadId/shipper-files` without a second KPI call.
+
 **Suggested home screen layout:** Four KPI tiles in shipper files section; list/table below from `GET /api/plant/shipper-requests/projects` (see [§8 Project lists — name fallback fields](#8-project-lists--name-fallback-fields) for `customerName`, `buildingType`, `location`).
+
+**Project detail screen:** Four KPI tiles from `GET /api/plant/shipper-files/projects/:leadId/stats`; requests table from `GET .../projects/:leadId/requests`.
 
 ---
 
@@ -448,18 +474,301 @@ Optional subtitle: always show `jobId` / `projectId` when the primary title uses
 
 ---
 
-## 9. Related docs
+## 9. Freight — request detail, bids & revision
+
+Full freight load breakdown (bundles / packing lists on form, email, and detail): [plant-freight-load-details-api.md](./plant-freight-load-details-api.md).
+
+### 9A. Freight request detail (full card)
+
+#### `GET /api/plant/deliveries/:deliveryId/detail` — **primary**
+
+Use when you have `deliveryId`. Works for **any** status (`draft`, `bidding_sent`, `carrier_selected`, `confirmed`, etc.).
+
+**Response `data` (partial):**
+
+```json
+{
+  "delivery": {
+    "deliveryId": "...",
+    "deliveryNumber": "DEL-0012",
+    "status": "bidding_sent",
+    "statusHistory": [ { "status": "draft", "changedAt": "..." } ],
+    "project": { "leadId": "...", "projectName": "Twin Creek", "jobId": "PRO-029" },
+    "customer": { "customerId": "...", "customerName": "Jane Smith" },
+    "formDetails": {
+      "loadDescription": "18 bundle shipment",
+      "loadWeight": 62400,
+      "dimensions": { "lengthFeet": 51, "widthFeet": 8.5, "heightFeet": 8 },
+      "materialType": "framing, panels, trim",
+      "packageCount": 2,
+      "loadingEquipment": ["forklift"],
+      "bidDeadline": "2026-06-20T18:00:00.000Z",
+      "pickupLocation": "Plant Yard, Houston",
+      "pickupLocationData": { "address": "...", "coordinates": { "lat": 29.76, "lng": -95.36 } },
+      "deliveryLocation": "ABC Site, Austin",
+      "deliveryLocationData": { ... },
+      "pickupDate": "2026-06-12T00:00:00.000Z",
+      "deliveryDate": "2026-06-13T00:00:00.000Z",
+      "receivingPoc": "John Doe",
+      "pickupContactPhone": "+1-555-222-3344",
+      "specialRequirements": "",
+      "additionalNotes": ""
+    },
+    "deliverySchedule": {
+      "deliveryDate": "...",
+      "timeWindow": "Mon-Fri 8AM-6PM",
+      "pickupAddress": "...",
+      "dropoffAddress": "..."
+    },
+    "deliveryInformation": {
+      "description": "18 bundle shipment",
+      "materialCategory": "framing, panels, trim",
+      "pickupDate": "..."
+    },
+    "shipperDetails": { "vendorName": "...", "personName": "...", "number": "...", "email": "..." },
+    "deliveryCompanyDetails": null,
+    "selectedBid": null,
+    "internalOwner": { "userId": "...", "name": "...", "email": "...", "phone": "..." },
+    "deliveryTypeAndSize": { "bundleCount": 41, "packageCount": 2, "totalWeight": 58475.4 },
+    "bundlePlan": { ... },
+    "packingListPlan": { ... },
+    "bundles": [ ... ],
+    "packingLists": [ ... ],
+    "receivingPocDetails": { "receivingPoc": "...", "pickupContactPhone": "..." }
+  }
+}
+```
+
+#### `GET /api/plant/projects/:leadId/delivery` — awarded / in-progress only
+
+Same response shape as above, but only when a carrier has been **selected** (`selectedCarrierBidId` set) and status is `carrier_selected`, `scheduled`, `confirmed`, `in_transit`, `delayed`, or `delivered`.
+
+404: `"No selected/confirmed delivery found for this project"` if still draft / bidding only.
+
+See also [§5 Deliveries — project selection fixes](#5-deliveries--project-selection-fixes) for list vs detail picker behavior.
+
+### 9B. Freight request list (summary)
+
+`GET /api/plant/deliveries/project/:leadId` — summary rows + `selectedDeliveryId`. Not full form fields; use **9A** for detail screen.
+
+### 9C. Carrier bids (bidding screen)
+
+`GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high|high_to_low`
+
+**Response `data` (partial):**
+
+```json
+{
+  "requestId": "...",
+  "projectName": "Twin Creek",
+  "status": "bidding_sent",
+  "stats": { "totalBids": 3, "averageBid": 2450, "awardedBid": null, "potentialSavings": 300 },
+  "bidRange": { "lowestBid": { ... }, "highestBid": { ... } },
+  "bids": [
+    {
+      "bidId": "...",
+      "carrierId": "...",
+      "carrierName": "Metro Freight",
+      "submittedAt": "2026-06-09T11:20:00.000Z",
+      "carrierNote": "Rate valid 24h",
+      "bidAmount": 2300,
+      "status": "submitted",
+      "isLowest": true,
+      "resubmitCount": 0,
+      "resubmitRequestedAt": null,
+      "resubmitNote": "",
+      "plantNote": "",
+      "canRequestResubmit": true
+    }
+  ]
+}
+```
+
+| Field | Use |
+|-------|-----|
+| `resubmitNote` | Last plant revision note sent to carrier |
+| `plantNote` | Same as `resubmitNote` (alias for FE parity with shipper resubmit) |
+| `canRequestResubmit` | Show “Request revision” when `true` (bid status `submitted`) |
+| `resubmitCount` | Revision rounds for this carrier bid |
+
+Legacy path: `GET /api/plant/deliveries/:deliveryId/bids` (same shape).
+
+### 9D. Request carrier bid revision
+
+`POST /api/plant/freight-bids/:bidId/request-resubmit`
+
+Ask one carrier to submit a **new bid amount** after they already submitted (mirrors vendor shipper `request-resubmit`, but amount only).
+
+**Request body:**
+
+```json
+{
+  "note": "Please revise — pickup window moved to next week."
+}
+```
+
+- `note` — **required**
+
+**Allowed when:** bid status is `submitted`; delivery not `cancelled`.
+
+**Behavior:**
+
+- Prior bid saved to history; `quotedAmount` cleared
+- Status → `resubmit_requested`
+- Email to carrier with note + same bid link
+- If deadline passed, extends `expiresAt` by 7 days
+
+**Response `data`:**
+
+```json
+{
+  "bidId": "...",
+  "status": "resubmit_requested",
+  "resubmitCount": 1,
+  "resubmitRequestedAt": "2026-06-17T12:00:00.000Z",
+  "note": "Please revise — pickup window moved to next week.",
+  "resubmitNote": "Please revise — pickup window moved to next week.",
+  "plantNote": "Please revise — pickup window moved to next week.",
+  "priorQuotedAmount": 2300,
+  "expiresAt": "2026-06-24T12:00:00.000Z",
+  "emailFailures": []
+}
+```
+
+Carrier resubmits via public `POST /api/public/freight-bids/:token/submit` → status back to `submitted`.
+
+### 9E. Other freight endpoints (quick ref)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/plant/projects/:projectId/freight-autofill` | Pre-fill create form (weight, dimensions, bundles) |
+| POST | `/api/plant/deliveries` | Create freight request |
+| POST | `/api/plant/projects/:projectId/freight/send-bids` | Send bid links to carriers |
+| POST | `/api/plant/freight-bids/:bidId/select` | Award bid |
+| GET | `/api/public/freight-bids/:token` | Carrier bid page (includes `resubmitNote` when revision requested) |
+
+---
+
+## 10. Payment schedule — edit (admin / sales)
+
+One payment schedule per project (`leadId`). **Roles:** `admin`, `sales` (sales only for assigned leads).  
+Full reference: [payment-schedule-update-api.md](./payment-schedule-update-api.md).
+
+| Action | Method | Path |
+|--------|--------|------|
+| Create | `POST` | `/api/payment-schedules` |
+| **Update** | **`PUT`** | **`/api/payment-schedules/lead/:leadId`** |
+| Get | `GET` | `/api/payment-schedules/lead/:leadId` |
+
+### `PUT /api/payment-schedules/lead/:leadId`
+
+Edit stages after initial create. Send the **full** `stages[]` array on every save.
+
+**Request body:**
+
+```json
+{
+  "totalAmount": 1917952,
+  "stages": [
+    {
+      "_id": "665b1b2c3d4e5f6789012341",
+      "stageName": "Deposit",
+      "amount": 30,
+      "amountType": "percentage",
+      "dueDate": "2026-06-01T00:00:00.000Z"
+    },
+    {
+      "_id": "665b1b2c3d4e5f6789012342",
+      "stageName": "On delivery",
+      "amount": 70,
+      "amountType": "percentage",
+      "dueDate": "2026-07-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `stages` | Yes | Min 1 row |
+| `stages[]._id` | No | Include for existing stages (from GET); omit for new stages |
+| `stages[].stageName` | Yes | e.g. `Deposit` |
+| `stages[].amount` | Yes | Percentage or fixed amount |
+| `stages[].amountType` | Yes | `percentage` or `fixed` — **all stages must match** |
+| `stages[].dueDate` | No | ISO 8601 |
+| `totalAmount` | No | Keeps existing if omitted; required for `fixed` sum validation |
+
+**Validation:**
+
+| Rule | Error |
+|------|--------|
+| Percentages sum to **100** | 400 |
+| Fixed amounts sum to **`totalAmount`** | 400 |
+| Cannot remove stage linked to invoice or `invoiced` / `paid` / `overdue` | 400 |
+| No schedule for lead | 404 |
+
+**Merge behavior:**
+
+- Existing stage (matched by `_id`): keeps `status`, `invoiceId`, `paidAt`, `paidBy`
+- New stage (no `_id`): added as `pending`
+- Removed stage: only if still `pending` and not invoiced
+
+**Response `200` — `data`:**
+
+```json
+{
+  "schedule": {
+    "_id": "665b...",
+    "leadId": "665a...",
+    "customerId": "664c...",
+    "totalAmount": 1917952,
+    "stages": [
+      {
+        "_id": "665b...01",
+        "stageName": "Deposit",
+        "amount": 30,
+        "amountType": "percentage",
+        "dueDate": "2026-06-01T00:00:00.000Z",
+        "status": "pending",
+        "invoiceId": null,
+        "paidAt": null,
+        "paidBy": null
+      }
+    ],
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+**FE flow:**
+
+```text
+1. GET /api/payment-schedules/lead/:leadId
+2. User edits form
+3. PUT /api/payment-schedules/lead/:leadId  (full stages[] with _ids)
+4. Refresh UI from response.data.schedule
+```
+
+**Create (first time only):** `POST /api/payment-schedules` with `leadId` + `stages` → `201`. Returns `400` if schedule already exists.
+
+**Invoice link:** `POST /api/leads/:leadId/invoices` optional `paymentScheduleStageId` = stage `_id`.
+
+---
+
+## 11. Related docs
 
 | Doc | Topic |
 |-----|--------|
 | [vendor-upload-resubmit-api.md](./vendor-upload-resubmit-api.md) | Vendor resubmit flow, public vendor upload routes |
 | [plant-panel-api.md](./plant-panel-api.md) | Full plant API catalog |
 | [plant-freight-load-details-api.md](./plant-freight-load-details-api.md) | Freight form, delivery detail, carrier bid — bundles & packing lists |
+| [payment-schedule-update-api.md](./payment-schedule-update-api.md) | Payment schedule create + PUT edit |
 | [sales-invoice-shipper-comparison-updates-jun-2026.md](./sales-invoice-shipper-comparison-updates-jun-2026.md) | Invoice pass-through totals + shipper comparison tab stats |
 
 ---
 
-## 10. Frontend checklist
+## 12. Frontend checklist
 
 ### SMDT screen
 
@@ -471,6 +780,11 @@ Optional subtitle: always show `jobId` / `projectId` when the primary title uses
 
 - [ ] KPI row: `GET /api/plant/shipper-requests/stats`
 - [ ] Project list: `GET /api/plant/shipper-requests/projects` — use `customerName`, `buildingType`, `location` when `projectName` is empty
+
+### Shipper project detail
+
+- [ ] KPI row: `GET /api/plant/shipper-files/projects/:leadId/stats` (or `stats` on `.../requests`)
+- [ ] Requests table: `GET /api/plant/shipper-files/projects/:leadId/requests`
 
 ### Project lists (name fallback)
 
@@ -496,6 +810,24 @@ Optional subtitle: always show `jobId` / `projectId` when the primary title uses
 - [ ] List/picker: `GET /api/plant/deliveries/project/:leadId` + `selectedDeliveryId`
 - [ ] Highlight row where `isSelected === true`
 
+### Freight request & bidding
+
+- [ ] Full detail (any status): `GET /api/plant/deliveries/:deliveryId/detail`
+- [ ] Bids table: `GET /api/plant/projects/:projectId/freight/bids`
+- [ ] Request revision modal → `POST /api/plant/freight-bids/:bidId/request-resubmit` `{ note }`
+- [ ] Show `canRequestResubmit` on bid rows; refresh after resubmit request
+- [ ] Create form autofill: `GET /api/plant/projects/:projectId/freight-autofill`
+- [ ] Send bids: `POST /api/plant/projects/:projectId/freight/send-bids`
+- [ ] Award: `POST /api/plant/freight-bids/:bidId/select`
+
+### Payment schedule (admin / sales)
+
+- [ ] Load: `GET /api/payment-schedules/lead/:leadId`
+- [ ] First create: `POST /api/payment-schedules` `{ leadId, stages, totalAmount? }`
+- [ ] Edit save: `PUT /api/payment-schedules/lead/:leadId` — full `stages[]` with `_id` on existing rows
+- [ ] Validate % sum = 100 or fixed sum = `totalAmount` before submit
+- [ ] Do not remove invoiced / paid stages from array
+
 ### Load planning / bundles
 
 - [ ] Bundle detail: show `unitWeight`, `totalWeight`, `weightBasis`
@@ -510,7 +842,8 @@ Optional subtitle: always show `jobId` / `projectId` when the primary title uses
 |--------|------|---------|
 | GET | `/api/smdt/stats` | SMDT KPIs |
 | GET | `/api/smdt/export/excel` | Download SMDT Excel |
-| GET | `/api/plant/shipper-requests/stats` | Shipper file KPIs |
+| GET | `/api/plant/shipper-requests/stats` | Shipper file KPIs (all projects) |
+| GET | `/api/plant/shipper-files/projects/:leadId/stats` | Shipper KPIs (single project) |
 | GET | `/api/plant/bom/projects` | BOM project list + name fallback fields |
 | GET | `/api/plant/shipper-files/projects` | Shipper project list + name fallback fields |
 | GET | `/api/plant/load-planning/projects` | Load planning project list + name fallback fields |
@@ -518,6 +851,15 @@ Optional subtitle: always show `jobId` / `projectId` when the primary title uses
 | GET | `/api/plant/deliveries/calendar` | Calendar (confirmed only) |
 | GET | `/api/plant/packing-list-plans/:id` | Truck plan + `project` |
 | GET | `/api/plant/projects/:leadId/delivery` | Selected delivery detail |
+| GET | `/api/plant/deliveries/:deliveryId/detail` | Full freight request detail (any status) |
 | GET | `/api/plant/deliveries/project/:leadId` | All deliveries + `selectedDeliveryId` |
+| GET | `/api/plant/projects/:projectId/freight/bids` | Carrier bids + `canRequestResubmit` |
+| POST | `/api/plant/freight-bids/:bidId/request-resubmit` | Request carrier bid revision `{ note }` |
+| GET | `/api/plant/projects/:projectId/freight-autofill` | Freight form autofill |
+| POST | `/api/plant/projects/:projectId/freight/send-bids` | Send bid links to carriers |
+| POST | `/api/plant/freight-bids/:bidId/select` | Award freight bid |
+| GET | `/api/payment-schedules/lead/:leadId` | Get payment schedule |
+| PUT | `/api/payment-schedules/lead/:leadId` | Edit payment schedule |
+| POST | `/api/payment-schedules` | Create payment schedule |
 | GET | `/api/plant/projects/:projectId/load-planning` | Load + bundle summary |
 | GET | `/api/plant/bundles/:bundleId` | Bundle items with weights |

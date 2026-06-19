@@ -263,7 +263,8 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21B | POST | `/api/public/vendor-upload/:token/presigned-url` | Presigned URL for vendor quote file upload |
 | 21C | POST | `/api/public/vendor-upload/:token` | Submit vendor quote file + quote amount |
 | 21D | GET | `/api/plant/shipper-files/projects` | Projects with raised shipper requests + received status |
-| 21E | GET | `/api/plant/shipper-files/projects/:leadId/requests` | Project-wise shipper request list |
+| 21E | GET | `/api/plant/shipper-files/projects/:leadId/requests` | Project-wise shipper request list (+ `stats` KPI block) |
+| 21EA | GET | `/api/plant/shipper-files/projects/:leadId/stats` | Project shipper file KPIs only |
 | 21F | GET | `/api/plant/shipper-requests/:requestId/document` | Single shipper document details |
 | 21G | POST | `/api/plant/shipper-requests/:requestId/compare` | Start async comparison job |
 | 21H | GET | `/api/plant/shipper-requests/compare-jobs/:jobId/status` | Poll comparison job status |
@@ -313,6 +314,7 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21ZF | POST | `/api/plant/deliveries/:deliveryId/send-bids` | Legacy id-based: send bid requests to selected carriers |
 | 21ZG | GET | `/api/plant/deliveries/:deliveryId/bids` | Legacy id-based: freight bid detail + stats + sorted bids |
 | 21ZH | POST | `/api/plant/freight-bids/:bidId/select` | Award one freight bid and reject others |
+| 21ZHA | POST | `/api/plant/freight-bids/:bidId/request-resubmit` | Ask carrier to submit revised bid amount (note required) |
 | 21ZI | GET | `/api/public/freight-bids/:token` | Public freight bid link details |
 | 21ZJ | POST | `/api/public/freight-bids/:token/submit` | Public carrier bid submit (deadline enforced) |
 | 22 | GET | `/api/plant/vendors` | List vendors / shippers |
@@ -1573,6 +1575,12 @@ Vendor shipper submissions for the project.
 
 ```json
 {
+  "stats": {
+    "totalFiles": 3,
+    "filesReceived": 2,
+    "ordersSent": 3,
+    "revisionsSent": 1
+  },
   "shipperFiles": [
     {
       "_id": "...",
@@ -1727,6 +1735,12 @@ Project-wise shipper request rows (table view).
   "leadId": "...",
   "projectId": "PRO-001",
   "projectName": "ABC Warehouse",
+  "stats": {
+    "totalFiles": 3,
+    "filesReceived": 2,
+    "ordersSent": 3,
+    "revisionsSent": 1
+  },
   "shipperRequests": [
     {
       "requestId": "...",
@@ -1740,6 +1754,35 @@ Project-wise shipper request rows (table view).
     }
   ],
   "total": 1
+}
+```
+
+| `stats` field | Meaning |
+|---------------|---------|
+| `totalFiles` | Shipper requests for this project |
+| `filesReceived` | Vendor submitted a quote file |
+| `ordersSent` | Requests sent to vendors (`sentAt` + valid status) |
+| `revisionsSent` | Sum of `resubmitCount` (revision rounds requested) |
+
+---
+
+## 21EA. `GET /api/plant/shipper-files/projects/:leadId/stats`
+
+Project-scoped shipper KPIs (same fields as dashboard `GET /api/plant/shipper-files/stats`, but for one project).
+
+Alias: `GET /api/plant/shipper-requests/projects/:leadId/stats`
+
+### Response `data`
+
+```json
+{
+  "leadId": "...",
+  "projectId": "PRO-001",
+  "projectName": "ABC Warehouse",
+  "totalFiles": 3,
+  "filesReceived": 2,
+  "ordersSent": 3,
+  "revisionsSent": 1
 }
 ```
 
@@ -3341,6 +3384,54 @@ Award one bid:
 
 ---
 
+## 21ZHA. `POST /api/plant/freight-bids/:bidId/request-resubmit`
+
+Ask a carrier to submit a **revised bid amount** after they have already submitted (mirrors shipper `request-resubmit`, but bid amount only).
+
+### Request body
+
+```json
+{
+  "note": "Please revise — pickup window moved to next week."
+}
+```
+
+- `note` — **required**
+
+### Allowed when
+
+- Bid status is `submitted`
+- Delivery is not `cancelled`
+
+### Behavior
+
+- Prior submission saved to `submissionHistory`
+- Clears current `quotedAmount`, `carrierNotes`, `submittedAt`
+- Status -> `resubmit_requested`
+- Increments `resubmitCount`, sets `resubmitNote`, `resubmitRequestedAt`
+- If deadline passed, extends `expiresAt` by 7 days (same bid link)
+- Sends resubmit email to carrier with note + link
+- Audit: `freight_bid.resubmit_requested`
+
+### Response `data`
+
+```json
+{
+  "bidId": "...",
+  "status": "resubmit_requested",
+  "resubmitCount": 1,
+  "resubmitRequestedAt": "2026-06-17T12:00:00.000Z",
+  "note": "Please revise — pickup window moved to next week.",
+  "priorQuotedAmount": 2300,
+  "expiresAt": "2026-06-24T12:00:00.000Z",
+  "emailFailures": []
+}
+```
+
+Bid list rows (`GET .../freight/bids`) also include `resubmitCount`, `resubmitRequestedAt`, `resubmitNote`, `canRequestResubmit`.
+
+---
+
 ## 21ZI. `GET /api/public/freight-bids/:token`
 
 Public carrier page bootstrap.
@@ -3360,9 +3451,13 @@ Public carrier page bootstrap.
   "deliveryLocation": "ABC Site, Austin",
   "bidDeadline": "2026-06-10T18:00:00.000Z",
   "quotedAmount": null,
-  "carrierNotes": ""
+  "carrierNotes": "",
+  "resubmitNote": "Please revise — pickup window moved.",
+  "resubmitRequestedAt": "2026-06-17T12:00:00.000Z"
 }
 ```
+
+Active link statuses: `sent`, `submitted`, `resubmit_requested`.
 
 ---
 
@@ -4204,6 +4299,8 @@ Frontend note:
 4. Carrier opens: GET /api/public/freight-bids/:token
 5. Carrier submits: POST /api/public/freight-bids/:token/submit   { quotedAmount, carrierNotes }
 6. Plant views: GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high
+6b. (optional) Plant requests revision: POST /api/plant/freight-bids/:bidId/request-resubmit   { note }
+     → carrier resubmits at step 5 (status `resubmit_requested` → `submitted`)
 7. Plant awards: POST /api/plant/freight-bids/:bidId/select
 ```
 
@@ -4258,6 +4355,7 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Send BOM to vendors | `POST .../consolidated-bom/send` `{ vendorIds }` |
 | Shipper projects list | `GET /api/plant/shipper-files/projects` |
 | Shipper requests table | `GET /api/plant/shipper-files/projects/:leadId/requests` |
+| Shipper project KPIs | `GET /api/plant/shipper-files/projects/:leadId/stats` |
 | Shipper file preview | `GET /api/plant/shipper-requests/:requestId/document` |
 | Run comparison | `POST /api/plant/shipper-requests/:requestId/compare` |
 | Poll comparison job | `GET .../compare-jobs/:jobId/status` or `POST .../compare-jobs/status` |
@@ -4301,6 +4399,7 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Send freight bid links | `POST /api/plant/deliveries/:deliveryId/send-bids` |
 | Freight bid detail view | `GET /api/plant/deliveries/:deliveryId/bids?sort=low_to_high|high_to_low` |
 | Award freight bid | `POST /api/plant/freight-bids/:bidId/select` |
+| Request freight bid revision | `POST /api/plant/freight-bids/:bidId/request-resubmit` `{ note }` |
 | Public freight bid page | `GET /api/public/freight-bids/:token` |
 | Public freight bid submit | `POST /api/public/freight-bids/:token/submit` |
 | Vendor public upload page | `GET /api/public/vendor-upload/:token` |

@@ -41,6 +41,7 @@ const {
 } = require('../../utils/shipperComparisonCategories')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { SHIPPER_REQUEST_LATEST_FIRST_SORT, sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
+const { computeShipperFilesStats } = require('../../utils/shipperFilesStats')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -121,41 +122,33 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
 exports.getShipperFilesStats = asyncHandler(async (req, res) => {
   const leadIds = await getAssignedLeadIds(req.user._id)
   if (!leadIds.length) {
-    return success(res, {
-      totalFiles: 0,
-      filesReceived: 0,
-      ordersSent: 0,
-      revisionsSent: 0,
-    })
+    return success(res, computeShipperFilesStats([]))
   }
 
   const requests = await ShipperRequest.find({ leadId: { $in: leadIds } })
     .select('status submittedFileUrl sentAt resubmitCount')
     .lean()
 
-  const ordersSentStatuses = new Set([
-    'sent',
-    'submitted',
-    'comparison_processing',
-    'comparison_completed',
-    'comparison_failed',
-    'approved',
-    'rejected',
-    'resubmit_requested',
-  ])
+  return success(res, computeShipperFilesStats(requests))
+})
 
-  const totalFiles = requests.length
-  const filesReceived = requests.filter((row) => Boolean(row.submittedFileUrl)).length
-  const ordersSent = requests.filter((row) => {
-    return Boolean(row.sentAt) && ordersSentStatuses.has(row.status)
-  }).length
-  const revisionsSent = requests.reduce((sum, row) => sum + Number(row.resubmitCount || 0), 0)
+exports.getProjectShipperFilesStats = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const requests = await ShipperRequest.find({ leadId })
+    .select('status submittedFileUrl sentAt resubmitCount')
+    .lean()
 
   return success(res, {
-    totalFiles,
-    filesReceived,
-    ordersSent,
-    revisionsSent,
+    leadId,
+    projectId: access.lead.jobId || '',
+    projectName: access.lead.projectName || '',
+    ...computeShipperFilesStats(requests),
   })
 })
 
@@ -177,6 +170,7 @@ exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
     leadId,
     projectId: access.lead.jobId || '',
     projectName: access.lead.projectName || '',
+    stats: computeShipperFilesStats(requests),
     shipperRequests: requests.map((r) => ({
       requestId: r._id,
       vendorId: r.vendorId?._id || r.vendorId,

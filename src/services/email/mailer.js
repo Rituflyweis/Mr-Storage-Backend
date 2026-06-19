@@ -535,6 +535,55 @@ const sendFreightBidRejectedEmail = async ({
   })
 }
 
+const sendFreightBidResubmitRequestEmail = async ({
+  toEmail,
+  carrierName,
+  projectName,
+  jobId,
+  deliveryNumber,
+  note,
+  bidUrl,
+  bidDeadline,
+  priorQuotedAmount,
+}) => {
+  const template = loadTemplate('carrier-freight-bid-resubmit')
+  const priorAmountText =
+    priorQuotedAmount != null && Number.isFinite(Number(priorQuotedAmount))
+      ? formatInvoiceMoney(priorQuotedAmount)
+      : 'N/A'
+
+  const html = fillTemplate(template, {
+    CARRIER_NAME: carrierName || 'Carrier',
+    PROJECT_NAME: projectName || '',
+    JOB_ID: jobId || '',
+    DELIVERY_NUMBER: deliveryNumber || '',
+    NOTE: note || '',
+    BID_URL: bidUrl || '',
+    BID_DEADLINE: formatInvoiceDate(bidDeadline),
+    PRIOR_QUOTED_AMOUNT: priorAmountText,
+  })
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Action Required: Revised Freight Bid for ${projectName || 'Project'}`,
+    html,
+    text: [
+      `Hello ${carrierName || 'Carrier'},`,
+      '',
+      `Project: ${projectName || ''}`,
+      `Job ID: ${jobId || ''}`,
+      `Freight Request #: ${deliveryNumber || ''}`,
+      '',
+      `Plant note: ${note || ''}`,
+      `Previous bid amount: ${priorAmountText}`,
+      '',
+      `Submit revised bid: ${bidUrl || ''}`,
+      `Bid deadline: ${formatInvoiceDate(bidDeadline)}`,
+    ].join('\n'),
+  })
+}
+
 module.exports = {
   isSmtpConfigured,
   sendQuotation,
@@ -546,6 +595,7 @@ module.exports = {
   sendShipperRejectionEmail,
   sendShipperResubmitRequestEmail,
   sendFreightBidRequestEmail,
+  sendFreightBidResubmitRequestEmail,
   sendFreightBidAwardedEmail,
   sendFreightBidRejectedEmail,
 }

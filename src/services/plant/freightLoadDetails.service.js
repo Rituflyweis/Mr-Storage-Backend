@@ -9,22 +9,76 @@ const round2 = (value) => {
   return Math.round(n * 100) / 100
 }
 
-const mapFreightBundleRow = (bundle) => ({
-  _id: bundle._id,
-  bundleNo: bundle.bundleNo,
-  bundleType: bundle.bundleType,
-  title: bundle.title || '',
-  totalQty: bundle.totalQty,
-  totalWeight: round2(bundle.totalWeight),
-  maxLengthFeet: round2(bundle.maxLengthFeet),
-  estimatedWidthFeet: round2(bundle.estimatedWidthFeet),
-  estimatedHeightFeet: round2(bundle.estimatedHeightFeet),
-  itemCount: bundle.items?.length || 0,
-  loadSequence: bundle.loadSequence,
-  status: bundle.status,
-  packingListId: bundle.packingListId || null,
-  warnings: bundle.warnings || [],
-})
+const DEFAULT_FREIGHT_WIDTH_FEET = 8.5
+const DEFAULT_FREIGHT_HEIGHT_FEET = 8
+const HOTSHOT_FREIGHT_WIDTH_FEET = 8
+
+const resolveBundleItemEnvelope = (bundle) => {
+  let widthFeet = Number(bundle.estimatedWidthFeet || 0)
+  let heightFeet = Number(bundle.estimatedHeightFeet || 0)
+
+  for (const item of bundle.items || []) {
+    widthFeet = Math.max(widthFeet, Number(item.widthFeet || 0))
+    heightFeet = Math.max(heightFeet, Number(item.heightFeet || 0))
+  }
+
+  return { widthFeet, heightFeet }
+}
+
+const computeFreightEnvelopeDimensions = (bundles = [], packingLists = []) => {
+  const maxLengthFeet = bundles.reduce(
+    (max, row) => Math.max(max, Number(row.maxLengthFeet || 0)),
+    0
+  )
+
+  let maxWidthFeet = 0
+  let maxHeightFeet = 0
+  for (const bundle of bundles) {
+    const envelope = resolveBundleItemEnvelope(bundle)
+    maxWidthFeet = Math.max(maxWidthFeet, envelope.widthFeet)
+    maxHeightFeet = Math.max(maxHeightFeet, envelope.heightFeet)
+  }
+
+  if (!maxWidthFeet || !maxHeightFeet) {
+    const truckTypes = packingLists.map((row) => row.truckType).filter(Boolean)
+    const hotshotOnly =
+      truckTypes.length > 0 && truckTypes.every((type) => type === 'HOTSHOT_40')
+
+    if (!maxWidthFeet) {
+      maxWidthFeet = hotshotOnly ? HOTSHOT_FREIGHT_WIDTH_FEET : DEFAULT_FREIGHT_WIDTH_FEET
+    }
+    if (!maxHeightFeet) {
+      maxHeightFeet = DEFAULT_FREIGHT_HEIGHT_FEET
+    }
+  }
+
+  return {
+    lengthFeet: maxLengthFeet,
+    widthFeet: maxWidthFeet,
+    heightFeet: maxHeightFeet,
+  }
+}
+
+const mapFreightBundleRow = (bundle) => {
+  const envelope = resolveBundleItemEnvelope(bundle)
+
+  return {
+    _id: bundle._id,
+    bundleNo: bundle.bundleNo,
+    bundleType: bundle.bundleType,
+    title: bundle.title || '',
+    totalQty: bundle.totalQty,
+    totalWeight: round2(bundle.totalWeight),
+    maxLengthFeet: round2(bundle.maxLengthFeet),
+    estimatedWidthFeet: round2(envelope.widthFeet || bundle.estimatedWidthFeet),
+    estimatedHeightFeet: round2(envelope.heightFeet || bundle.estimatedHeightFeet),
+    itemCount: bundle.items?.length || 0,
+    loadSequence: bundle.loadSequence,
+    status: bundle.status,
+    packingListId: bundle.packingListId || null,
+    warnings: bundle.warnings || [],
+  }
+}
 
 const mapFreightPackingListRow = (packingList) => ({
   _id: packingList._id,
@@ -214,6 +268,7 @@ const formatFreightLoadDetailsHtml = ({ bundles = [], packingLists = [] } = {}) 
 }
 
 module.exports = {
+  computeFreightEnvelopeDimensions,
   mapFreightBundleRow,
   mapFreightPackingListRow,
   loadFreightLoadDetailsByLeadId,

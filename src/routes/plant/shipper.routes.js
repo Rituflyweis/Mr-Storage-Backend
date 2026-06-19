@@ -7,6 +7,12 @@ router.get('/stats', ctrl.getShipperFilesStats)
 
 router.get('/projects', ctrl.getShipperProjects)
 
+router.get('/projects/:leadId/stats',
+  [param('leadId').isMongoId()],
+  validate,
+  ctrl.getProjectShipperFilesStats
+)
+
 router.get('/projects/:leadId/requests',
   [param('leadId').isMongoId()],
   validate,

@@ -13,6 +13,7 @@ const auditService = require('../../services/audit.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
 const {
+  computeFreightEnvelopeDimensions,
   loadFreightLoadDetailsByLeadId,
   loadFreightLoadDetailsByBundlePlanId,
 } = require('../../services/plant/freightLoadDetails.service')
@@ -20,6 +21,10 @@ const { CLIENT_URL } = require('../../config/env')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
 const { SHIPPER_REQUEST_LATEST_FIRST_SORT } = require('../../utils/shipperRequestSort')
+const {
+  mapPlantFreightBidRow,
+  mapSelectedFreightBidDetails,
+} = require('../../utils/freightBidDisplay')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -297,9 +302,10 @@ const buildDeliveryStats = (deliveries) => {
 
 const buildFreightAutofill = (bundlePlan, packingListPlan, bundles, loadDetails = {}) => {
   const totalWeight = bundles.reduce((sum, row) => sum + Number(row.totalWeight || 0), 0)
-  const maxLengthFeet = bundles.reduce((max, row) => Math.max(max, Number(row.maxLengthFeet || 0)), 0)
-  const maxWidthFeet = bundles.reduce((max, row) => Math.max(max, Number(row.estimatedWidthFeet || 0)), 0)
-  const maxHeightFeet = bundles.reduce((max, row) => Math.max(max, Number(row.estimatedHeightFeet || 0)), 0)
+  const envelope = computeFreightEnvelopeDimensions(
+    bundles,
+    loadDetails.packingLists || []
+  )
   const bundleTypes = [...new Set(bundles.map((row) => row.bundleType).filter(Boolean))]
 
   const loadDescription = `${bundles.length} bundle(s) for bundle plan ${bundlePlan.planNumber || ''}`.trim()
@@ -308,9 +314,9 @@ const buildFreightAutofill = (bundlePlan, packingListPlan, bundles, loadDetails 
     loadDescription,
     weight: toRounded(totalWeight),
     dimensions: {
-      lengthFeet: toRounded(maxLengthFeet),
-      widthFeet: toRounded(maxWidthFeet),
-      heightFeet: toRounded(maxHeightFeet),
+      lengthFeet: toRounded(envelope.lengthFeet),
+      widthFeet: toRounded(envelope.widthFeet),
+      heightFeet: toRounded(envelope.heightFeet),
     },
     metalType: bundleTypes.join(', '),
     packageCount: packingListPlan?.totalBundles || bundles.length,
@@ -565,6 +571,9 @@ exports.sendDeliveryBids = asyncHandler(async (req, res) => {
       bid.carrierNotes = ''
       bid.submittedAt = null
       bid.selectedAt = null
+      bid.resubmitNote = ''
+      bid.resubmitRequestedAt = null
+      bid.resubmitCount = 0
       await bid.save()
     }
 
@@ -633,15 +642,9 @@ exports.getDeliveryBids = asyncHandler(async (req, res) => {
   const lowestId = stats.lowestBid?._id ? String(stats.lowestBid._id) : null
 
   const mapped = bids
-    .map((row) => ({
-      bidId: row._id,
-      carrierId: row.carrierId?._id || row.carrierId,
-      carrierName: row.carrierId?.carrierName || '',
-      submittedAt: row.submittedAt,
-      carrierNote: row.carrierNotes || '',
+    .map((row) => mapPlantFreightBidRow(row, {
+      lowestId,
       bidAmount: getSubmittedBidAmount(row),
-      status: row.status,
-      isLowest: lowestId ? String(row._id) === lowestId : false,
     }))
 
   mapped.sort((a, b) => {
@@ -735,20 +738,7 @@ const buildShipperDetails = (vendor) => (
     : null
 )
 
-const buildSelectedBidDetails = (selectedBidDoc) => {
-  if (!selectedBidDoc) return null
-  return {
-    bidId: selectedBidDoc._id,
-    carrierId: selectedBidDoc.carrierId?._id || selectedBidDoc.carrierId,
-    carrierName: selectedBidDoc.carrierId?.carrierName || '',
-    quotedAmount: selectedBidDoc.quotedAmount ?? null,
-    currency: selectedBidDoc.currency || 'USD',
-    carrierNotes: selectedBidDoc.carrierNotes || '',
-    submittedAt: selectedBidDoc.submittedAt,
-    selectedAt: selectedBidDoc.selectedAt,
-    status: selectedBidDoc.status,
-  }
-}
+const buildSelectedBidDetails = (selectedBidDoc) => mapSelectedFreightBidDetails(selectedBidDoc)
 
 const buildDeliveryFormDetails = (delivery) => ({
   description: delivery.description || '',

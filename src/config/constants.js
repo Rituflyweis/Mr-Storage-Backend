@@ -146,6 +146,7 @@ const AUDIT_ACTIONS = {
   DELIVERY_CREATED:          'delivery.created',
   FREIGHT_BIDS_SENT:         'freight_bids.sent',
   FREIGHT_BID_SELECTED:      'freight_bid.selected',
+  FREIGHT_BID_RESUBMIT_REQUESTED: 'freight_bid.resubmit_requested',
 
   SMDT_BULK_UPLOADED:        'smdt.bulk_uploaded',
   SMDT_ITEM_ADDED:           'smdt.item_added',
@@ -179,8 +180,8 @@ const ACTIVE_SHIPPER_REQUEST_STATUSES = [
 ]
 
 const CARRIER_STATUSES = ['active', 'inactive']
-const FREIGHT_BID_STATUSES = ['sent', 'submitted', 'selected', 'rejected', 'expired']
-const ACTIVE_FREIGHT_BID_STATUSES = ['sent', 'submitted']
+const FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested', 'selected', 'rejected', 'expired']
+const ACTIVE_FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested']
 const BUNDLE_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
 const BUNDLE_STATUSES = ['draft', 'confirmed', 'assigned_to_truck', 'loaded']
 const PACKING_LIST_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']

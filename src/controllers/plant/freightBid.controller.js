@@ -1,12 +1,21 @@
 const FreightBid = require('../../models/FreightBid')
 const Delivery = require('../../models/Delivery')
+const FreightCarrier = require('../../models/FreightCarrier')
 const Lead = require('../../models/Lead')
 const auditService = require('../../services/audit.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
-const { sendFreightBidAwardedEmail, sendFreightBidRejectedEmail } = require('../../services/email/mailer')
+const {
+  sendFreightBidAwardedEmail,
+  sendFreightBidRejectedEmail,
+  sendFreightBidResubmitRequestEmail,
+} = require('../../services/email/mailer')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const { CLIENT_URL } = require('../../config/env')
 const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+
+const FREIGHT_BID_RESUBMIT_ALLOWED_STATUSES = new Set(['submitted'])
+const RESUBMIT_DEADLINE_EXTENSION_DAYS = 7
 
 exports.selectFreightBid = asyncHandler(async (req, res) => {
   const { bidId } = req.params
@@ -114,4 +123,119 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
     rejectedBidIds: rejectedRows.map((row) => row._id),
     emailFailures,
   }, 'Freight bid selected')
+})
+
+exports.requestFreightBidResubmit = asyncHandler(async (req, res) => {
+  const { bidId } = req.params
+  const note = String(req.body.note || '').trim()
+  if (!note) return badRequest(res, 'note is required')
+
+  const bid = await FreightBid.findById(bidId)
+  if (!bid) return notFound(res, 'Freight bid not found')
+
+  if (!FREIGHT_BID_RESUBMIT_ALLOWED_STATUSES.has(bid.status)) {
+    return badRequest(res, `Cannot request resubmit while status is ${bid.status}`)
+  }
+
+  const delivery = await Delivery.findById(bid.deliveryId)
+  if (!delivery) return notFound(res, 'Freight request not found')
+
+  if (delivery.status === 'cancelled') {
+    return badRequest(res, 'Cannot request resubmit for a cancelled freight request')
+  }
+
+  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const priorQuotedAmount = bid.quotedAmount
+
+  if (bid.quotedAmount != null || bid.submittedAt) {
+    bid.submissionHistory.push({
+      quotedAmount: bid.quotedAmount ?? null,
+      carrierNotes: bid.carrierNotes || '',
+      submittedAt: bid.submittedAt || null,
+    })
+  }
+
+  bid.quotedAmount = null
+  bid.carrierNotes = ''
+  bid.submittedAt = null
+  bid.selectedAt = null
+  bid.status = 'resubmit_requested'
+  bid.resubmitNote = note
+  bid.resubmitRequestedAt = new Date()
+  bid.resubmitCount = (bid.resubmitCount || 0) + 1
+
+  const now = Date.now()
+  if (!bid.expiresAt || new Date(bid.expiresAt).getTime() < now) {
+    bid.expiresAt = new Date(now + RESUBMIT_DEADLINE_EXTENSION_DAYS * 24 * 60 * 60 * 1000)
+  }
+
+  if (
+    bid.expiresAt &&
+    (!delivery.bidDeadline || new Date(bid.expiresAt).getTime() > new Date(delivery.bidDeadline).getTime())
+  ) {
+    delivery.bidDeadline = bid.expiresAt
+    await delivery.save()
+  }
+
+  await bid.save()
+
+  const [carrier, lead] = await Promise.all([
+    FreightCarrier.findById(bid.carrierId).select('carrierName email').lean(),
+    Lead.findById(delivery.leadId).select('projectName jobId customerId').lean(),
+  ])
+
+  const bidUrl = `${CLIENT_URL}/carrier/${bid.token}`
+  const emailFailures = []
+  try {
+    if (carrier?.email) {
+      await sendFreightBidResubmitRequestEmail({
+        toEmail: carrier.email,
+        carrierName: carrier.carrierName,
+        projectName: lead?.projectName || '',
+        jobId: lead?.jobId || '',
+        deliveryNumber: delivery.deliveryNumber,
+        note: bid.resubmitNote,
+        bidUrl,
+        bidDeadline: bid.expiresAt,
+        priorQuotedAmount,
+      })
+    }
+  } catch (err) {
+    emailFailures.push({ carrierId: carrier?._id, error: err.message })
+  }
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.FREIGHT_BID_RESUBMIT_REQUESTED,
+    leadId: delivery.leadId,
+    customerId: lead?.customerId || null,
+    performedBy: req.user._id,
+    metadata: {
+      deliveryId: delivery._id,
+      bidId: bid._id,
+      carrierId: bid.carrierId,
+      note: bid.resubmitNote,
+      priorQuotedAmount,
+      resubmitCount: bid.resubmitCount,
+      expiresAt: bid.expiresAt,
+    },
+  })
+
+  return success(res, {
+    bidId: bid._id,
+    status: bid.status,
+    resubmitCount: bid.resubmitCount,
+    resubmitRequestedAt: bid.resubmitRequestedAt,
+    note: bid.resubmitNote,
+    resubmitNote: bid.resubmitNote,
+    plantNote: bid.resubmitNote,
+    priorQuotedAmount,
+    expiresAt: bid.expiresAt,
+    emailFailures,
+  }, 'Freight bid resubmit requested')
 })
