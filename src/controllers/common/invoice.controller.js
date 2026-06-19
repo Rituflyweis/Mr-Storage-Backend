@@ -235,11 +235,14 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
   if (!customer) return notFound(res, 'Customer not found')
   if (!customer.email) return badRequest(res, 'Customer has no email address on file')
 
+  const paymentSchedule = await PaymentSchedule.findOne({ leadId: invoice.leadId }).lean()
+
   try {
     await mailer.sendInvoice({
       toEmail: customer.email,
-      customerName: customer.firstName,
+      customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || customer.firstName,
       invoice,
+      paymentSchedule,
     })
   } catch (err) {
     console.error('[sendInvoice] Email failed for invoice', invoice.invoiceNumber, err.message)

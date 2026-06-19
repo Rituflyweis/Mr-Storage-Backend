@@ -167,6 +167,79 @@ const resolveInvoiceDueDate = (invoice) =>
 
 const buildInvoiceDueDate = (invoice) => formatInvoiceDate(resolveInvoiceDueDate(invoice))
 
+const formatPaymentStageAmount = (stage, scheduleTotal) => {
+  if (stage.amountType === 'percentage') {
+    const pct = Number(stage.amount)
+    const dollar =
+      scheduleTotal != null && Number.isFinite(pct)
+        ? (Number(scheduleTotal) * pct) / 100
+        : null
+    const pctLabel = Number.isFinite(pct) ? `${pct}%` : '—'
+    return dollar != null ? `${pctLabel} (${formatInvoiceMoney(dollar)})` : pctLabel
+  }
+  return formatInvoiceMoney(stage.amount)
+}
+
+const formatPaymentStageStatus = (status) => {
+  const labels = {
+    pending: 'Pending',
+    invoiced: 'Invoiced',
+    paid: 'Paid',
+    overdue: 'Overdue',
+  }
+  return labels[status] || status || '—'
+}
+
+const buildPaymentScheduleSection = (paymentSchedule, invoice) => {
+  const stages = Array.isArray(paymentSchedule?.stages) ? paymentSchedule.stages : []
+  if (!stages.length) return ''
+
+  const scheduleTotal = paymentSchedule.totalAmount
+  const currentStageId = invoice?.paymentScheduleStageId
+    ? String(invoice.paymentScheduleStageId)
+    : null
+
+  const rows = stages
+    .map((stage) => {
+      const isCurrent = currentStageId && String(stage._id) === currentStageId
+      const rowStyle = isCurrent ? 'background:#f0f7ff;font-weight:600' : ''
+      const currentBadge = isCurrent
+        ? ' <span style="font-size:10px;color:#1a2e4a;background:#d8e8f8;padding:2px 6px;border-radius:4px;margin-left:6px">This invoice</span>'
+        : ''
+
+      return `<tr style="${rowStyle}">
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top">${escapeHtml(stage.stageName || '—')}${currentBadge}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatPaymentStageAmount(stage, scheduleTotal)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top">${formatInvoiceDate(stage.dueDate)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top">${formatPaymentStageStatus(stage.status)}</td>
+      </tr>`
+    })
+    .join('')
+
+  const totalLabel =
+    scheduleTotal != null
+      ? `<p style="font-size:12px;color:#666;margin:8px 0 0">Schedule total: <strong>${formatInvoiceMoney(scheduleTotal)}</strong></p>`
+      : ''
+
+  return `
+      <div class="section-title">Payment schedule</div>
+      <table class="line-items">
+        <thead>
+          <tr>
+            <th>Stage</th>
+            <th class="num">Amount</th>
+            <th>Due date</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+      ${totalLabel}
+    `
+}
+
 const sendQuotation = async ({ toEmail, customerName, quotation }) => {
   const template = loadTemplate('quotation')
   const html = fillTemplate(template, {
@@ -204,10 +277,11 @@ const sendQuotation = async ({ toEmail, customerName, quotation }) => {
 }
 
 
-const sendInvoice = async ({ toEmail, customerName, invoice }) => {
+const sendInvoice = async ({ toEmail, customerName, invoice, paymentSchedule = null }) => {
   const inv = invoice?.toObject ? invoice.toObject() : invoice
   const template = loadTemplate('invoice')
   const hasDeposit = inv.depositAmount != null && Number(inv.depositAmount) !== 0
+  const paymentScheduleSection = buildPaymentScheduleSection(paymentSchedule, inv)
   const html = fillTemplate(template, {
     CUSTOMER_NAME: escapeHtml(customerName),
     INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || '—'),
@@ -225,6 +299,7 @@ const sendInvoice = async ({ toEmail, customerName, invoice }) => {
     LINE_ITEMS: buildInvoiceLineItemsRows(inv.lineItems),
     TOTALS_ROWS: buildInvoiceTotalsRows(inv),
     DEPOSIT_NOTE: hasDeposit ? ' (deposit shown separately)' : '',
+    PAYMENT_SCHEDULE_SECTION: paymentScheduleSection,
   })
 
   // Generate PDF from the same HTML used for the email body

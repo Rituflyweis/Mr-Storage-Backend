@@ -1,16 +1,28 @@
-const PDFDocument = require('pdfkit')
+const puppeteer = require('puppeteer')
 
 const generateInvoicePdf = async (html) => {
-  // Simple PDF — HTML render nahi hoga but reliable hai
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument()
-    const buffers = []
-    doc.on('data', chunk => buffers.push(chunk))
-    doc.on('end', () => resolve(Buffer.concat(buffers)))
-    doc.on('error', reject)
-    doc.fontSize(12).text('Invoice', { align: 'center' })
-    doc.end()
-  })
+  const launchOptions = {
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  }
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH
+  }
+
+  const browser = await puppeteer.launch(launchOptions)
+
+  try {
+    const page = await browser.newPage()
+    await page.setContent(html, { waitUntil: 'networkidle0' })
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '24px', right: '24px', bottom: '24px', left: '24px' },
+    })
+    return Buffer.from(pdfBuffer)
+  } finally {
+    await browser.close()
+  }
 }
 
 module.exports = { generateInvoicePdf }
