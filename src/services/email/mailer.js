@@ -240,6 +240,59 @@ const buildPaymentScheduleSection = (paymentSchedule, invoice) => {
     `
 }
 
+const buildInvoiceLineItemDescription = (li) => {
+  if (li.description && String(li.description).trim()) return String(li.description).trim()
+  return (li.items || []).filter(Boolean).join(', ') || '—'
+}
+
+const buildInvoicePdfDocument = (inv, customerName, paymentSchedule) => {
+  const stages = Array.isArray(paymentSchedule?.stages) ? paymentSchedule.stages : []
+  const scheduleTotal = paymentSchedule?.totalAmount
+  const currentStageId = inv?.paymentScheduleStageId ? String(inv.paymentScheduleStageId) : null
+
+  const totals = [
+    ['Subtotal', inv.subtotal, false],
+    ['Discount', inv.discount, true],
+    ['Tax', inv.tax, false],
+    ['Deposit', inv.depositAmount, false],
+    ['Total due', inv.totalAmount, false],
+  ].map(([label, amount, isDiscount]) => ({
+    label,
+    amount:
+      isDiscount && amount != null && Number(amount) !== 0
+        ? `−${formatInvoiceMoney(amount)}`
+        : formatInvoiceMoney(amount),
+  }))
+
+  return {
+    customerName,
+    invoiceNumber: inv.invoiceNumber || '—',
+    date: formatInvoiceDate(inv.date),
+    dueDate: buildInvoiceDueDate(inv),
+    paymentTerms: buildInvoicePaymentTerms(inv),
+    daysToPay: inv.daysToPay != null && inv.daysToPay !== '' ? String(inv.daysToPay) : '—',
+    poNumber: inv.poNumber || '—',
+    totalAmount: formatInvoiceMoney(inv.totalAmount),
+    lineItems: (inv.lineItems || []).map((li, index) => ({
+      index: index + 1,
+      description: buildInvoiceLineItemDescription(li),
+      rate: formatInvoiceRateCell(li),
+      quantity: li.quantity ?? '—',
+      tax: formatInvoiceTaxCell(li),
+      total: formatInvoiceMoney(li.total),
+    })),
+    totals,
+    paymentStages: stages.map((stage) => ({
+      stageName: stage.stageName || '—',
+      amount: formatPaymentStageAmount(stage, scheduleTotal),
+      dueDate: formatInvoiceDate(stage.dueDate),
+      status: formatPaymentStageStatus(stage.status),
+      isCurrent: Boolean(currentStageId && String(stage._id) === currentStageId),
+    })),
+    scheduleTotal: scheduleTotal != null ? formatInvoiceMoney(scheduleTotal) : null,
+  }
+}
+
 const sendQuotation = async ({ toEmail, customerName, quotation }) => {
   const template = loadTemplate('quotation')
   const html = fillTemplate(template, {
@@ -302,8 +355,8 @@ const sendInvoice = async ({ toEmail, customerName, invoice, paymentSchedule = n
     PAYMENT_SCHEDULE_SECTION: paymentScheduleSection,
   })
 
-  // Generate PDF from the same HTML used for the email body
-  const pdfBuffer = await generateInvoicePdf(html)
+  const pdfDocument = buildInvoicePdfDocument(inv, customerName, paymentSchedule)
+  const pdfBuffer = await generateInvoicePdf(html, pdfDocument)
   const invoiceFilename = `Invoice-${inv.invoiceNumber || 'document'}.pdf`
 
   await transporter.sendMail({
