@@ -1068,21 +1068,32 @@ Update any subset of `name`, `phone`, `role`, `isActive`.
 > 🔒 Requires role: `admin`
 
 ### `GET /api/admin/escalations`
-**Query params:** `status` (`pending|resolved`), `startDate`, `endDate`
+**Query params:** `status` (`pending|resolved`), `startDate`, `endDate`, `assignedSales`, `page`, `limit`
+
+Same row shape as `GET /api/sales/leads/escalated` (`data.leads[]`).
 
 ```json
 {
   "data": {
-    "escalations": [{
-      "_id": "64f...",
-      "note": "Customer demanding 40% discount — outside authority",
-      "status": "pending", "resolvedAt": null,
-      "leadId":             { "...full lead document..." },
-      "customerId":         { "...full customer document..." },
-      "raisedBy":           { "...full user document..." },
-      "resolvedBy":         null,
-      "resolvedAssignedTo": null
-    }]
+    "leads": [{
+      "_id": "leadId",
+      "projectId": "PRO-029",
+      "jobId": "PRO-029",
+      "projectName": "Twin Creek",
+      "lifecycleStatus": "negotiation",
+      "quoteValue": 500000,
+      "customerId": { "_id": "...", "firstName": "Jane", "email": "jane@..." },
+      "assignedTo": { "_id": "...", "firstName": "Ravi", "lastName": "Kumar", "email": "ravi@..." },
+      "escalation": {
+        "_id": "escalationId",
+        "note": "Customer demanding 40% discount",
+        "status": "pending",
+        "createdAt": "..."
+      }
+    }],
+    "total": 12,
+    "page": 1,
+    "limit": 100
   }
 }
 ```

@@ -22,7 +22,7 @@ Errors: `success: false`, `message` string, optional `data` with validation deta
 
 1. [SMDT cost list — export & KPIs](#1-smdt-cost-list--export--kpis)
 2. [Shipper files — dashboard KPIs](#2-shipper-files--dashboard-kpis)
-3. [Delivery calendar — confirmed only](#3-delivery-calendar--confirmed-only)
+3. [Delivery calendar — awarded & active loads](#3-delivery-calendar--awarded--active-loads)
 4. [Packing list plan — project details](#4-packing-list-plan--project-details)
 5. [Deliveries — project selection fixes](#5-deliveries--project-selection-fixes)
 6. [Load planning — bundle weights](#6-load-planning--bundle-weights)
@@ -164,12 +164,17 @@ Alternatively, read `stats` from `GET /api/plant/shipper-files/projects/:leadId/
 
 ---
 
-## 3. Delivery calendar — confirmed only
+## 3. Delivery calendar — awarded & active loads
 
 ### `GET /api/plant/deliveries/calendar`
 
-**Behavior change:** Calendar now returns **only** deliveries with `status === "confirmed"`.  
-Previously included `draft`, `bidding_sent`, etc. — remove those from calendar UI expectations.
+**Behavior:** Calendar returns deliveries that are **awarded or in the active delivery pipeline** — not draft/bidding states.
+
+**Included statuses:** `carrier_selected`, `scheduled`, `confirmed`, `in_transit`, `delayed`, `delivered`
+
+**Excluded:** `draft`, `bidding_sent`, `cancelled`
+
+After awarding a carrier (`POST /api/plant/freight-bids/:bidId/select`), delivery status becomes **`confirmed`** immediately (award and confirm in one step). The load appears on the calendar when `deliveryDate` or `pickupDate` falls in the requested range (or under `undated` if neither is set).
 
 **Query params:**
 
@@ -213,8 +218,9 @@ GET /api/plant/deliveries/calendar?fromDate=2026-06-18&toDate=2026-06-18
 
 **UI notes:**
 
-- Only show **confirmed** deliveries on calendar; use freight/delivery list APIs for bidding/draft states.
-- If you need `scheduled` or `carrier_selected` on calendar later, coordinate with backend — current contract is **confirmed only**.
+- Only show **awarded/active** deliveries on calendar (`carrier_selected` through `delivered`); use freight/delivery list APIs for bidding/draft states.
+- Loads appear on calendar after carrier award (`status` is `confirmed`)
+- Entries without `deliveryDate` are grouped under `"undated"` — prompt user to set a date or handle that bucket in UI.
 
 ---
 
@@ -293,7 +299,7 @@ List all deliveries for a project. **New fields:**
     {
       "requestId": "...",
       "deliveryId": "...",
-      "status": "carrier_selected",
+      "status": "confirmed",
       "isSelected": true,
       "hasSelectedCarrier": true,
       "carrier": "ABC Freight",
@@ -576,6 +582,7 @@ See also [§5 Deliveries — project selection fixes](#5-deliveries--project-sel
       "isLowest": true,
       "resubmitCount": 0,
       "resubmitRequestedAt": null,
+      "requestedBidAmount": null,
       "resubmitNote": "",
       "plantNote": "",
       "canRequestResubmit": true
@@ -588,6 +595,7 @@ See also [§5 Deliveries — project selection fixes](#5-deliveries--project-sel
 |-------|-----|
 | `resubmitNote` | Last plant revision note sent to carrier |
 | `plantNote` | Same as `resubmitNote` (alias for FE parity with shipper resubmit) |
+| `requestedBidAmount` | Plant’s target amount when status is `resubmit_requested` (`null` otherwise) |
 | `canRequestResubmit` | Show “Request revision” when `true` (bid status `submitted`) |
 | `resubmitCount` | Revision rounds for this carrier bid |
 
@@ -603,19 +611,22 @@ Ask one carrier to submit a **new bid amount** after they already submitted (mir
 
 ```json
 {
-  "note": "Please revise — pickup window moved to next week."
+  "note": "Please revise — pickup window moved to next week.",
+  "bidAmount": 2100
 }
 ```
 
 - `note` — **required**
+- `bidAmount` — **optional** — plant’s requested/target bid amount (counter-offer guidance for the carrier). Stored as `resubmitRequestedAmount`; does **not** replace the carrier’s `quotedAmount` until they resubmit on the public link.
 
 **Allowed when:** bid status is `submitted`; delivery not `cancelled`.
 
 **Behavior:**
 
-- Prior bid saved to history; `quotedAmount` cleared
+- Prior bid saved to history; carrier `quotedAmount` cleared
+- Optional `bidAmount` saved as `resubmitRequestedAmount` (or `null` if omitted)
 - Status → `resubmit_requested`
-- Email to carrier with note + same bid link
+- Email to carrier with note, prior amount, and requested amount (if provided) + same bid link
 - If deadline passed, extends `expiresAt` by 7 days
 
 **Response `data`:**
@@ -630,12 +641,13 @@ Ask one carrier to submit a **new bid amount** after they already submitted (mir
   "resubmitNote": "Please revise — pickup window moved to next week.",
   "plantNote": "Please revise — pickup window moved to next week.",
   "priorQuotedAmount": 2300,
+  "requestedBidAmount": 2100,
   "expiresAt": "2026-06-24T12:00:00.000Z",
   "emailFailures": []
 }
 ```
 
-Carrier resubmits via public `POST /api/public/freight-bids/:token/submit` → status back to `submitted`.
+Carrier resubmits via public `POST /api/public/freight-bids/:token/submit` → status back to `submitted`; `requestedBidAmount` cleared.
 
 ### 9E. Other freight endpoints (quick ref)
 
@@ -644,8 +656,8 @@ Carrier resubmits via public `POST /api/public/freight-bids/:token/submit` → s
 | GET | `/api/plant/projects/:projectId/freight-autofill` | Pre-fill create form (weight, dimensions, bundles) |
 | POST | `/api/plant/deliveries` | Create freight request |
 | POST | `/api/plant/projects/:projectId/freight/send-bids` | Send bid links to carriers |
-| POST | `/api/plant/freight-bids/:bidId/select` | Award bid |
-| GET | `/api/public/freight-bids/:token` | Carrier bid page (includes `resubmitNote` when revision requested) |
+| POST | `/api/plant/freight-bids/:bidId/select` | Award bid → delivery `confirmed` |
+| GET | `/api/public/freight-bids/:token` | Carrier bid page (`resubmitNote`, `requestedBidAmount` when revision requested) |
 
 ---
 
@@ -796,8 +808,9 @@ Edit stages after initial create. Send the **full** `stages[]` array on every sa
 
 ### Delivery calendar
 
-- [ ] Only render `status === "confirmed"` entries from calendar API
+- [ ] Render calendar entries for `carrier_selected`, `scheduled`, `confirmed`, `in_transit`, `delayed`, `delivered`
 - [ ] Do not expect `bidding_sent` / `draft` on calendar response
+- [ ] Handle `undated` bucket when `deliveryDate` is missing
 
 ### Packing list / truck plan
 
@@ -814,7 +827,8 @@ Edit stages after initial create. Send the **full** `stages[]` array on every sa
 
 - [ ] Full detail (any status): `GET /api/plant/deliveries/:deliveryId/detail`
 - [ ] Bids table: `GET /api/plant/projects/:projectId/freight/bids`
-- [ ] Request revision modal → `POST /api/plant/freight-bids/:bidId/request-resubmit` `{ note }`
+- [ ] Request revision modal → `POST /api/plant/freight-bids/:bidId/request-resubmit` `{ note, bidAmount? }`
+- [ ] While `resubmit_requested`, show `requestedBidAmount` on bid row (`bidAmount` is `null` until carrier resubmits)
 - [ ] Show `canRequestResubmit` on bid rows; refresh after resubmit request
 - [ ] Create form autofill: `GET /api/plant/projects/:projectId/freight-autofill`
 - [ ] Send bids: `POST /api/plant/projects/:projectId/freight/send-bids`
@@ -848,16 +862,16 @@ Edit stages after initial create. Send the **full** `stages[]` array on every sa
 | GET | `/api/plant/shipper-files/projects` | Shipper project list + name fallback fields |
 | GET | `/api/plant/load-planning/projects` | Load planning project list + name fallback fields |
 | GET | `/api/plant/packing-lists/projects` | Packing list project list + name fallback fields |
-| GET | `/api/plant/deliveries/calendar` | Calendar (confirmed only) |
+| GET | `/api/plant/deliveries/calendar` | Calendar (awarded + active delivery statuses) |
 | GET | `/api/plant/packing-list-plans/:id` | Truck plan + `project` |
 | GET | `/api/plant/projects/:leadId/delivery` | Selected delivery detail |
 | GET | `/api/plant/deliveries/:deliveryId/detail` | Full freight request detail (any status) |
 | GET | `/api/plant/deliveries/project/:leadId` | All deliveries + `selectedDeliveryId` |
 | GET | `/api/plant/projects/:projectId/freight/bids` | Carrier bids + `canRequestResubmit` |
-| POST | `/api/plant/freight-bids/:bidId/request-resubmit` | Request carrier bid revision `{ note }` |
+| POST | `/api/plant/freight-bids/:bidId/request-resubmit` | Request carrier bid revision `{ note, bidAmount? }` |
 | GET | `/api/plant/projects/:projectId/freight-autofill` | Freight form autofill |
 | POST | `/api/plant/projects/:projectId/freight/send-bids` | Send bid links to carriers |
-| POST | `/api/plant/freight-bids/:bidId/select` | Award freight bid |
+| POST | `/api/plant/freight-bids/:bidId/select` | Award freight bid (delivery → `confirmed`) |
 | GET | `/api/payment-schedules/lead/:leadId` | Get payment schedule |
 | PUT | `/api/payment-schedules/lead/:leadId` | Edit payment schedule |
 | POST | `/api/payment-schedules` | Create payment schedule |

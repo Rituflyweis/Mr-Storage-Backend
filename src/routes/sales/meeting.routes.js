@@ -9,6 +9,7 @@ router.get('/',
   [
     query('status').optional().isIn(MEETING_STATUSES),
     query('search').optional().trim(),
+    query('leadId').optional().isMongoId(),
   ],
   validate,
   ctrl.getMeetings

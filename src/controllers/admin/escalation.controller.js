@@ -7,6 +7,10 @@ const { success, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const {
+  mapEscalationLeadRow,
+  ESCALATION_LEAD_POPULATE,
+} = require('../../utils/escalationLeadRow')
 
 exports.getAllEscalations = asyncHandler(async (req, res) => {
   const { status, assignedSales, page = 1, limit = 20 } = req.query
@@ -19,18 +23,25 @@ exports.getAllEscalations = asyncHandler(async (req, res) => {
     filter.leadId = { $in: leadIds }
   }
 
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+
   const [escalations, total] = await Promise.all([
     Escalation.find(filter)
-      .populate('leadId', 'projectName lifecycleStatus')
-      .populate('customerId', 'firstName lastName email')
-      .populate('raisedBy', 'name email')
-      .populate('resolvedAssignedTo', 'name')
+      .populate(ESCALATION_LEAD_POPULATE)
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit).limit(Number(limit)).lean(),
-    Escalation.countDocuments(filter)
+      .skip((parsedPage - 1) * parsedLimit)
+      .limit(parsedLimit)
+      .lean(),
+    Escalation.countDocuments(filter),
   ])
 
-  return success(res, { escalations, total, page: Number(page), limit: Number(limit) })
+  return success(res, {
+    leads: escalations.map(mapEscalationLeadRow),
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
 })
 
 exports.resolveEscalation = asyncHandler(async (req, res) => {

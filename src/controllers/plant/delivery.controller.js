@@ -81,18 +81,18 @@ const toRounded = (value) => {
   return Math.round(Number(value) * 100) / 100
 }
 
-const isSubmittedBid = (row) => {
-  const status = String(row?.status || '').trim().toLowerCase()
-  return status === 'submitted' || status === 'selected'
-}
-
 const getSubmittedBidAmount = (row) => {
-  if (!isSubmittedBid(row)) return null
   const rawAmount = row?.quotedAmount
   if (rawAmount == null || rawAmount === '') return null
 
   const amount = Number(rawAmount)
-  return Number.isFinite(amount) ? amount : null
+  if (!Number.isFinite(amount)) return null
+
+  const status = String(row?.status || '').trim().toLowerCase()
+  // sent / resubmit_requested never have an active bid amount on the row
+  if (status === 'sent' || status === 'resubmit_requested') return null
+
+  return amount
 }
 
 const toObjectId = (val) => {
@@ -242,7 +242,9 @@ const SELECTED_DELIVERY_STATUSES = [
   'delivered',
 ]
 
-const CALENDAR_DELIVERY_STATUSES = ['confirmed']
+const CALENDAR_DELIVERY_STATUSES = SELECTED_DELIVERY_STATUSES
+
+const resolveCalendarDate = (delivery) => delivery.deliveryDate || delivery.pickupDate || null
 
 const fetchShipperVendorsByLeadIds = async (leadIds) => {
   if (!leadIds.length) return new Map()
@@ -573,6 +575,7 @@ exports.sendDeliveryBids = asyncHandler(async (req, res) => {
       bid.selectedAt = null
       bid.resubmitNote = ''
       bid.resubmitRequestedAt = null
+      bid.resubmitRequestedAmount = null
       bid.resubmitCount = 0
       await bid.save()
     }
@@ -1179,6 +1182,14 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
   const baseFilter = buildDeliveryBaseFilter(req.query)
   const customerFilterId = baseFilter._customerId
   delete baseFilter._customerId
+  if (baseFilter.deliveryDate) {
+    const range = { ...baseFilter.deliveryDate }
+    delete baseFilter.deliveryDate
+    baseFilter.$or = [
+      { deliveryDate: range },
+      { deliveryDate: null, pickupDate: range },
+    ]
+  }
   baseFilter.leadId = baseFilter.leadId || { $in: leadIds }
   baseFilter.status = { $in: CALENDAR_DELIVERY_STATUSES }
   if (baseFilter.leadId?.$in) {
@@ -1210,7 +1221,8 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
 
   const grouped = new Map()
   for (const row of filteredDeliveries) {
-    const dateKey = row.deliveryDate ? new Date(row.deliveryDate).toISOString().slice(0, 10) : 'undated'
+    const calendarDate = resolveCalendarDate(row)
+    const dateKey = calendarDate ? new Date(calendarDate).toISOString().slice(0, 10) : 'undated'
     if (!grouped.has(dateKey)) grouped.set(dateKey, [])
     grouped.get(dateKey).push({
       ...mapDeliveryListRow({

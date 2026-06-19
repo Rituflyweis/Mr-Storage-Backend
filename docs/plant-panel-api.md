@@ -314,7 +314,7 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21ZF | POST | `/api/plant/deliveries/:deliveryId/send-bids` | Legacy id-based: send bid requests to selected carriers |
 | 21ZG | GET | `/api/plant/deliveries/:deliveryId/bids` | Legacy id-based: freight bid detail + stats + sorted bids |
 | 21ZH | POST | `/api/plant/freight-bids/:bidId/select` | Award one freight bid and reject others |
-| 21ZHA | POST | `/api/plant/freight-bids/:bidId/request-resubmit` | Ask carrier to submit revised bid amount (note required) |
+| 21ZHA | POST | `/api/plant/freight-bids/:bidId/request-resubmit` | Ask carrier to submit revised bid amount (`note` required, optional `bidAmount`) |
 | 21ZI | GET | `/api/public/freight-bids/:token` | Public freight bid link details |
 | 21ZJ | POST | `/api/public/freight-bids/:token/submit` | Public carrier bid submit (deadline enforced) |
 | 22 | GET | `/api/plant/vendors` | List vendors / shippers |
@@ -3047,6 +3047,8 @@ Same as §21ZEE.
 
 Delivery calendar grouped by `deliveryDate`.
 
+**Included statuses:** `carrier_selected`, `scheduled`, `confirmed`, `in_transit`, `delayed`, `delivered` (excludes `draft`, `bidding_sent`, `cancelled`). Awarded loads appear immediately after carrier selection.
+
 ### Query params
 
 | Param | Type | Default | Notes |
@@ -3362,7 +3364,7 @@ Award one bid:
 - selected bid -> `selected`
 - all other bids for same delivery -> `rejected`
 - delivery linked to awarded bid (`selectedCarrierBidId`)
-- delivery status -> `carrier_selected`
+- delivery status -> `confirmed` (award and confirm in one step; `statusHistory` records `carrier_selected` then `confirmed`)
 - awarded carrier gets awarded email, others get rejection emails
 
 ### Response `data`
@@ -3370,7 +3372,7 @@ Award one bid:
 ```json
 {
   "deliveryId": "...",
-  "status": "carrier_selected",
+  "status": "confirmed",
   "selectedBid": {
     "bidId": "...",
     "carrierId": "...",
@@ -3392,11 +3394,13 @@ Ask a carrier to submit a **revised bid amount** after they have already submitt
 
 ```json
 {
-  "note": "Please revise — pickup window moved to next week."
+  "note": "Please revise — pickup window moved to next week.",
+  "bidAmount": 2100
 }
 ```
 
 - `note` — **required**
+- `bidAmount` — **optional** — plant’s requested/target amount (counter-offer guidance). Stored as `resubmitRequestedAmount`; carrier must still submit via public link.
 
 ### Allowed when
 
@@ -3406,11 +3410,12 @@ Ask a carrier to submit a **revised bid amount** after they have already submitt
 ### Behavior
 
 - Prior submission saved to `submissionHistory`
-- Clears current `quotedAmount`, `carrierNotes`, `submittedAt`
+- Clears current carrier `quotedAmount`, `carrierNotes`, `submittedAt`
+- Sets optional `resubmitRequestedAmount` from `bidAmount` (or `null`)
 - Status -> `resubmit_requested`
 - Increments `resubmitCount`, sets `resubmitNote`, `resubmitRequestedAt`
 - If deadline passed, extends `expiresAt` by 7 days (same bid link)
-- Sends resubmit email to carrier with note + link
+- Sends resubmit email to carrier with note, prior amount, requested amount + link
 - Audit: `freight_bid.resubmit_requested`
 
 ### Response `data`
@@ -3423,12 +3428,13 @@ Ask a carrier to submit a **revised bid amount** after they have already submitt
   "resubmitRequestedAt": "2026-06-17T12:00:00.000Z",
   "note": "Please revise — pickup window moved to next week.",
   "priorQuotedAmount": 2300,
+  "requestedBidAmount": 2100,
   "expiresAt": "2026-06-24T12:00:00.000Z",
   "emailFailures": []
 }
 ```
 
-Bid list rows (`GET .../freight/bids`) also include `resubmitCount`, `resubmitRequestedAt`, `resubmitNote`, `canRequestResubmit`.
+Bid list rows (`GET .../freight/bids`) also include `resubmitCount`, `resubmitRequestedAt`, `requestedBidAmount`, `resubmitNote`, `canRequestResubmit`.
 
 ---
 
@@ -3453,7 +3459,8 @@ Public carrier page bootstrap.
   "quotedAmount": null,
   "carrierNotes": "",
   "resubmitNote": "Please revise — pickup window moved.",
-  "resubmitRequestedAt": "2026-06-17T12:00:00.000Z"
+  "resubmitRequestedAt": "2026-06-17T12:00:00.000Z",
+  "requestedBidAmount": 2100
 }
 ```
 
@@ -4299,7 +4306,7 @@ Frontend note:
 4. Carrier opens: GET /api/public/freight-bids/:token
 5. Carrier submits: POST /api/public/freight-bids/:token/submit   { quotedAmount, carrierNotes }
 6. Plant views: GET /api/plant/projects/:projectId/freight/bids?sort=low_to_high
-6b. (optional) Plant requests revision: POST /api/plant/freight-bids/:bidId/request-resubmit   { note }
+6b. (optional) Plant requests revision: POST /api/plant/freight-bids/:bidId/request-resubmit   { note, bidAmount? }
      → carrier resubmits at step 5 (status `resubmit_requested` → `submitted`)
 7. Plant awards: POST /api/plant/freight-bids/:bidId/select
 ```
@@ -4308,7 +4315,7 @@ Award behavior at step 7:
 - selected bid becomes `selected`
 - all other bids for same delivery become `rejected`
 - `Delivery.selectedCarrierBidId` set to selected bid
-- `Delivery.status` becomes `carrier_selected`
+- `Delivery.status` becomes `confirmed` (award + confirm in one API call)
 - awarded carrier gets award email and others get rejection email
 
 Frontend note:
@@ -4399,7 +4406,7 @@ These prefixes are mounted under `/api/plant` but route files are **empty stubs*
 | Send freight bid links | `POST /api/plant/deliveries/:deliveryId/send-bids` |
 | Freight bid detail view | `GET /api/plant/deliveries/:deliveryId/bids?sort=low_to_high|high_to_low` |
 | Award freight bid | `POST /api/plant/freight-bids/:bidId/select` |
-| Request freight bid revision | `POST /api/plant/freight-bids/:bidId/request-resubmit` `{ note }` |
+| Request freight bid revision | `POST /api/plant/freight-bids/:bidId/request-resubmit` `{ note, bidAmount? }` |
 | Public freight bid page | `GET /api/public/freight-bids/:token` |
 | Public freight bid submit | `POST /api/public/freight-bids/:token/submit` |
 | Vendor public upload page | `GET /api/public/vendor-upload/:token` |

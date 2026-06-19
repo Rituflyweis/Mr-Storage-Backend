@@ -1,5 +1,18 @@
-const mapPlantFreightBidRow = (row, { lowestId = null } = {}) => {
+const normalizeBidAmount = (value) => {
+  if (value == null || value === '') return null
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amount : null
+}
+
+const mapPlantFreightBidRow = (row, { lowestId = null, bidAmount = null } = {}) => {
   const revisionNote = String(row.resubmitNote || '').trim()
+  const normalizedAmount =
+    bidAmount != null
+      ? bidAmount
+      : row.quotedAmount != null && Number.isFinite(Number(row.quotedAmount))
+        ? Number(row.quotedAmount)
+        : null
+  const requestedBidAmount = normalizeBidAmount(row.resubmitRequestedAmount)
 
   return {
     bidId: row._id,
@@ -7,13 +20,12 @@ const mapPlantFreightBidRow = (row, { lowestId = null } = {}) => {
     carrierName: row.carrierId?.carrierName || '',
     submittedAt: row.submittedAt,
     carrierNote: row.carrierNotes || '',
-    bidAmount: row.quotedAmount != null && Number.isFinite(Number(row.quotedAmount))
-      ? Number(row.quotedAmount)
-      : null,
+    bidAmount: normalizedAmount,
     status: row.status,
     isLowest: lowestId ? String(row._id) === lowestId : false,
     resubmitCount: row.resubmitCount || 0,
     resubmitRequestedAt: row.resubmitRequestedAt || null,
+    requestedBidAmount,
     resubmitNote: revisionNote,
     plantNote: revisionNote,
     canRequestResubmit: row.status === 'submitted',
@@ -37,6 +49,7 @@ const mapSelectedFreightBidDetails = (selectedBidDoc) => {
     status: selectedBidDoc.status,
     resubmitCount: selectedBidDoc.resubmitCount || 0,
     resubmitRequestedAt: selectedBidDoc.resubmitRequestedAt || null,
+    requestedBidAmount: normalizeBidAmount(selectedBidDoc.resubmitRequestedAmount),
     resubmitNote: revisionNote,
     plantNote: revisionNote,
     canRequestResubmit: selectedBidDoc.status === 'submitted',

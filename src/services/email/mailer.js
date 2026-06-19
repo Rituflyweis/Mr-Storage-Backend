@@ -545,11 +545,16 @@ const sendFreightBidResubmitRequestEmail = async ({
   bidUrl,
   bidDeadline,
   priorQuotedAmount,
+  requestedBidAmount,
 }) => {
   const template = loadTemplate('carrier-freight-bid-resubmit')
   const priorAmountText =
     priorQuotedAmount != null && Number.isFinite(Number(priorQuotedAmount))
       ? formatInvoiceMoney(priorQuotedAmount)
+      : 'N/A'
+  const requestedAmountText =
+    requestedBidAmount != null && Number.isFinite(Number(requestedBidAmount))
+      ? formatInvoiceMoney(requestedBidAmount)
       : 'N/A'
 
   const html = fillTemplate(template, {
@@ -561,6 +566,7 @@ const sendFreightBidResubmitRequestEmail = async ({
     BID_URL: bidUrl || '',
     BID_DEADLINE: formatInvoiceDate(bidDeadline),
     PRIOR_QUOTED_AMOUNT: priorAmountText,
+    REQUESTED_BID_AMOUNT: requestedAmountText,
   })
 
   await transporter.sendMail({
@@ -577,6 +583,7 @@ const sendFreightBidResubmitRequestEmail = async ({
       '',
       `Plant note: ${note || ''}`,
       `Previous bid amount: ${priorAmountText}`,
+      `Requested bid amount: ${requestedAmountText}`,
       '',
       `Submit revised bid: ${bidUrl || ''}`,
       `Bid deadline: ${formatInvoiceDate(bidDeadline)}`,

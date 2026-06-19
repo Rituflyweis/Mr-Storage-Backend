@@ -1,4 +1,4 @@
-const BUNDLE_PLANNING_SERVICE_VERSION = 'bundle-planning-v5.1-bom-unit-total-weight-fields'
+const BUNDLE_PLANNING_SERVICE_VERSION = 'bundle-planning-v5.2-semi-first-final-hotshot'
 
 /* =========================================================
  * Optional model loading
@@ -1034,8 +1034,9 @@ const resolveTruckConfigForBundle = (bundle) => {
   const length = Number(bundle.maxLengthFeet || 0)
 
   const hotshotFits =
-    length <= TRUCK_TYPES.HOTSHOT_40.maxLengthFeet &&
-    (weight <= 0 || weight <= TRUCK_TYPES.HOTSHOT_40.maxWeight)
+    weight > 0 &&
+    weight <= TRUCK_TYPES.HOTSHOT_40.maxWeight &&
+    length <= TRUCK_TYPES.HOTSHOT_40.maxLengthFeet
 
   return hotshotFits ? TRUCK_TYPES.HOTSHOT_40 : TRUCK_TYPES.SEMI_53
 }
@@ -1058,8 +1059,8 @@ const canFitBundleInPackingList = (packingList, bundle) => {
   )
 
   return (
-    newWeight <= packingList.maxTruckWeight &&
-    newLength <= packingList.maxTruckLengthFeet
+    newWeight <= Number(packingList.maxTruckWeight || 0) &&
+    newLength <= Number(packingList.maxTruckLengthFeet || 0)
   )
 }
 
@@ -1092,6 +1093,27 @@ const createEmptyPackingList = (counter, truckConfig) => ({
   warnings: [],
   status: 'draft',
 })
+
+const applyTruckConfigToPackingList = (packingList, truckConfig) => {
+  packingList.truckType = truckConfig.truckType
+  packingList.truckLabel = truckConfig.label
+  packingList.maxTruckWeight = truckConfig.maxWeight
+  packingList.hardMaxTruckWeight = truckConfig.hardMaxWeight
+  packingList.maxTruckLengthFeet = truckConfig.maxLengthFeet
+
+  return packingList
+}
+
+const canPackingListUseHotshot = (packingList) => {
+  const weight = Number(packingList.totalWeight || 0)
+  const length = Number(packingList.maxLengthFeet || 0)
+
+  return (
+    weight > 0 &&
+    weight <= TRUCK_TYPES.HOTSHOT_40.maxWeight &&
+    length <= TRUCK_TYPES.HOTSHOT_40.maxLengthFeet
+  )
+}
 
 const addBundleToPackingList = (packingList, bundle) => {
   packingList.bundleIds.push(bundle._id)
@@ -1228,6 +1250,13 @@ const generateMixedTruckPackingLists = (bundles) => {
   const packingLists = []
   let counter = 1
 
+  /*
+   * Shipment-level truck planning:
+   * - Do not select a Hot Shot just because a single bundle fits.
+   * - Pack using SEMI_53 capacity first to minimize truck count.
+   * - After packing is complete, only downgrade the final leftover truck
+   *   to HOTSHOT_40 if that full leftover truck fits Hot Shot limits.
+   */
   for (const bundle of sorted) {
     let placed = false
 
@@ -1241,13 +1270,28 @@ const generateMixedTruckPackingLists = (bundles) => {
 
     if (placed) continue
 
-    const truckConfig = resolveTruckConfigForBundle(bundle)
-
-    const safeTruckConfig = truckConfig || TRUCK_TYPES.SEMI_53
-
-    const packingList = createEmptyPackingList(counter++, safeTruckConfig)
+    const packingList = createEmptyPackingList(counter++, TRUCK_TYPES.SEMI_53)
     addBundleToPackingList(packingList, bundle)
     packingLists.push(packingList)
+  }
+
+  /*
+   * Downgrade rule:
+   * - If the whole shipment is one small truck, use HOTSHOT_40.
+   * - If multiple trucks are needed, only the final leftover truck can become HOTSHOT_40.
+   * This prevents inefficient results like 7 Hot Shots + 4 Semis.
+   */
+  if (packingLists.length === 1) {
+    if (canPackingListUseHotshot(packingLists[0])) {
+      applyTruckConfigToPackingList(packingLists[0], TRUCK_TYPES.HOTSHOT_40)
+    }
+  } else if (packingLists.length > 1) {
+    const lastIndex = packingLists.length - 1
+    const lastPackingList = packingLists[lastIndex]
+
+    if (canPackingListUseHotshot(lastPackingList)) {
+      applyTruckConfigToPackingList(lastPackingList, TRUCK_TYPES.HOTSHOT_40)
+    }
   }
 
   return finalizePackingLists(packingLists)

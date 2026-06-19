@@ -59,6 +59,10 @@ exports.getFreightBidInfo = asyncHandler(async (req, res) => {
     resubmitNote: revisionNote,
     plantNote: revisionNote,
     resubmitRequestedAt: bid.resubmitRequestedAt || null,
+    requestedBidAmount:
+      bid.resubmitRequestedAmount != null && Number.isFinite(Number(bid.resubmitRequestedAmount))
+        ? Number(bid.resubmitRequestedAmount)
+        : null,
     resubmitCount: bid.resubmitCount || 0,
     bundlePlan: loadDetails.bundlePlan,
     packingListPlan: loadDetails.packingListPlan,
@@ -88,6 +92,7 @@ exports.submitFreightBid = asyncHandler(async (req, res) => {
   bid.carrierNotes = String(carrierNotes || '').trim()
   bid.submittedAt = new Date()
   bid.status = 'submitted'
+  bid.resubmitRequestedAmount = null
   await bid.save()
 
   return success(res, {

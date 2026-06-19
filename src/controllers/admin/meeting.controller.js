@@ -7,8 +7,14 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, MEETING_STATUSES } = require('../../config/constants')
 
 exports.getMeetings = asyncHandler(async (req, res) => {
-  const { status, search } = req.query
+  const { status, search, leadId } = req.query
   const filter = {}
+
+  if (leadId) {
+    const lead = await Lead.findById(leadId).select('_id').lean()
+    if (!lead) return notFound(res, 'Lead not found')
+    filter.leadId = leadId
+  }
 
   if (status) {
     if (!MEETING_STATUSES.includes(status)) {

@@ -25,9 +25,10 @@ const FreightBidSchema = new mongoose.Schema(
     sentAt:                { type: Date, default: Date.now },
     expiresAt:             { type: Date, default: null },
     selectedAt:            { type: Date, default: null },
-    resubmitNote:          { type: String, default: '' },
-    resubmitRequestedAt:   { type: Date, default: null },
-    resubmitCount:         { type: Number, default: 0 },
+    resubmitNote:              { type: String, default: '' },
+    resubmitRequestedAt:       { type: Date, default: null },
+    resubmitRequestedAmount:   { type: Number, default: null },
+    resubmitCount:             { type: Number, default: 0 },
     submissionHistory:     { type: [FreightBidSubmissionHistorySchema], default: [] },
   },
   { timestamps: true }

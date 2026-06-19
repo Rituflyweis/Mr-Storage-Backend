@@ -13,10 +13,19 @@ const getSalesLeadIds = async (userId) => {
 }
 
 exports.getMeetings = asyncHandler(async (req, res) => {
-  const { status, search } = req.query
-  const leadIds = await getSalesLeadIds(req.user._id)
+  const { status, search, leadId } = req.query
+  const ownLeadIds = await getSalesLeadIds(req.user._id)
 
-  const filter = { leadId: { $in: leadIds } }  // ← sirf apni leads
+  const filter = {}
+
+  if (leadId) {
+    if (!ownLeadIds.some((id) => String(id) === String(leadId))) {
+      return forbidden(res, 'You do not have access to this project')
+    }
+    filter.leadId = leadId
+  } else {
+    filter.leadId = { $in: ownLeadIds }
+  }
 
   if (status) {
     if (!MEETING_STATUSES.includes(status)) {

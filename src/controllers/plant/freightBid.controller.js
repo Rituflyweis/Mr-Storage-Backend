@@ -46,10 +46,11 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
   await selectedBid.save()
 
   delivery.selectedCarrierBidId = selectedBid._id
-  delivery.status = 'carrier_selected'
+  delivery.status = 'confirmed'
   delivery.statusHistory = [
     ...(Array.isArray(delivery.statusHistory) ? delivery.statusHistory : []),
     { status: 'carrier_selected', changedAt: now },
+    { status: 'confirmed', changedAt: now },
   ]
   await delivery.save()
 
@@ -108,7 +109,13 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
     leadId: delivery.leadId,
     customerId: lead?.customerId || null,
     performedBy: req.user._id,
-    metadata: { deliveryId: delivery._id, selectedBidId: selectedBid._id, carrierId: selectedBid.carrierId, quotedAmount: selectedBid.quotedAmount },
+    metadata: {
+      deliveryId: delivery._id,
+      selectedBidId: selectedBid._id,
+      carrierId: selectedBid.carrierId,
+      quotedAmount: selectedBid.quotedAmount,
+      deliveryStatus: delivery.status,
+    },
   })
 
   return success(res, {
@@ -122,13 +129,21 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
     },
     rejectedBidIds: rejectedRows.map((row) => row._id),
     emailFailures,
-  }, 'Freight bid selected')
+  }, 'Freight bid selected and delivery confirmed')
 })
+
+const normalizeOptionalBidAmount = (value) => {
+  if (value === undefined || value === null || value === '') return null
+  const amount = Number(value)
+  if (!Number.isFinite(amount) || amount < 0) return null
+  return amount
+}
 
 exports.requestFreightBidResubmit = asyncHandler(async (req, res) => {
   const { bidId } = req.params
   const note = String(req.body.note || '').trim()
   if (!note) return badRequest(res, 'note is required')
+  const requestedBidAmount = normalizeOptionalBidAmount(req.body.bidAmount)
 
   const bid = await FreightBid.findById(bidId)
   if (!bid) return notFound(res, 'Freight bid not found')
@@ -221,6 +236,7 @@ exports.requestFreightBidResubmit = asyncHandler(async (req, res) => {
       carrierId: bid.carrierId,
       note: bid.resubmitNote,
       priorQuotedAmount,
+      requestedBidAmount: bid.resubmitRequestedAmount,
       resubmitCount: bid.resubmitCount,
       expiresAt: bid.expiresAt,
     },
@@ -235,6 +251,7 @@ exports.requestFreightBidResubmit = asyncHandler(async (req, res) => {
     resubmitNote: bid.resubmitNote,
     plantNote: bid.resubmitNote,
     priorQuotedAmount,
+    requestedBidAmount: bid.resubmitRequestedAmount,
     expiresAt: bid.expiresAt,
     emailFailures,
   }, 'Freight bid resubmit requested')

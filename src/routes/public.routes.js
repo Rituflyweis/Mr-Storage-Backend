@@ -18,7 +18,7 @@ const vendorUploadLimiter = rateLimit({
 })
 
 router.post('/chat/init',
-  chatInitLimiter,
+  // chatInitLimiter,
   [
     body('firstName').notEmpty().trim(),
     body('email').isEmail().normalizeEmail(),
@@ -32,19 +32,19 @@ router.post('/chat/init',
 router.get('/chat/history/:leadId', ctrl.getChatHistory)
 
 router.get('/vendor-upload/:token',
-  vendorUploadLimiter,
+  // vendorUploadLimiter,
   ctrl.getVendorUploadInfo
 )
 
 router.post('/vendor-upload/:token/presigned-url',
-  vendorUploadLimiter,
+  // vendorUploadLimiter,
   [body('fileName').notEmpty(), body('fileType').notEmpty(), body('folder').optional().notEmpty()],
   validate,
   ctrl.getVendorUploadPresignedUrl
 )
 
 router.post('/vendor-upload/:token',
-  vendorUploadLimiter,
+  // vendorUploadLimiter,
   [
     body('submittedFileUrl').notEmpty().trim(),
     body('submittedFileName').notEmpty().trim(),
@@ -55,12 +55,12 @@ router.post('/vendor-upload/:token',
 )
 
 router.get('/freight-bids/:token',
-  vendorUploadLimiter,
+  // vendorUploadLimiter,
   freightBidCtrl.getFreightBidInfo
 )
 
 router.post('/freight-bids/:token/submit',
-  vendorUploadLimiter,
+  // vendorUploadLimiter,
   [
     body('quotedAmount').isNumeric(),
     body('carrierNotes').optional().isString().trim(),
