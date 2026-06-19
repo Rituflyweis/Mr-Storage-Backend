@@ -330,25 +330,27 @@ const buildFreightAutofill = (bundlePlan, packingListPlan, bundles, loadDetails 
 }
 
 const buildDeliveryBidStats = (bids) => {
-  const submitted = bids
+  const withAmounts = bids
     .map((row) => ({ ...row, _normalizedBidAmount: getSubmittedBidAmount(row) }))
     .filter((row) => row._normalizedBidAmount != null)
-  const sorted = [...submitted].sort((a, b) => a._normalizedBidAmount - b._normalizedBidAmount)
+  const sorted = [...withAmounts].sort((a, b) => a._normalizedBidAmount - b._normalizedBidAmount)
 
-  const totalBids = submitted.length
-  const averageBid = totalBids
-    ? Math.round((submitted.reduce((sum, row) => sum + row._normalizedBidAmount, 0) / totalBids) * 100) / 100
+  const totalBids = bids.length
+  const submittedBids = withAmounts.length
+  const averageBid = submittedBids
+    ? Math.round((withAmounts.reduce((sum, row) => sum + row._normalizedBidAmount, 0) / submittedBids) * 100) / 100
     : null
 
   const lowestBid = sorted[0] || null
   const highestBid = sorted[sorted.length - 1] || null
-  const awardedBid = submitted.find((row) => String(row.status || '').trim().toLowerCase() === 'selected') || null
+  const awardedBid = withAmounts.find((row) => String(row.status || '').trim().toLowerCase() === 'selected') || null
   const potentialSavings = highestBid && awardedBid
     ? Math.max(0, highestBid._normalizedBidAmount - awardedBid._normalizedBidAmount)
     : null
 
   return {
     totalBids,
+    submittedBids,
     averageBid,
     lowestBid,
     highestBid,
@@ -665,6 +667,7 @@ exports.getDeliveryBids = asyncHandler(async (req, res) => {
     status: delivery.status,
     stats: {
       totalBids: stats.totalBids,
+      submittedBids: stats.submittedBids,
       awardedBid: stats.awardedBid ? stats.awardedBid._normalizedBidAmount : null,
       averageBid: stats.averageBid,
       potentialSavings: stats.potentialSavings,
