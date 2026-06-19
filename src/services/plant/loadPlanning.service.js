@@ -127,6 +127,11 @@ const BUNDLE_LIMITS = {
   maxBundleLengthFeet: 53,
 }
 
+// Vendor quote lines usually only carry length; use standard freight envelope when width/height are absent.
+const DEFAULT_BUNDLE_ENVELOPE_WIDTH_FEET = 8.5
+const DEFAULT_BUNDLE_ENVELOPE_HEIGHT_FEET = 8
+const HOTSHOT_BUNDLE_ENVELOPE_WIDTH_FEET = 8
+
 const WEIGHT_BASIS = {
   BOM_MATCHED_TOTAL: 'BOM_MATCHED_TOTAL_WEIGHT',
   BOM_MATCHED_UNIT: 'BOM_MATCHED_UNIT_WEIGHT',
@@ -935,11 +940,38 @@ const createEmptyBundle = (counter, bundleType) => ({
   status: 'draft',
 })
 
-const finalizeBundle = (bundle) => ({
-  ...bundle,
-  totalWeight: roundNumber(bundle.totalWeight || 0),
-  warnings: getBundleWarnings(bundle),
-})
+const applyBundleEnvelopeDefaults = (bundle) => {
+  if (!bundle?.items?.length) return bundle
+
+  const width = toNumber(bundle.estimatedWidthFeet, 0)
+  const height = toNumber(bundle.estimatedHeightFeet, 0)
+  if (width > 0 && height > 0) return bundle
+
+  const weight = toNumber(bundle.totalWeight, 0)
+  const length = toNumber(bundle.maxLengthFeet, 0)
+  const hotshotFits =
+    weight > 0 &&
+    weight <= TRUCK_TYPES.HOTSHOT_40.maxWeight &&
+    length <= TRUCK_TYPES.HOTSHOT_40.maxLengthFeet
+  const defaultWidth = hotshotFits
+    ? HOTSHOT_BUNDLE_ENVELOPE_WIDTH_FEET
+    : DEFAULT_BUNDLE_ENVELOPE_WIDTH_FEET
+
+  return {
+    ...bundle,
+    estimatedWidthFeet: width > 0 ? roundNumber(width) : defaultWidth,
+    estimatedHeightFeet: height > 0 ? roundNumber(height) : DEFAULT_BUNDLE_ENVELOPE_HEIGHT_FEET,
+  }
+}
+
+const finalizeBundle = (bundle) => {
+  const withEnvelope = applyBundleEnvelopeDefaults(bundle)
+  return {
+    ...withEnvelope,
+    totalWeight: roundNumber(withEnvelope.totalWeight || 0),
+    warnings: getBundleWarnings(withEnvelope),
+  }
+}
 
 const assignLoadSequence = (bundles) => {
   return [...bundles]

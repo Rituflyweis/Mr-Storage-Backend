@@ -1374,6 +1374,8 @@ Production: replace host with your API origin (same host as REST API).
 | `all_shipper_files_submitted` | `user:{plantUserId}` | All requested vendors have submitted | See below |
 | `shipper_comparison_complete` | `user:{triggeredBy}` | Comparison job completed | See below |
 | `shipper_comparison_failed` | `user:{triggeredBy}` | Comparison job failed | See below |
+| `freight_bid_submitted` | `user:{plantUserId}` | Carrier submits freight bid | See `docs/plant-freight-bid-socket-events.md` |
+| `all_freight_bids_submitted` | `user:{plantUserId}` | All carriers for delivery responded | See `docs/plant-freight-bid-socket-events.md` |
 
 **Payload examples**
 
@@ -1443,6 +1445,15 @@ socket.on('shipper_comparison_complete', (data) => {
 
 socket.on('shipper_comparison_failed', (data) => {
   // data: { jobId, requestId, leadId, vendorId, error }
+})
+
+socket.on('freight_bid_submitted', (data) => {
+  // data: { leadId, deliveryId, bidId, carrierName, quotedAmount, ... }
+  // see docs/plant-freight-bid-socket-events.md
+})
+
+socket.on('all_freight_bids_submitted', (data) => {
+  // data: { leadId, deliveryId, deliveryNumber, bidCount, ... }
 })
 ```
 

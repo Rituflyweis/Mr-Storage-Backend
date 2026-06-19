@@ -104,6 +104,28 @@ const generateInvoicePdfWithPdfkit = (document) => {
     drawKeyValueRow(doc, 'Payment terms', document.paymentTerms)
     drawKeyValueRow(doc, 'Days to pay', document.daysToPay)
 
+    const paymentStages = Array.isArray(document.paymentStages) ? document.paymentStages : []
+    drawSectionTitle(doc, 'Payment schedule')
+    if (!paymentStages.length) {
+      doc.font('Helvetica').fontSize(10).fillColor('#888888')
+        .text('No payment schedule stages are configured for this project yet.', { width: contentWidth })
+    } else {
+      paymentStages.forEach((stage) => {
+        const stageLabel = stage.isCurrent ? `${stage.stageName} (This invoice)` : stage.stageName
+        doc.font('Helvetica-Bold').fontSize(10).fillColor('#333333').text(stageLabel, { width: contentWidth })
+        doc.font('Helvetica').fontSize(9).fillColor('#666666')
+          .text(
+            `Amount: ${stage.amount}   Due: ${stage.dueDate}   Status: ${stage.status}`,
+            { width: contentWidth }
+          )
+        doc.moveDown(0.35)
+      })
+      if (document.scheduleTotal) {
+        doc.font('Helvetica').fontSize(10).fillColor('#666666')
+          .text(`Schedule total: ${document.scheduleTotal}`)
+      }
+    }
+
     drawSectionTitle(doc, 'Line items')
 
     const lineItems = Array.isArray(document.lineItems) ? document.lineItems : []
@@ -131,25 +153,6 @@ const generateInvoicePdfWithPdfkit = (document) => {
         .fillColor(isGrand ? HEADER_COLOR : '#333333')
       drawKeyValueRow(doc, row.label, row.amount)
     })
-
-    const paymentStages = Array.isArray(document.paymentStages) ? document.paymentStages : []
-    if (paymentStages.length) {
-      drawSectionTitle(doc, 'Payment schedule')
-      paymentStages.forEach((stage) => {
-        const stageLabel = stage.isCurrent ? `${stage.stageName} (This invoice)` : stage.stageName
-        doc.font('Helvetica-Bold').fontSize(10).fillColor('#333333').text(stageLabel, { width: contentWidth })
-        doc.font('Helvetica').fontSize(9).fillColor('#666666')
-          .text(
-            `Amount: ${stage.amount}   Due: ${stage.dueDate}   Status: ${stage.status}`,
-            { width: contentWidth }
-          )
-        doc.moveDown(0.35)
-      })
-      if (document.scheduleTotal) {
-        doc.font('Helvetica').fontSize(10).fillColor('#666666')
-          .text(`Schedule total: ${document.scheduleTotal}`)
-      }
-    }
 
     doc.moveDown(1)
     doc.font('Helvetica').fontSize(9).fillColor('#888888')

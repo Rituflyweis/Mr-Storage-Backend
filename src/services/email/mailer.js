@@ -192,7 +192,15 @@ const formatPaymentStageStatus = (status) => {
 
 const buildPaymentScheduleSection = (paymentSchedule, invoice) => {
   const stages = Array.isArray(paymentSchedule?.stages) ? paymentSchedule.stages : []
-  if (!stages.length) return ''
+
+  if (!stages.length) {
+    return `
+      <div class="section-title">Payment schedule</div>
+      <p class="line-items-note" style="margin-top:0">
+        No payment schedule stages are configured for this project yet.
+      </p>
+    `
+  }
 
   const scheduleTotal = paymentSchedule.totalAmount
   const currentStageId = invoice?.paymentScheduleStageId
@@ -356,22 +364,44 @@ const sendInvoice = async ({ toEmail, customerName, invoice, paymentSchedule = n
   })
 
   const pdfDocument = buildInvoicePdfDocument(inv, customerName, paymentSchedule)
-  const pdfBuffer = await generateInvoicePdf(html, pdfDocument)
   const invoiceFilename = `Invoice-${inv.invoiceNumber || 'document'}.pdf`
 
-  await transporter.sendMail({
+  let pdfBuffer = null
+  let pdfError = null
+  try {
+    pdfBuffer = await generateInvoicePdf(html, pdfDocument)
+  } catch (err) {
+    pdfError = err.message
+    console.warn('[sendInvoice] PDF attachment skipped, sending HTML email only:', err.message)
+  }
+
+  const mailOptions = {
     from: MAIL_FROM,
     to: toEmail,
     subject: `Invoice ${inv.invoiceNumber || ''}`,
     html,
-    attachments: [
+  }
+
+  if (pdfBuffer) {
+    mailOptions.attachments = [
       {
         filename: invoiceFilename,
         content: pdfBuffer,
         contentType: 'application/pdf',
       },
-    ],
-  })
+    ]
+  }
+
+  await transporter.sendMail(mailOptions)
+
+  const stages = Array.isArray(paymentSchedule?.stages) ? paymentSchedule.stages : []
+
+  return {
+    pdfAttached: Boolean(pdfBuffer),
+    pdfError,
+    paymentScheduleIncluded: stages.length > 0,
+    paymentScheduleStageCount: stages.length,
+  }
 }
 
 const sendOtp = async ({ toEmail, name, otp, expiresInMinutes = 10 }) => {

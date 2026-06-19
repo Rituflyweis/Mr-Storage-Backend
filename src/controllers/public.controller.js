@@ -5,7 +5,6 @@ const bcrypt = require('bcryptjs')
 const Customer = require('../models/Customer')
 const Lead = require('../models/Lead')
 const Message = require('../models/Message')
-const POOrder = require('../models/POOrder')
 const ShipperRequest = require('../models/ShipperRequest')
 const ConsolidatedBOM = require('../models/ConsolidatedBOM')
 const auditService = require('../services/audit.service')
@@ -14,6 +13,7 @@ const { syncLeadBuildings } = require('../services/leadBuilding.service')
 const generateCustomerId = require('../utils/generateCustomerId')
 const { success, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
+const { notifyPlantUsersForLead } = require('../utils/notifyPlantUsers')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../config/constants')
 const env = require('../config/env')
 
@@ -51,18 +51,6 @@ const buildVendorUploadSummary = (request) => {
     requiresQuoteValue: true,
     exceptionSummary,
     submissionHistoryCount: Array.isArray(request.submissionHistory) ? request.submissionHistory.length : 0,
-  }
-}
-
-const notifyPlantUsersForLead = async (leadId, eventName, payload) => {
-  if (!global.io) return
-  const plantUserIds = await POOrder.distinct('assignedTo', {
-    leadId,
-    status: 'approved',
-    assignedTo: { $ne: null },
-  })
-  for (const userId of plantUserIds) {
-    global.io.of('/admin').to(`user:${userId}`).emit(eventName, payload)
   }
 }
 
