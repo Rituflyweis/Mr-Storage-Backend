@@ -1,101 +1,467 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice {{INVOICE_NUMBER}}</title>
   <style>
-    body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 0; background: #f5f5f5; }
-    .container { max-width: 640px; margin: 30px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-    .header { background: #1a2e4a; color: white; padding: 30px; }
-    .header h1 { margin: 0 0 4px; font-size: 20px; }
-    .header p { margin: 4px 0 0; font-size: 13px; opacity: 0.85; }
-    .body { padding: 30px; }
-    .greeting { font-size: 15px; margin-bottom: 16px; }
-    .detail-table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; }
-    .detail-table tr td { padding: 9px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
-    .detail-table tr td:first-child { color: #666; width: 42%; }
-    .detail-table tr td:last-child { font-weight: 600; color: #1a2e4a; text-align: right; }
-    .section-title { font-size: 14px; font-weight: 700; color: #1a2e4a; margin: 24px 0 10px; text-transform: uppercase; letter-spacing: 0.4px; }
-    .line-items { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .line-items th { background: #f0f4f8; color: #1a2e4a; padding: 10px 8px; text-align: left; border-bottom: 2px solid #d8e2ec; font-size: 11px; text-transform: uppercase; }
-    .line-items th.num { text-align: right; }
-    .line-items th.qty { text-align: center; }
-    .line-items .cell-sub { font-size: 10px; color: #888; margin-top: 2px; }
-    .line-items-note { font-size: 11px; color: #888; margin: 8px 0 0; line-height: 1.4; }
-    .totals-wrap { margin-top: 20px; border-top: 2px solid #1a2e4a; padding-top: 12px; }
-    .totals-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .totals-table td { padding: 7px 0; }
-    .totals-table td:last-child { text-align: right; font-weight: 600; }
-    .totals-table tr.grand td { font-size: 18px; font-weight: 700; color: #1a2e4a; padding-top: 12px; border-top: 1px solid #eee; }
-    .total-box { background: #1a2e4a; color: white; border-radius: 6px; padding: 18px 20px; text-align: right; margin: 20px 0; }
-    .total-box .label { font-size: 12px; opacity: 0.75; }
-    .total-box .amount { font-size: 26px; font-weight: 700; }
-    .footer { background: #f8f8f8; padding: 18px 30px; font-size: 12px; color: #888; text-align: center; border-top: 1px solid #eee; }
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f4f5f7;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #111827;
+    }
+
+    table {
+      border-collapse: collapse;
+    }
+
+    img {
+      border: 0;
+      outline: none;
+      text-decoration: none;
+      display: block;
+    }
+
+    .page-wrap {
+      width: 100%;
+      background: #f4f5f7;
+      padding: 28px 12px;
+    }
+
+    .invoice-card {
+      width: 100%;
+      max-width: 760px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 28px rgba(17, 24, 39, 0.08);
+    }
+
+    .invoice-inner {
+      padding: 48px 52px 40px;
+    }
+
+    .invoice-label {
+      text-align: center;
+      color: #d1d5db;
+      font-size: 20px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      padding-bottom: 44px;
+    }
+
+    .logo {
+      max-width: 210px;
+      max-height: 58px;
+      object-fit: contain;
+    }
+
+    .muted {
+      color: #6b7280;
+    }
+
+    .company-copy,
+    .customer-copy {
+      font-size: 12px;
+      line-height: 1.65;
+      color: #6b7280;
+    }
+
+    .customer-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #111827;
+      padding-bottom: 4px;
+    }
+
+    .meta-table {
+      width: 100%;
+      font-size: 13px;
+    }
+
+    .meta-table td {
+      padding: 0 0 11px;
+      vertical-align: top;
+    }
+
+    .meta-label {
+      color: #6b7280;
+      font-weight: 600;
+      padding-right: 28px;
+      white-space: nowrap;
+    }
+
+    .meta-value {
+      color: #111827;
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .section-title {
+      color: #111827;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.1px;
+      padding-bottom: 14px;
+    }
+
+    .line-items {
+      width: 100%;
+      font-size: 13px;
+      color: #374151;
+    }
+
+    .line-items thead th {
+      color: #374151;
+      font-size: 13px;
+      font-weight: 800;
+      padding: 0 0 11px;
+      border-bottom: 2px solid #111827;
+    }
+
+    .line-items tbody td {
+      padding: 16px 0 14px;
+      border-bottom: 1px solid #f0f1f3;
+      vertical-align: top;
+    }
+
+    .line-items .description {
+      width: 55%;
+      padding-right: 18px;
+      font-weight: 600;
+      color: #4b5563;
+    }
+
+    .line-items .num {
+      text-align: right;
+      white-space: nowrap;
+      color: #6b7280;
+    }
+
+    .line-items .amount {
+      text-align: right;
+      white-space: nowrap;
+      color: #374151;
+      font-weight: 700;
+    }
+
+    .item-note {
+      display: block;
+      color: #9ca3af;
+      font-size: 11px;
+      line-height: 1.45;
+      font-weight: 400;
+      padding-top: 5px;
+    }
+
+    .item-tags {
+      padding-top: 8px;
+    }
+
+    .item-tag {
+      display: inline-block;
+      background: #f9fafb;
+      border: 1px solid #f0f1f3;
+      border-radius: 4px;
+      padding: 3px 7px;
+      margin: 0 4px 4px 0;
+      color: #6b7280;
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .line-items-note {
+      font-size: 11px;
+      color: #9ca3af;
+      line-height: 1.5;
+      margin: 10px 0 0;
+    }
+
+    .summary-table {
+      width: 280px;
+      margin-left: auto;
+      font-size: 13px;
+    }
+
+    .summary-table td {
+      padding: 8px 0;
+      vertical-align: top;
+    }
+
+    .summary-table .label {
+      color: #111827;
+      font-weight: 800;
+    }
+
+    .summary-table .soft-label {
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .summary-table .value {
+      text-align: right;
+      color: #6b7280;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .summary-table .discount,
+    .summary-table .discount .value {
+      color: #dc2626;
+    }
+
+    .summary-table .rule td {
+      border-bottom: 1px solid #eef0f2;
+      padding-bottom: 12px;
+    }
+
+    .summary-table .grand td {
+      color: #111827;
+      font-size: 15px;
+      font-weight: 800;
+      padding-top: 12px;
+    }
+
+    .summary-table .deposit td {
+      border-top: 1px solid #eef0f2;
+      padding-top: 13px;
+      color: #111827;
+      font-weight: 800;
+    }
+
+    .schedule-wrap {
+      margin-top: 38px;
+      padding-top: 24px;
+      border-top: 2px solid #111827;
+    }
+
+    .payment-schedule {
+      width: 100%;
+      font-size: 13px;
+      border-top: 1px solid #e5e7eb;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .payment-schedule td {
+      padding: 12px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    .payment-schedule tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .payment-schedule .stage-name {
+      color: #4b5563;
+      font-weight: 600;
+    }
+
+    .payment-schedule .stage-amount {
+      color: #111827;
+      font-weight: 800;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .footer-block {
+      border-top: 1px solid #e5e7eb;
+      padding-top: 24px;
+      margin-top: 42px;
+    }
+
+    .footer-copy {
+      font-size: 10px;
+      line-height: 1.6;
+      color: #6b7280;
+      margin: 0 0 24px;
+    }
+
+    .signature-table {
+      width: 260px;
+      margin-left: auto;
+    }
+
+    .signature-line {
+      border-top: 1px solid #9ca3af;
+      height: 1px;
+      line-height: 1px;
+      font-size: 1px;
+    }
+
+    .signature-label {
+      padding-top: 8px;
+      color: #6b7280;
+      font-size: 12px;
+    }
+
+    @media only screen and (max-width: 640px) {
+      .invoice-inner {
+        padding: 34px 22px 30px !important;
+      }
+
+      .invoice-label {
+        padding-bottom: 32px !important;
+        font-size: 17px !important;
+        letter-spacing: 4px !important;
+      }
+
+      .stack-column,
+      .stack-column td {
+        display: block !important;
+        width: 100% !important;
+      }
+
+      .meta-wrap {
+        padding-top: 28px !important;
+      }
+
+      .meta-value {
+        text-align: right !important;
+      }
+
+      .line-items thead {
+        display: none !important;
+      }
+
+      .line-items tbody td {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 5px 0 !important;
+        border-bottom: 0 !important;
+        text-align: left !important;
+      }
+
+      .line-items tbody tr {
+        display: block !important;
+        padding: 14px 0 !important;
+        border-bottom: 1px solid #f0f1f3 !important;
+      }
+
+      .summary-table,
+      .signature-table {
+        width: 100% !important;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>Invoice {{INVOICE_NUMBER}}</h1>
-      <p>Invoice date: {{DATE}}</p>
-      <p>Due date: {{DUE_DATE}}</p>
-    </div>
-    <div class="body">
-      <p class="greeting">Dear <strong>{{CUSTOMER_NAME}}</strong>,</p>
-      <p style="font-size:14px;color:#555;line-height:1.5;margin-bottom:8px">
-        Please find your invoice details below. Payment is due per the terms listed.
-      </p>
-
-      <div class="total-box">
-        <div class="label">Total amount due</div>
-        <div class="amount">{{TOTAL_AMOUNT}}</div>
-      </div>
-
-      <table class="detail-table">
-        <tr><td>Invoice number</td><td>{{INVOICE_NUMBER}}</td></tr>
-        <tr><td>PO number</td><td>{{PO_NUMBER}}</td></tr>
-        <tr><td>Invoice date</td><td>{{DATE}}</td></tr>
-        <tr><td>Due date</td><td>{{DUE_DATE}}</td></tr>
-        <tr><td>Payment terms</td><td>{{PAYMENT_TERMS}}</td></tr>
-        <tr><td>Days to pay</td><td>{{DAYS_TO_PAY}}</td></tr>
-      </table>
-
-      {{PAYMENT_SCHEDULE_SECTION}}
-
-      <div class="section-title">Line items</div>
-      <table class="line-items">
-        <thead>
+  <table role="presentation" class="page-wrap" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center">
+        <table role="presentation" class="invoice-card" width="760" cellpadding="0" cellspacing="0">
           <tr>
-            <th style="width:28px">#</th>
-            <th>Description</th>
-            <th class="num">Rate</th>
-            <th class="qty">Qty</th>
-            <th class="num">Tax</th>
-            <th class="num">Amount</th>
+            <td class="invoice-inner">
+              <div class="invoice-label">Invoice</div>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="stack-column">
+                <tr>
+                  <td width="52%" valign="top">
+                    <img src="{{LOGO_URL}}" alt="{{COMPANY_NAME}}" class="logo" />
+                    <div class="company-copy" style="padding-top:22px;">
+                      {{COMPANY_ADDRESS_HTML}}<br />
+                      {{COMPANY_EMAIL}}<br />
+                      {{COMPANY_WEBSITE}}
+                    </div>
+                  </td>
+                  <td width="48%" valign="top" class="meta-wrap">
+                    <table role="presentation" class="meta-table" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td class="meta-label">Payment terms</td>
+                        <td class="meta-value">{{PAYMENT_TERMS}}</td>
+                      </tr>
+                      <tr>
+                        <td class="meta-label">Invoice #</td>
+                        <td class="meta-value">{{INVOICE_NUMBER}}</td>
+                      </tr>
+                      <tr>
+                        <td class="meta-label">PO #</td>
+                        <td class="meta-value">{{PO_NUMBER}}</td>
+                      </tr>
+                      <tr>
+                        <td class="meta-label">Invoice date</td>
+                        <td class="meta-value">{{DATE}}</td>
+                      </tr>
+                      <tr>
+                        <td class="meta-label">Due date</td>
+                        <td class="meta-value">{{DUE_DATE}}</td>
+                      </tr>
+                      <tr>
+                        <td class="meta-label">Days to pay</td>
+                        <td class="meta-value">{{DAYS_TO_PAY}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:40px;">
+                <tr>
+                  <td valign="top">
+                    <div class="section-title">Bill To</div>
+                    <div class="customer-name">{{CUSTOMER_NAME}}</div>
+                    <div class="customer-copy">{{CUSTOMER_ADDRESS_HTML}}</div>
+                  </td>
+                </tr>
+              </table>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:44px;">
+                <tr>
+                  <td>
+                    <table class="line-items" width="100%" cellpadding="0" cellspacing="0">
+                      <thead>
+                        <tr>
+                          <th align="left">Description</th>
+                          <th align="right" style="width:90px;">Rate</th>
+                          <th align="right" style="width:58px;">Qty</th>
+                          <th align="right" style="width:112px;">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {{LINE_ITEMS}}
+                      </tbody>
+                    </table>
+                    <p class="line-items-note">Line amounts exclude tax; invoice tax is summarized below.</p>
+                  </td>
+                </tr>
+              </table>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:30px;">
+                <tr>
+                  <td align="right">
+                    <table role="presentation" class="summary-table" cellpadding="0" cellspacing="0">
+                      {{TOTALS_ROWS}}
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              {{PAYMENT_SCHEDULE_SECTION}}
+
+              <div class="footer-block">
+                <p class="footer-copy">
+                  Thank you for your business. Please reply to this email if you have any questions about this invoice.
+                </p>
+                <p class="footer-copy">
+                  By signing this document, the customer agrees to the services and conditions outlined in this invoice.
+                </p>
+
+                <table role="presentation" class="signature-table" cellpadding="0" cellspacing="0">
+                  <tr><td class="signature-line">&nbsp;</td></tr>
+                  <tr><td class="signature-label">Client signature</td></tr>
+                </table>
+              </div>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {{LINE_ITEMS}}
-        </tbody>
-      </table>
-      <p class="line-items-note">
-        Line amounts exclude tax; invoice tax is summarized below.
-      </p>
-
-      <div class="section-title">Summary</div>
-      <p class="line-items-note" style="margin-top:0;margin-bottom:12px">
-        Total due = Subtotal − Discount + Tax{{DEPOSIT_NOTE}}
-      </p>
-      <div class="totals-wrap">
-        <table class="totals-table">
-          {{TOTALS_ROWS}}
         </table>
-      </div>
-
-      <p style="font-size:13px;color:#888;margin-top:24px;line-height:1.5">
-        Please remit payment by the due date above. Contact us if you have any questions about this invoice.
-      </p>
-    </div>
-    <div class="footer">Please reply to this email for any invoice queries.</div>
-  </div>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>
