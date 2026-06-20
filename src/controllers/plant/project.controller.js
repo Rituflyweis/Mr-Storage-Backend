@@ -17,6 +17,10 @@ const { formatLog } = require('../../services/auditActivity.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
 const { computeShipperFilesStats } = require('../../utils/shipperFilesStats')
+const {
+  buildAmountComparisonForRequest,
+  loadConsolidatedBomCostMap,
+} = require('../../utils/shipperAmountComparison')
 const { validatePlantLifecycleTransition } = require('../../utils/plantLifecycle')
 const { getLatestBomJobsByBuilding, formatBomJobSummary } = require('../../utils/plantBomAccess')
 const { processBOMJob, inferFileFormat } = require('../../services/plant/bom.service')
@@ -735,6 +739,7 @@ exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
       .populate('vendorId', 'vendorName vendorCode email')
       .lean()
   )
+  const bomCostById = await loadConsolidatedBomCostMap(requests)
 
   return success(res, {
     stats: computeShipperFilesStats(requests),
@@ -748,6 +753,7 @@ exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
       submittedAt: r.submittedAt,
       quoteValue: r.quoteValue,
       sentAt: r.sentAt,
+      amountComparison: buildAmountComparisonForRequest(r, bomCostById),
     })),
   })
 })

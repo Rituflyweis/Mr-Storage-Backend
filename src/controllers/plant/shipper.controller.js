@@ -42,6 +42,11 @@ const {
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { SHIPPER_REQUEST_LATEST_FIRST_SORT, sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
 const { computeShipperFilesStats } = require('../../utils/shipperFilesStats')
+const {
+  buildShipperAmountComparison,
+  buildAmountComparisonForRequest,
+  loadConsolidatedBomCostMap,
+} = require('../../utils/shipperAmountComparison')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -165,6 +170,7 @@ exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
       .populate('vendorId', 'vendorName vendorCode')
       .lean()
   )
+  const bomCostById = await loadConsolidatedBomCostMap(requests)
 
   return success(res, {
     leadId,
@@ -184,6 +190,7 @@ exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
       resubmitCount: r.resubmitCount || 0,
       resubmitRequestedAt: r.resubmitRequestedAt || null,
       canRequestResubmit: ['submitted', 'comparison_completed', 'comparison_failed', 'resubmit_requested'].includes(r.status),
+      amountComparison: buildAmountComparisonForRequest(r, bomCostById),
     })),
     total: requests.length,
   })
@@ -204,6 +211,14 @@ exports.getShipperRequestDocument = asyncHandler(async (req, res) => {
     return forbidden(res, access.error)
   }
 
+  const consolidatedBom = request.consolidatedBOMId
+    ? await ConsolidatedBOM.findById(request.consolidatedBOMId).select('totalCost').lean()
+    : null
+  const amountComparison = buildShipperAmountComparison(
+    consolidatedBom?.totalCost,
+    request.quoteValue
+  )
+
   return success(res, {
     requestId: request._id,
     leadId: request.leadId?._id || request.leadId,
@@ -217,6 +232,7 @@ exports.getShipperRequestDocument = asyncHandler(async (req, res) => {
     uploadedDate: request.submittedAt || null,
     rates: request.quoteValue ?? null,
     fileStatus: request.status,
+    amountComparison,
   })
 })
 

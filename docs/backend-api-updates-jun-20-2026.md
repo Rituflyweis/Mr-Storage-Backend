@@ -13,8 +13,9 @@ Frontend integration log for changes shipped in this session.
 1. [Freight bid resubmit — requested amount fix](#1-freight-bid-resubmit--requested-amount-fix)
 2. [Sales building sync — increase & reduce](#2-sales-building-sync--increase--reduce)
 3. [Admin escalations — response shape & user details](#3-admin-escalations--response-shape--user-details)
-4. [Files changed](#4-files-changed)
-5. [Frontend checklist](#5-frontend-checklist)
+4. [Shipper files — BOM vs submitted amount comparison](#4-shipper-files--bom-vs-submitted-amount-comparison)
+5. [Files changed](#5-files-changed)
+6. [Frontend checklist](#6-frontend-checklist)
 
 ---
 
@@ -352,17 +353,271 @@ Shared mapper `src/utils/escalationLeadRow.js` now returns full lead-centric row
 
 ---
 
-## 4. Files changed
+## 4. Shipper files — BOM vs submitted amount comparison
+
+**Added:** June 20, 2026
+
+Shipper **list** and **detail** responses now include `amountComparison`: consolidated BOM total cost vs vendor submitted quote amount, plus a mismatch flag.
+
+This is a **header-level total comparison** (not line-item comparison). Line-item comparison still uses `POST /api/plant/shipper-requests/:requestId/compare`.
+
+### Data sources
+
+| Field | Source |
+|-------|--------|
+| `bomAmount` | `ConsolidatedBOM.totalCost` (via `ShipperRequest.consolidatedBOMId`) |
+| `shipperSubmittedAmount` | `ShipperRequest.quoteValue` (vendor submitted on public upload) |
+
+### `amountComparison` object
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `bomAmount` | `number \| null` | Consolidated BOM total cost |
+| `shipperSubmittedAmount` | `number \| null` | Vendor submitted quote |
+| `difference` | `number \| null` | `shipperSubmittedAmount − bomAmount` |
+| `isMismatch` | `boolean \| null` | `true` when both amounts exist and differ; `null` if cannot compare |
+| `canCompare` | `boolean` | `false` when vendor has not submitted a quote yet |
+
+### UI logic
+
+```javascript
+if (!row.amountComparison.canCompare) {
+  // "Awaiting vendor quote"
+} else if (row.amountComparison.isMismatch) {
+  // Highlight — show bomAmount, shipperSubmittedAmount, difference
+} else {
+  // Amounts match
+}
+```
+
+---
+
+### 4A. `GET /api/plant/shipper-files/projects/:leadId/requests`
+
+**Alias:** `GET /api/plant/shipper-requests/projects/:leadId/requests`  
+**Role:** `plant`
+
+#### Response `data` (example — mismatch + match + pending)
+
+```json
+{
+  "leadId": "664c1a2b3d4e5f6789012001",
+  "projectId": "PRO-080",
+  "projectName": "Anshika Warehouse LLC",
+  "stats": {
+    "totalFiles": 3,
+    "filesReceived": 2,
+    "ordersSent": 3,
+    "revisionsSent": 1
+  },
+  "shipperRequests": [
+    {
+      "requestId": "6a328001a2982523aa1e91bd",
+      "vendorId": "665a00000000000000000010",
+      "vendorName": "Ayesha LLC 1",
+      "vendorCode": "VND-0029",
+      "fileName": "Ayesha-Quote-Revised.pdf",
+      "uploadedDate": "2026-06-20T10:15:00.000Z",
+      "rates": 6000,
+      "fileStatus": "submitted",
+      "comparisonStatus": "idle",
+      "resubmitCount": 1,
+      "resubmitRequestedAt": "2026-06-19T14:00:00.000Z",
+      "canRequestResubmit": true,
+      "amountComparison": {
+        "bomAmount": 10000,
+        "shipperSubmittedAmount": 6000,
+        "difference": -4000,
+        "isMismatch": true,
+        "canCompare": true
+      }
+    },
+    {
+      "requestId": "6a328001a2982523aa1e91be",
+      "vendorId": "665a00000000000000000011",
+      "vendorName": "SteelCo Logistics",
+      "vendorCode": "VND-0011",
+      "fileName": "SteelCo-Quote.pdf",
+      "uploadedDate": "2026-06-18T09:30:00.000Z",
+      "rates": 10000,
+      "fileStatus": "comparison_completed",
+      "comparisonStatus": "completed",
+      "resubmitCount": 0,
+      "resubmitRequestedAt": null,
+      "canRequestResubmit": true,
+      "amountComparison": {
+        "bomAmount": 10000,
+        "shipperSubmittedAmount": 10000,
+        "difference": 0,
+        "isMismatch": false,
+        "canCompare": true
+      }
+    },
+    {
+      "requestId": "6a328001a2982523aa1e91bf",
+      "vendorId": "665a00000000000000000012",
+      "vendorName": "Metro Freight Supply",
+      "vendorCode": "VND-0012",
+      "fileName": "",
+      "uploadedDate": null,
+      "rates": null,
+      "fileStatus": "sent",
+      "comparisonStatus": "idle",
+      "resubmitCount": 0,
+      "resubmitRequestedAt": null,
+      "canRequestResubmit": false,
+      "amountComparison": {
+        "bomAmount": 10000,
+        "shipperSubmittedAmount": null,
+        "difference": null,
+        "isMismatch": null,
+        "canCompare": false
+      }
+    }
+  ],
+  "total": 3
+}
+```
+
+---
+
+### 4B. `GET /api/plant/shipper-files/:requestId/document`
+
+**Alias:** `GET /api/plant/shipper-requests/:requestId/document`  
+**Role:** `plant`
+
+#### Response `data` — mismatch example
+
+```json
+{
+  "requestId": "6a328001a2982523aa1e91bd",
+  "leadId": "664c1a2b3d4e5f6789012001",
+  "projectId": "PRO-080",
+  "projectName": "Anshika Warehouse LLC",
+  "vendorId": "665a00000000000000000010",
+  "vendorName": "Ayesha LLC 1",
+  "vendorCode": "VND-0029",
+  "fileName": "Ayesha-Quote-Revised.pdf",
+  "fileUrl": "https://bucket.s3.amazonaws.com/vendor-uploads/abc123.pdf",
+  "uploadedDate": "2026-06-20T10:15:00.000Z",
+  "rates": 6000,
+  "fileStatus": "submitted",
+  "amountComparison": {
+    "bomAmount": 10000,
+    "shipperSubmittedAmount": 6000,
+    "difference": -4000,
+    "isMismatch": true,
+    "canCompare": true
+  }
+}
+```
+
+#### Response `data` — amounts match
+
+```json
+{
+  "requestId": "6a328001a2982523aa1e91be",
+  "leadId": "664c1a2b3d4e5f6789012001",
+  "projectId": "PRO-080",
+  "projectName": "Anshika Warehouse LLC",
+  "vendorId": "665a00000000000000000011",
+  "vendorName": "SteelCo Logistics",
+  "vendorCode": "VND-0011",
+  "fileName": "SteelCo-Quote.pdf",
+  "fileUrl": "https://bucket.s3.amazonaws.com/vendor-uploads/def456.pdf",
+  "uploadedDate": "2026-06-18T09:30:00.000Z",
+  "rates": 10000,
+  "fileStatus": "comparison_completed",
+  "amountComparison": {
+    "bomAmount": 10000,
+    "shipperSubmittedAmount": 10000,
+    "difference": 0,
+    "isMismatch": false,
+    "canCompare": true
+  }
+}
+```
+
+---
+
+### 4C. `GET /api/plant/projects/:leadId/shipper-files`
+
+**Role:** `plant`
+
+#### Response `data` (example)
+
+```json
+{
+  "stats": {
+    "totalFiles": 2,
+    "filesReceived": 2,
+    "ordersSent": 2,
+    "revisionsSent": 1
+  },
+  "shipperFiles": [
+    {
+      "_id": "6a328001a2982523aa1e91bd",
+      "vendorId": "665a00000000000000000010",
+      "vendorName": "Ayesha LLC 1",
+      "status": "submitted",
+      "submittedFileUrl": "https://bucket.s3.amazonaws.com/vendor-uploads/abc123.pdf",
+      "submittedFileName": "Ayesha-Quote-Revised.pdf",
+      "submittedAt": "2026-06-20T10:15:00.000Z",
+      "quoteValue": 6000,
+      "sentAt": "2026-06-17T08:00:00.000Z",
+      "amountComparison": {
+        "bomAmount": 10000,
+        "shipperSubmittedAmount": 6000,
+        "difference": -4000,
+        "isMismatch": true,
+        "canCompare": true
+      }
+    },
+    {
+      "_id": "6a328001a2982523aa1e91be",
+      "vendorId": "665a00000000000000000011",
+      "vendorName": "SteelCo Logistics",
+      "status": "comparison_completed",
+      "submittedFileUrl": "https://bucket.s3.amazonaws.com/vendor-uploads/def456.pdf",
+      "submittedFileName": "SteelCo-Quote.pdf",
+      "submittedAt": "2026-06-18T09:30:00.000Z",
+      "quoteValue": 10000,
+      "sentAt": "2026-06-17T08:00:00.000Z",
+      "amountComparison": {
+        "bomAmount": 10000,
+        "shipperSubmittedAmount": 10000,
+        "difference": 0,
+        "isMismatch": false,
+        "canCompare": true
+      }
+    }
+  ]
+}
+```
+
+### Field name note (list endpoints)
+
+| Endpoint | Shipper amount field | Row id field |
+|----------|---------------------|--------------|
+| `.../shipper-files/projects/:leadId/requests` | `rates` | `requestId` |
+| `.../projects/:leadId/shipper-files` | `quoteValue` | `_id` |
+
+Use **`amountComparison`** as the shared source for BOM vs shipper comparison on all three endpoints.
+
+---
+
+## 5. Files changed
 
 | Area | Files |
 |------|-------|
 | Freight bid resubmit | `src/controllers/plant/freightBid.controller.js`, `src/routes/plant/freightBid.routes.js` |
 | Building sync | `src/services/leadBuilding.service.js`, `src/controllers/sales/lead.controller.js`, `src/config/constants.js` |
 | Admin escalations | `src/utils/escalationLeadRow.js`, `src/controllers/admin/escalation.controller.js` |
+| Shipper amount comparison | `src/utils/shipperAmountComparison.js`, `src/controllers/plant/shipper.controller.js`, `src/controllers/plant/project.controller.js` |
 
 ---
 
-## 5. Frontend checklist
+## 6. Frontend checklist
 
 ### Plant — freight
 
@@ -382,10 +637,18 @@ Shared mapper `src/utils/escalationLeadRow.js` now returns full lead-centric row
 - [ ] Display `customerId`, `escalatedBy`, `assignedTo`, `resolvedBy`, `resolvedAssignedTo`
 - [ ] Resolve/assign handlers read `data.lead` (not raw `data.escalation`)
 
+### Plant — shipper amount comparison
+
+- [ ] List: show BOM amount vs shipper amount from `amountComparison` on `GET .../shipper-files/projects/:leadId/requests`
+- [ ] Detail: show same block on `GET .../shipper-requests/:requestId/document`
+- [ ] Project tab: `GET /api/plant/projects/:leadId/shipper-files` — use `quoteValue` + `amountComparison`
+- [ ] Highlight row when `amountComparison.isMismatch === true`
+- [ ] When `canCompare === false`, show “Awaiting vendor quote” (not a mismatch)
+
 ---
 
 ## Related docs
 
 - `docs/plant-freight-bid-socket-events.md` — carrier bid socket events (`freight_bid_submitted`, etc.)
 - `docs/sales-panel-updates-jun-2026.md` — earlier sales escalation row fields
-- `docs/frontend-api-integration-jun-19-2026.md` — broader plant/admin/sales integration guide
+- `docs/plant-frontend-api-updates-jun-2026.md` — plant shipper KPIs, freight revision, project list fields
