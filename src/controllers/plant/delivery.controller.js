@@ -353,9 +353,18 @@ const buildDeliveryBidStats = (bids) => {
   const lowestBid = sorted[0] || null
   const highestBid = sorted[sorted.length - 1] || null
   const awardedBid = withAmounts.find((row) => String(row.status || '').trim().toLowerCase() === 'selected') || null
-  const potentialSavings = highestBid && awardedBid
-    ? Math.max(0, highestBid._normalizedBidAmount - awardedBid._normalizedBidAmount)
-    : null
+
+  let potentialSavings = null
+  if (submittedBids > 0) {
+    if (awardedBid && highestBid) {
+      potentialSavings = Math.max(0, highestBid._normalizedBidAmount - awardedBid._normalizedBidAmount)
+    } else if (lowestBid && highestBid) {
+      // Pre-award: savings if plant picks lowest vs highest submitted bid
+      potentialSavings = Math.max(0, highestBid._normalizedBidAmount - lowestBid._normalizedBidAmount)
+    } else {
+      potentialSavings = 0
+    }
+  }
 
   return {
     totalBids,
