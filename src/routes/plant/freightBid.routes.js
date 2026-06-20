@@ -14,6 +14,7 @@ router.post('/:bidId/request-resubmit',
     param('bidId').isMongoId(),
     body('note').trim().notEmpty().withMessage('note is required'),
     body('bidAmount').optional().isFloat({ min: 0 }).withMessage('bidAmount must be a non-negative number'),
+    body('requestedBidAmount').optional().isFloat({ min: 0 }).withMessage('requestedBidAmount must be a non-negative number'),
   ],
   validate,
   ctrl.requestFreightBidResubmit

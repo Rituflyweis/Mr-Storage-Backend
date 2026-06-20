@@ -143,7 +143,9 @@ exports.requestFreightBidResubmit = asyncHandler(async (req, res) => {
   const { bidId } = req.params
   const note = String(req.body.note || '').trim()
   if (!note) return badRequest(res, 'note is required')
-  const requestedBidAmount = normalizeOptionalBidAmount(req.body.bidAmount)
+  const requestedBidAmount = normalizeOptionalBidAmount(
+    req.body.bidAmount ?? req.body.requestedBidAmount
+  )
 
   const bid = await FreightBid.findById(bidId)
   if (!bid) return notFound(res, 'Freight bid not found')
@@ -182,6 +184,7 @@ exports.requestFreightBidResubmit = asyncHandler(async (req, res) => {
   bid.status = 'resubmit_requested'
   bid.resubmitNote = note
   bid.resubmitRequestedAt = new Date()
+  bid.resubmitRequestedAmount = requestedBidAmount
   bid.resubmitCount = (bid.resubmitCount || 0) + 1
 
   const now = Date.now()
@@ -218,6 +221,7 @@ exports.requestFreightBidResubmit = asyncHandler(async (req, res) => {
         bidUrl,
         bidDeadline: bid.expiresAt,
         priorQuotedAmount,
+        requestedBidAmount,
       })
     }
   } catch (err) {

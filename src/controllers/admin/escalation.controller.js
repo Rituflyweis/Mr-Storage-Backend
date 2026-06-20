@@ -10,6 +10,7 @@ const { AUDIT_ACTIONS } = require('../../config/constants')
 const {
   mapEscalationLeadRow,
   ESCALATION_LEAD_POPULATE,
+  loadEscalationWithRelations,
 } = require('../../utils/escalationLeadRow')
 
 exports.getAllEscalations = asyncHandler(async (req, res) => {
@@ -48,8 +49,11 @@ exports.resolveEscalation = asyncHandler(async (req, res) => {
   const escalation = await Escalation.findById(req.params.escalationId)
   if (!escalation) return notFound(res, 'Escalation not found')
 
+  const lead = await Lead.findById(escalation.leadId).select('assignedSales').lean()
+
   escalation.status = 'resolved'
   escalation.resolvedBy = req.user._id
+  escalation.resolvedAssignedTo = lead?.assignedSales || escalation.resolvedAssignedTo || null
   escalation.resolvedAt = new Date()
   await escalation.save()
 
@@ -59,7 +63,8 @@ exports.resolveEscalation = asyncHandler(async (req, res) => {
     metadata: { escalationId: escalation._id, note: req.body.note || '' }
   })
 
-  return success(res, { escalation }, 'Escalation resolved')
+  const populated = await loadEscalationWithRelations(escalation._id)
+  return success(res, { lead: mapEscalationLeadRow(populated) }, 'Escalation resolved')
 })
 
 exports.assignEscalation = asyncHandler(async (req, res) => {
@@ -114,5 +119,6 @@ exports.assignEscalation = asyncHandler(async (req, res) => {
   }
   await leadListSocket.emitLeadListUpdated(escalation.leadId, { trigger: 'escalation_reassign' })
 
-  return success(res, { escalation }, 'Escalation resolved and lead reassigned')
+  const populated = await loadEscalationWithRelations(escalation._id)
+  return success(res, { lead: mapEscalationLeadRow(populated) }, 'Escalation resolved and lead reassigned')
 })

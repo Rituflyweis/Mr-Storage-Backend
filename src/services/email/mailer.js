@@ -53,7 +53,11 @@ const escapeHtml = (str) => {
 
 const formatInvoiceMoney = (value) => {
   if (value == null || value === '' || Number.isNaN(Number(value))) return '—'
-  return Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const formatted = Number(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return `$${formatted}`
 }
 
 const formatInvoiceDate = (value) => {
@@ -579,7 +583,10 @@ const sendFreightBidRequestEmail = async ({
   const safeLoadDescription = escapeHtml(loadDescription || '')
   const safePickup = escapeHtml(pickupLocation || '')
   const safeDelivery = escapeHtml(deliveryLocation || '')
-  const safeWeight = loadWeight != null ? `${formatInvoiceMoney(loadWeight)} lbs` : '—'
+  const safeWeight =
+    loadWeight != null
+      ? `${Number(loadWeight).toLocaleString('en-US')} lbs`
+      : '—'
   const safeDeadline = formatInvoiceDate(bidDeadline)
   const loadDetailsHtml = formatFreightLoadDetailsHtml({ bundles, packingLists })
   const loadDetailsText = formatFreightLoadDetailsText({ bundles, packingLists })
@@ -650,7 +657,7 @@ const sendFreightBidAwardedEmail = async ({
         <li><strong>Project:</strong> ${escapeHtml(projectName || '')}</li>
         <li><strong>Job ID:</strong> ${escapeHtml(jobId || '')}</li>
         <li><strong>Freight Request #:</strong> ${escapeHtml(deliveryNumber || '')}</li>
-        <li><strong>Awarded Amount:</strong> ${quotedAmount != null ? `${formatInvoiceMoney(quotedAmount)} USD` : '—'}</li>
+        <li><strong>Awarded Amount:</strong> ${quotedAmount != null ? formatInvoiceMoney(quotedAmount) : '—'}</li>
       </ul>
       <p>Our team will coordinate next steps with you shortly.</p>
     </div>

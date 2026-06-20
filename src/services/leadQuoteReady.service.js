@@ -2,6 +2,7 @@ const Lead = require('../models/Lead')
 const roundRobinService = require('./roundRobin.service')
 const auditService = require('./audit.service')
 const leadListSocket = require('./leadListSocket.service')
+const { extractPlannedStartFromMessages } = require('../utils/parsePlannedStart')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
 
 const advanceLifecycleIfNeeded = async (leadId, stage) => {
@@ -23,17 +24,114 @@ const advanceLifecycleIfNeeded = async (leadId, stage) => {
   await lead.save()
 }
 
-const parseBudgetFromText = (text) => {
+const getPrecedingAiMessage = (messages, customerIndex) => {
+  for (let j = customerIndex - 1; j >= 0; j -= 1) {
+    if (messages[j]?.senderType === 'ai') return messages[j]
+  }
+  return null
+}
+
+/** Alex asked about budget/price/cost — bare numeric replies may be budget. */
+const aiAskedAboutBudget = (text = '') => {
+  const t = String(text).toLowerCase()
+  return (
+    /\bbudget\b/.test(t) ||
+    /\bprice\s*range\b/.test(t) ||
+    /what(?:'s| is) your (?:budget|price)/.test(t) ||
+    /how much (?:are you|do you|would you)/.test(t) ||
+    (/\bcost\b/.test(t) && /\b(your|project|looking|expect|have in mind)\b/.test(t)) ||
+    /\ballocated\b/.test(t) ||
+    /(?:what|how much).*\bspend\b/.test(t) ||
+    /\bafford\b/.test(t)
+  )
+}
+
+const customerMessageHasExplicitBudget = (text = '') => {
+  const t = String(text).toLowerCase()
+  return (
+    /\$/.test(t) ||
+    /\d+\s*k\b/.test(t) ||
+    /\b(dollars?|usd|bucks)\b/.test(t) ||
+    /\bbudget\b/.test(t) ||
+    /\b(thousand|million)\b/.test(t)
+  )
+}
+
+const textMentionsBudgetContext = (text = '') => {
+  const t = String(text).toLowerCase()
+  return customerMessageHasExplicitBudget(t) || aiAskedAboutBudget(t)
+}
+
+/** Amounts that are clearly calendar years, not dollars. */
+const looksLikeYearAnswer = (amount, precedingAiText = '') => {
+  if (!Number.isFinite(amount) || amount !== Math.floor(amount)) return false
+  if (amount < 2020 || amount > 2035) return false
+  const ai = String(precedingAiText).toLowerCase()
+  return (
+    /\byear\b/.test(ai) ||
+    /\bwhen\b/.test(ai) ||
+    /\btimeline\b/.test(ai) ||
+    /\bstart\b/.test(ai)
+  )
+}
+
+/** Parse when the customer used $, k, dollars, budget, etc. */
+const parseExplicitBudgetFromText = (text) => {
   const t = String(text || '').toLowerCase().replace(/,/g, '').trim()
   if (!t) return 0
 
   const kMatch = t.match(/(?:\$?\s*)(\d+(?:\.\d+)?)\s*k\b/)
   if (kMatch) return Math.round(parseFloat(kMatch[1]) * 1000)
 
-  const dollarMatch = t.match(/(?:\$?\s*)(\d+(?:\.\d+)?)(?:\s*(?:dollars?|usd|bucks?))?/)
-  if (dollarMatch) {
-    const n = parseFloat(dollarMatch[1])
+  if (/\$/.test(t)) {
+    const dollarMatch = t.match(/\$\s*(\d+(?:\.\d+)?)/)
+    if (dollarMatch) {
+      const n = parseFloat(dollarMatch[1])
+      if (n > 0) return Math.round(n)
+    }
+  }
+
+  const currencyWordMatch = t.match(/(\d+(?:\.\d+)?)\s*(?:dollars?|usd|bucks)\b/)
+  if (currencyWordMatch) {
+    const n = parseFloat(currencyWordMatch[1])
     if (n > 0) return Math.round(n)
+  }
+
+  const thousandMatch = t.match(/(\d+(?:\.\d+)?)\s*(?:thousand|million)\b/)
+  if (thousandMatch) {
+    const n = parseFloat(thousandMatch[1])
+    const mult = /\bmillion\b/.test(t) ? 1_000_000 : 1_000
+    if (n > 0) return Math.round(n * mult)
+  }
+
+  const budgetMatch = t.match(/\bbudget\b[^0-9$]*\$?\s*(\d+(?:\.\d+)?)\s*k?\b/)
+  if (budgetMatch) {
+    let n = parseFloat(budgetMatch[1])
+    if (/\d+\s*k\b/.test(budgetMatch[0])) n *= 1000
+    if (n > 0) return Math.round(n)
+  }
+
+  return 0
+}
+
+/** Whole-message numeric reply — only valid when Alex just asked about budget. */
+const parseBareNumberBudget = (text, precedingAiText = '') => {
+  const trimmed = String(text || '').replace(/,/g, '').trim()
+  if (!/^\d+(?:\.\d+)?$/.test(trimmed)) return 0
+
+  const n = parseFloat(trimmed)
+  if (n <= 0) return 0
+  if (looksLikeYearAnswer(n, precedingAiText)) return 0
+
+  return Math.round(n)
+}
+
+const parseBudgetFromCustomerMessage = (content, precedingAiText = '') => {
+  if (customerMessageHasExplicitBudget(content)) {
+    return parseExplicitBudgetFromText(content)
+  }
+  if (aiAskedAboutBudget(precedingAiText)) {
+    return parseBareNumberBudget(content, precedingAiText)
   }
   return 0
 }
@@ -50,16 +148,22 @@ const extractCustomerBudget = (messages = [], quoteData = {}, scoreData = {}) =>
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i]
     if (m.senderType !== 'customer') continue
-    const amount = parseBudgetFromText(m.content)
+    const precedingAi = getPrecedingAiMessage(messages, i)
+    const amount = parseBudgetFromCustomerMessage(m.content, precedingAi?.content || '')
     if (amount > 0) return amount
   }
 
   const budgetReason = scoreData.scoreBreakdown?.budgetSignals?.reason || ''
-  const fromReason = parseBudgetFromText(budgetReason)
-  if (fromReason > 0) return fromReason
+  if (textMentionsBudgetContext(budgetReason)) {
+    const fromReason = parseExplicitBudgetFromText(budgetReason)
+    if (fromReason > 0) return fromReason
+  }
 
-  const fromRequirements = parseBudgetFromText(scoreData.requirements || '')
-  if (fromRequirements > 0) return fromRequirements
+  const requirements = scoreData.requirements || ''
+  if (textMentionsBudgetContext(requirements)) {
+    const fromRequirements = parseExplicitBudgetFromText(requirements)
+    if (fromRequirements > 0) return fromRequirements
+  }
 
   return 0
 }
@@ -192,6 +296,14 @@ const syncLeadProjectFields = async (leadId, quoteData, extraFields = {}) => {
   }
 }
 
+/** Persist planned start when customer answers Alex's timeline question. */
+const syncPlannedStartFromMessages = async (leadId, messages = []) => {
+  const plannedStartDate = extractPlannedStartFromMessages(messages)
+  if (!plannedStartDate) return
+
+  await Lead.findByIdAndUpdate(leadId, { $set: { plannedStartDate } })
+}
+
 /** Persist buildingType, location, etc. from AI scoring after each chat turn. */
 const syncLeadProjectFieldsFromScore = async (leadId, scoreData = {}) => {
   const structured = scoreData.projectFields && typeof scoreData.projectFields === 'object'
@@ -317,4 +429,5 @@ module.exports = {
   buildFallbackQuoteData,
   extractCustomerBudget,
   syncLeadProjectFieldsFromScore,
+  syncPlannedStartFromMessages,
 }

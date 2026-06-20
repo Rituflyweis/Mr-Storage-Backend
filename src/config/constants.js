@@ -91,6 +91,7 @@ const AUDIT_ACTIONS = {
   LEAD_TERMINATED:          'lead.terminated',
   LEAD_NOTE_ADDED:          'lead.note_added',
   BUILDINGS_CREATED:        'lead.buildings_created',
+  BUILDINGS_SYNCED:         'lead.buildings_synced',
   DRAWING_UPLOADED:         'drawing.uploaded',
   DRAWING_REVIEWED:         'drawing.reviewed',
   BOM_APPROVED:             'bom.approved',

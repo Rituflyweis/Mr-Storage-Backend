@@ -638,16 +638,26 @@ exports.createBuildings = asyncHandler(async (req, res) => {
   const num = parseInt(numberOfBuildings, 10)
   if (!num || num < 1) return badRequest(res, 'numberOfBuildings must be >= 1')
 
-  const { buildings, numberOfBuildings: effectiveCount, createdCount, createdBuildingNumbers } =
-    await syncLeadBuildings(lead, {
-      numberOfBuildings: num,
-      createdBy: req.user._id,
-    })
+  const syncResult = await syncLeadBuildings(lead, {
+    numberOfBuildings: num,
+    createdBy: req.user._id,
+  })
 
-  if (createdCount > 0) {
+  const {
+    buildings,
+    numberOfBuildings: effectiveCount,
+    createdCount,
+    createdBuildingNumbers,
+    removedCount,
+    removedBuildingNumbers,
+    removedBomJobCount,
+    consolidatedBomInvalidated,
+  } = syncResult
+
+  if (createdCount > 0 || removedCount > 0) {
     await auditService.log({
       type: 'lead',
-      action: AUDIT_ACTIONS.BUILDINGS_CREATED,
+      action: removedCount > 0 ? AUDIT_ACTIONS.BUILDINGS_SYNCED : AUDIT_ACTIONS.BUILDINGS_CREATED,
       leadId,
       customerId: lead.customerId,
       performedBy: req.user._id,
@@ -655,16 +665,30 @@ exports.createBuildings = asyncHandler(async (req, res) => {
         numberOfBuildings: effectiveCount,
         createdCount,
         createdBuildingNumbers,
+        removedCount,
+        removedBuildingNumbers,
+        removedBomJobCount,
+        consolidatedBomInvalidated,
       },
     })
   }
 
-  return created(res, {
+  const payload = {
     buildings,
     numberOfBuildings: effectiveCount,
     createdCount,
     createdBuildingNumbers,
-  })
+    removedCount,
+    removedBuildingNumbers,
+    removedBomJobCount,
+    consolidatedBomInvalidated,
+  }
+
+  if (createdCount > 0 && removedCount === 0) {
+    return created(res, payload)
+  }
+
+  return success(res, payload, removedCount > 0 ? 'Buildings synced' : 'No building changes')
 })
 
 exports.getBuildings = asyncHandler(async (req, res) => {

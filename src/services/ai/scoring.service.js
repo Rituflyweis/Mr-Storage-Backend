@@ -22,6 +22,7 @@ const parseCharLimit = (val, fallback) => {
 
 const scoreLead = async (messages, leadName = '') => {
   const maxChars = parseCharLimit(env.CLAUDE_MAX_SCORE_LIVE_CHARS, 18000)
+  const currentYear = new Date().getFullYear()
 
   const transcript = messages
     .filter(m => m.senderType === 'customer' || m.senderType === 'ai')
@@ -68,6 +69,10 @@ Scoring guide:
 - timeline (0-20): Within 1 month=20, 1-3 months=15, 3-6 months=10, just exploring=3
 - decisionMaker (0-15): Confirmed=15, influencer=8, unclear=3
 - projectClarity (0-15): All 10 required fields explicitly provided=15, most=10, some=5, vague=0
+
+Timeline normalization (current calendar year is ${currentYear}):
+- If the customer answered a start/timeline question with only a month name (e.g. "September"), record timeline as that month in ${currentYear} in scoreBreakdown.timeline.reason and requirements summary.
+- Do NOT leave timeline incomplete just because the customer omitted the year.
 
 requirementsComplete MUST be false if budget OR decision-maker OR any of the 10 fields is still missing or only asked by Alex but not answered by the customer.
 projectClarity points must be 0-15 (never exceed 15).
