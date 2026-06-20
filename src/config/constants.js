@@ -145,6 +145,7 @@ const AUDIT_ACTIONS = {
   CARRIER_CREATED:           'carrier.created',
   CARRIER_UPDATED:           'carrier.updated',
   DELIVERY_CREATED:          'delivery.created',
+  DELIVERY_EDITED:           'delivery.edited',
   DELIVERY_RESCHEDULED:      'delivery.rescheduled',
   FREIGHT_BIDS_SENT:         'freight_bids.sent',
   FREIGHT_BID_SUBMITTED:     'freight_bid.submitted',

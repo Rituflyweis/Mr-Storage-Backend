@@ -39,6 +39,48 @@ const DELIVERY_STATUS_TRANSITIONS = {
 }
 
 const DELIVERY_RESCHEDULE_BLOCKED_STATUSES = new Set(['cancelled', 'delivered'])
+const DELIVERY_EDIT_BLOCKED_STATUSES = new Set(['cancelled', 'delivered'])
+const DELIVERY_POST_AWARD_STATUSES = new Set([
+  'carrier_selected',
+  'scheduled',
+  'confirmed',
+  'in_transit',
+  'delayed',
+])
+const DELIVERY_POST_AWARD_LOCKED_BODY_KEYS = new Set([
+  'weight',
+  'dimensions',
+  'metalType',
+  'packageCount',
+  'bidDeadline',
+  'loadDescription',
+])
+const DELIVERY_EDIT_BODY_KEYS = [
+  'description',
+  'loadDescription',
+  'weight',
+  'dimensions',
+  'metalType',
+  'packageCount',
+  'loadingEquipment',
+  'bidDeadline',
+  'documentUrl',
+  'pickupLocation',
+  'pickupLocationData',
+  'deliveryLocation',
+  'deliveryLocationData',
+  'pickupDate',
+  'pickupTime',
+  'deliveryDate',
+  'deliveryTime',
+  'timeWindowStart',
+  'timeWindowEnd',
+  'timings',
+  'receivingPoc',
+  'pickupContactPhone',
+  'specialRequirements',
+  'additionalNotes',
+]
 
 const formatDeliveryTimeWindow = (start = '', end = '') => {
   const s = String(start || '').trim()
@@ -84,6 +126,105 @@ const normalizeLocationData = (location = {}) => ({
   address: String(location.address || '').trim(),
   coordinates: normalizeCoordinates(location.coordinates || {}),
 })
+
+const buildDeliveryFieldsFromBody = (body = {}) => {
+  const fields = {}
+
+  if (body.description !== undefined) {
+    fields.description = String(body.description || '').trim()
+  }
+  if (body.loadDescription !== undefined) {
+    fields.loadDescription = String(body.loadDescription || '').trim()
+  }
+  if (body.weight !== undefined) {
+    fields.loadWeight = body.weight != null ? Number(body.weight) : null
+  }
+  if (body.dimensions !== undefined) {
+    fields.dimensions = {
+      lengthFeet: body.dimensions?.lengthFeet != null ? Number(body.dimensions.lengthFeet) : null,
+      widthFeet: body.dimensions?.widthFeet != null ? Number(body.dimensions.widthFeet) : null,
+      heightFeet: body.dimensions?.heightFeet != null ? Number(body.dimensions.heightFeet) : null,
+    }
+  }
+  if (body.metalType !== undefined) {
+    fields.materialType = String(body.metalType || '').trim()
+  }
+  if (body.packageCount !== undefined) {
+    fields.packageCount = body.packageCount != null ? Number(body.packageCount) : null
+  }
+  if (body.loadingEquipment !== undefined) {
+    fields.loadingEquipment = Array.isArray(body.loadingEquipment)
+      ? body.loadingEquipment.map((v) => String(v || '').trim()).filter(Boolean)
+      : []
+  }
+  if (body.bidDeadline !== undefined) {
+    fields.bidDeadline = body.bidDeadline ? new Date(body.bidDeadline) : null
+  }
+  if (body.documentUrl !== undefined) {
+    fields.documentUrl = String(body.documentUrl || '').trim()
+  }
+  if (body.pickupLocation !== undefined) {
+    fields.pickupLocation = String(body.pickupLocation || '').trim()
+  }
+  if (body.pickupLocationData !== undefined) {
+    fields.pickupLocationData = normalizeLocationData(body.pickupLocationData || {})
+  }
+  if (body.deliveryLocation !== undefined) {
+    fields.deliveryLocation = String(body.deliveryLocation || '').trim()
+  }
+  if (body.deliveryLocationData !== undefined) {
+    fields.deliveryLocationData = normalizeLocationData(body.deliveryLocationData || {})
+  }
+  if (body.pickupDate !== undefined) {
+    fields.pickupDate = body.pickupDate ? new Date(body.pickupDate) : null
+  }
+  if (body.pickupTime !== undefined) {
+    fields.pickupTime = String(body.pickupTime || '').trim()
+  }
+  if (body.deliveryDate !== undefined) {
+    fields.deliveryDate = body.deliveryDate ? new Date(body.deliveryDate) : null
+  }
+  if (body.deliveryTime !== undefined) {
+    fields.deliveryTime = String(body.deliveryTime || '').trim()
+  }
+  if (body.timeWindowStart !== undefined) {
+    fields.timeWindowStart = String(body.timeWindowStart || '').trim()
+  }
+  if (body.timeWindowEnd !== undefined) {
+    fields.timeWindowEnd = String(body.timeWindowEnd || '').trim()
+  }
+  if (body.timings !== undefined) {
+    fields.timings = String(body.timings || '').trim()
+  }
+  if (body.receivingPoc !== undefined) {
+    fields.receivingPoc = String(body.receivingPoc || '').trim()
+  }
+  if (body.pickupContactPhone !== undefined) {
+    fields.pickupContactPhone = String(body.pickupContactPhone || '').trim()
+  }
+  if (body.specialRequirements !== undefined) {
+    fields.specialRequirements = String(body.specialRequirements || '').trim()
+  }
+  if (body.additionalNotes !== undefined) {
+    fields.additionalNotes = String(body.additionalNotes || '').trim()
+  }
+
+  if (
+    fields.timeWindowStart !== undefined ||
+    fields.timeWindowEnd !== undefined
+  ) {
+    const start = fields.timeWindowStart
+    const end = fields.timeWindowEnd
+    if (fields.timings === undefined && (start || end)) {
+      fields.timings = formatDeliveryTimeWindow(start, end)
+    }
+    if (fields.deliveryTime === undefined && start) {
+      fields.deliveryTime = start
+    }
+  }
+
+  return fields
+}
 
 const toRounded = (value) => {
   if (!Number.isFinite(Number(value))) return null
@@ -434,35 +575,8 @@ exports.createDelivery = asyncHandler(async (req, res) => {
     leadId,
     deliveryNumber,
     status: 'draft',
-    description: String(req.body.description || '').trim(),
-    loadDescription: String(req.body.loadDescription || '').trim(),
-    loadWeight: req.body.weight != null ? Number(req.body.weight) : null,
-    dimensions: {
-      lengthFeet: req.body.dimensions?.lengthFeet != null ? Number(req.body.dimensions.lengthFeet) : null,
-      widthFeet: req.body.dimensions?.widthFeet != null ? Number(req.body.dimensions.widthFeet) : null,
-      heightFeet: req.body.dimensions?.heightFeet != null ? Number(req.body.dimensions.heightFeet) : null,
-    },
-    materialType: String(req.body.metalType || '').trim(),
-    packageCount: req.body.packageCount != null ? Number(req.body.packageCount) : null,
-    loadingEquipment: Array.isArray(req.body.loadingEquipment)
-      ? req.body.loadingEquipment.map((v) => String(v || '').trim()).filter(Boolean)
-      : [],
-    bidDeadline: req.body.bidDeadline ? new Date(req.body.bidDeadline) : null,
-    documentUrl: String(req.body.documentUrl || '').trim(),
-    pickupLocation: String(req.body.pickupLocation || '').trim(),
-    pickupLocationData: normalizeLocationData(req.body.pickupLocationData || {}),
-    deliveryLocation: String(req.body.deliveryLocation || '').trim(),
-    deliveryLocationData: normalizeLocationData(req.body.deliveryLocationData || {}),
-    pickupDate: req.body.pickupDate ? new Date(req.body.pickupDate) : null,
-    pickupTime: String(req.body.pickupTime || '').trim(),
-    deliveryDate: req.body.deliveryDate ? new Date(req.body.deliveryDate) : null,
-    deliveryTime: String(req.body.deliveryTime || '').trim(),
-    timings: String(req.body.timings || '').trim(),
-    receivingPoc: String(req.body.receivingPoc || '').trim(),
-    pickupContactPhone: String(req.body.pickupContactPhone || '').trim(),
-    specialRequirements: String(req.body.specialRequirements || '').trim(),
-    additionalNotes: String(req.body.additionalNotes || '').trim(),
     statusHistory: [{ status: 'draft', changedAt: new Date() }],
+    ...buildDeliveryFieldsFromBody(req.body),
   })
 
   await auditService.log({
@@ -475,6 +589,86 @@ exports.createDelivery = asyncHandler(async (req, res) => {
   })
 
   return created(res, { delivery }, 'Freight request created')
+})
+
+exports.updateDelivery = asyncHandler(async (req, res) => {
+  const { deliveryId } = req.params
+  const body = req.body || {}
+
+  const hasUpdates = DELIVERY_EDIT_BODY_KEYS.some((key) => body[key] !== undefined)
+  if (!hasUpdates) {
+    return badRequest(res, 'At least one editable field is required')
+  }
+
+  const delivery = await Delivery.findById(deliveryId)
+  if (!delivery) return notFound(res, 'Freight request not found')
+
+  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  if (DELIVERY_EDIT_BLOCKED_STATUSES.has(delivery.status)) {
+    return badRequest(res, `Cannot edit a delivery with status ${delivery.status}`)
+  }
+
+  if (DELIVERY_POST_AWARD_STATUSES.has(delivery.status)) {
+    const lockedAttempt = [...DELIVERY_POST_AWARD_LOCKED_BODY_KEYS].filter((key) => body[key] !== undefined)
+    if (lockedAttempt.length) {
+      return badRequest(
+        res,
+        `Cannot change load/bid fields after a carrier is selected: ${lockedAttempt.join(', ')}`
+      )
+    }
+  }
+
+  const fields = buildDeliveryFieldsFromBody(body)
+
+  if (
+    fields.bidDeadline != null &&
+    ['draft', 'bidding_sent'].includes(delivery.status) &&
+    (Number.isNaN(fields.bidDeadline.getTime()) || fields.bidDeadline <= new Date())
+  ) {
+    return badRequest(res, 'bidDeadline must be a valid future date while bidding is open')
+  }
+
+  Object.assign(delivery, fields)
+  await delivery.save()
+
+  if (
+    fields.bidDeadline !== undefined &&
+    delivery.status === 'bidding_sent' &&
+    fields.bidDeadline
+  ) {
+    await FreightBid.updateMany(
+      {
+        deliveryId: delivery._id,
+        status: { $in: ['sent', 'resubmit_requested'] },
+      },
+      { $set: { expiresAt: fields.bidDeadline } }
+    )
+  }
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.DELIVERY_EDITED,
+    leadId: delivery.leadId,
+    customerId: access.lead.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      deliveryId: delivery._id,
+      deliveryNumber: delivery.deliveryNumber,
+      updatedFields: Object.keys(fields),
+    },
+  })
+
+  const updated = await Delivery.findById(delivery._id)
+    .populate(DELIVERY_DETAIL_POPULATE)
+    .lean()
+
+  const payload = await buildDeliveryDetailPayload(updated, req.user._id)
+  return success(res, payload, 'Freight request updated')
 })
 
 exports.getProjectDeliveries = asyncHandler(async (req, res) => {

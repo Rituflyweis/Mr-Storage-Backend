@@ -129,6 +129,52 @@ router.post('/',
   ctrl.createDelivery
 )
 
+const deliveryEditValidators = [
+  body('description').optional().isString().trim(),
+  body('loadDescription').optional().isString().trim(),
+  body('weight').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('dimensions').optional().isObject(),
+  body('dimensions.lengthFeet').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('dimensions.widthFeet').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('dimensions.heightFeet').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('metalType').optional().isString().trim(),
+  body('packageCount').optional({ nullable: true }).isInt({ min: 0 }),
+  body('loadingEquipment').optional().isArray(),
+  body('loadingEquipment.*').optional().isString().trim(),
+  body('bidDeadline').optional({ nullable: true }).isISO8601(),
+  body('documentUrl').optional().isString().trim(),
+  body('pickupLocation').optional().isString().trim(),
+  body('pickupLocationData').optional().isObject(),
+  body('pickupLocationData.address').optional().isString().trim(),
+  body('pickupLocationData.coordinates.lat').optional({ nullable: true }).isFloat(),
+  body('pickupLocationData.coordinates.lng').optional({ nullable: true }).isFloat(),
+  body('deliveryLocation').optional().isString().trim(),
+  body('deliveryLocationData').optional().isObject(),
+  body('deliveryLocationData.address').optional().isString().trim(),
+  body('deliveryLocationData.coordinates.lat').optional({ nullable: true }).isFloat(),
+  body('deliveryLocationData.coordinates.lng').optional({ nullable: true }).isFloat(),
+  body('pickupDate').optional({ nullable: true }).isISO8601(),
+  body('pickupTime').optional().isString().trim(),
+  body('deliveryDate').optional({ nullable: true }).isISO8601(),
+  body('deliveryTime').optional().isString().trim(),
+  body('timeWindowStart').optional().isString().trim(),
+  body('timeWindowEnd').optional().isString().trim(),
+  body('timings').optional().isString().trim(),
+  body('receivingPoc').optional().isString().trim(),
+  body('pickupContactPhone').optional().isString().trim(),
+  body('specialRequirements').optional().isString().trim(),
+  body('additionalNotes').optional().isString().trim(),
+]
+
+router.put('/:deliveryId',
+  [
+    param('deliveryId').isMongoId(),
+    ...deliveryEditValidators,
+  ],
+  validate,
+  ctrl.updateDelivery
+)
+
 router.post('/:deliveryId/send-bids',
   [
     param('deliveryId').isMongoId(),

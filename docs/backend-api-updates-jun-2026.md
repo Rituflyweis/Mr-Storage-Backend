@@ -15,9 +15,10 @@ Frontend integration log for changes shipped in this session.
 3. [Admin escalations — response shape & user details](#3-admin-escalations--response-shape--user-details)
 4. [Shipper files — BOM vs submitted amount comparison](#4-shipper-files--bom-vs-submitted-amount-comparison)
 5. [Delivery reschedule API](#5-delivery-reschedule-api)
-6. [Load planning projects — totalLoads & totalBundles](#6-load-planning-projects--totalloads--totalbundles)
-7. [Files changed](#7-files-changed)
-8. [Frontend checklist](#8-frontend-checklist)
+6. [Delivery full edit API](#6-delivery-full-edit-api)
+7. [Load planning projects — totalLoads & totalBundles](#7-load-planning-projects--totalloads--totalbundles)
+8. [Files changed](#8-files-changed)
+9. [Frontend checklist](#9-frontend-checklist)
 
 ---
 
@@ -724,7 +725,95 @@ Reschedule a freight delivery date and time window without editing the full deli
 
 ---
 
-## 6. Load planning projects — totalLoads & totalBundles
+## 6. Delivery full edit API
+
+**Added:** June 20, 2026
+
+Edit the full freight delivery document (same fields as create). Use **`PATCH .../reschedule`** for date-only moves with reason/history.
+
+### Endpoint
+
+| Method | Path | Role |
+|--------|------|------|
+| PUT | `/api/plant/deliveries/:deliveryId` | `plant` |
+
+**Pre-fill:** `GET /api/plant/deliveries/:deliveryId/detail` → `data.delivery.formDetails`
+
+### Request body
+
+Send one or more fields (same names as `POST /api/plant/deliveries`, **without** `leadId`):
+
+```json
+{
+  "description": "Project outbound freight",
+  "loadDescription": "18 bundle shipment — revised",
+  "weight": 62400,
+  "dimensions": { "lengthFeet": 51, "widthFeet": 8.5, "heightFeet": 8 },
+  "metalType": "framing, panels, trim",
+  "packageCount": 18,
+  "loadingEquipment": ["forklift", "crane"],
+  "bidDeadline": "2026-06-10T18:00:00.000Z",
+  "documentUrl": "https://bucket.s3.../freight-sheet-v2.pdf",
+  "pickupLocation": "Plant Yard, Houston",
+  "pickupLocationData": {
+    "address": "Plant Yard, Houston",
+    "coordinates": { "lat": 29.7604, "lng": -95.3698 }
+  },
+  "deliveryLocation": "ABC Site, Austin",
+  "deliveryLocationData": {
+    "address": "ABC Site, Austin",
+    "coordinates": { "lat": 30.2672, "lng": -97.7431 }
+  },
+  "pickupDate": "2026-06-12T00:00:00.000Z",
+  "pickupTime": "09:00",
+  "deliveryDate": "2026-06-13T00:00:00.000Z",
+  "deliveryTime": "13:00",
+  "timeWindowStart": "09:00",
+  "timeWindowEnd": "13:00",
+  "timings": "09:00 - 13:00",
+  "receivingPoc": "John Doe",
+  "pickupContactPhone": "+1-555-222-3344",
+  "specialRequirements": "Do not stack top layer panels",
+  "additionalNotes": "Call 30 mins before arrival"
+}
+```
+
+| Body field | Maps to | Notes |
+|------------|---------|-------|
+| `weight` | `loadWeight` | Alias (same as create) |
+| `metalType` | `materialType` | Alias (same as create) |
+| `timeWindowStart` / `timeWindowEnd` | schedule fields | Also syncs `timings` and `deliveryTime` when omitted |
+
+**Not editable:** `deliveryNumber`, `leadId`, `status` (use `PATCH .../status`), `selectedCarrierBidId`
+
+### Response `data`
+
+Same rich shape as **`GET .../detail`** (`data.delivery` with `formDetails`, `deliverySchedule`, shipper/carrier blocks, etc.).
+
+### Rules
+
+| Status | Edit |
+|--------|------|
+| `draft`, `bidding_sent` | Full edit |
+| `carrier_selected`, `scheduled`, `confirmed`, `in_transit`, `delayed` | Schedule, locations, contacts, notes — **cannot** change `weight`, `dimensions`, `metalType`, `packageCount`, `bidDeadline`, `loadDescription` |
+| `delivered`, `cancelled` | **400** blocked |
+
+- At least one body field required
+- `bidDeadline` must be future when status is `draft` or `bidding_sent`
+- If `bidDeadline` changes while `bidding_sent`, open bid `expiresAt` values sync for `sent` / `resubmit_requested` bids
+
+### curl
+
+```bash
+curl -X PUT "https://flyweistechnology.com/api/plant/deliveries/DELIVERY_ID" \
+  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{ "loadDescription": "18 bundle shipment — revised", "weight": 62400 }'
+```
+
+---
+
+## 7. Load planning projects — totalLoads & totalBundles
 
 **Added:** June 20, 2026
 
@@ -776,7 +865,7 @@ Query params `page` and `limit` are accepted by the client but not yet applied s
 
 ---
 
-## 7. Files changed
+## 8. Files changed
 
 | Area | Files |
 |------|-------|
@@ -785,11 +874,12 @@ Query params `page` and `limit` are accepted by the client but not yet applied s
 | Admin escalations | `src/utils/escalationLeadRow.js`, `src/controllers/admin/escalation.controller.js` |
 | Shipper amount comparison | `src/utils/shipperAmountComparison.js`, `src/controllers/plant/shipper.controller.js`, `src/controllers/plant/project.controller.js` |
 | Delivery reschedule | `src/models/Delivery.js`, `src/controllers/plant/delivery.controller.js`, `src/routes/plant/delivery.routes.js`, `src/config/constants.js` |
+| Delivery full edit | `src/controllers/plant/delivery.controller.js`, `src/routes/plant/delivery.routes.js`, `src/config/constants.js` |
 | Load planning projects | `src/controllers/plant/bundlePlan.controller.js` |
 
 ---
 
-## 8. Frontend checklist
+## 9. Frontend checklist
 
 ### Plant — freight
 
@@ -817,6 +907,13 @@ Query params `page` and `limit` are accepted by the client but not yet applied s
 - [ ] Project tab: `GET /api/plant/projects/:leadId/shipper-files` — use `quoteValue` + `amountComparison`
 - [ ] Highlight row when `amountComparison.isMismatch === true`
 - [ ] When `canCompare === false`, show “Awaiting vendor quote” (not a mismatch)
+
+### Plant — delivery edit
+
+- [ ] Edit form → `PUT /api/plant/deliveries/:deliveryId` (reuse create field names)
+- [ ] Pre-fill from `GET .../detail` → `data.delivery.formDetails`
+- [ ] After save, response is full detail payload (no extra GET required)
+- [ ] Reschedule-only modal still uses `PATCH .../reschedule`
 
 ### Plant — delivery reschedule
 
