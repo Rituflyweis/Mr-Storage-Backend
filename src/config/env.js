@@ -52,4 +52,10 @@ module.exports = {
 
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
   MASTER_OTP: process.env.NODE_ENV !== 'production' ? (process.env.MASTER_OTP || null) : null,
+
+  INVOICE_COMPANY_NAME: process.env.INVOICE_COMPANY_NAME || '',
+  INVOICE_COMPANY_ADDRESS: process.env.INVOICE_COMPANY_ADDRESS || '',
+  INVOICE_COMPANY_EMAIL: process.env.INVOICE_COMPANY_EMAIL || '',
+  INVOICE_COMPANY_WEBSITE: process.env.INVOICE_COMPANY_WEBSITE || '',
+  INVOICE_LOGO_URL: process.env.INVOICE_LOGO_URL || '',
 }

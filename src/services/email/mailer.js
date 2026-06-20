@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer')
 const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM } = require('../../config/env')
+const { getInvoiceCompany } = require('../../config/invoiceCompany')
 const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
 const path = require('path')
 const fs = require('fs')
@@ -49,6 +50,39 @@ const escapeHtml = (str) => {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+const formatMultilineAddressHtml = (lines = []) =>
+  lines.filter(Boolean).map((line) => escapeHtml(line)).join('<br />')
+
+const buildInvoiceCompanyTemplateFields = () => {
+  const company = getInvoiceCompany()
+  const detailLines = [
+    formatMultilineAddressHtml(company.addressLines),
+    company.email ? escapeHtml(company.email) : '',
+    company.website ? escapeHtml(company.website) : '',
+  ].filter(Boolean)
+
+  const logoBlock = company.logoUrl
+    ? `<img src="${escapeHtml(company.logoUrl)}" alt="${escapeHtml(company.name)}" class="logo" />`
+    : `<div style="font-size:18px;font-weight:800;color:#111827;letter-spacing:0.5px;line-height:1.3;">${escapeHtml(company.name)}</div>`
+
+  return {
+    LOGO_BLOCK: logoBlock,
+    COMPANY_NAME: escapeHtml(company.name),
+    COMPANY_DETAILS_HTML: detailLines.join('<br />'),
+  }
+}
+
+const buildCustomerBillToAddressHtml = ({ company = '', location = '' } = {}) => {
+  const lines = [String(company || '').trim(), String(location || '').trim()].filter(Boolean)
+  if (!lines.length) return ''
+  return formatMultilineAddressHtml(lines)
+}
+
+const buildCustomerAddressBlock = (customerAddressHtml) => {
+  if (!customerAddressHtml) return ''
+  return `<div class="customer-copy">${customerAddressHtml}</div>`
 }
 
 const formatInvoiceMoney = (value) => {
@@ -342,13 +376,21 @@ const sendQuotation = async ({ toEmail, customerName, quotation }) => {
 }
 
 
-const sendInvoice = async ({ toEmail, customerName, invoice, paymentSchedule = null }) => {
+const sendInvoice = async ({
+  toEmail,
+  customerName,
+  customerAddressHtml = '',
+  invoice,
+  paymentSchedule = null,
+}) => {
   const inv = invoice?.toObject ? invoice.toObject() : invoice
   const template = loadTemplate('invoice')
   const hasDeposit = inv.depositAmount != null && Number(inv.depositAmount) !== 0
   const paymentScheduleSection = buildPaymentScheduleSection(paymentSchedule, inv)
   const html = fillTemplate(template, {
+    ...buildInvoiceCompanyTemplateFields(),
     CUSTOMER_NAME: escapeHtml(customerName),
+    CUSTOMER_ADDRESS_BLOCK: buildCustomerAddressBlock(customerAddressHtml),
     INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || '—'),
     DATE: formatInvoiceDate(inv.date),
     DUE_DATE: buildInvoiceDueDate(inv),
@@ -758,6 +800,7 @@ const sendFreightBidResubmitRequestEmail = async ({
 
 module.exports = {
   isSmtpConfigured,
+  buildCustomerBillToAddressHtml,
   sendQuotation,
   sendInvoice,
   sendOtp,

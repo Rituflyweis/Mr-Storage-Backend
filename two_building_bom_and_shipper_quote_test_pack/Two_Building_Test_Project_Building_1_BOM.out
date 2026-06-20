@@ -1,0 +1,99 @@
+===============================================================================
+ TWO BUILDING TEST - BLDG 1  1.RIGID & ENDWALL FRAME MEMBERS:   06/20/26  10:30am
+
+                                                                 Total    Total
+ Quan Mark   Description           Part     Punch       Length  Weight     Cost
+===============================================================================
+    2 B1RF1  RF Column                                      19'04-00"   610.9  1256.67
+    2 B1RF2  RF Rafter                                      28'06-00"   980.4  2040.60
+    2 B1RF3  RF Rafter                                      30'02-00"  1086.0  2238.37
+    2 B1WC1  Wind Column           W8X13         PPEP       16'08-00"   433.3   933.33
+    2 B1EC1  EW Column             W8X10         PPEP       14'03-00"   285.0   741.00
+    2 B1ER1  EW Rafter             W12X19        PPEP       23'09-00"   902.5  1662.50
+    4 B1EB1  Ext Beam              W8X10         PPEP        6'01-00"   243.3   632.67
+    4 B1DJ1  Door Jamb             C83516        PPEP       12'03-00"   149.5   124.95
+
+-------------------------------------------------------------------------------
+                                                   Total:     4690.9  9630.09
+
+
+===============================================================================
+ TWO BUILDING TEST - BLDG 1  2.PURLINS, EAVE STRUTS, WALL GIRTS:06/20/26  10:30am
+
+                                                                 Total    Total
+ Quan Mark   Description           Part     Punch       Length  Weight     Cost
+===============================================================================
+    8 B1P1   Roof Purlin           Z82514        PPEP       25'03-00"   636.3   521.16
+   12 B1P2   Roof Purlin           Z82514        PPEP       28'07-00"  1080.5   884.94
+    8 B1P3   Roof Purlin           Z82516        PPEP       32'02-00"   887.8   674.21
+    6 B1P4   Roof Purlin           Z82516        PPEP       35'05-00"   733.1   556.75
+    4 B1E1   Eave Strut            08534DU3      PPEP       24'00-00"   393.6   302.40
+    4 B1E2   Eave Strut            08534DU2      PPEP       26'05-00"   406.8   327.57
+    2 B1E3   Eave Strut            08534DU2      PPEP       30'00-00"   231.0   186.00
+   10 B1G1   Wall Girt             Z83512        PPEP       31'04-00"  1645.0  1240.80
+    8 B1G2   Wall Girt             Z83512        PPEP       33'06-00"  1407.0  1061.28
+    8 B1G3   Wall Girt             Z83514        PPEP       22'08-00"   879.5   674.56
+    6 B1G4   Wall Girt             Z82516        PPEP       19'01-00"   395.0   299.99
+    4 B1G5   Wall Girt             Z82514        PPEP       16'06-00"   207.9   170.28
+   18 B1BR1  RF Flg Brc            B4214         PPEP       21'00-00"   536.8   434.70
+   12 B1BR2  RF Flg Brc            B4214         PPEP       15'06-00"   264.1   213.90
+   10 B1BR3  RF Flg Brc            B4214         PPEP       11'08-00"   165.7   134.17
+    8 B1BR4  EW Flg Brc            B4214         PPEP        9'09-00"   110.8    89.70
+    6 B1BR5  EW Flg Brc            B4214         PPEP        7'11-00"    67.5    54.63
+
+-------------------------------------------------------------------------------
+                                                   Total:    10048.4  7827.04
+
+
+===============================================================================
+ TWO BUILDING TEST - BLDG 1  3.ROOF & WALL SHEETING:            06/20/26  10:30am
+
+                                                                 Total    Total
+ Quan Mark   Description           Part     Punch       Length  Weight     Cost
+===============================================================================
+   44 B1RS1  Roof Sheet            RLOC26        NPP        20'01-00"  2341.7  2827.73
+   33 B1RS2  Roof Sheet            RLOC26        NPP        22'05-00"  1960.3  2367.20
+   26 B1WS1  Wall Sheet            PBR26         NPP        15'06-00"  1108.3  1229.15
+   24 B1WS2  Wall Sheet            PBR26         NPP        17'00-00"  1122.0  1244.40
+    4 B1ESL1 L_EW Sheet            RLOC26        NPP        13'05-00"   142.2   171.73
+    4 B1ESL2 L_EW Sheet            RLOC26        NPP        14'02-00"   150.2   181.33
+    4 B1ESR1 R_EW Sheet            RLOC26        NPP        13'08-00"   144.9   174.93
+    4 B1ESR2 R_EW Sheet            RLOC26        NPP        14'05-00"   152.8   184.53
+   12 B1SOF1 Soffit                RLOC26        NPP         9'06-00"   302.1   364.80
+   10 B1SOF2 Soffit                RLOC26        NPP         8'10-00"   234.1   282.67
+    8 B1FAS1 Fascia                PBR26         NPP        12'04-00"   271.3   300.93
+    8 B1FAS2 Fascia                PBR26         NPP        13'01-00"   287.8   319.23
+
+-------------------------------------------------------------------------------
+                                                   Total:     8217.7  9648.63
+
+
+===============================================================================
+ TWO BUILDING TEST - BLDG 1  4.TRIM, FLASHING & ACCESSORIES:    06/20/26  10:30am
+
+                                                                 Total    Total
+ Quan Mark   Description           Part     Punch       Length  Weight     Cost
+===============================================================================
+    8 B1RT1  Rake Trim             TRIM-RAKE     NPP        13'00-00"   109.2   218.40
+    8 B1RT2  Rake Trim             TRIM-RAKE     NPP        14'00-00"   117.6   235.20
+   10 B1ET1  Eave Trim             TRIM-EAVE     NPP        11'06-00"   128.8   235.75
+    8 B1JT1  Jamb Trim             TRIM-JAMB     NPP         9'00-00"    69.1   140.40
+    8 B1GU1  Gutter                GUTTER6       NPP        15'00-00"   168.0   540.00
+    6 B1DS1  Downspout             DOWNSP4       NPP        11'00-00"    59.4   214.50
+   10 B1PL1  Hdr-Jmb Plt           CL-100        PPEP           6-00"     6.8    21.65
+   12 B1PL2  Grt-Jmb Plt           CL-103        PPEP           9-08"    20.7    41.14
+   12 B1PL3  Jmb-Bas Plt           CL-104        PPEP           6-00"     8.9    28.26
+    8 B1PL4  Raf-Grt Plt           SP2           PPEP          11-12"     9.6    49.35
+   24 B1AB1  Anchor Bolt           AB36A1        PPEP           0-00"     3.6    10.08
+   24 B1AB2  Anchor Bolt           AB36A2        PPEP           0-00"     3.6    10.08
+   35 B1BTL  Butyl Tape            BTL-A1        NPP            0-00"    70.0   183.75
+   19 B1MRS  Metal Roof Seal       MRS-A1        NPP            0-00"    16.2   570.00
+ 1500 B1SCR  Lap Screws            SCREW-A1      NPP            0-00"    45.0   120.00
+
+-------------------------------------------------------------------------------
+                                                   Total:      836.5  2618.56
+
+
+Summary Reports
+Building 1 Total Weight: 23,793.5
+Building 1 Total Cost: 29,724.32

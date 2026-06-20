@@ -248,12 +248,18 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
   if (!customer.email) return badRequest(res, 'Customer has no email address on file')
 
   const paymentSchedule = await loadPaymentScheduleForInvoice(invoice)
+  const lead = await Lead.findById(invoice.leadId).select('location').lean()
+  const customerAddressHtml = mailer.buildCustomerBillToAddressHtml({
+    company: customer.company,
+    location: customer.location || lead?.location || '',
+  })
 
   let emailResult = { pdfAttached: true, pdfError: null, paymentScheduleIncluded: false, paymentScheduleStageCount: 0 }
   try {
     emailResult = await mailer.sendInvoice({
       toEmail: customer.email,
       customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || customer.firstName,
+      customerAddressHtml,
       invoice,
       paymentSchedule,
     })

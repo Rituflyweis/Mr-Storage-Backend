@@ -1,0 +1,293 @@
+{
+  "meta": {
+    "pack": "two_building_bom_and_shipper_quote_test_pack",
+    "mode": "single_building_merged_out_files",
+    "leadId": "6a366c5eafe5382d86421f3d",
+    "buildingId": "6a366c5fafe5382d86421f4b",
+    "bomJobId": "6a366c5fafe5382d86421f52",
+    "consolidatedBOMId": "6a366c6715d1c37f83d559c3",
+    "shipperRequestId": "6a366c68afe5382d86422007",
+    "parsedLineCounts": {
+      "building1": 52,
+      "building2": 52,
+      "merged": 52
+    },
+    "extractedLineCount": 52,
+    "consolidatedGroupCount": 52,
+    "consolidatedTotalCost": 29724.320000000007,
+    "consolidatedTotalWeight": 23793.49999999999,
+    "packExpected": {
+      "combinedItems": 104,
+      "totalCost": 61812.83,
+      "totalWeight": 49430.4
+    }
+  },
+  "comparisonSummary": {
+    "expectedLines": 52,
+    "vendorLines": 208,
+    "matchedLines": 52,
+    "missingItems": 0,
+    "extraItems": 156,
+    "qtyMismatches": 0,
+    "lengthMismatches": 0,
+    "weightMismatches": 0,
+    "priceMismatches": 0,
+    "partMismatches": 0,
+    "ambiguousMatches": 0,
+    "manualReviewRequired": 156,
+    "extractionNote": "shipper-comparison-v4.8-row-preserved-no-length-normalization: row-preserved BOM matching with duplicate quantity-aware pairing and no-length normalization. Single-building row-preserved BOMs pass only when vendor preserves separate comparable lines.",
+    "expectedSource": "bom_items_row_preserved",
+    "bomItemIdsFound": 52,
+    "bomItemsLoaded": 52,
+    "serviceVersion": "shipper-comparison-v4.8-row-preserved-no-length-normalization",
+    "extractionFormat": "central_states",
+    "extractionMethod": "pdf_text",
+    "extractedVendorLines": 208
+  },
+  "exceptionCount": 156,
+  "exceptionsSample": [
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1DJ1 (12.250ft) not present in Consolidated BOM.",
+      "mark": "B1DJ1"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1EB1 (6.083ft) not present in Consolidated BOM.",
+      "mark": "B1EB1"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1EC1 (14.250ft) not present in Consolidated BOM.",
+      "mark": "B1EC1"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1ER1 (23.750ft) not present in Consolidated BOM.",
+      "mark": "B1ER1"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1RF1 (19.333ft) not present in Consolidated BOM.",
+      "mark": "B1RF1"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1RF2 (28.500ft) not present in Consolidated BOM.",
+      "mark": "B1RF2"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1RF3 (30.167ft) not present in Consolidated BOM.",
+      "mark": "B1RF3"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1WC1 (16.667ft) not present in Consolidated BOM.",
+      "mark": "B1WC1"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1BR1 (21.000ft) not present in Consolidated BOM.",
+      "mark": "B1BR1"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1BR2 (15.500ft) not present in Consolidated BOM.",
+      "mark": "B1BR2"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1BR3 (11.667ft) not present in Consolidated BOM.",
+      "mark": "B1BR3"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1BR4 (9.750ft) not present in Consolidated BOM.",
+      "mark": "B1BR4"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1BR5 (7.917ft) not present in Consolidated BOM.",
+      "mark": "B1BR5"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1E1 (24.000ft) not present in Consolidated BOM.",
+      "mark": "B1E1"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1E2 (26.417ft) not present in Consolidated BOM.",
+      "mark": "B1E2"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1E3 (30.000ft) not present in Consolidated BOM.",
+      "mark": "B1E3"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1G1 (31.333ft) not present in Consolidated BOM.",
+      "mark": "B1G1"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1G2 (33.500ft) not present in Consolidated BOM.",
+      "mark": "B1G2"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1G3 (22.667ft) not present in Consolidated BOM.",
+      "mark": "B1G3"
+    },
+    {
+      "issueType": "extra",
+      "severity": "medium",
+      "reason": "Vendor quoted mark B1G4 (19.083ft) not present in Consolidated BOM.",
+      "mark": "B1G4"
+    }
+  ],
+  "mismatchSample": [
+    {
+      "_id": "6a366c6aafe5382d86422114",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422115",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422116",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422117",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422118",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422119",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642211a",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642211b",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642211c",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642211d",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642211e",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642211f",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422120",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422121",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422122",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422123",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422124",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422125",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422126",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422127",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422128",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422129",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642212a",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642212b",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642212c",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642212d",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642212e",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d8642212f",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422130",
+      "status": "extra_in_vendor_quote"
+    },
+    {
+      "_id": "6a366c6aafe5382d86422131",
+      "status": "extra_in_vendor_quote"
+    }
+  ],
+  "mismatchTotal": 156
+}
