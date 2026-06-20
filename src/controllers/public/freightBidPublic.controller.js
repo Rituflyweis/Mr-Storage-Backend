@@ -4,7 +4,7 @@ const FreightCarrier = require('../../models/FreightCarrier')
 const Lead = require('../../models/Lead')
 const auditService = require('../../services/audit.service')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
-const { mapPublicFreightBidRevisionNote } = require('../../utils/freightBidDisplay')
+const { mapPublicFreightBidInfo } = require('../../utils/freightBidDisplay')
 const { notifyPlantUsersForLead } = require('../../utils/notifyPlantUsers')
 const { success, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -45,11 +45,8 @@ exports.getFreightBidInfo = asyncHandler(async (req, res) => {
     ? await loadFreightLoadDetailsByLeadId(delivery.leadId)
     : { bundlePlan: null, packingListPlan: null, bundles: [], packingLists: [] }
 
-  const revisionNote = mapPublicFreightBidRevisionNote(bid)
-
   return success(res, {
-    bidId: bid._id,
-    status: bid.status,
+    ...mapPublicFreightBidInfo(bid),
     carrierName: carrier?.carrierName || '',
     projectName: lead?.projectName || '',
     jobId: lead?.jobId || '',
@@ -61,17 +58,6 @@ exports.getFreightBidInfo = asyncHandler(async (req, res) => {
     packageCount: delivery.packageCount ?? null,
     pickupLocation: delivery.pickupLocation || delivery.pickupLocationData?.address || '',
     deliveryLocation: delivery.deliveryLocation || delivery.deliveryLocationData?.address || '',
-    bidDeadline: bid.expiresAt,
-    quotedAmount: bid.quotedAmount,
-    carrierNotes: bid.carrierNotes || '',
-    resubmitNote: revisionNote,
-    plantNote: revisionNote,
-    resubmitRequestedAt: bid.resubmitRequestedAt || null,
-    requestedBidAmount:
-      bid.resubmitRequestedAmount != null && Number.isFinite(Number(bid.resubmitRequestedAmount))
-        ? Number(bid.resubmitRequestedAmount)
-        : null,
-    resubmitCount: bid.resubmitCount || 0,
     bundlePlan: loadDetails.bundlePlan,
     packingListPlan: loadDetails.packingListPlan,
     bundles: loadDetails.bundles,

@@ -282,7 +282,8 @@ Lists projects that have a non-cancelled bundle plan.
       "location": "Houston, TX",
       "bundlePlanId": "...",
       "fileReceivedAt": "2026-06-10T11:00:00.000Z",
-      "totalLoadPlanning": 18,
+      "totalBundles": 18,
+      "totalLoads": 2,
       "status": "confirmed",
       "updatedAt": "2026-06-15T09:00:00.000Z"
     }
@@ -293,7 +294,8 @@ Lists projects that have a non-cancelled bundle plan.
 
 | Field | Meaning |
 |-------|---------|
-| `totalLoadPlanning` | Bundle count on latest bundle plan |
+| `totalBundles` | Bundle count on latest bundle plan |
+| `totalLoads` | Truck/load count from latest packing list plan (`0` if truck plan not generated yet) |
 | `status` | Bundle plan status (`draft`, `confirmed`, etc.) |
 
 **Detail screen:** `GET /api/plant/projects/:projectId/load-planning`

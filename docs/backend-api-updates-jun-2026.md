@@ -14,8 +14,10 @@ Frontend integration log for changes shipped in this session.
 2. [Sales building sync — increase & reduce](#2-sales-building-sync--increase--reduce)
 3. [Admin escalations — response shape & user details](#3-admin-escalations--response-shape--user-details)
 4. [Shipper files — BOM vs submitted amount comparison](#4-shipper-files--bom-vs-submitted-amount-comparison)
-5. [Files changed](#5-files-changed)
-6. [Frontend checklist](#6-frontend-checklist)
+5. [Delivery reschedule API](#5-delivery-reschedule-api)
+6. [Load planning projects — totalLoads & totalBundles](#6-load-planning-projects--totalloads--totalbundles)
+7. [Files changed](#7-files-changed)
+8. [Frontend checklist](#8-frontend-checklist)
 
 ---
 
@@ -78,14 +80,63 @@ Template: `carrier-freight-bid-resubmit.html`
 | Previous bid amount | `10,000.00` |
 | **Requested bid amount** | `6,000.00` (was N/A before fix) |
 
-### Public carrier page
+### Public carrier page — `GET /api/public/freight-bids/:token`
 
-`GET /api/public/freight-bids/:token` returns `requestedBidAmount` while status is `resubmit_requested`.
+No JWT — token is in the URL path.
+
+When plant requests a revision (`status === "resubmit_requested"`), the GET response includes the same revision fields as the plant resubmit POST. `quotedAmount` is `null` (cleared so the carrier enters a new quote); use **`priorQuotedAmount`** for their previous submission.
+
+#### Revision fields (`status === "resubmit_requested"`)
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `priorQuotedAmount` | number \| null | Carrier’s previous bid (from `submissionHistory`) |
+| `requestedBidAmount` | number \| null | Plant’s target/counter-offer (`resubmitRequestedAmount`) |
+| `note` | string | Plant revision message (alias of `resubmitNote` / `plantNote`) |
+| `resubmitNote` | string | Same as `note` |
+| `plantNote` | string | Same as `note` |
+| `resubmitRequestedAt` | ISO date \| null | When revision was requested |
+| `resubmitCount` | number | Revision round count |
+| `quotedAmount` | null | Cleared until carrier resubmits |
+| `carrierNotes` | string | Cleared until carrier resubmits |
+
+#### Example GET `data` (revision requested)
+
+```json
+{
+  "bidId": "...",
+  "status": "resubmit_requested",
+  "carrierName": "Metro Freight",
+  "projectName": "ABC Warehouse",
+  "jobId": "PRO-001",
+  "deliveryNumber": "DEL-0001",
+  "description": "18 bundle shipment",
+  "pickupLocation": "Plant Yard, Houston",
+  "deliveryLocation": "ABC Site, Austin",
+  "bidDeadline": "2026-06-24T12:00:00.000Z",
+  "quotedAmount": null,
+  "carrierNotes": "",
+  "priorQuotedAmount": 10000,
+  "requestedBidAmount": 6000,
+  "note": "Please revise — pickup window moved to next week.",
+  "resubmitNote": "Please revise — pickup window moved to next week.",
+  "plantNote": "Please revise — pickup window moved to next week.",
+  "resubmitRequestedAt": "2026-06-20T10:00:00.000Z",
+  "resubmitCount": 1,
+  "bundlePlan": null,
+  "packingListPlan": null,
+  "bundles": [],
+  "packingLists": []
+}
+```
+
+Load-detail blocks (`bundlePlan`, `packingListPlan`, `bundles`, `packingLists`) are always included when available.
 
 ### FE notes
 
 - Send `bidAmount` from plant revision modal
-- Show `requestedBidAmount` on bid row while waiting for carrier resubmit
+- Carrier page: show `priorQuotedAmount`, `requestedBidAmount`, and `note` when `status === "resubmit_requested"`
+- Show `requestedBidAmount` on plant bid row while waiting for carrier resubmit
 - After carrier resubmits, `requestedBidAmount` is cleared and `quotedAmount` is updated
 
 ---
@@ -606,23 +657,145 @@ Use **`amountComparison`** as the shared source for BOM vs shipper comparison on
 
 ---
 
-## 5. Files changed
+## 5. Delivery reschedule API
 
-| Area | Files |
-|------|-------|
-| Freight bid resubmit | `src/controllers/plant/freightBid.controller.js`, `src/routes/plant/freightBid.routes.js` |
-| Building sync | `src/services/leadBuilding.service.js`, `src/controllers/sales/lead.controller.js`, `src/config/constants.js` |
-| Admin escalations | `src/utils/escalationLeadRow.js`, `src/controllers/admin/escalation.controller.js` |
-| Shipper amount comparison | `src/utils/shipperAmountComparison.js`, `src/controllers/plant/shipper.controller.js`, `src/controllers/plant/project.controller.js` |
+**Added:** June 20, 2026
+
+Reschedule a freight delivery date and time window without editing the full delivery document.
+
+### Endpoint
+
+| Method | Path | Role |
+|--------|------|------|
+| PATCH | `/api/plant/deliveries/:deliveryId/reschedule` | `plant` |
+
+### Request body
+
+```json
+{
+  "date": "2026-06-25T00:00:00.000Z",
+  "timeWindowStart": "09:00",
+  "timeWindowEnd": "13:00",
+  "rescheduleReason": "Customer site not ready — moved to next week",
+  "additionalNotes": "Call POC 30 mins before arrival"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `date` | Yes | New delivery date (ISO 8601) → updates `deliveryDate` |
+| `timeWindowStart` | Yes | e.g. `"09:00"` |
+| `timeWindowEnd` | Yes | e.g. `"13:00"` |
+| `rescheduleReason` | Yes | Why the delivery was moved |
+| `additionalNotes` | No | Updates delivery `additionalNotes`; omit to keep existing |
+
+### Response `data`
+
+```json
+{
+  "deliveryId": "6a328001a2982523aa1e91bd",
+  "deliveryNumber": "DEL-0029",
+  "status": "scheduled",
+  "deliveryDate": "2026-06-25T00:00:00.000Z",
+  "timeWindowStart": "09:00",
+  "timeWindowEnd": "13:00",
+  "timings": "09:00 - 13:00",
+  "rescheduleReason": "Customer site not ready — moved to next week",
+  "additionalNotes": "Call POC 30 mins before arrival",
+  "reschedule": {
+    "_id": "...",
+    "date": "2026-06-25T00:00:00.000Z",
+    "timeWindowStart": "09:00",
+    "timeWindowEnd": "13:00",
+    "reason": "Customer site not ready — moved to next week",
+    "additionalNotes": "Call POC 30 mins before arrival",
+    "rescheduledAt": "2026-06-20T14:00:00.000Z",
+    "rescheduledBy": "674abc..."
+  },
+  "rescheduleHistory": []
+}
+```
+
+### Rules
+
+- **Blocked** when `status` is `cancelled` or `delivered`
+- Appends to `rescheduleHistory` on the delivery document
+- Detail view (`GET .../detail`) now also returns `timeWindowStart`, `timeWindowEnd`, and `rescheduleHistory` under `formDetails` / `deliverySchedule`
 
 ---
 
-## 6. Frontend checklist
+## 6. Load planning projects — totalLoads & totalBundles
+
+**Added:** June 20, 2026
+
+Load planning project list rows now expose separate bundle and truck counts. The old `totalLoadPlanning` field (which held bundle count under a misleading name) is **removed**.
+
+### Endpoint
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/api/plant/load-planning/projects` | `plant` |
+
+Query params `page` and `limit` are accepted by the client but not yet applied server-side (full list returned; `total` = row count).
+
+### Response `data.projects[]` — count fields
+
+| Field | Type | Source | Meaning |
+|-------|------|--------|---------|
+| `totalBundles` | number | Latest `BundlePlan.totalBundles` | Bundles in the bundle plan |
+| `totalLoads` | number | Latest `PackingListPlan.totalPackingLists` | Trucks/loads after truck plan is generated; `0` if no packing list plan yet |
+
+### Example row
+
+```json
+{
+  "leadId": "6a337c4fedd83b0390b87007",
+  "projectId": "PRO-019",
+  "jobId": "PRO-019",
+  "projectName": "ABC Warehouse",
+  "customerName": "John Doe",
+  "buildingType": "warehouse",
+  "location": "Houston, TX",
+  "bundlePlanId": "...",
+  "fileReceivedAt": "2026-06-10T11:00:00.000Z",
+  "totalBundles": 18,
+  "totalLoads": 2,
+  "status": "confirmed",
+  "updatedAt": "2026-06-15T09:00:00.000Z"
+}
+```
+
+### Migration
+
+| Before | After |
+|--------|-------|
+| `totalLoadPlanning` (bundle count) | **`totalBundles`** |
+| *(missing)* | **`totalLoads`** (truck count) |
+
+**Detail screen (unchanged):** `GET /api/plant/projects/:projectId/load-planning`
+
+---
+
+## 7. Files changed
+
+| Area | Files |
+|------|-------|
+| Freight bid resubmit | `src/controllers/plant/freightBid.controller.js`, `src/routes/plant/freightBid.routes.js`, `src/controllers/public/freightBidPublic.controller.js`, `src/utils/freightBidDisplay.js` |
+| Building sync | `src/services/leadBuilding.service.js`, `src/controllers/sales/lead.controller.js`, `src/config/constants.js` |
+| Admin escalations | `src/utils/escalationLeadRow.js`, `src/controllers/admin/escalation.controller.js` |
+| Shipper amount comparison | `src/utils/shipperAmountComparison.js`, `src/controllers/plant/shipper.controller.js`, `src/controllers/plant/project.controller.js` |
+| Delivery reschedule | `src/models/Delivery.js`, `src/controllers/plant/delivery.controller.js`, `src/routes/plant/delivery.routes.js`, `src/config/constants.js` |
+| Load planning projects | `src/controllers/plant/bundlePlan.controller.js` |
+
+---
+
+## 8. Frontend checklist
 
 ### Plant — freight
 
 - [ ] Revision modal sends `{ note, bidAmount }` to `POST /api/plant/freight-bids/:bidId/request-resubmit`
 - [ ] Show `requestedBidAmount` on bid row when `status === 'resubmit_requested'`
+- [ ] Carrier page (`GET /api/public/freight-bids/:token`): show `priorQuotedAmount`, `requestedBidAmount`, `note` when revision requested
 - [ ] Verify carrier email shows requested amount after deploy
 
 ### Sales — buildings
@@ -644,6 +817,18 @@ Use **`amountComparison`** as the shared source for BOM vs shipper comparison on
 - [ ] Project tab: `GET /api/plant/projects/:leadId/shipper-files` — use `quoteValue` + `amountComparison`
 - [ ] Highlight row when `amountComparison.isMismatch === true`
 - [ ] When `canCompare === false`, show “Awaiting vendor quote” (not a mismatch)
+
+### Plant — delivery reschedule
+
+- [ ] Reschedule modal → `PATCH /api/plant/deliveries/:deliveryId/reschedule`
+- [ ] Send `{ date, timeWindowStart, timeWindowEnd, rescheduleReason, additionalNotes? }`
+- [ ] Read updated schedule from response or refresh `GET .../detail`
+- [ ] Show `rescheduleHistory` on delivery detail if needed
+
+### Plant — load planning project list
+
+- [ ] `GET /api/plant/load-planning/projects` — use **`totalBundles`** for bundle column (replace `totalLoadPlanning`)
+- [ ] Use **`totalLoads`** for trucks/loads column (`0` until truck plan is generated)
 
 ---
 

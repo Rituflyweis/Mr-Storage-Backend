@@ -61,8 +61,38 @@ const mapPublicFreightBidRevisionNote = (bid) => {
   return String(bid.resubmitNote || '').trim()
 }
 
+const getPriorQuotedAmountFromBid = (bid) => {
+  if (bid.status !== 'resubmit_requested') return null
+  const history = Array.isArray(bid.submissionHistory) ? bid.submissionHistory : []
+  if (!history.length) return null
+  return normalizeBidAmount(history[history.length - 1]?.quotedAmount)
+}
+
+const mapPublicFreightBidInfo = (bid) => {
+  const revisionNote = mapPublicFreightBidRevisionNote(bid)
+  const priorQuotedAmount = getPriorQuotedAmountFromBid(bid)
+  const requestedBidAmount = normalizeBidAmount(bid.resubmitRequestedAmount)
+
+  return {
+    bidId: bid._id,
+    status: bid.status,
+    quotedAmount: bid.quotedAmount ?? null,
+    carrierNotes: bid.carrierNotes || '',
+    resubmitNote: revisionNote,
+    plantNote: revisionNote,
+    note: revisionNote,
+    resubmitRequestedAt: bid.resubmitRequestedAt || null,
+    priorQuotedAmount,
+    requestedBidAmount,
+    resubmitCount: bid.resubmitCount || 0,
+    bidDeadline: bid.expiresAt,
+  }
+}
+
 module.exports = {
   mapPlantFreightBidRow,
   mapSelectedFreightBidDetails,
   mapPublicFreightBidRevisionNote,
+  getPriorQuotedAmountFromBid,
+  mapPublicFreightBidInfo,
 }

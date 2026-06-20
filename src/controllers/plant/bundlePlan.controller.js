@@ -186,13 +186,27 @@ exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
 
   if (!bundlePlans.length) return success(res, { projects: [], total: 0 })
 
+  const bundlePlanIds = bundlePlans.map((bp) => bp._id)
   const shipperRequestIds = bundlePlans.map((bp) => bp.shipperRequestId).filter(Boolean)
-  const shipperRequests = shipperRequestIds.length
-    ? await ShipperRequest.find({ _id: { $in: shipperRequestIds } })
-        .select('_id submittedAt')
-        .lean()
-    : []
+
+  const [shipperRequests, packingListPlans] = await Promise.all([
+    shipperRequestIds.length
+      ? ShipperRequest.find({ _id: { $in: shipperRequestIds } })
+          .select('_id submittedAt')
+          .lean()
+      : [],
+    PackingListPlan.find({
+      bundlePlanId: { $in: bundlePlanIds },
+      status: { $ne: 'cancelled' },
+    })
+      .select('bundlePlanId totalPackingLists')
+      .lean(),
+  ])
+
   const shipperRequestMap = new Map(shipperRequests.map((sr) => [String(sr._id), sr]))
+  const packingListPlanByBundlePlanId = new Map(
+    packingListPlans.map((plan) => [String(plan.bundlePlanId), plan])
+  )
 
   const projectMap = new Map()
 
@@ -204,6 +218,7 @@ exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
     if (projectMap.has(key)) continue
 
     const shipperRequest = shipperRequestMap.get(String(bundlePlan.shipperRequestId))
+    const packingListPlan = packingListPlanByBundlePlanId.get(String(bundlePlan._id))
 
     projectMap.set(key, {
       leadId: lead._id,
@@ -213,7 +228,8 @@ exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
       ...mapProjectNameFallbackFields(lead),
       bundlePlanId: bundlePlan._id,
       fileReceivedAt: shipperRequest?.submittedAt || bundlePlan.createdAt || null,
-      totalLoadPlanning: bundlePlan.totalBundles || 0,
+      totalBundles: bundlePlan.totalBundles || 0,
+      totalLoads: packingListPlan?.totalPackingLists || 0,
       status: bundlePlan.status,
       updatedAt: bundlePlan.updatedAt,
     })

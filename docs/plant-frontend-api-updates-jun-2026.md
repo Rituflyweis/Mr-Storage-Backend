@@ -405,7 +405,7 @@ Several plant **project list** endpoints now include `customerName`, `buildingTy
 |----------|--------|
 | `GET /api/plant/bom/projects` | Paginated (`page`, `limit`); one row per building (latest BOM job) |
 | `GET /api/plant/shipper-files/projects` | Same handler as `GET /api/plant/shipper-requests/projects` |
-| `GET /api/plant/load-planning/projects` | Latest non-cancelled bundle plan per project |
+| `GET /api/plant/load-planning/projects` | Latest non-cancelled bundle plan per project; **`totalBundles`**, **`totalLoads`** (replaces `totalLoadPlanning`) |
 | `GET /api/plant/packing-lists/projects` | Latest non-cancelled packing list plan per project |
 
 Scoped to projects assigned to the logged-in plant user (approved PO), same as other plant project lists.
@@ -420,7 +420,18 @@ Scoped to projects assigned to the logged-in plant user (approved PO), same as o
 
 Existing fields (`leadId`, `projectId`, `jobId`, `projectName`, status counts, etc.) are unchanged.
 
-### Example row (shipper / load-planning / packing-lists shape)
+### Load planning list — count fields (June 20, 2026)
+
+On `GET /api/plant/load-planning/projects` only:
+
+| Field | Meaning |
+|-------|---------|
+| `totalBundles` | Bundles on latest bundle plan |
+| `totalLoads` | Trucks from latest packing list plan (`0` if truck plan not generated) |
+
+**Removed:** `totalLoadPlanning` (was bundle count under wrong key name).
+
+### Example row (shipper / packing-lists shape)
 
 ```json
 {
@@ -435,6 +446,26 @@ Existing fields (`leadId`, `projectId`, `jobId`, `projectName`, status counts, e
   "receivedShipperFiles": 2,
   "fileReceivedStatus": "partial",
   "latestSubmittedAt": "2026-06-10T12:00:00.000Z"
+}
+```
+
+### Example row (load-planning projects)
+
+```json
+{
+  "leadId": "6a337c4fedd83b0390b87007",
+  "projectId": "PRO-029",
+  "jobId": "PRO-029",
+  "projectName": "",
+  "customerName": "Jane Smith",
+  "buildingType": "commercial",
+  "location": "Twin Creek, TX",
+  "bundlePlanId": "...",
+  "fileReceivedAt": "2026-06-10T12:00:00.000Z",
+  "totalBundles": 18,
+  "totalLoads": 2,
+  "status": "confirmed",
+  "updatedAt": "2026-06-15T09:00:00.000Z"
 }
 ```
 
@@ -802,7 +833,7 @@ Edit stages after initial create. Send the **full** `stages[]` array on every sa
 
 - [ ] BOM: `GET /api/plant/bom/projects` — fallback title fields on each row
 - [ ] Shipper files: `GET /api/plant/shipper-files/projects` (or `shipper-requests/projects`)
-- [ ] Load planning: `GET /api/plant/load-planning/projects`
+- [ ] Load planning: `GET /api/plant/load-planning/projects` — **`totalBundles`**, **`totalLoads`** (not `totalLoadPlanning`)
 - [ ] Packing lists: `GET /api/plant/packing-lists/projects`
 - [ ] Shared helper: `projectName` → `customerName · buildingType · location` → `jobId`
 
@@ -860,7 +891,7 @@ Edit stages after initial create. Send the **full** `stages[]` array on every sa
 | GET | `/api/plant/shipper-files/projects/:leadId/stats` | Shipper KPIs (single project) |
 | GET | `/api/plant/bom/projects` | BOM project list + name fallback fields |
 | GET | `/api/plant/shipper-files/projects` | Shipper project list + name fallback fields |
-| GET | `/api/plant/load-planning/projects` | Load planning project list + name fallback fields |
+| GET | `/api/plant/load-planning/projects` | Load planning project list + `totalBundles`, `totalLoads` |
 | GET | `/api/plant/packing-lists/projects` | Packing list project list + name fallback fields |
 | GET | `/api/plant/deliveries/calendar` | Calendar (awarded + active delivery statuses) |
 | GET | `/api/plant/packing-list-plans/:id` | Truck plan + `project` |

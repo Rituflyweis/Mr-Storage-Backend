@@ -38,6 +38,15 @@ const DELIVERY_STATUS_TRANSITIONS = {
   delayed: ['scheduled', 'confirmed', 'in_transit', 'delivered', 'cancelled'],
 }
 
+const DELIVERY_RESCHEDULE_BLOCKED_STATUSES = new Set(['cancelled', 'delivered'])
+
+const formatDeliveryTimeWindow = (start = '', end = '') => {
+  const s = String(start || '').trim()
+  const e = String(end || '').trim()
+  if (s && e) return `${s} - ${e}`
+  return s || e || ''
+}
+
 const makeDeliveryStatusHistory = (delivery) => {
   const rows = Array.isArray(delivery?.statusHistory) ? [...delivery.statusHistory] : []
   if (!rows.length && delivery?.status) {
@@ -764,11 +773,23 @@ const buildDeliveryFormDetails = (delivery) => ({
   pickupTime: delivery.pickupTime || '',
   deliveryDate: delivery.deliveryDate,
   deliveryTime: delivery.deliveryTime || '',
+  timeWindowStart: delivery.timeWindowStart || delivery.deliveryTime || '',
+  timeWindowEnd: delivery.timeWindowEnd || '',
   timings: delivery.timings || '',
   receivingPoc: delivery.receivingPoc || '',
   pickupContactPhone: delivery.pickupContactPhone || '',
   specialRequirements: delivery.specialRequirements || '',
   additionalNotes: delivery.additionalNotes || '',
+  rescheduleHistory: (delivery.rescheduleHistory || []).map((row) => ({
+    _id: row._id,
+    date: row.date,
+    timeWindowStart: row.timeWindowStart || '',
+    timeWindowEnd: row.timeWindowEnd || '',
+    reason: row.reason || '',
+    additionalNotes: row.additionalNotes || '',
+    rescheduledAt: row.rescheduledAt,
+    rescheduledBy: row.rescheduledBy,
+  })),
 })
 
 const buildDeliveryDetailPayload = async (delivery, plantUserId) => {
@@ -834,7 +855,12 @@ const buildDeliveryDetailPayload = async (delivery, plantUserId) => {
 
       deliverySchedule: {
         deliveryDate: delivery.deliveryDate,
-        timeWindow: delivery.timings || '',
+        timeWindow: delivery.timings || formatDeliveryTimeWindow(
+          delivery.timeWindowStart || delivery.deliveryTime,
+          delivery.timeWindowEnd
+        ),
+        timeWindowStart: delivery.timeWindowStart || delivery.deliveryTime || '',
+        timeWindowEnd: delivery.timeWindowEnd || '',
         pickupAddress: delivery.pickupLocation || delivery.pickupLocationData?.address || '',
         dropoffAddress: delivery.deliveryLocation || delivery.deliveryLocationData?.address || '',
       },
@@ -1406,6 +1432,105 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   )
 
   return success(res, { deliveries, total, page, limit })
+})
+
+exports.rescheduleDelivery = asyncHandler(async (req, res) => {
+  const { deliveryId } = req.params
+  const {
+    date,
+    timeWindowStart,
+    timeWindowEnd,
+    rescheduleReason,
+    additionalNotes,
+  } = req.body
+
+  const delivery = await Delivery.findById(deliveryId)
+  if (!delivery) return notFound(res, 'Delivery not found')
+
+  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  if (DELIVERY_RESCHEDULE_BLOCKED_STATUSES.has(delivery.status)) {
+    return badRequest(res, `Cannot reschedule a delivery with status ${delivery.status}`)
+  }
+
+  const newDate = normalizeDateOnly(date)
+  if (!newDate) return badRequest(res, 'Valid date is required')
+
+  const start = String(timeWindowStart || '').trim()
+  const end = String(timeWindowEnd || '').trim()
+  const reason = String(rescheduleReason || '').trim()
+  if (!start) return badRequest(res, 'timeWindowStart is required')
+  if (!end) return badRequest(res, 'timeWindowEnd is required')
+  if (!reason) return badRequest(res, 'rescheduleReason is required')
+
+  const notes = additionalNotes !== undefined
+    ? String(additionalNotes).trim()
+    : delivery.additionalNotes
+
+  delivery.deliveryDate = newDate
+  delivery.deliveryTime = start
+  delivery.timeWindowStart = start
+  delivery.timeWindowEnd = end
+  delivery.timings = formatDeliveryTimeWindow(start, end)
+  delivery.additionalNotes = notes
+  delivery.rescheduleHistory.push({
+    date: newDate,
+    timeWindowStart: start,
+    timeWindowEnd: end,
+    reason,
+    additionalNotes: notes,
+    rescheduledAt: new Date(),
+    rescheduledBy: req.user._id,
+  })
+
+  await delivery.save()
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.DELIVERY_RESCHEDULED,
+    leadId: delivery.leadId,
+    customerId: access.lead.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      deliveryId: delivery._id,
+      deliveryNumber: delivery.deliveryNumber,
+      date: newDate,
+      timeWindowStart: start,
+      timeWindowEnd: end,
+      rescheduleReason: reason,
+    },
+  })
+
+  const latestReschedule = delivery.rescheduleHistory[delivery.rescheduleHistory.length - 1]
+
+  return success(res, {
+    deliveryId: delivery._id,
+    deliveryNumber: delivery.deliveryNumber,
+    status: delivery.status,
+    deliveryDate: delivery.deliveryDate,
+    timeWindowStart: delivery.timeWindowStart,
+    timeWindowEnd: delivery.timeWindowEnd,
+    timings: delivery.timings,
+    rescheduleReason: reason,
+    additionalNotes: delivery.additionalNotes,
+    reschedule: latestReschedule
+      ? {
+          _id: latestReschedule._id,
+          date: latestReschedule.date,
+          timeWindowStart: latestReschedule.timeWindowStart,
+          timeWindowEnd: latestReschedule.timeWindowEnd,
+          reason: latestReschedule.reason,
+          additionalNotes: latestReschedule.additionalNotes,
+          rescheduledAt: latestReschedule.rescheduledAt,
+          rescheduledBy: latestReschedule.rescheduledBy,
+        }
+      : null,
+    rescheduleHistory: delivery.rescheduleHistory,
+  }, 'Delivery rescheduled')
 })
 
 exports.updateDeliveryStatus = asyncHandler(async (req, res) => {
