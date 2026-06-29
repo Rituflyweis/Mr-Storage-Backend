@@ -523,7 +523,7 @@ exports.getFreightAutofill = asyncHandler(async (req, res) => {
   const bundlePlan = await BundlePlan.findById(bundlePlanId).lean()
   if (!bundlePlan) return notFound(res, 'Bundle plan not found')
 
-  const access = await assertPlantProjectAccess(bundlePlan.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(bundlePlan.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -542,7 +542,7 @@ exports.getFreightAutofillByProject = asyncHandler(async (req, res) => {
   const lead = await resolveLeadByProjectRef(req.params.projectId)
   if (!lead) return notFound(res, 'Project not found')
 
-  const access = await assertPlantProjectAccess(lead._id, req.user._id)
+  const access = await assertPlantProjectAccess(lead._id, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -564,7 +564,7 @@ exports.getFreightAutofillByProject = asyncHandler(async (req, res) => {
 
 exports.createDelivery = asyncHandler(async (req, res) => {
   const { leadId } = req.body
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -603,7 +603,7 @@ exports.updateDelivery = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(deliveryId)
   if (!delivery) return notFound(res, 'Freight request not found')
 
-  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(delivery.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -673,7 +673,7 @@ exports.updateDelivery = asyncHandler(async (req, res) => {
 
 exports.getProjectDeliveries = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -736,7 +736,7 @@ exports.sendDeliveryBids = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(deliveryId)
   if (!delivery) return notFound(res, 'Freight request not found')
 
-  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(delivery.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -845,7 +845,7 @@ exports.getDeliveryBids = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(deliveryId).lean()
   if (!delivery) return notFound(res, 'Freight request not found')
 
-  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(delivery.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -901,7 +901,7 @@ exports.sendDeliveryBidsByProject = asyncHandler(async (req, res) => {
   const lead = await resolveLeadByProjectRef(req.params.projectId)
   if (!lead) return notFound(res, 'Project not found')
 
-  const access = await assertPlantProjectAccess(lead._id, req.user._id)
+  const access = await assertPlantProjectAccess(lead._id, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -918,7 +918,7 @@ exports.getDeliveryBidsByProject = asyncHandler(async (req, res) => {
   const lead = await resolveLeadByProjectRef(req.params.projectId)
   if (!lead) return notFound(res, 'Project not found')
 
-  const access = await assertPlantProjectAccess(lead._id, req.user._id)
+  const access = await assertPlantProjectAccess(lead._id, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -1122,7 +1122,7 @@ const buildDeliveryDetailPayload = async (delivery, plantUserId) => {
 
 exports.getProjectConfirmedDelivery = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -1152,7 +1152,7 @@ exports.getDeliveryDetail = asyncHandler(async (req, res) => {
   if (!delivery) return notFound(res, 'Delivery not found')
 
   const leadId = delivery.leadId?._id || delivery.leadId
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -1650,7 +1650,7 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(deliveryId)
   if (!delivery) return notFound(res, 'Delivery not found')
 
-  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(delivery.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -1743,7 +1743,7 @@ exports.updateDeliveryStatus = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(deliveryId)
   if (!delivery) return notFound(res, 'Delivery not found')
 
-  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(delivery.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)

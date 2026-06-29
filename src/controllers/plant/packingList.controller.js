@@ -1,8 +1,8 @@
 const PackingList = require('../../models/PackingList')
 const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
-const POOrder = require('../../models/POOrder')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 const {
   mapProjectNameFallbackFields,
   LEAD_PROJECT_LIST_SELECT,
@@ -69,11 +69,10 @@ const syncPackingListPlanSummary = async (packingListPlanId) => {
   return summary
 }
 
-const getAssignedLeadIds = async (plantUserId) =>
-  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+const getAssignedLeadIds = async (req) => getScopedLeadIds(req)
 
 exports.getPackingListPlanProjects = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) return success(res, { projects: [], total: 0 })
 
   const plans = await PackingListPlan.find({
@@ -126,7 +125,7 @@ exports.getPackingList = asyncHandler(async (req, res) => {
   const packingList = await PackingList.findById(req.params.packingListId).lean()
   if (!packingList) return notFound(res, 'Packing list not found')
 
-  const access = await assertPlantProjectAccess(packingList.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(packingList.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -158,7 +157,7 @@ exports.updatePackingList = asyncHandler(async (req, res) => {
   const packingList = await PackingList.findById(req.params.packingListId)
   if (!packingList) return notFound(res, 'Packing list not found')
 
-  const access = await assertPlantProjectAccess(packingList.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(packingList.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)

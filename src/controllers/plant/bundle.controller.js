@@ -370,7 +370,7 @@ const syncBundlePlanTotals = async (bundlePlanId) => {
 exports.getProjectBundlePlan = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -422,7 +422,7 @@ exports.getBundle = asyncHandler(async (req, res) => {
   const bundle = await Bundle.findById(req.params.bundleId).lean()
   if (!bundle) return notFound(res, 'Bundle not found')
 
-  const access = await assertPlantProjectAccess(bundle.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(bundle.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -448,7 +448,7 @@ exports.updateBundle = asyncHandler(async (req, res) => {
   const bundle = await Bundle.findById(req.params.bundleId)
   if (!bundle) return notFound(res, 'Bundle not found')
 
-  const access = await assertPlantProjectAccess(bundle.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(bundle.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -531,7 +531,7 @@ exports.deleteBundle = asyncHandler(async (req, res) => {
   const bundle = await Bundle.findById(req.params.bundleId).lean()
   if (!bundle) return notFound(res, 'Bundle not found')
 
-  const access = await assertPlantProjectAccess(bundle.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(bundle.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)

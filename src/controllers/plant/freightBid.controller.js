@@ -25,7 +25,7 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(selectedBid.deliveryId)
   if (!delivery) return notFound(res, 'Freight request not found')
 
-  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(delivery.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -161,7 +161,7 @@ exports.requestFreightBidResubmit = asyncHandler(async (req, res) => {
     return badRequest(res, 'Cannot request resubmit for a cancelled freight request')
   }
 
-  const access = await assertPlantProjectAccess(delivery.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(delivery.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)

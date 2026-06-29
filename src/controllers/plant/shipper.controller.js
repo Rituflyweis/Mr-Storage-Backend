@@ -1,4 +1,3 @@
-const POOrder = require('../../models/POOrder')
 const crypto = require('crypto')
 const ShipperRequest = require('../../models/ShipperRequest')
 const ShipperComparisonJob = require('../../models/ShipperComparisonJob')
@@ -10,6 +9,7 @@ const BundlePlan = require('../../models/BundlePlan')
 const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 const {
   mapProjectNameFallbackFields,
   LEAD_PROJECT_LIST_SELECT,
@@ -50,8 +50,7 @@ const {
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
-const getAssignedLeadIds = async (plantUserId) =>
-  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+const getAssignedLeadIds = async (req) => getScopedLeadIds(req)
 
 const resolveFileReceivedStatus = (total, received) => {
   if (!total || total <= 0) return 'none'
@@ -71,7 +70,7 @@ const getNextBundlePlanNumber = async () => {
 }
 
 exports.getShipperProjects = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) return success(res, { projects: [], total: 0 })
 
   const requests = await ShipperRequest.find({ leadId: { $in: leadIds } })
@@ -125,7 +124,7 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
 })
 
 exports.getShipperFilesStats = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) {
     return success(res, computeShipperFilesStats([]))
   }
@@ -139,7 +138,7 @@ exports.getShipperFilesStats = asyncHandler(async (req, res) => {
 
 exports.getProjectShipperFilesStats = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -159,7 +158,7 @@ exports.getProjectShipperFilesStats = asyncHandler(async (req, res) => {
 
 exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -205,7 +204,7 @@ exports.getShipperRequestDocument = asyncHandler(async (req, res) => {
 
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -241,7 +240,7 @@ exports.compareShipperRequest = asyncHandler(async (req, res) => {
   const request = await ShipperRequest.findById(requestId).select('leadId vendorId submittedFileUrl')
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -290,7 +289,7 @@ exports.getComparisonJobStatus = asyncHandler(async (req, res) => {
   const job = await ShipperComparisonJob.findById(jobId).lean()
   if (!job) return notFound(res, 'Comparison job not found')
 
-  const access = await assertPlantProjectAccess(job.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(job.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -326,7 +325,7 @@ exports.getComparisonJobsStatusBatch = asyncHandler(async (req, res) => {
       continue
     }
 
-    const access = await assertPlantProjectAccess(job.leadId, req.user._id)
+    const access = await assertPlantProjectAccess(job.leadId, req)
     if (access.error) {
       rows.push({ compareJobId: jobId, error: access.error })
       continue
@@ -352,7 +351,7 @@ exports.approveShipperRequest = asyncHandler(async (req, res) => {
     .populate('leadId', 'projectName jobId customerId')
   if (!selected) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(selected.leadId._id, req.user._id)
+  const access = await assertPlantProjectAccess(selected.leadId._id, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -473,7 +472,7 @@ exports.requestShipperResubmit = asyncHandler(async (req, res) => {
 
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId._id, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId._id, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -601,7 +600,7 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
     .lean()
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -666,7 +665,7 @@ exports.getShipperComparisonResults = asyncHandler(async (req, res) => {
     .lean()
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -729,7 +728,7 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
 
   const leadId = request.leadId?._id || request.leadId
 
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
 
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)

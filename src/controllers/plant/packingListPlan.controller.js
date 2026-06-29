@@ -8,21 +8,21 @@ const packingListCtrl = require('./packingList.controller')
 const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
-const loadPackingListPlanWithAccess = async (packingListPlanId, plantUserId) => {
+const loadPackingListPlanWithAccess = async (packingListPlanId, req) => {
   const packingListPlan = await PackingListPlan.findById(packingListPlanId).lean()
   if (!packingListPlan) return { error: 'Packing list plan not found', code: 404 }
 
-  const access = await assertPlantProjectAccess(packingListPlan.leadId, plantUserId)
+  const access = await assertPlantProjectAccess(packingListPlan.leadId, req)
   if (access.error) return access
 
   return { packingListPlan }
 }
 
-const loadPackingListPlanByProjectWithAccess = async (projectRef, plantUserId) => {
+const loadPackingListPlanByProjectWithAccess = async (projectRef, req) => {
   const lead = await resolveLeadByProjectRef(projectRef)
   if (!lead) return { error: 'Project not found', code: 404 }
 
-  const access = await assertPlantProjectAccess(lead._id, plantUserId)
+  const access = await assertPlantProjectAccess(lead._id, req)
   if (access.error) return access
 
   const packingListPlan = await PackingListPlan.findOne({ leadId: lead._id, status: { $ne: 'cancelled' } })
@@ -67,7 +67,7 @@ const loadProjectSummary = async (leadId) => {
 }
 
 exports.getPackingListPlan = asyncHandler(async (req, res) => {
-  const loaded = await loadPackingListPlanWithAccess(req.params.packingListPlanId, req.user._id)
+  const loaded = await loadPackingListPlanWithAccess(req.params.packingListPlanId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -147,7 +147,7 @@ exports.getPackingListPlanPublic = asyncHandler(async (req, res) => {
 })
 
 exports.confirmPackingListPlan = asyncHandler(async (req, res) => {
-  const loaded = await loadPackingListPlanWithAccess(req.params.packingListPlanId, req.user._id)
+  const loaded = await loadPackingListPlanWithAccess(req.params.packingListPlanId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -255,7 +255,7 @@ exports.confirmPackingListPlan = asyncHandler(async (req, res) => {
 })
 
 exports.getProjectPackingListPlan = asyncHandler(async (req, res) => {
-  const loaded = await loadPackingListPlanByProjectWithAccess(req.params.projectId, req.user._id)
+  const loaded = await loadPackingListPlanByProjectWithAccess(req.params.projectId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -266,7 +266,7 @@ exports.getProjectPackingListPlan = asyncHandler(async (req, res) => {
 })
 
 exports.confirmProjectPackingListPlan = asyncHandler(async (req, res) => {
-  const loaded = await loadPackingListPlanByProjectWithAccess(req.params.projectId, req.user._id)
+  const loaded = await loadPackingListPlanByProjectWithAccess(req.params.projectId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -277,7 +277,7 @@ exports.confirmProjectPackingListPlan = asyncHandler(async (req, res) => {
 })
 
 exports.updateProjectPackingList = asyncHandler(async (req, res) => {
-  const loaded = await loadPackingListPlanByProjectWithAccess(req.params.projectId, req.user._id)
+  const loaded = await loadPackingListPlanByProjectWithAccess(req.params.projectId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
