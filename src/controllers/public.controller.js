@@ -10,6 +10,7 @@ const ConsolidatedBOM = require('../models/ConsolidatedBOM')
 const auditService = require('../services/audit.service')
 const leadListSocket = require('../services/leadListSocket.service')
 const { syncLeadBuildings } = require('../services/leadBuilding.service')
+const mailer = require('../services/email/mailer')
 const generateCustomerId = require('../utils/generateCustomerId')
 const { success, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
@@ -85,6 +86,20 @@ exports.chatInit = asyncHandler(async (req, res) => {
       source: 'chat',
     })
     isNewCustomer = true
+
+    if (mailer.isEmailConfigured()) {
+      try {
+        await mailer.sendNewCustomerEnquiryNotification({
+          toEmail: 'info@steelbuildingdepot.com',
+          customerName: firstName.trim(),
+          customerEmail: normalizedEmail,
+          customerPhone: normalizedPhone,
+          countryCode,
+        })
+      } catch (err) {
+        console.warn('[chatInit] Failed to send new customer enquiry notification:', err.message)
+      }
+    }
   }
 
   // 3. Check for any existing active (non-delivered) lead for this customer

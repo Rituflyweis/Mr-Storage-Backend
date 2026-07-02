@@ -232,7 +232,7 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
 
 exports.sendInvoice = asyncHandler(async (req, res) => {
   if (!mailer.isSmtpConfigured()) {
-    return badRequest(res, 'Email service is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS.')
+    return badRequest(res, 'Email service is not configured. Set SENDGRID_API_KEY (and optional SENDGRID_FROM).')
   }
 
   const invoice = await Invoice.findById(req.params.invoiceId)

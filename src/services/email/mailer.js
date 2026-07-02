@@ -1,5 +1,5 @@
-const nodemailer = require('nodemailer')
-const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM } = require('../../config/env')
+const sgMail = require('@sendgrid/mail')
+const { SENDGRID_API_KEY, SENDGRID_FROM, MAIL_FROM } = require('../../config/env')
 const { getInvoiceCompany } = require('../../config/invoiceCompany')
 const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
 const path = require('path')
@@ -15,21 +15,45 @@ const {
 } = require('../plant/freightLoadDetails.service')
 
 
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: Number(SMTP_PORT),
-  secure: Number(SMTP_PORT) === 465,
-  family: 4,
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 30000,
-  auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
-  },
-})
+if (SENDGRID_API_KEY) {
+  sgMail.setApiKey(SENDGRID_API_KEY)
+}
 
-const isSmtpConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS)
+const resolvedMailFrom = SENDGRID_FROM || MAIL_FROM
+
+const isEmailConfigured = () => Boolean(SENDGRID_API_KEY && resolvedMailFrom)
+const isSmtpConfigured = isEmailConfigured
+
+const normalizeAttachmentsForSendGrid = (attachments = []) =>
+  attachments.map((attachment) => {
+    const normalized = { ...attachment }
+    if (Buffer.isBuffer(normalized.content)) {
+      normalized.content = normalized.content.toString('base64')
+    }
+    if (!normalized.disposition) {
+      normalized.disposition = 'attachment'
+    }
+    return normalized
+  })
+
+const transporter = {
+  sendMail: async (mailOptions = {}) => {
+    if (!SENDGRID_API_KEY) {
+      throw new Error('Email service is not configured. Set SENDGRID_API_KEY.')
+    }
+
+    const payload = {
+      ...mailOptions,
+      from: mailOptions.from || resolvedMailFrom,
+    }
+
+    if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
+      payload.attachments = normalizeAttachmentsForSendGrid(payload.attachments)
+    }
+
+    await sgMail.send(payload)
+  },
+}
 
 const loadTemplate = (templateName) => {
   const filePath = path.join(__dirname, 'templates', `${templateName}.html`)
@@ -484,6 +508,45 @@ const sendEmployeeCredentials = async ({ toEmail, name, role, tempPassword }) =>
   })
 }
 
+const sendNewCustomerEnquiryNotification = async ({
+  toEmail = 'info@steelbuildingdepot.com',
+  customerName,
+  customerEmail,
+  customerPhone,
+  countryCode,
+}) => {
+  const safeName = escapeHtml(customerName || 'N/A')
+  const safeEmail = escapeHtml(customerEmail || 'N/A')
+  const safePhone = escapeHtml(customerPhone || 'N/A')
+  const safeCountryCode = escapeHtml(countryCode || '')
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">New Customer Enquiry</h2>
+      <p>A new customer enquiry was created from AI chat init.</p>
+      <ul>
+        <li><strong>Name:</strong> ${safeName}</li>
+        <li><strong>Email:</strong> ${safeEmail}</li>
+        <li><strong>Phone:</strong> ${safeCountryCode} ${safePhone}</li>
+      </ul>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: resolvedMailFrom,
+    to: toEmail,
+    subject: 'New customer enquiry',
+    html,
+    text: [
+      'New customer enquiry created from AI chat init.',
+      '',
+      `Name: ${customerName || 'N/A'}`,
+      `Email: ${customerEmail || 'N/A'}`,
+      `Phone: ${(countryCode || '').trim()} ${customerPhone || 'N/A'}`.trim(),
+    ].join('\n'),
+  })
+}
+
 const sendConsolidatedBOMToVendor = async ({
   toEmail,
   vendorName,
@@ -799,12 +862,14 @@ const sendFreightBidResubmitRequestEmail = async ({
 }
 
 module.exports = {
+  isEmailConfigured,
   isSmtpConfigured,
   buildCustomerBillToAddressHtml,
   sendQuotation,
   sendInvoice,
   sendOtp,
   sendEmployeeCredentials,
+  sendNewCustomerEnquiryNotification,
   sendConsolidatedBOMToVendor,
   sendShipperApprovalEmail,
   sendShipperRejectionEmail,
