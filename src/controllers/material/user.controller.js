@@ -26,6 +26,14 @@ exports.sendNewsLetterRequest = asyncHandler(async(req, res) => {
 })
 
 exports.sendQuotesRequest = asyncHandler(async(req, res) => {
+  console.info('[material.sendQuotesRequest] request received', {
+    ip: req.ip,
+    hasEmail: Boolean(req.body.email),
+    hasPhoneNumber: Boolean(req.body.phoneNumber),
+    hasBuildingTypeId: Boolean(req.body.buildingTypeId),
+    at: new Date().toISOString(),
+  })
+
   const firstName = String(req.body.firstName || '').trim()
   const lastName = String(req.body.lastName || '').trim()
   const email = String(req.body.email || '').trim().toLowerCase()
@@ -162,6 +170,31 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
   }
 
   const created = await Quotes.create(payload)
+  const inquiryMessageParts = [
+    req.body.notes ? `Notes: ${String(req.body.notes).trim()}` : '',
+    req.body.intendedUse ? `Intended Use: ${String(req.body.intendedUse).trim()}` : '',
+    req.body.buildingTypeId ? `Building Type Id: ${String(req.body.buildingTypeId).trim()}` : '',
+    req.body.width ? `Width: ${String(req.body.width).trim()}` : '',
+    req.body.length ? `Length: ${String(req.body.length).trim()}` : '',
+    req.body.height ? `Height: ${String(req.body.height).trim()}` : '',
+    req.body.roofPitch ? `Roof Pitch: ${String(req.body.roofPitch).trim()}` : '',
+    req.body.siteAddress ? `Site Address: ${String(req.body.siteAddress).trim()}` : '',
+    req.body.city ? `City: ${String(req.body.city).trim()}` : '',
+    req.body.state ? `State: ${String(req.body.state).trim()}` : '',
+    req.body.country ? `Country: ${String(req.body.country).trim()}` : '',
+    req.body.zip || req.body.zipCode ? `Zip: ${String(req.body.zip || req.body.zipCode).trim()}` : '',
+  ].filter(Boolean)
+
+  await Inquire.create({
+    name: firstName,
+    lastName,
+    email,
+    phone,
+    message: inquiryMessageParts.join(' | '),
+    customerId: customer._id,
+    leadId: lead._id,
+  })
+
   return res.status(200).json({ status: 200, message: 'Quote request send successfully', data: created })
 })
 
