@@ -26,17 +26,131 @@ exports.sendNewsLetterRequest = asyncHandler(async(req, res) => {
 })
 
 exports.sendQuotesRequest = asyncHandler(async(req, res) => {
+  const firstName = String(req.body.firstName || '').trim()
+  const lastName = String(req.body.lastName || '').trim()
+  const email = String(req.body.email || '').trim().toLowerCase()
+  const rawPhone = String(req.body.phoneNumber || '').trim()
+  const phone = rawPhone.replace(/\D/g, '').trim() || rawPhone
+  const countryCode = String(req.body.countryCode || '+1').trim() || '+1'
+
+  if (!firstName || !phone) {
+    return res.status(400).json({
+      status: 400,
+      message: 'firstName and phoneNumber are required to create lead from quote request',
+    })
+  }
+
+  const customerQuery = { $or: [{ 'phone.number': phone }] }
+  if (email) customerQuery.$or.push({ email })
+  let customer = await Customer.findOne(customerQuery)
+
+  let isNewCustomer = false
+  if (!customer) {
+    if (!email) {
+      return res.status(400).json({
+        status: 400,
+        message: 'email is required to create a new customer',
+      })
+    }
+
+    const customerId = await generateCustomerId()
+    const hashedPassword = await bcrypt.hash(phone, 12)
+    customer = await Customer.create({
+      customerId,
+      firstName,
+      lastName,
+      email,
+      phone: { number: phone, countryCode },
+      password: hashedPassword,
+      source: 'chat',
+    })
+    isNewCustomer = true
+
+    if (mailer.isEmailConfigured()) {
+      try {
+        await mailer.sendNewCustomerEnquiryNotification({
+          toEmail: 'info@steelbuildingdepot.com',
+          customerName: firstName,
+          customerEmail: email,
+          customerPhone: phone,
+          countryCode,
+        })
+      } catch (err) {
+        console.warn('[sendQuotesRequest] Failed to send new customer enquiry notification:', err.message)
+      }
+    }
+  }
+
+  let lead = await Lead.findOne({
+    customerId: customer._id,
+    lifecycleStatus: { $nin: CLOSED_STAGES },
+  }).sort({ createdAt: -1 })
+
+  const quoteNotes = String(req.body.notes || '').trim()
+
+  if (!lead) {
+    lead = await Lead.create({
+      customerId: customer._id,
+      source: 'chat',
+      lifecycleStatus: 'initial_contact',
+      lifecycleHistory: [
+        { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
+      ],
+      buildingType: String(req.body.buildingTypeId || ''),
+      width: req.body.width ? Number(req.body.width) : null,
+      length: req.body.length ? Number(req.body.length) : null,
+      height: req.body.height ? Number(req.body.height) : null,
+      location: [req.body.siteAddress, req.body.city, req.body.state, req.body.country, req.body.zip || req.body.zipCode]
+        .filter(Boolean)
+        .join(', '),
+      projectName: String(req.body.intendedUse || ''),
+      notes: quoteNotes,
+    })
+
+    await auditService.log({
+      type: 'lead',
+      action: AUDIT_ACTIONS.LEAD_CREATED,
+      leadId: lead._id,
+      customerId: customer._id,
+      performedBy: null,
+      metadata: { source: 'chat', isNewCustomer, via: 'material_quote' },
+    })
+
+    await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'material_quote' })
+    await syncLeadBuildings(lead, { createdBy: null })
+  } else {
+    if (req.body.width) lead.width = Number(req.body.width)
+    if (req.body.length) lead.length = Number(req.body.length)
+    if (req.body.height) lead.height = Number(req.body.height)
+    if (req.body.buildingTypeId) lead.buildingType = String(req.body.buildingTypeId)
+
+    const mergedLocation = [req.body.siteAddress, req.body.city, req.body.state, req.body.country, req.body.zip || req.body.zipCode]
+      .filter(Boolean)
+      .join(', ')
+    if (mergedLocation) lead.location = mergedLocation
+    if (req.body.intendedUse) lead.projectName = String(req.body.intendedUse)
+
+    if (quoteNotes) {
+      const existingNotes = String(lead.notes || '').trim()
+      lead.notes = existingNotes ? `${existingNotes}\n\n${quoteNotes}` : quoteNotes
+    }
+
+    await lead.save()
+  }
+
   const payload = {
     buildingTypeId: req.body.buildingTypeId,
+    customerId: customer._id,
+    leadId: lead._id,
     width: req.body.width,
     length: req.body.length,
     height: req.body.height,
     roofPitch: req.body.roofPitch,
     zipCode: req.body.zipCode,
-    firstName: req.body.firstName,
-    lastName: req.body.lastName,
-    email: req.body.email,
-    phoneNumber: req.body.phoneNumber,
+    firstName,
+    lastName,
+    email,
+    phoneNumber: phone,
     company: req.body.company,
     siteAddress: req.body.siteAddress,
     city: req.body.city,

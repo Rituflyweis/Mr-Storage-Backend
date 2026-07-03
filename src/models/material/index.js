@@ -99,6 +99,16 @@ const quotesSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'buildingType',
   },
+  customerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Customer',
+    default: null,
+  },
+  leadId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Lead',
+    default: null,
+  },
   width: String,
   length: String,
   height: String,
