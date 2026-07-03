@@ -125,6 +125,16 @@ const inquireSchema = new mongoose.Schema({
   phone: String,
   message: String,
   image: String,
+  customerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Customer',
+    default: null,
+  },
+  leadId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Lead',
+    default: null,
+  },
   status: {
     type: String,
     enum: ['pending', 'completed'],

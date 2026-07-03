@@ -1,5 +1,14 @@
 const asyncHandler = require('../../utils/asyncHandler')
+const bcrypt = require('bcryptjs')
 const { NewsLetter, Quotes, Inquire } = require('../../models/material')
+const Customer = require('../../models/Customer')
+const Lead = require('../../models/Lead')
+const auditService = require('../../services/audit.service')
+const leadListSocket = require('../../services/leadListSocket.service')
+const { syncLeadBuildings } = require('../../services/leadBuilding.service')
+const mailer = require('../../services/email/mailer')
+const generateCustomerId = require('../../utils/generateCustomerId')
+const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
 
 exports.sendNewsLetterRequest = asyncHandler(async(req, res) => {
   const { email } = req.body
@@ -43,7 +52,100 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
 })
 
 exports.sendInquire = asyncHandler(async(req, res) => {
-  const created = await Inquire.create(req.body)
+  const firstName = String(req.body.name || '').trim()
+  const email = String(req.body.email || '').trim().toLowerCase()
+  const rawPhone = String(req.body.phone || '').trim()
+  const phone = rawPhone.replace(/\D/g, '').trim() || rawPhone
+  const countryCode = String(req.body.countryCode || '+1').trim() || '+1'
+
+  if (!firstName || !email || !phone) {
+    return res.status(400).json({
+      status: 400,
+      message: 'name, email and phone are required to create lead enquiry',
+    })
+  }
+
+  let customer = await Customer.findOne({
+    $or: [
+      { email },
+      { 'phone.number': phone },
+    ],
+  })
+
+  let isNewCustomer = false
+  if (!customer) {
+    const customerId = await generateCustomerId()
+    const hashedPassword = await bcrypt.hash(phone, 12)
+    customer = await Customer.create({
+      customerId,
+      firstName,
+      lastName: String(req.body.lastName || '').trim(),
+      email,
+      phone: { number: phone, countryCode },
+      password: hashedPassword,
+      source: 'chat',
+    })
+    isNewCustomer = true
+
+    if (mailer.isEmailConfigured()) {
+      try {
+        await mailer.sendNewCustomerEnquiryNotification({
+          toEmail: 'info@steelbuildingdepot.com',
+          customerName: firstName,
+          customerEmail: email,
+          customerPhone: phone,
+          countryCode,
+        })
+      } catch (err) {
+        console.warn('[sendInquire] Failed to send new customer enquiry notification:', err.message)
+      }
+    }
+  }
+
+  let lead = await Lead.findOne({
+    customerId: customer._id,
+    lifecycleStatus: { $nin: CLOSED_STAGES },
+  }).sort({ createdAt: -1 })
+
+  if (!lead) {
+    lead = await Lead.create({
+      customerId: customer._id,
+      source: 'chat',
+      lifecycleStatus: 'initial_contact',
+      lifecycleHistory: [
+        { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
+      ],
+      notes: String(req.body.message || '').trim(),
+    })
+
+    await auditService.log({
+      type: 'lead',
+      action: AUDIT_ACTIONS.LEAD_CREATED,
+      leadId: lead._id,
+      customerId: customer._id,
+      performedBy: null,
+      metadata: { source: 'chat', isNewCustomer, via: 'material_inquiry' },
+    })
+
+    await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'material_inquiry' })
+    await syncLeadBuildings(lead, { createdBy: null })
+  } else if (req.body.message) {
+    const nextNote = String(req.body.message).trim()
+    if (nextNote) {
+      const existingNotes = String(lead.notes || '').trim()
+      lead.notes = existingNotes ? `${existingNotes}\n\n${nextNote}` : nextNote
+      await lead.save()
+    }
+  }
+
+  const created = await Inquire.create({
+    ...req.body,
+    email,
+    phone,
+    name: firstName,
+    customerId: customer._id,
+    leadId: lead._id,
+  })
   return res.status(200).send({ message: 'send Inquire successfully ', data: created })
 })
 
