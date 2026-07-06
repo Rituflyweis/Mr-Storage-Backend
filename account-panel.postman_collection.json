@@ -1,0 +1,443 @@
+{
+  "info": {
+    "name": "Account Panel - The Steel",
+    "_postman_id": "account-panel-steelpro",
+    "description": "All Account Panel APIs for The Steel / Mr-Storage Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "leadId", "value": "", "type": "string" },
+    { "key": "invoiceId", "value": "", "type": "string" },
+    { "key": "expenseId", "value": "", "type": "string" },
+    { "key": "taxId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth (Shared)",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"account@steelpro.com\",\n  \"password\": \"password123\"\n}"
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["const r = pm.response.json();\nif (r.data?.accessToken) pm.collectionVariables.set('token', r.data.accessToken);"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Dashboard (Financial Overview)",
+      "item": [
+        {
+          "name": "Get Financial Stats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/dashboard/stats",
+              "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "stats"],
+              "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }]
+            }
+          },
+          "_postman_note": "Returns: totalRevenue, totalExpenses, netProfit, outstanding"
+        },
+        {
+          "name": "Get Invoice Stats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/dashboard/invoice-stats", "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "invoice-stats"] }
+          },
+          "_postman_note": "Returns: total, paid, unpaid, overdue, totalSales"
+        },
+        {
+          "name": "Get Income vs Expense Chart",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/dashboard/income-vs-expense?period=weekly",
+              "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "income-vs-expense"],
+              "query": [{ "key": "period", "value": "weekly", "description": "weekly | monthly | yearly" }]
+            }
+          }
+        },
+        {
+          "name": "Get Recent Transactions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/dashboard/recent-transactions?limit=10",
+              "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "recent-transactions"],
+              "query": [{ "key": "limit", "value": "10" }]
+            }
+          }
+        },
+        {
+          "name": "Get Upcoming Payments",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/dashboard/upcoming-payments", "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "upcoming-payments"] }
+          }
+        },
+        {
+          "name": "Get Payment Distribution",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/dashboard/payment-distribution", "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "payment-distribution"] }
+          },
+          "_postman_note": "Returns: paid/pending/overdue counts, amounts, percentages"
+        },
+        {
+          "name": "Get Revenue Trend (12 months)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/dashboard/revenue-trend", "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "revenue-trend"] }
+          }
+        },
+        {
+          "name": "Get Expense Trend (12 months)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/dashboard/expense-trend", "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "expense-trend"] }
+          }
+        },
+        {
+          "name": "Get Cost Breakdown (Material/Labour/Logistics)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/dashboard/cost-breakdown", "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "cost-breakdown"] }
+          },
+          "_postman_note": "NEW — Returns: breakdown{material, labour, logistics, other}, total"
+        },
+        {
+          "name": "Get WIP Projects (Profit Analysis)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/dashboard/wip-projects", "host": ["{{baseUrl}}"], "path": ["account", "dashboard", "wip-projects"] }
+          },
+          "_postman_note": "NEW — Returns: projects[] with revenue, totalCost, netProfit, profitMargin per project"
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Payment Overview (Deposit/Progress/Final)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/payments/overview",
+              "host": ["{{baseUrl}}"], "path": ["account", "payments", "overview"],
+              "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }]
+            }
+          },
+          "_postman_note": "NEW — Returns: summary{totalOrderValue/totalReceived/outstanding}, depositPayments{%/total/received/pending}, progressPayments, finalPayments, clientBreakdown[], invoices[]"
+        },
+        {
+          "name": "Orders & Payments Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/payments/orders?page=1&limit=20",
+              "host": ["{{baseUrl}}"], "path": ["account", "payments", "orders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "_postman_note": "NEW — Returns: summary{totalOrderValue/totalReceived/outstanding/totalWipProfit}, orders[] with paymentBreakdown{deposit/progress/final}"
+        }
+      ]
+    },
+    {
+      "name": "Invoices",
+      "item": [
+        {
+          "name": "Get Invoices",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/invoices",
+              "host": ["{{baseUrl}}"], "path": ["account", "invoices"],
+              "query": [
+                { "key": "status", "value": "", "disabled": true, "description": "paid | sent | draft | overdue" },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Invoice Analytics",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/invoices/analytics", "host": ["{{baseUrl}}"], "path": ["account", "invoices", "analytics"] }
+          }
+        },
+        {
+          "name": "Get Project Invoice Breakdown",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/invoices/project/{{leadId}}/breakdown",
+              "host": ["{{baseUrl}}"], "path": ["account", "invoices", "project", "{{leadId}}", "breakdown"]
+            }
+          }
+        },
+        {
+          "name": "Mark Invoice as Paid",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/invoices/{{invoiceId}}/mark-paid",
+              "host": ["{{baseUrl}}"], "path": ["account", "invoices", "{{invoiceId}}", "mark-paid"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "WIP Profit Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/analytics/wip-profit", "host": ["{{baseUrl}}"], "path": ["account", "analytics", "wip-profit"] }
+          },
+          "_postman_note": "NEW — Returns: summary{totalProjectValue/totalCostToDate/currentWipProfit/profitMargin}, mostProfitable[], decreasingMargin[], projects[] with costBreakdown"
+        },
+        {
+          "name": "Project Cost Analysis Table",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/analytics/project-cost-analysis?page=1&limit=10",
+              "host": ["{{baseUrl}}"], "path": ["account", "analytics", "project-cost-analysis"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "category", "value": "", "disabled": true, "description": "materials | labour | transport | equipment | etc." },
+                { "key": "leadId", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "_postman_note": "NEW — Returns: rows[] with project/category/estimated/actual/variance/date"
+        },
+        {
+          "name": "Order Value vs Plant Costs",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/analytics/order-vs-plant-costs", "host": ["{{baseUrl}}"], "path": ["account", "analytics", "order-vs-plant-costs"] }
+          },
+          "_postman_note": "NEW — Returns: totalOrderValue, totalPlantCosts, projectedProfit"
+        }
+      ]
+    },
+    {
+      "name": "Expenses Management",
+      "item": [
+        {
+          "name": "Get Expense Stats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/expenses/stats", "host": ["{{baseUrl}}"], "path": ["account", "expenses", "stats"] }
+          }
+        },
+        {
+          "name": "Get All Expenses",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/expenses",
+              "host": ["{{baseUrl}}"], "path": ["account", "expenses"],
+              "query": [
+                { "key": "category", "value": "", "disabled": true, "description": "materials | labour | equipment | transport | utilities | permits | subcontractor | office | maintenance | other" },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true },
+                { "key": "leadId", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Expense",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/account/expenses", "host": ["{{baseUrl}}"], "path": ["account", "expenses"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expenseId\": \"EXP-001\",\n  \"category\": \"materials\",\n  \"date\": \"2025-01-15\",\n  \"amount\": 2500,\n  \"description\": \"Steel beams purchase\",\n  \"leadId\": \"{{leadId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Project Expenses",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/expenses/project/{{leadId}}",
+              "host": ["{{baseUrl}}"], "path": ["account", "expenses", "project", "{{leadId}}"]
+            }
+          }
+        },
+        {
+          "name": "Deactivate Expense",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/expenses/{{expenseId}}/deactivate",
+              "host": ["{{baseUrl}}"], "path": ["account", "expenses", "{{expenseId}}", "deactivate"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Profit & Loss Report",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/reports/profit-loss?page=1&limit=20",
+              "host": ["{{baseUrl}}"], "path": ["account", "reports", "profit-loss"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "leadId", "value": "", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "_postman_note": "NEW — Returns: rows[] with orderId/projectName/revenue/expense/netProfit/margin/status, summary{totalRevenue/totalExpense/netProfit/avgMargin}, expenseByCategory, monthlyTrend[]"
+        },
+        {
+          "name": "Cash Flow Report",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/reports/cash-flow",
+              "host": ["{{baseUrl}}"], "path": ["account", "reports", "cash-flow"],
+              "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }]
+            }
+          },
+          "_postman_note": "NEW — Returns: points[] with label/inflow/outflow/net per month (12 months), summary{totalInflow/totalOutflow/netCashFlow}"
+        }
+      ]
+    },
+    {
+      "name": "Taxation",
+      "item": [
+        {
+          "name": "Get Tax Stats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/tax/stats", "host": ["{{baseUrl}}"], "path": ["account", "tax", "stats"] }
+          },
+          "_postman_note": "Returns: totalPayable, totalPaid, pendingCount, overdueCount, paidCount, pendingFilings"
+        },
+        {
+          "name": "Get All Taxes",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/tax",
+              "host": ["{{baseUrl}}"], "path": ["account", "tax"],
+              "query": [
+                { "key": "status", "value": "", "disabled": true, "description": "pending | paid | overdue" },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add New Tax",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/account/tax", "host": ["{{baseUrl}}"], "path": ["account", "tax"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"state\": \"California\",\n  \"dueDate\": \"2025-02-20\",\n  \"amount\": 5000,\n  \"filingFrequency\": \"monthly\",\n  \"threshold\": \">$17,000/yr\",\n  \"websiteLink\": \"https://onlineservices.cdtfa.ca.gov\"\n}"
+            }
+          },
+          "_postman_note": "UPDATED — now accepts filingFrequency (monthly|quarterly|annually|varies|local_only) and threshold fields"
+        },
+        {
+          "name": "Mark Tax as Paid",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/tax/{{taxId}}/mark-paid",
+              "host": ["{{baseUrl}}"], "path": ["account", "tax", "{{taxId}}", "mark-paid"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        {
+          "name": "Get Projects",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/projects",
+              "host": ["{{baseUrl}}"], "path": ["account", "projects"],
+              "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

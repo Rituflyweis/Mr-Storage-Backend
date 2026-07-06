@@ -4,6 +4,9 @@ const { v4: uuidv4 } = require('uuid')
 const Customer = require('../models/Customer')
 const Lead = require('../models/Lead')
 const Invoice = require('../models/Invoice')
+const Delivery = require('../models/Delivery')
+const FreightBid = require('../models/FreightBid')
+const FreightCarrier = require('../models/FreightCarrier')
 const Quotation = require('../models/Quotation')
 const QuoteSummary = require('../models/QuoteSummary')
 const PaymentSchedule = require('../models/PaymentSchedule')
@@ -63,7 +66,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const customerId = req.customer._id
 
   const [leads, invoices] = await Promise.all([
-    Lead.find({ customerId }).select('lifecycleStatus quoteValue documents').lean(),
+    Lead.find({ customerId }).select('lifecycleStatus quoteValue documents jobId projectName').lean(),
     Invoice.find({ customerId }).select('status totalAmount date daysToPay leadId').lean(),
   ])
 
@@ -97,14 +100,61 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     }
   }
 
+  const leadIds = leads.map(l => l._id)
+  const nowTs = new Date()
+  const weekFromNow = new Date(nowTs.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+  const deliveries = leadIds.length
+    ? await Delivery.find({
+        leadId: { $in: leadIds },
+        status: { $nin: ['draft', 'cancelled'] },
+      }).select('status deliveryDate deliveryNumber description loadDescription leadId loadWeight').lean()
+    : []
+
+  const deliveryTracking = {
+    inTransit:            deliveries.filter(d => d.status === 'in_transit').length,
+    staged:               deliveries.filter(d => d.status === 'scheduled').length,
+    ready:                deliveries.filter(d => d.status === 'confirmed').length,
+    totalToday:           deliveries.filter(d => d.deliveryDate && new Date(d.deliveryDate).toDateString() === nowTs.toDateString()).length,
+    upcomingDeliveries:   deliveries.filter(d => d.deliveryDate && new Date(d.deliveryDate) > nowTs).length,
+    deliveriesThisWeek:   deliveries.filter(d => d.deliveryDate && new Date(d.deliveryDate) > nowTs && new Date(d.deliveryDate) <= weekFromNow).length,
+    delayedDeliveries:    deliveries.filter(d => d.status === 'delayed').length,
+    rescheduledDeliveries: deliveries.filter(d => d.status === 'rescheduled').length,
+  }
+
+  const nextDelivery = deliveries
+    .filter(d => d.deliveryDate && new Date(d.deliveryDate) >= nowTs && d.status !== 'delivered')
+    .sort((a, b) => new Date(a.deliveryDate) - new Date(b.deliveryDate))[0] || null
+
+  const shipmentBreakdown = {
+    totalLoads: deliveries.length,
+    totalBundles: null,
+  }
+
+  const projectTimeline = leads.reduce((min, l) => {
+    if (!min) return null
+    return min
+  }, null)
+
   return success(res, {
     activeProjects,
     closedProjects,
     drawingsAndApprovals,
+    projectTimeline: null,
     totalProjectValue,
     totalPaid,
     totalPending,
     upcomingInvoice,
+    deliveryTracking,
+    shipmentBreakdown,
+    nextDelivery: nextDelivery ? {
+      deliveryId: nextDelivery._id,
+      deliveryNumber: nextDelivery.deliveryNumber,
+      description: nextDelivery.loadDescription || nextDelivery.description || '',
+      status: nextDelivery.status,
+      deliveryDate: nextDelivery.deliveryDate,
+      estimatedWeight: nextDelivery.loadWeight || null,
+    } : null,
   })
 })
 
@@ -366,4 +416,138 @@ exports.getPaymentInvoices = asyncHandler(async (req, res) => {
   })
 
   return success(res, { projects })
+})
+
+// ── Delivery Schedule ─────────────────────────────────────────────────────────
+
+exports.getDeliverySchedule = asyncHandler(async (req, res) => {
+  const customerId = req.customer._id
+  const { tab = 'upcoming' } = req.query
+
+  const leads = await Lead.find({ customerId }).select('_id jobId projectName').lean()
+  if (!leads.length) return success(res, { deliveries: [], total: 0 })
+
+  const leadIds = leads.map(l => l._id)
+  const leadMap = new Map(leads.map(l => [String(l._id), l]))
+  const now = new Date()
+
+  const baseFilter = {
+    leadId: { $in: leadIds },
+    status: { $nin: ['draft', 'cancelled'] },
+  }
+
+  if (tab === 'upcoming') {
+    baseFilter.deliveryDate = { $gte: now }
+    baseFilter.status = { $nin: ['draft', 'cancelled', 'delivered'] }
+  } else if (tab === 'past') {
+    baseFilter.$or = [
+      { status: 'delivered' },
+      { deliveryDate: { $lt: now }, status: { $nin: ['draft', 'cancelled'] } },
+    ]
+    delete baseFilter.status
+  } else if (tab === 'rescheduled') {
+    baseFilter.status = 'rescheduled'
+  }
+
+  const deliveries = await Delivery.find(baseFilter)
+    .sort({ deliveryDate: 1 })
+    .lean()
+
+  const selectedBidIds = deliveries.map(d => d.selectedCarrierBidId).filter(Boolean)
+  const selectedBids = selectedBidIds.length
+    ? await FreightBid.find({ _id: { $in: selectedBidIds } })
+        .select('_id carrierId')
+        .populate('carrierId', 'carrierName contactName phone email')
+        .lean()
+    : []
+  const bidMap = new Map(selectedBids.map(b => [String(b._id), b]))
+
+  const result = deliveries.map(d => {
+    const lead = leadMap.get(String(d.leadId)) || {}
+    const bid = d.selectedCarrierBidId ? bidMap.get(String(d.selectedCarrierBidId)) : null
+    const carrier = bid?.carrierId || null
+
+    return {
+      deliveryId: d._id,
+      deliveryNumber: d.deliveryNumber,
+      status: d.status,
+      description: d.loadDescription || d.description || '',
+      deliveryDate: d.deliveryDate,
+      timings: d.timings || '',
+      pickupDate: d.pickupDate,
+      estimatedWeight: d.loadWeight || null,
+      loadingEquipment: d.loadingEquipment || [],
+      siteInstructions: d.specialRequirements || '',
+      specialNotes: d.additionalNotes || '',
+      siteContact: {
+        name: d.receivingPoc || '',
+        phone: d.pickupContactPhone || '',
+      },
+      deliveryCompany: carrier ? {
+        name: carrier.carrierName || '',
+        driver: carrier.contactName || '',
+        phone: carrier.phone || '',
+        email: carrier.email || '',
+      } : null,
+      project: {
+        leadId: lead._id || d.leadId,
+        projectId: lead.jobId || '',
+        projectName: lead.projectName || '',
+      },
+    }
+  })
+
+  const upcomingCount = await Delivery.countDocuments({ leadId: { $in: leadIds }, deliveryDate: { $gte: now }, status: { $nin: ['draft', 'cancelled', 'delivered'] } })
+  const pastCount = await Delivery.countDocuments({ leadId: { $in: leadIds }, $or: [{ status: 'delivered' }, { deliveryDate: { $lt: now }, status: { $nin: ['draft', 'cancelled'] } }] })
+  const rescheduledCount = await Delivery.countDocuments({ leadId: { $in: leadIds }, status: 'rescheduled' })
+
+  return success(res, {
+    deliveries: result,
+    total: result.length,
+    tabs: { upcoming: upcomingCount, past: pastCount, rescheduled: rescheduledCount },
+  })
+})
+
+// ── Tax Report ────────────────────────────────────────────────────────────────
+
+exports.getTaxReport = asyncHandler(async (req, res) => {
+  const customerId = req.customer._id
+
+  const leads = await Lead.find({ customerId }).select('_id jobId projectName buildingType location').lean()
+  if (!leads.length) return success(res, { rows: [], summary: { totalContractAmount: 0, totalTaxDue: 0 } })
+
+  const leadIds = leads.map(l => l._id)
+  const leadMap = new Map(leads.map(l => [String(l._id), l]))
+
+  const invoices = await Invoice.find({ customerId, leadId: { $in: leadIds } })
+    .select('leadId invoiceNumber totalAmount tax date status lineItems')
+    .sort({ date: -1 })
+    .lean()
+
+  const rows = invoices
+    .filter(inv => (inv.tax || 0) > 0 || (inv.lineItems || []).some(li => li.taxAmount > 0))
+    .map(inv => {
+      const lead = leadMap.get(String(inv.leadId)) || {}
+      const lineTaxTotal = (inv.lineItems || []).reduce((s, li) => s + (li.taxAmount || 0), 0)
+      const taxDue = lineTaxTotal || inv.tax || 0
+      const taxRate = inv.totalAmount > 0 ? ((taxDue / inv.totalAmount) * 100).toFixed(2) : 0
+
+      return {
+        date: inv.date,
+        invoiceNumber: inv.invoiceNumber,
+        projectId: lead.jobId || '',
+        projectName: lead.projectName || '',
+        buildingType: lead.buildingType || '',
+        location: lead.location || '',
+        contractAmount: inv.totalAmount || 0,
+        taxRate: Number(taxRate),
+        taxDue,
+        status: inv.status,
+      }
+    })
+
+  const totalContractAmount = rows.reduce((s, r) => s + r.contractAmount, 0)
+  const totalTaxDue = rows.reduce((s, r) => s + r.taxDue, 0)
+
+  return success(res, { rows, summary: { totalContractAmount, totalTaxDue } })
 })

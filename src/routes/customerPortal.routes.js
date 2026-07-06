@@ -41,7 +41,11 @@ router.post('/projects',
 router.get('/documents', ctrl.getDocuments)
 
 // Payments
-router.get('/payments',          ctrl.getPayments)
-router.get('/payments/invoices', ctrl.getPaymentInvoices)
+router.get('/payments',            ctrl.getPayments)
+router.get('/payments/invoices',   ctrl.getPaymentInvoices)
+router.get('/payments/tax-report', ctrl.getTaxReport)
+
+// Delivery Schedule
+router.get('/deliveries', ctrl.getDeliverySchedule)
 
 module.exports = router
