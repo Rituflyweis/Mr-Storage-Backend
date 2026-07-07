@@ -1,0 +1,21 @@
+const router = require('express').Router()
+const { body, param } = require('express-validator')
+const ctrl = require('../../controllers/admin/construction.controller')
+const validate = require('../../middleware/validate')
+
+router.get('/overview',              ctrl.getOverview)
+router.get('/projects-calendar',     ctrl.getProjectsCalendar)
+router.get('/drawings',              ctrl.getDrawings)
+router.post('/drawings/:leadId',     [param('leadId').isMongoId(), body('name').notEmpty()], validate, ctrl.uploadDrawing)
+router.put('/drawings/:docId/review', [param('docId').isMongoId()], validate, ctrl.approveDrawing)
+router.get('/deliveries',            ctrl.getConstructionDeliveries)
+router.get('/tasks',                 ctrl.getTasks)
+router.post('/tasks',                [body('title').notEmpty(), body('leadId').isMongoId()], validate, ctrl.createTask)
+router.put('/tasks/:taskId',         [param('taskId').isMongoId()], validate, ctrl.updateTask)
+router.delete('/tasks/:taskId',      [param('taskId').isMongoId()], validate, ctrl.deleteTask)
+router.get('/material-requests',     ctrl.getMaterialRequests)
+router.post('/material-requests',    [body('leadId').isMongoId(), body('requestedItems').isArray()], validate, ctrl.createMaterialRequest)
+router.put('/material-requests/:requestId/review', [param('requestId').isMongoId(), body('action').isIn(['approved','rejected'])], validate, ctrl.reviewMaterialRequest)
+router.get('/reports',               ctrl.getConstructionReports)
+
+module.exports = router
