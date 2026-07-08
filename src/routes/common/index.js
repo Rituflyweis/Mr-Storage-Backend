@@ -41,5 +41,6 @@ router.use('/payment-schedules', ...guard, require('./payment.routes'))
 router.use('/upload', uploadGuard, require('./upload.routes'))
 router.use('/uploads', uploadGuard, require('./upload.routes'))
 router.use('/smdt', smdtGuard, require('./smdt.routes'))
+router.use('/activity', require('./pageActivity.routes'))
 
 module.exports = router

@@ -5,15 +5,16 @@ const bcrypt = require('bcryptjs')
 const Customer = require('../models/Customer')
 const Lead = require('../models/Lead')
 const Message = require('../models/Message')
-const POOrder = require('../models/POOrder')
 const ShipperRequest = require('../models/ShipperRequest')
 const ConsolidatedBOM = require('../models/ConsolidatedBOM')
 const auditService = require('../services/audit.service')
 const leadListSocket = require('../services/leadListSocket.service')
 const { syncLeadBuildings } = require('../services/leadBuilding.service')
+const mailer = require('../services/email/mailer')
 const generateCustomerId = require('../utils/generateCustomerId')
 const { success, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
+const { notifyPlantUsersForLead } = require('../utils/notifyPlantUsers')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../config/constants')
 const env = require('../config/env')
 
@@ -54,18 +55,6 @@ const buildVendorUploadSummary = (request) => {
   }
 }
 
-const notifyPlantUsersForLead = async (leadId, eventName, payload) => {
-  if (!global.io) return
-  const plantUserIds = await POOrder.distinct('assignedTo', {
-    leadId,
-    status: 'approved',
-    assignedTo: { $ne: null },
-  })
-  for (const userId of plantUserIds) {
-    global.io.of('/admin').to(`user:${userId}`).emit(eventName, payload)
-  }
-}
-
 exports.chatInit = asyncHandler(async (req, res) => {
   const { firstName, email, phone } = req.body
   const countryCode = String(req.body.countryCode || '+1').trim() || '+1'
@@ -97,6 +86,20 @@ exports.chatInit = asyncHandler(async (req, res) => {
       source: 'chat',
     })
     isNewCustomer = true
+
+    if (mailer.isEmailConfigured()) {
+      try {
+        await mailer.sendNewCustomerEnquiryNotification({
+          toEmail: 'info@steelbuildingdepot.com',
+          customerName: firstName.trim(),
+          customerEmail: normalizedEmail,
+          customerPhone: normalizedPhone,
+          countryCode,
+        })
+      } catch (err) {
+        console.warn('[chatInit] Failed to send new customer enquiry notification:', err.message)
+      }
+    }
   }
 
   // 3. Check for any existing active (non-delivered) lead for this customer

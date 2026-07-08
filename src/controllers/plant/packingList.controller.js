@@ -1,8 +1,13 @@
 const PackingList = require('../../models/PackingList')
 const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
-const POOrder = require('../../models/POOrder')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { getScopedLeadIds } = require('../../utils/plantAccessScope')
+const {
+  mapProjectNameFallbackFields,
+  LEAD_PROJECT_LIST_SELECT,
+  LEAD_PROJECT_LIST_POPULATE,
+} = require('../../utils/plantProjectListFields')
 const { TRUCK_TYPES } = require('../../services/plant/loadPlanning.service')
 const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -64,18 +69,21 @@ const syncPackingListPlanSummary = async (packingListPlanId) => {
   return summary
 }
 
-const getAssignedLeadIds = async (plantUserId) =>
-  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+const getAssignedLeadIds = async (req) => getScopedLeadIds(req)
 
 exports.getPackingListPlanProjects = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) return success(res, { projects: [], total: 0 })
 
   const plans = await PackingListPlan.find({
     leadId: { $in: leadIds },
     status: { $ne: 'cancelled' },
   })
-    .populate('leadId', 'projectName jobId')
+    .populate({
+      path: 'leadId',
+      select: LEAD_PROJECT_LIST_SELECT,
+      populate: LEAD_PROJECT_LIST_POPULATE,
+    })
     .sort({ updatedAt: -1 })
     .lean()
 
@@ -95,6 +103,7 @@ exports.getPackingListPlanProjects = asyncHandler(async (req, res) => {
       projectId: lead.jobId || '',
       jobId: lead.jobId || '',
       projectName: lead.projectName || '',
+      ...mapProjectNameFallbackFields(lead),
       packingListPlanId: plan._id,
       listGeneratedAt: plan.createdAt || null,
       totalPackingList: plan.totalPackingLists || 0,
@@ -116,7 +125,7 @@ exports.getPackingList = asyncHandler(async (req, res) => {
   const packingList = await PackingList.findById(req.params.packingListId).lean()
   if (!packingList) return notFound(res, 'Packing list not found')
 
-  const access = await assertPlantProjectAccess(packingList.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(packingList.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -148,7 +157,7 @@ exports.updatePackingList = asyncHandler(async (req, res) => {
   const packingList = await PackingList.findById(req.params.packingListId)
   if (!packingList) return notFound(res, 'Packing list not found')
 
-  const access = await assertPlantProjectAccess(packingList.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(packingList.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)

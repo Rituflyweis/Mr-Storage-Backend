@@ -3,10 +3,15 @@ const Bundle = require('../../models/Bundle')
 const VendorQuoteLine = require('../../models/VendorQuoteLine')
 const PackingListPlan = require('../../models/PackingListPlan')
 const PackingList = require('../../models/PackingList')
-const POOrder = require('../../models/POOrder')
 const ShipperRequest = require('../../models/ShipperRequest')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
+const {
+  mapProjectNameFallbackFields,
+  LEAD_PROJECT_LIST_SELECT,
+  LEAD_PROJECT_LIST_POPULATE,
+} = require('../../utils/plantProjectListFields')
 const {
   TRUCK_TYPES,
   generateMixedTruckPackingLists,
@@ -150,40 +155,57 @@ const getBundleCoverage = (vendorLines, bundles) => {
   }
 }
 
-const loadBundlePlanWithAccess = async (bundlePlanId, plantUserId) => {
+const loadBundlePlanWithAccess = async (bundlePlanId, req) => {
   const bundlePlan = await BundlePlan.findById(bundlePlanId).lean()
   if (!bundlePlan) return { error: 'Bundle plan not found', code: 404 }
 
-  const access = await assertPlantProjectAccess(bundlePlan.leadId, plantUserId)
+  const access = await assertPlantProjectAccess(bundlePlan.leadId, req)
   if (access.error) return access
 
   return { bundlePlan }
 }
 
-const getAssignedLeadIds = async (plantUserId) =>
-  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+const getAssignedLeadIds = async (req) => getScopedLeadIds(req)
 
 exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) return success(res, { projects: [], total: 0 })
 
   const bundlePlans = await BundlePlan.find({
     leadId: { $in: leadIds },
     status: { $ne: 'cancelled' },
   })
-    .populate('leadId', 'projectName jobId')
+    .populate({
+      path: 'leadId',
+      select: LEAD_PROJECT_LIST_SELECT,
+      populate: LEAD_PROJECT_LIST_POPULATE,
+    })
     .sort({ updatedAt: -1 })
     .lean()
 
   if (!bundlePlans.length) return success(res, { projects: [], total: 0 })
 
+  const bundlePlanIds = bundlePlans.map((bp) => bp._id)
   const shipperRequestIds = bundlePlans.map((bp) => bp.shipperRequestId).filter(Boolean)
-  const shipperRequests = shipperRequestIds.length
-    ? await ShipperRequest.find({ _id: { $in: shipperRequestIds } })
-        .select('_id submittedAt')
-        .lean()
-    : []
+
+  const [shipperRequests, packingListPlans] = await Promise.all([
+    shipperRequestIds.length
+      ? ShipperRequest.find({ _id: { $in: shipperRequestIds } })
+          .select('_id submittedAt')
+          .lean()
+      : [],
+    PackingListPlan.find({
+      bundlePlanId: { $in: bundlePlanIds },
+      status: { $ne: 'cancelled' },
+    })
+      .select('bundlePlanId totalPackingLists')
+      .lean(),
+  ])
+
   const shipperRequestMap = new Map(shipperRequests.map((sr) => [String(sr._id), sr]))
+  const packingListPlanByBundlePlanId = new Map(
+    packingListPlans.map((plan) => [String(plan.bundlePlanId), plan])
+  )
 
   const projectMap = new Map()
 
@@ -195,15 +217,18 @@ exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
     if (projectMap.has(key)) continue
 
     const shipperRequest = shipperRequestMap.get(String(bundlePlan.shipperRequestId))
+    const packingListPlan = packingListPlanByBundlePlanId.get(String(bundlePlan._id))
 
     projectMap.set(key, {
       leadId: lead._id,
       projectId: lead.jobId || '',
       jobId: lead.jobId || '',
       projectName: lead.projectName || '',
+      ...mapProjectNameFallbackFields(lead),
       bundlePlanId: bundlePlan._id,
       fileReceivedAt: shipperRequest?.submittedAt || bundlePlan.createdAt || null,
-      totalLoadPlanning: bundlePlan.totalBundles || 0,
+      totalBundles: bundlePlan.totalBundles || 0,
+      totalLoads: packingListPlan?.totalPackingLists || 0,
       status: bundlePlan.status,
       updatedAt: bundlePlan.updatedAt,
     })
@@ -218,11 +243,11 @@ exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
   return success(res, { projects, total: projects.length })
 })
 
-const loadBundlePlanByProjectWithAccess = async (projectRef, plantUserId) => {
+const loadBundlePlanByProjectWithAccess = async (projectRef, req) => {
   const lead = await resolveLeadByProjectRef(projectRef)
   if (!lead) return { error: 'Project not found', code: 404 }
 
-  const access = await assertPlantProjectAccess(lead._id, plantUserId)
+  const access = await assertPlantProjectAccess(lead._id, req)
   if (access.error) return access
 
   const bundlePlan = await BundlePlan.findOne({
@@ -240,7 +265,7 @@ const loadBundlePlanByProjectWithAccess = async (projectRef, plantUserId) => {
 }
 
 exports.getBundlePlan = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req.user._id)
+  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -261,7 +286,7 @@ exports.getBundlePlan = asyncHandler(async (req, res) => {
 })
 
 exports.updateBundlePlan = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req.user._id)
+  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -278,7 +303,7 @@ exports.updateBundlePlan = asyncHandler(async (req, res) => {
 })
 
 exports.getBundlePlanCoverage = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req.user._id)
+  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -298,7 +323,7 @@ exports.getBundlePlanCoverage = asyncHandler(async (req, res) => {
 })
 
 exports.createBundle = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req.user._id)
+  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -356,7 +381,7 @@ exports.createBundle = asyncHandler(async (req, res) => {
 })
 
 exports.confirmBundlePlan = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req.user._id)
+  const loaded = await loadBundlePlanWithAccess(req.params.bundlePlanId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -408,7 +433,7 @@ exports.confirmBundlePlan = asyncHandler(async (req, res) => {
 exports.generatePackingListPlan = asyncHandler(async (req, res) => {
   const { bundlePlanId } = req.params
 
-  const loaded = await loadBundlePlanWithAccess(bundlePlanId, req.user._id)
+  const loaded = await loadBundlePlanWithAccess(bundlePlanId, req)
 
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
@@ -670,7 +695,7 @@ exports.generatePackingListPlan = asyncHandler(async (req, res) => {
 })
 
 exports.getProjectLoadPlanning = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -702,7 +727,7 @@ exports.getProjectLoadPlanning = asyncHandler(async (req, res) => {
 })
 
 exports.updateProjectLoadPlanning = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -814,7 +839,7 @@ exports.updateProjectLoadPlanning = asyncHandler(async (req, res) => {
 })
 
 exports.getProjectBundlePlanCoverage = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -825,7 +850,7 @@ exports.getProjectBundlePlanCoverage = asyncHandler(async (req, res) => {
 })
 
 exports.confirmProjectBundlePlan = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)
@@ -836,7 +861,7 @@ exports.confirmProjectBundlePlan = asyncHandler(async (req, res) => {
 })
 
 exports.generateProjectPackingListPlan = asyncHandler(async (req, res) => {
-  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req.user._id)
+  const loaded = await loadBundlePlanByProjectWithAccess(req.params.projectId, req)
   if (loaded.error) {
     if (loaded.code === 404) return notFound(res, loaded.error)
     return forbidden(res, loaded.error)

@@ -26,6 +26,10 @@ const {
 const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
 const { setLeadLifecycleStage } = require('../../utils/leadLifecycle.util')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
+const {
+  mapEscalationLeadRow,
+  ESCALATION_LEAD_POPULATE,
+} = require('../../utils/escalationLeadRow')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const leadListSocket = require('../../services/leadListSocket.service')
@@ -358,14 +362,7 @@ exports.getEscalatedLeads = asyncHandler(async (req, res) => {
 
   const [escalations, total] = await Promise.all([
     Escalation.find(escalationFilter)
-      .populate({
-  path: 'leadId',
-  select: '_id jobId projectName lifecycleStatus quoteValue customerId assignedSales',
-  populate: {
-    path: 'assignedSales',
-    select: '_id firstName lastName email'
-  }
-})
+      .populate(ESCALATION_LEAD_POPULATE)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -373,20 +370,7 @@ exports.getEscalatedLeads = asyncHandler(async (req, res) => {
     Escalation.countDocuments(escalationFilter),
   ])
 
-  const result = escalations.map(e => withProjectIdFields({
-    _id: e.leadId?._id,
-    projectName: e.leadId?.projectName || '',
-    lifecycleStatus: e.leadId?.lifecycleStatus || '',
-    quoteValue: e.leadId?.quoteValue || 0,
-    customerId: e.customerId ? { _id: e.customerId._id, firstName: e.customerId.firstName, email: e.customerId.email } : null,
-    assignedTo: e.leadId?.assignedSales ? {
-    _id: e.leadId.assignedSales._id,
-    firstName: e.leadId.assignedSales.firstName,
-    lastName: e.leadId.assignedSales.lastName,
-    email: e.leadId.assignedSales.email
-  } : null,
-    escalation: { _id: e._id, note: e.note, status: e.status, createdAt: e.createdAt },
-  }, e.leadId?.jobId))
+  const result = escalations.map(mapEscalationLeadRow)
 
   return success(res, { leads: result, total })
 })
@@ -654,16 +638,26 @@ exports.createBuildings = asyncHandler(async (req, res) => {
   const num = parseInt(numberOfBuildings, 10)
   if (!num || num < 1) return badRequest(res, 'numberOfBuildings must be >= 1')
 
-  const { buildings, numberOfBuildings: effectiveCount, createdCount, createdBuildingNumbers } =
-    await syncLeadBuildings(lead, {
-      numberOfBuildings: num,
-      createdBy: req.user._id,
-    })
+  const syncResult = await syncLeadBuildings(lead, {
+    numberOfBuildings: num,
+    createdBy: req.user._id,
+  })
 
-  if (createdCount > 0) {
+  const {
+    buildings,
+    numberOfBuildings: effectiveCount,
+    createdCount,
+    createdBuildingNumbers,
+    removedCount,
+    removedBuildingNumbers,
+    removedBomJobCount,
+    consolidatedBomInvalidated,
+  } = syncResult
+
+  if (createdCount > 0 || removedCount > 0) {
     await auditService.log({
       type: 'lead',
-      action: AUDIT_ACTIONS.BUILDINGS_CREATED,
+      action: removedCount > 0 ? AUDIT_ACTIONS.BUILDINGS_SYNCED : AUDIT_ACTIONS.BUILDINGS_CREATED,
       leadId,
       customerId: lead.customerId,
       performedBy: req.user._id,
@@ -671,16 +665,30 @@ exports.createBuildings = asyncHandler(async (req, res) => {
         numberOfBuildings: effectiveCount,
         createdCount,
         createdBuildingNumbers,
+        removedCount,
+        removedBuildingNumbers,
+        removedBomJobCount,
+        consolidatedBomInvalidated,
       },
     })
   }
 
-  return created(res, {
+  const payload = {
     buildings,
     numberOfBuildings: effectiveCount,
     createdCount,
     createdBuildingNumbers,
-  })
+    removedCount,
+    removedBuildingNumbers,
+    removedBomJobCount,
+    consolidatedBomInvalidated,
+  }
+
+  if (createdCount > 0 && removedCount === 0) {
+    return created(res, payload)
+  }
+
+  return success(res, payload, removedCount > 0 ? 'Buildings synced' : 'No building changes')
 })
 
 exports.getBuildings = asyncHandler(async (req, res) => {
@@ -766,6 +774,13 @@ exports.raisePOOrder = asyncHandler(async (req, res) => {
 
   const latestInvoice = await Invoice.findOne({ leadId }).sort({ createdAt: -1 }).lean()
   if (!latestInvoice) return badRequest(res, 'No invoice found. Create an invoice first.')
+
+  if (latestInvoice.status !== 'paid') {
+    return badRequest(res, 'Latest invoice must be marked as paid before raising a PO', {
+      invoiceId: latestInvoice._id,
+      invoiceStatus: latestInvoice.status,
+    })
+  }
 
   if (!PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES.includes(lead.lifecycleStatus)) {
     return badRequest(
@@ -897,30 +912,35 @@ exports.getMyPOOrders = asyncHandler(async (req, res) => {
   if (status) filter.status = status
 
   const skip = (parsedPage - 1) * parsedLimit
- const [orders, total] = await Promise.all([
-  POOrder.find(filter)
-    .populate({
-      path: 'leadId',
-      select: 'jobId projectName'
-    })
-    .populate({
-      path: 'customerId',
-      select: 'firstName'
-    })
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(parsedLimit)
-    .lean(),
-  POOrder.countDocuments(filter),
-])
+  const [orders, total] = await Promise.all([
+    POOrder.find(filter)
+      .populate({
+        path: 'leadId',
+        select: 'jobId projectName',
+      })
+      .populate({
+        path: 'customerId',
+        select: 'firstName lastName',
+      })
+      .populate({
+        path: 'invoiceId',
+        select: 'invoiceNumber status totalAmount',
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    POOrder.countDocuments(filter),
+  ])
 
-const formattedOrders = orders.map(order => ({
-  ...order,
-  jobId: order.leadId?.jobId || null,
-}))
+  const formattedOrders = orders.map((order) => ({
+    ...order,
+    jobId: order.leadId?.jobId || null,
+    quoteValue: order.invoiceId?.totalAmount ?? null,
+  }))
 
-return success(res, {
-  orders: formattedOrders,
+  return success(res, {
+    orders: formattedOrders,
   total,
   page: parsedPage,
   limit: parsedLimit,

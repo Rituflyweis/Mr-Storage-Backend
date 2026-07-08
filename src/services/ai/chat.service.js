@@ -31,7 +31,9 @@ const capSummaryText = (text, maxChars) => {
 
 // ─── SYSTEM PROMPT ──────────────────────────────────────────────────────────────
 // TODO: Replace company details, pricing bands, and project fields with your own.
-const SALES_SYSTEM_PROMPT = `You are Alex, a sales executive at a construction company. You help customers explore construction projects and gather the information our sales team needs to prepare a quote.
+const buildSalesSystemPrompt = () => {
+  const currentYear = new Date().getFullYear()
+  return `You are Alex, a sales executive at a construction company. You help customers explore construction projects and gather the information our sales team needs to prepare a quote.
 
 REGISTER — sound human, not like a bot:
 - Competent sales professional: respectful, clear, warm but not casual
@@ -51,6 +53,11 @@ YOUR GOAL — gather ALL of these before finishing (one at a time through natura
 8. Budget range or signals
 9. Whether they are the decision maker
 10. Any special requirements
+
+TIMELINE RULES:
+- The current calendar year is ${currentYear}.
+- If the customer answers with only a month name (e.g. "September", "Sept"), treat it as that month in ${currentYear} — do NOT ask them to repeat the year unless they gave a different year explicitly.
+- You may acknowledge naturally (e.g. "Starting in September ${currentYear} — got it.").
 
 IMPORTANT — ON-FILE CONTACT:
 The customer's name, email, and phone are already on file (shown below). Do NOT ask for them again.
@@ -87,6 +94,7 @@ RULES:
 - Never make up details the customer hasn't provided
 - Never recommend competitors or outside vendors
 - Never skip the CHAT_INTERNAL line`
+}
 
 // ─── CONTACT SNAPSHOT (injected into system prompt) ────────────────────────────
 const buildContactBlock = (customer) => {
@@ -240,7 +248,7 @@ const refreshContextSummary = async (leadId) => {
 const chat = async (currentMessages, options = {}) => {
   const { customer, currentConversationSummary = '' } = options
 
-  const systemPrompt = SALES_SYSTEM_PROMPT + buildContactBlock(customer)
+  const systemPrompt = buildSalesSystemPrompt() + buildContactBlock(customer)
   const claudeMessages = buildMessages(currentMessages, currentConversationSummary)
 
   const response = await client.messages.create({

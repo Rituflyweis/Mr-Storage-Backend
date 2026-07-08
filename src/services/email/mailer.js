@@ -1,5 +1,6 @@
-const nodemailer = require('nodemailer')
-const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM } = require('../../config/env')
+const sgMail = require('@sendgrid/mail')
+const { SENDGRID_API_KEY, SENDGRID_FROM, MAIL_FROM } = require('../../config/env')
+const { getInvoiceCompany } = require('../../config/invoiceCompany')
 const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
 const path = require('path')
 const fs = require('fs')
@@ -8,23 +9,51 @@ const {
   formatExceptionsForEmailHtml,
   formatExceptionsForEmailText,
 } = require('../../utils/vendorUpload.util')
+const {
+  formatFreightLoadDetailsHtml,
+  formatFreightLoadDetailsText,
+} = require('../plant/freightLoadDetails.service')
 
 
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: Number(SMTP_PORT),
-  secure: Number(SMTP_PORT) === 465,
-  family: 4,
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 30000,
-  auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
+if (SENDGRID_API_KEY) {
+  sgMail.setApiKey(SENDGRID_API_KEY)
+}
+
+const resolvedMailFrom = SENDGRID_FROM || MAIL_FROM
+
+const isEmailConfigured = () => Boolean(SENDGRID_API_KEY && resolvedMailFrom)
+const isSmtpConfigured = isEmailConfigured
+
+const normalizeAttachmentsForSendGrid = (attachments = []) =>
+  attachments.map((attachment) => {
+    const normalized = { ...attachment }
+    if (Buffer.isBuffer(normalized.content)) {
+      normalized.content = normalized.content.toString('base64')
+    }
+    if (!normalized.disposition) {
+      normalized.disposition = 'attachment'
+    }
+    return normalized
+  })
+
+const transporter = {
+  sendMail: async (mailOptions = {}) => {
+    if (!SENDGRID_API_KEY) {
+      throw new Error('Email service is not configured. Set SENDGRID_API_KEY.')
+    }
+
+    const payload = {
+      ...mailOptions,
+      from: mailOptions.from || resolvedMailFrom,
+    }
+
+    if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
+      payload.attachments = normalizeAttachmentsForSendGrid(payload.attachments)
+    }
+
+    await sgMail.send(payload)
   },
-})
-
-const isSmtpConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS)
+}
 
 const loadTemplate = (templateName) => {
   const filePath = path.join(__dirname, 'templates', `${templateName}.html`)
@@ -47,9 +76,46 @@ const escapeHtml = (str) => {
     .replace(/"/g, '&quot;')
 }
 
+const formatMultilineAddressHtml = (lines = []) =>
+  lines.filter(Boolean).map((line) => escapeHtml(line)).join('<br />')
+
+const buildInvoiceCompanyTemplateFields = () => {
+  const company = getInvoiceCompany()
+  const detailLines = [
+    formatMultilineAddressHtml(company.addressLines),
+    company.email ? escapeHtml(company.email) : '',
+    company.website ? escapeHtml(company.website) : '',
+  ].filter(Boolean)
+
+  const logoBlock = company.logoUrl
+    ? `<img src="${escapeHtml(company.logoUrl)}" alt="${escapeHtml(company.name)}" class="logo" />`
+    : `<div style="font-size:18px;font-weight:800;color:#111827;letter-spacing:0.5px;line-height:1.3;">${escapeHtml(company.name)}</div>`
+
+  return {
+    LOGO_BLOCK: logoBlock,
+    COMPANY_NAME: escapeHtml(company.name),
+    COMPANY_DETAILS_HTML: detailLines.join('<br />'),
+  }
+}
+
+const buildCustomerBillToAddressHtml = ({ company = '', location = '' } = {}) => {
+  const lines = [String(company || '').trim(), String(location || '').trim()].filter(Boolean)
+  if (!lines.length) return ''
+  return formatMultilineAddressHtml(lines)
+}
+
+const buildCustomerAddressBlock = (customerAddressHtml) => {
+  if (!customerAddressHtml) return ''
+  return `<div class="customer-copy">${customerAddressHtml}</div>`
+}
+
 const formatInvoiceMoney = (value) => {
   if (value == null || value === '' || Number.isNaN(Number(value))) return '—'
-  return Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const formatted = Number(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return `$${formatted}`
 }
 
 const formatInvoiceDate = (value) => {
@@ -58,14 +124,43 @@ const formatInvoiceDate = (value) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toDateString()
 }
 
+const normalizeInvoiceValueType = (type) =>
+  String(type || 'amount').trim().toLowerCase() === 'percentage' ? 'percentage' : 'amount'
+
+const formatInvoiceRateCell = (li) => {
+  const effectiveRate = li.effectiveRate != null ? li.effectiveRate : li.rate
+  return formatInvoiceMoney(effectiveRate)
+}
+
+const formatInvoiceTaxCell = (li) => {
+  const taxType = normalizeInvoiceValueType(li.taxType)
+  const taxInput = li.tax
+  const taxAmount =
+    li.taxAmount != null
+      ? li.taxAmount
+      : taxType === 'amount'
+        ? taxInput
+        : null
+
+  if (taxType === 'percentage' && taxInput != null && taxInput !== '') {
+    const amountLine = taxAmount != null ? formatInvoiceMoney(taxAmount) : '—'
+    return amountLine
+  }
+
+  return formatInvoiceMoney(taxAmount != null ? taxAmount : taxInput)
+}
+
 const buildInvoiceLineItemsRows = (lineItems = []) => {
   if (!lineItems.length) {
-    return '<tr><td colspan="7" style="text-align:center;color:#888;padding:16px">No line items on this invoice</td></tr>'
+    return '<tr><td colspan="6" style="text-align:center;color:#888;padding:16px">No line items on this invoice</td></tr>'
   }
 
   return lineItems
     .map((li, index) => {
-      const description = (li.items || []).filter(Boolean).map(escapeHtml).join('<br/>') || '—'
+      const description =
+        (li.description && String(li.description).trim())
+          ? escapeHtml(li.description)
+          : (li.items || []).filter(Boolean).map(escapeHtml).join('<br/>') || '—'
       const images = (li.images || []).filter(Boolean)
       const imagesHtml = images.length
         ? `<div style="margin-top:6px;font-size:11px">${images
@@ -79,10 +174,9 @@ const buildInvoiceLineItemsRows = (lineItems = []) => {
       return `<tr>
         <td style="padding:10px 6px;border-bottom:1px solid #eee;vertical-align:top;color:#666">${index + 1}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top">${description}${imagesHtml}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceMoney(li.rate)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceMoney(li.markup)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceRateCell(li)}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;vertical-align:top">${li.quantity ?? '—'}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceMoney(li.tax)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatInvoiceTaxCell(li)}</td>
         <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;vertical-align:top">${formatInvoiceMoney(li.total)}</td>
       </tr>`
     })
@@ -91,16 +185,15 @@ const buildInvoiceLineItemsRows = (lineItems = []) => {
 
 const buildInvoiceTotalsRows = (invoice) => {
   const rows = [
-    ['Subtotal', invoice.subtotal],
-    ['Markup total', invoice.markupTotal],
-    ['Tax', invoice.tax],
-    ['Discount', invoice.discount],
-    ['Deposit', invoice.depositAmount],
-    ['Total due', invoice.totalAmount],
+    ['Subtotal', invoice.subtotal, false],
+    ['Discount', invoice.discount, true],
+    ['Tax', invoice.tax, false],
+    ['Deposit', invoice.depositAmount, false],
+    ['Total due', invoice.totalAmount, false],
   ]
 
   return rows
-    .map(([label, amount], i) => {
+    .map(([label, amount, isDiscount], i) => {
       const isGrand = i === rows.length - 1
       const rowClass = isGrand ? ' class="grand"' : ''
       const labelStyle = isGrand
@@ -110,7 +203,7 @@ const buildInvoiceTotalsRows = (invoice) => {
         ? 'text-align:right;font-weight:700;font-size:18px;color:#1a2e4a;width:120px;padding:10px 8px 6px'
         : 'text-align:right;font-weight:600;width:120px;padding:6px 8px'
       const displayAmount =
-        label === 'Discount' && amount != null && Number(amount) !== 0
+        isDiscount && amount != null && Number(amount) !== 0
           ? `−${formatInvoiceMoney(amount)}`
           : formatInvoiceMoney(amount)
       return `<tr${rowClass}>
@@ -135,6 +228,140 @@ const resolveInvoiceDueDate = (invoice) =>
   invoice.dueDate || computeInvoiceDueDate(invoice.date, invoice.daysToPay)
 
 const buildInvoiceDueDate = (invoice) => formatInvoiceDate(resolveInvoiceDueDate(invoice))
+
+const formatPaymentStageAmount = (stage, scheduleTotal) => {
+  if (stage.amountType === 'percentage') {
+    const pct = Number(stage.amount)
+    const dollar =
+      scheduleTotal != null && Number.isFinite(pct)
+        ? (Number(scheduleTotal) * pct) / 100
+        : null
+    const pctLabel = Number.isFinite(pct) ? `${pct}%` : '—'
+    return dollar != null ? `${pctLabel} (${formatInvoiceMoney(dollar)})` : pctLabel
+  }
+  return formatInvoiceMoney(stage.amount)
+}
+
+const formatPaymentStageStatus = (status) => {
+  const labels = {
+    pending: 'Pending',
+    invoiced: 'Invoiced',
+    paid: 'Paid',
+    overdue: 'Overdue',
+  }
+  return labels[status] || status || '—'
+}
+
+const buildPaymentScheduleSection = (paymentSchedule, invoice) => {
+  const stages = Array.isArray(paymentSchedule?.stages) ? paymentSchedule.stages : []
+
+  if (!stages.length) {
+    return `
+      <div class="section-title">Payment schedule</div>
+      <p class="line-items-note" style="margin-top:0">
+        No payment schedule stages are configured for this project yet.
+      </p>
+    `
+  }
+
+  const scheduleTotal = paymentSchedule.totalAmount
+  const currentStageId = invoice?.paymentScheduleStageId
+    ? String(invoice.paymentScheduleStageId)
+    : null
+
+  const rows = stages
+    .map((stage) => {
+      const isCurrent = currentStageId && String(stage._id) === currentStageId
+      const rowStyle = isCurrent ? 'background:#f0f7ff;font-weight:600' : ''
+      const currentBadge = isCurrent
+        ? ' <span style="font-size:10px;color:#1a2e4a;background:#d8e8f8;padding:2px 6px;border-radius:4px;margin-left:6px">This invoice</span>'
+        : ''
+
+      return `<tr style="${rowStyle}">
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top">${escapeHtml(stage.stageName || '—')}${currentBadge}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">${formatPaymentStageAmount(stage, scheduleTotal)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top">${formatInvoiceDate(stage.dueDate)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top">${formatPaymentStageStatus(stage.status)}</td>
+      </tr>`
+    })
+    .join('')
+
+  const totalLabel =
+    scheduleTotal != null
+      ? `<p style="font-size:12px;color:#666;margin:8px 0 0">Schedule total: <strong>${formatInvoiceMoney(scheduleTotal)}</strong></p>`
+      : ''
+
+  return `
+      <div class="section-title">Payment schedule</div>
+      <table class="line-items">
+        <thead>
+          <tr>
+            <th>Stage</th>
+            <th class="num">Amount</th>
+            <th>Due date</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+      ${totalLabel}
+    `
+}
+
+const buildInvoiceLineItemDescription = (li) => {
+  if (li.description && String(li.description).trim()) return String(li.description).trim()
+  return (li.items || []).filter(Boolean).join(', ') || '—'
+}
+
+const buildInvoicePdfDocument = (inv, customerName, paymentSchedule) => {
+  const stages = Array.isArray(paymentSchedule?.stages) ? paymentSchedule.stages : []
+  const scheduleTotal = paymentSchedule?.totalAmount
+  const currentStageId = inv?.paymentScheduleStageId ? String(inv.paymentScheduleStageId) : null
+
+  const totals = [
+    ['Subtotal', inv.subtotal, false],
+    ['Discount', inv.discount, true],
+    ['Tax', inv.tax, false],
+    ['Deposit', inv.depositAmount, false],
+    ['Total due', inv.totalAmount, false],
+  ].map(([label, amount, isDiscount]) => ({
+    label,
+    amount:
+      isDiscount && amount != null && Number(amount) !== 0
+        ? `−${formatInvoiceMoney(amount)}`
+        : formatInvoiceMoney(amount),
+  }))
+
+  return {
+    customerName,
+    invoiceNumber: inv.invoiceNumber || '—',
+    date: formatInvoiceDate(inv.date),
+    dueDate: buildInvoiceDueDate(inv),
+    paymentTerms: buildInvoicePaymentTerms(inv),
+    daysToPay: inv.daysToPay != null && inv.daysToPay !== '' ? String(inv.daysToPay) : '—',
+    poNumber: inv.poNumber || '—',
+    totalAmount: formatInvoiceMoney(inv.totalAmount),
+    lineItems: (inv.lineItems || []).map((li, index) => ({
+      index: index + 1,
+      description: buildInvoiceLineItemDescription(li),
+      rate: formatInvoiceRateCell(li),
+      quantity: li.quantity ?? '—',
+      tax: formatInvoiceTaxCell(li),
+      total: formatInvoiceMoney(li.total),
+    })),
+    totals,
+    paymentStages: stages.map((stage) => ({
+      stageName: stage.stageName || '—',
+      amount: formatPaymentStageAmount(stage, scheduleTotal),
+      dueDate: formatInvoiceDate(stage.dueDate),
+      status: formatPaymentStageStatus(stage.status),
+      isCurrent: Boolean(currentStageId && String(stage._id) === currentStageId),
+    })),
+    scheduleTotal: scheduleTotal != null ? formatInvoiceMoney(scheduleTotal) : null,
+  }
+}
 
 const sendQuotation = async ({ toEmail, customerName, quotation }) => {
   const template = loadTemplate('quotation')
@@ -173,11 +400,21 @@ const sendQuotation = async ({ toEmail, customerName, quotation }) => {
 }
 
 
-const sendInvoice = async ({ toEmail, customerName, invoice }) => {
+const sendInvoice = async ({
+  toEmail,
+  customerName,
+  customerAddressHtml = '',
+  invoice,
+  paymentSchedule = null,
+}) => {
   const inv = invoice?.toObject ? invoice.toObject() : invoice
   const template = loadTemplate('invoice')
+  const hasDeposit = inv.depositAmount != null && Number(inv.depositAmount) !== 0
+  const paymentScheduleSection = buildPaymentScheduleSection(paymentSchedule, inv)
   const html = fillTemplate(template, {
+    ...buildInvoiceCompanyTemplateFields(),
     CUSTOMER_NAME: escapeHtml(customerName),
+    CUSTOMER_ADDRESS_BLOCK: buildCustomerAddressBlock(customerAddressHtml),
     INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || '—'),
     DATE: formatInvoiceDate(inv.date),
     DUE_DATE: buildInvoiceDueDate(inv),
@@ -192,25 +429,49 @@ const sendInvoice = async ({ toEmail, customerName, invoice }) => {
     TOTAL_AMOUNT: formatInvoiceMoney(inv.totalAmount),
     LINE_ITEMS: buildInvoiceLineItemsRows(inv.lineItems),
     TOTALS_ROWS: buildInvoiceTotalsRows(inv),
+    DEPOSIT_NOTE: hasDeposit ? ' (deposit shown separately)' : '',
+    PAYMENT_SCHEDULE_SECTION: paymentScheduleSection,
   })
 
-  // Generate PDF from the same HTML used for the email body
-  const pdfBuffer = await generateInvoicePdf(html)
+  const pdfDocument = buildInvoicePdfDocument(inv, customerName, paymentSchedule)
   const invoiceFilename = `Invoice-${inv.invoiceNumber || 'document'}.pdf`
 
-  await transporter.sendMail({
+  let pdfBuffer = null
+  let pdfError = null
+  try {
+    pdfBuffer = await generateInvoicePdf(html, pdfDocument)
+  } catch (err) {
+    pdfError = err.message
+    console.warn('[sendInvoice] PDF attachment skipped, sending HTML email only:', err.message)
+  }
+
+  const mailOptions = {
     from: MAIL_FROM,
     to: toEmail,
     subject: `Invoice ${inv.invoiceNumber || ''}`,
     html,
-    attachments: [
+  }
+
+  if (pdfBuffer) {
+    mailOptions.attachments = [
       {
         filename: invoiceFilename,
         content: pdfBuffer,
         contentType: 'application/pdf',
       },
-    ],
-  })
+    ]
+  }
+
+  await transporter.sendMail(mailOptions)
+
+  const stages = Array.isArray(paymentSchedule?.stages) ? paymentSchedule.stages : []
+
+  return {
+    pdfAttached: Boolean(pdfBuffer),
+    pdfError,
+    paymentScheduleIncluded: stages.length > 0,
+    paymentScheduleStageCount: stages.length,
+  }
 }
 
 const sendOtp = async ({ toEmail, name, otp, expiresInMinutes = 10 }) => {
@@ -244,6 +505,45 @@ const sendEmployeeCredentials = async ({ toEmail, name, role, tempPassword }) =>
     to: toEmail,
     subject: 'Your CRM Login Credentials',
     html,
+  })
+}
+
+const sendNewCustomerEnquiryNotification = async ({
+  toEmail = 'info@steelbuildingdepot.com',
+  customerName,
+  customerEmail,
+  customerPhone,
+  countryCode,
+}) => {
+  const safeName = escapeHtml(customerName || 'N/A')
+  const safeEmail = escapeHtml(customerEmail || 'N/A')
+  const safePhone = escapeHtml(customerPhone || 'N/A')
+  const safeCountryCode = escapeHtml(countryCode || '')
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">New Customer Enquiry</h2>
+      <p>A new customer enquiry was created from AI chat init.</p>
+      <ul>
+        <li><strong>Name:</strong> ${safeName}</li>
+        <li><strong>Email:</strong> ${safeEmail}</li>
+        <li><strong>Phone:</strong> ${safeCountryCode} ${safePhone}</li>
+      </ul>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: resolvedMailFrom,
+    to: toEmail,
+    subject: 'New customer enquiry',
+    html,
+    text: [
+      'New customer enquiry created from AI chat init.',
+      '',
+      `Name: ${customerName || 'N/A'}`,
+      `Email: ${customerEmail || 'N/A'}`,
+      `Phone: ${(countryCode || '').trim()} ${customerPhone || 'N/A'}`.trim(),
+    ].join('\n'),
   })
 }
 
@@ -377,6 +677,8 @@ const sendFreightBidRequestEmail = async ({
   loadWeight,
   pickupLocation,
   deliveryLocation,
+  bundles = [],
+  packingLists = [],
 }) => {
   const safeCarrier = escapeHtml(carrierName || 'Carrier')
   const safeProject = escapeHtml(projectName || '')
@@ -386,8 +688,13 @@ const sendFreightBidRequestEmail = async ({
   const safeLoadDescription = escapeHtml(loadDescription || '')
   const safePickup = escapeHtml(pickupLocation || '')
   const safeDelivery = escapeHtml(deliveryLocation || '')
-  const safeWeight = loadWeight != null ? `${formatInvoiceMoney(loadWeight)} lbs` : '—'
+  const safeWeight =
+    loadWeight != null
+      ? `${Number(loadWeight).toLocaleString('en-US')} lbs`
+      : '—'
   const safeDeadline = formatInvoiceDate(bidDeadline)
+  const loadDetailsHtml = formatFreightLoadDetailsHtml({ bundles, packingLists })
+  const loadDetailsText = formatFreightLoadDetailsText({ bundles, packingLists })
 
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
@@ -404,6 +711,7 @@ const sendFreightBidRequestEmail = async ({
         <li><strong>Delivery location:</strong> ${safeDelivery}</li>
         <li><strong>Bid deadline:</strong> ${safeDeadline}</li>
       </ul>
+      ${loadDetailsHtml}
       <p>
         Submit your bid here:<br/>
         <a href="${safeBidUrl}" target="_blank" rel="noopener">${safeBidUrl}</a>
@@ -417,6 +725,23 @@ const sendFreightBidRequestEmail = async ({
     to: toEmail,
     subject: `Freight Bid Request: ${projectName || 'Project'}${deliveryNumber ? ` (${deliveryNumber})` : ''}`,
     html,
+    text: [
+      `Hi ${carrierName || 'Carrier'},`,
+      '',
+      'You have received a freight bid request:',
+      `Project: ${projectName || ''}`,
+      `Job ID: ${jobId || ''}`,
+      `Freight Request #: ${deliveryNumber || ''}`,
+      `Load description: ${loadDescription || ''}`,
+      `Load weight: ${loadWeight != null ? `${loadWeight} lbs` : '—'}`,
+      `Pickup: ${pickupLocation || ''}`,
+      `Delivery: ${deliveryLocation || ''}`,
+      `Bid deadline: ${safeDeadline}`,
+      '',
+      loadDetailsText,
+      '',
+      `Submit bid: ${bidUrl || ''}`,
+    ].join('\n'),
   })
 }
 
@@ -437,7 +762,7 @@ const sendFreightBidAwardedEmail = async ({
         <li><strong>Project:</strong> ${escapeHtml(projectName || '')}</li>
         <li><strong>Job ID:</strong> ${escapeHtml(jobId || '')}</li>
         <li><strong>Freight Request #:</strong> ${escapeHtml(deliveryNumber || '')}</li>
-        <li><strong>Awarded Amount:</strong> ${quotedAmount != null ? `${formatInvoiceMoney(quotedAmount)} USD` : '—'}</li>
+        <li><strong>Awarded Amount:</strong> ${quotedAmount != null ? formatInvoiceMoney(quotedAmount) : '—'}</li>
       </ul>
       <p>Our team will coordinate next steps with you shortly.</p>
     </div>
@@ -480,17 +805,77 @@ const sendFreightBidRejectedEmail = async ({
   })
 }
 
+const sendFreightBidResubmitRequestEmail = async ({
+  toEmail,
+  carrierName,
+  projectName,
+  jobId,
+  deliveryNumber,
+  note,
+  bidUrl,
+  bidDeadline,
+  priorQuotedAmount,
+  requestedBidAmount,
+}) => {
+  const template = loadTemplate('carrier-freight-bid-resubmit')
+  const priorAmountText =
+    priorQuotedAmount != null && Number.isFinite(Number(priorQuotedAmount))
+      ? formatInvoiceMoney(priorQuotedAmount)
+      : 'N/A'
+  const requestedAmountText =
+    requestedBidAmount != null && Number.isFinite(Number(requestedBidAmount))
+      ? formatInvoiceMoney(requestedBidAmount)
+      : 'N/A'
+
+  const html = fillTemplate(template, {
+    CARRIER_NAME: carrierName || 'Carrier',
+    PROJECT_NAME: projectName || '',
+    JOB_ID: jobId || '',
+    DELIVERY_NUMBER: deliveryNumber || '',
+    NOTE: note || '',
+    BID_URL: bidUrl || '',
+    BID_DEADLINE: formatInvoiceDate(bidDeadline),
+    PRIOR_QUOTED_AMOUNT: priorAmountText,
+    REQUESTED_BID_AMOUNT: requestedAmountText,
+  })
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Action Required: Revised Freight Bid for ${projectName || 'Project'}`,
+    html,
+    text: [
+      `Hello ${carrierName || 'Carrier'},`,
+      '',
+      `Project: ${projectName || ''}`,
+      `Job ID: ${jobId || ''}`,
+      `Freight Request #: ${deliveryNumber || ''}`,
+      '',
+      `Plant note: ${note || ''}`,
+      `Previous bid amount: ${priorAmountText}`,
+      `Requested bid amount: ${requestedAmountText}`,
+      '',
+      `Submit revised bid: ${bidUrl || ''}`,
+      `Bid deadline: ${formatInvoiceDate(bidDeadline)}`,
+    ].join('\n'),
+  })
+}
+
 module.exports = {
+  isEmailConfigured,
   isSmtpConfigured,
+  buildCustomerBillToAddressHtml,
   sendQuotation,
   sendInvoice,
   sendOtp,
   sendEmployeeCredentials,
+  sendNewCustomerEnquiryNotification,
   sendConsolidatedBOMToVendor,
   sendShipperApprovalEmail,
   sendShipperRejectionEmail,
   sendShipperResubmitRequestEmail,
   sendFreightBidRequestEmail,
+  sendFreightBidResubmitRequestEmail,
   sendFreightBidAwardedEmail,
   sendFreightBidRejectedEmail,
 }

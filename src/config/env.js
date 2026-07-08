@@ -44,12 +44,16 @@ module.exports = {
   AWS_S3_BUCKET: process.env.AWS_S3_BUCKET,
   AWS_S3_PRESIGNED_URL_EXPIRES: parseInt(process.env.AWS_S3_PRESIGNED_URL_EXPIRES || '300', 10),
 
-  SMTP_HOST: process.env.SMTP_HOST,
-  SMTP_PORT: parseInt(process.env.SMTP_PORT || '587', 10),
-  SMTP_USER: process.env.SMTP_USER,
-  SMTP_PASS: process.env.SMTP_PASS,
+  SENDGRID_API_KEY: process.env.SENDGRID_API_KEY,
+  SENDGRID_FROM: process.env.SENDGRID_FROM,
   MAIL_FROM: process.env.MAIL_FROM || 'Construction AI <noreply@example.com>',
 
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
   MASTER_OTP: process.env.NODE_ENV !== 'production' ? (process.env.MASTER_OTP || null) : null,
+
+  INVOICE_COMPANY_NAME: process.env.INVOICE_COMPANY_NAME || '',
+  INVOICE_COMPANY_ADDRESS: process.env.INVOICE_COMPANY_ADDRESS || '',
+  INVOICE_COMPANY_EMAIL: process.env.INVOICE_COMPANY_EMAIL || '',
+  INVOICE_COMPANY_WEBSITE: process.env.INVOICE_COMPANY_WEBSITE || '',
+  INVOICE_LOGO_URL: process.env.INVOICE_LOGO_URL || '',
 }

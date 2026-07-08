@@ -3,7 +3,15 @@ const { body, param, query } = require('express-validator')
 const ctrl = require('../../controllers/plant/shipper.controller')
 const validate = require('../../middleware/validate')
 
+router.get('/stats', ctrl.getShipperFilesStats)
+
 router.get('/projects', ctrl.getShipperProjects)
+
+router.get('/projects/:leadId/stats',
+  [param('leadId').isMongoId()],
+  validate,
+  ctrl.getProjectShipperFilesStats
+)
 
 router.get('/projects/:leadId/requests',
   [param('leadId').isMongoId()],
@@ -62,6 +70,7 @@ router.get('/:requestId/comparison-results',
     param('requestId').isMongoId(),
     query('page').optional().isInt({ min: 1 }),
     query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('category').optional().isIn(['matched', 'unmatched', 'extra', 'all']),
     query('status').optional().isString().trim(),
     query('severity').optional().isIn(['low', 'medium', 'high', 'critical']),
   ],

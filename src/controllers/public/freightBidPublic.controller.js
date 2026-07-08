@@ -2,11 +2,21 @@ const FreightBid = require('../../models/FreightBid')
 const Delivery = require('../../models/Delivery')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Lead = require('../../models/Lead')
+const auditService = require('../../services/audit.service')
+const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
+const { mapPublicFreightBidInfo } = require('../../utils/freightBidDisplay')
+const { notifyPlantUsersForLead } = require('../../utils/notifyPlantUsers')
 const { success, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const { AUDIT_ACTIONS } = require('../../config/constants')
+
+const PENDING_FREIGHT_BID_STATUSES = new Set(['sent', 'resubmit_requested'])
+
+const areAllFreightBidsSubmitted = (bids = []) =>
+  bids.length > 0 && bids.every((row) => !PENDING_FREIGHT_BID_STATUSES.has(row.status))
 
 const isBidLinkActive = (bid, delivery) => {
-  const activeStatuses = new Set(['sent', 'submitted'])
+  const activeStatuses = new Set(['sent', 'submitted', 'resubmit_requested'])
   if (!activeStatuses.has(bid.status)) return false
   if (delivery.status === 'cancelled') return false
   if (bid.expiresAt && new Date(bid.expiresAt).getTime() < Date.now()) return false
@@ -31,19 +41,27 @@ exports.getFreightBidInfo = asyncHandler(async (req, res) => {
     return badRequest(res, `This bid link is not active (status: ${bid.status})`)
   }
 
+  const loadDetails = delivery.leadId
+    ? await loadFreightLoadDetailsByLeadId(delivery.leadId)
+    : { bundlePlan: null, packingListPlan: null, bundles: [], packingLists: [] }
+
   return success(res, {
-    bidId: bid._id,
-    status: bid.status,
+    ...mapPublicFreightBidInfo(bid),
     carrierName: carrier?.carrierName || '',
     projectName: lead?.projectName || '',
     jobId: lead?.jobId || '',
     deliveryNumber: delivery.deliveryNumber || '',
     description: delivery.loadDescription || delivery.description || '',
+    loadWeight: delivery.loadWeight ?? null,
+    dimensions: delivery.dimensions || {},
+    materialType: delivery.materialType || '',
+    packageCount: delivery.packageCount ?? null,
     pickupLocation: delivery.pickupLocation || delivery.pickupLocationData?.address || '',
     deliveryLocation: delivery.deliveryLocation || delivery.deliveryLocationData?.address || '',
-    bidDeadline: bid.expiresAt,
-    quotedAmount: bid.quotedAmount,
-    carrierNotes: bid.carrierNotes || '',
+    bundlePlan: loadDetails.bundlePlan,
+    packingListPlan: loadDetails.packingListPlan,
+    bundles: loadDetails.bundles,
+    packingLists: loadDetails.packingLists,
   })
 })
 
@@ -68,7 +86,75 @@ exports.submitFreightBid = asyncHandler(async (req, res) => {
   bid.carrierNotes = String(carrierNotes || '').trim()
   bid.submittedAt = new Date()
   bid.status = 'submitted'
+  bid.resubmitRequestedAmount = null
   await bid.save()
+
+  const [carrier, lead, allBids] = await Promise.all([
+    FreightCarrier.findById(bid.carrierId).select('carrierName').lean(),
+    delivery.leadId
+      ? Lead.findById(delivery.leadId).select('projectName jobId customerId').lean()
+      : null,
+    FreightBid.find({ deliveryId: delivery._id }).select('status').lean(),
+  ])
+
+  const leadId = delivery.leadId
+  const allFreightBidsSubmitted = areAllFreightBidsSubmitted(allBids)
+
+  if (leadId) {
+    await auditService.log({
+      type: 'plant',
+      action: AUDIT_ACTIONS.FREIGHT_BID_SUBMITTED,
+      leadId,
+      customerId: lead?.customerId || null,
+      performedBy: null,
+      metadata: {
+        deliveryId: delivery._id,
+        deliveryNumber: delivery.deliveryNumber || '',
+        bidId: bid._id,
+        carrierId: bid.carrierId,
+        carrierName: carrier?.carrierName || '',
+        quotedAmount: bid.quotedAmount,
+        submittedAt: bid.submittedAt,
+      },
+    })
+
+    await notifyPlantUsersForLead(leadId, 'freight_bid_submitted', {
+      leadId,
+      deliveryId: delivery._id,
+      deliveryNumber: delivery.deliveryNumber || '',
+      bidId: bid._id,
+      carrierId: bid.carrierId,
+      carrierName: carrier?.carrierName || '',
+      submittedAt: bid.submittedAt,
+      quotedAmount: bid.quotedAmount,
+      projectName: lead?.projectName || '',
+      jobId: lead?.jobId || '',
+    })
+
+    if (allFreightBidsSubmitted) {
+      await auditService.log({
+        type: 'plant',
+        action: AUDIT_ACTIONS.ALL_FREIGHT_BIDS_SUBMITTED,
+        leadId,
+        customerId: lead?.customerId || null,
+        performedBy: null,
+        metadata: {
+          deliveryId: delivery._id,
+          deliveryNumber: delivery.deliveryNumber || '',
+          bidCount: allBids.length,
+        },
+      })
+
+      await notifyPlantUsersForLead(leadId, 'all_freight_bids_submitted', {
+        leadId,
+        deliveryId: delivery._id,
+        deliveryNumber: delivery.deliveryNumber || '',
+        bidCount: allBids.length,
+        projectName: lead?.projectName || '',
+        jobId: lead?.jobId || '',
+      })
+    }
+  }
 
   return success(res, {
     bidId: bid._id,
@@ -76,5 +162,6 @@ exports.submitFreightBid = asyncHandler(async (req, res) => {
     quotedAmount: bid.quotedAmount,
     carrierNotes: bid.carrierNotes,
     submittedAt: bid.submittedAt,
+    allFreightBidsSubmitted,
   }, 'Freight bid submitted')
 })

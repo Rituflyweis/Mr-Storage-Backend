@@ -13,6 +13,7 @@ const {
   buildFallbackQuoteData,
   advanceLifecycleIfNeeded,
   syncLeadProjectFieldsFromScore,
+  syncPlannedStartFromMessages,
 } = require('../leadQuoteReady.service')
 
 const notifyAssignedSales = (leadId, assignedSales, message) => {
@@ -133,6 +134,7 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
   scoringService.applyScoreToLead(lead, scoreData)
   await saveLeadScoring(leadId, lead.leadScoring)
   await syncLeadProjectFieldsFromScore(leadId, scoreData)
+  await syncPlannedStartFromMessages(leadId, messagesAfterAi)
 
   if (canAdvanceLifecycle(messagesAfterAi) && isRequirementsGatheredFromChat(chatMeta, scoreData)) {
     await advanceLifecycleIfNeeded(leadId, 'requirements_gathered')

@@ -1,4 +1,7 @@
 const Building = require('../models/Building')
+const BOMJob = require('../models/BOMJob')
+const BOMItem = require('../models/BOMItem')
+const ConsolidatedBOM = require('../models/ConsolidatedBOM')
 const Lead = require('../models/Lead')
 const User = require('../models/User')
 const Quotation = require('../models/Quotation')
@@ -26,9 +29,10 @@ const getLatestQuotationId = async (leadId) => {
 }
 
 /**
- * Ensure buildings numbered 1..targetCount exist for a lead.
- * Additive only — existing buildings are never deleted.
- * Updates lead.numberOfBuildings to max(targetCount, highest existing buildingNumber).
+ * Sync buildings numbered 1..targetCount for a lead.
+ * - Increase: creates missing buildings.
+ * - Decrease: removes buildings with buildingNumber > targetCount (and their BOM jobs/items).
+ * - Sets lead.numberOfBuildings to targetCount.
  */
 const syncLeadBuildings = async (lead, options = {}) => {
   const {
@@ -39,9 +43,33 @@ const syncLeadBuildings = async (lead, options = {}) => {
 
   const targetCount = normalizeBuildingCount(numberOfBuildings ?? lead.numberOfBuildings, 1)
 
-  const existing = await Building.find({ leadId: lead._id }).select('buildingNumber').lean()
+  const existing = await Building.find({ leadId: lead._id })
+    .select('_id buildingNumber')
+    .sort({ buildingNumber: 1 })
+    .lean()
+
   const existingNumbers = new Set(existing.map((b) => b.buildingNumber))
-  const maxExisting = existing.reduce((max, b) => Math.max(max, b.buildingNumber), 0)
+  const toRemove = existing.filter((b) => b.buildingNumber > targetCount)
+  const removedBuildingNumbers = toRemove
+    .map((b) => b.buildingNumber)
+    .sort((a, b) => b - a)
+
+  let removedBomJobCount = 0
+  let consolidatedBomInvalidated = false
+
+  if (toRemove.length) {
+    const removeIds = toRemove.map((b) => b._id)
+    const bomDeleteResult = await BOMJob.deleteMany({ buildingId: { $in: removeIds } })
+    removedBomJobCount = bomDeleteResult.deletedCount || 0
+    await BOMItem.deleteMany({ buildingId: { $in: removeIds } })
+    await Building.deleteMany({ _id: { $in: removeIds } })
+
+    const consolidated = await ConsolidatedBOM.findOne({ leadId: lead._id }).select('_id').lean()
+    if (consolidated) {
+      await ConsolidatedBOM.findByIdAndUpdate(consolidated._id, { status: 'draft' })
+      consolidatedBomInvalidated = true
+    }
+  }
 
   const createdBy = await resolveBuildingCreatedBy(lead, performedBy)
   const quotationId = quotationIdOverride ?? await getLatestQuotationId(lead._id)
@@ -64,19 +92,22 @@ const syncLeadBuildings = async (lead, options = {}) => {
     created = await Building.insertMany(toInsert)
   }
 
-  const effectiveCount = Math.max(targetCount, maxExisting)
-  if (lead.numberOfBuildings !== effectiveCount) {
-    lead.numberOfBuildings = effectiveCount
-    await Lead.findByIdAndUpdate(lead._id, { numberOfBuildings: effectiveCount })
+  if (lead.numberOfBuildings !== targetCount) {
+    lead.numberOfBuildings = targetCount
+    await Lead.findByIdAndUpdate(lead._id, { numberOfBuildings: targetCount })
   }
 
   const buildings = await Building.find({ leadId: lead._id }).sort({ buildingNumber: 1 })
 
   return {
     buildings,
-    numberOfBuildings: effectiveCount,
+    numberOfBuildings: targetCount,
     createdCount: created.length,
     createdBuildingNumbers: toInsert.map((row) => row.buildingNumber),
+    removedCount: toRemove.length,
+    removedBuildingNumbers,
+    removedBomJobCount,
+    consolidatedBomInvalidated,
   }
 }
 

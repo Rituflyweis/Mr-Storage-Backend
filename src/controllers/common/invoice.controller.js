@@ -14,6 +14,18 @@ const { AUDIT_ACTIONS, INVOICE_STATUSES, INVOICE_CREATE_MIN_LIFECYCLE_STAGE } = 
 const { isLifecycleAtLeast } = require('../../utils/leadLifecycle.util')
 const { generateInvoiceListExcel, generateInvoiceListPdf } = require('../../utils/exportInvoices')
 
+const loadPaymentScheduleForInvoice = async (invoice) => {
+  const leadId = invoice.leadId?._id || invoice.leadId
+  if (leadId) {
+    const byLead = await PaymentSchedule.findOne({ leadId }).lean()
+    if (byLead) return byLead
+  }
+  if (invoice.paymentScheduleId) {
+    return PaymentSchedule.findById(invoice.paymentScheduleId).lean()
+  }
+  return null
+}
+
 const INVOICE_BODY_FIELDS = [
   'date', 'daysToPay', 'lineItems', 'description',
   'subtotal', 'markupTotal', 'tax', 'discount', 'depositAmount', 'totalAmount',
@@ -220,7 +232,7 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
 
 exports.sendInvoice = asyncHandler(async (req, res) => {
   if (!mailer.isSmtpConfigured()) {
-    return badRequest(res, 'Email service is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS.')
+    return badRequest(res, 'Email service is not configured. Set SENDGRID_API_KEY (and optional SENDGRID_FROM).')
   }
 
   const invoice = await Invoice.findById(req.params.invoiceId)
@@ -235,11 +247,21 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
   if (!customer) return notFound(res, 'Customer not found')
   if (!customer.email) return badRequest(res, 'Customer has no email address on file')
 
+  const paymentSchedule = await loadPaymentScheduleForInvoice(invoice)
+  const lead = await Lead.findById(invoice.leadId).select('location').lean()
+  const customerAddressHtml = mailer.buildCustomerBillToAddressHtml({
+    company: customer.company,
+    location: customer.location || lead?.location || '',
+  })
+
+  let emailResult = { pdfAttached: true, pdfError: null, paymentScheduleIncluded: false, paymentScheduleStageCount: 0 }
   try {
-    await mailer.sendInvoice({
+    emailResult = await mailer.sendInvoice({
       toEmail: customer.email,
-      customerName: customer.firstName,
+      customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || customer.firstName,
+      customerAddressHtml,
       invoice,
+      paymentSchedule,
     })
   } catch (err) {
     console.error('[sendInvoice] Email failed for invoice', invoice.invoiceNumber, err.message)
@@ -256,10 +278,27 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
     leadId: invoice.leadId,
     customerId: invoice.customerId,
     performedBy: req.user._id,
-    metadata: { invoiceNumber: invoice.invoiceNumber, sentTo: customer.email },
+    metadata: {
+      invoiceNumber: invoice.invoiceNumber,
+      sentTo: customer.email,
+      pdfAttached: emailResult.pdfAttached,
+      pdfError: emailResult.pdfError || null,
+      paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
+      paymentScheduleStageCount: emailResult.paymentScheduleStageCount,
+    },
   })
 
-  return success(res, { invoice }, 'Invoice sent successfully')
+  const message = emailResult.pdfAttached
+    ? 'Invoice sent successfully'
+    : 'Invoice sent successfully (PDF attachment could not be generated; HTML email delivered)'
+
+  return success(res, {
+    invoice,
+    pdfAttached: emailResult.pdfAttached,
+    pdfWarning: emailResult.pdfError || null,
+    paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
+    paymentScheduleStageCount: emailResult.paymentScheduleStageCount,
+  }, message)
 })
 
 exports.markAsPaid = asyncHandler(async (req, res) => {

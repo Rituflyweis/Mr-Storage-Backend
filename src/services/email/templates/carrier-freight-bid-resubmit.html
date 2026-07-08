@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Revised Freight Bid Request</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6; margin: 0; padding: 0; background: #f9fafb;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding: 24px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="620" cellspacing="0" cellpadding="0" style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px;">
+          <tr>
+            <td style="padding: 24px 28px;">
+              <h2 style="margin: 0 0 8px; color: #1d4ed8;">Revised Freight Bid Required</h2>
+              <p>Hello {{CARRIER_NAME}},</p>
+              <p>Please submit a <strong>revised bid amount</strong> for:</p>
+              <p>
+                <strong>Project:</strong> {{PROJECT_NAME}}<br/>
+                <strong>Job ID:</strong> {{JOB_ID}}<br/>
+                <strong>Freight Request #:</strong> {{DELIVERY_NUMBER}}
+              </p>
+              <p><strong>Plant note:</strong> {{NOTE}}</p>
+              <p><strong>Previous bid amount:</strong> {{PRIOR_QUOTED_AMOUNT}}</p>
+              <p><strong>Requested bid amount:</strong> {{REQUESTED_BID_AMOUNT}}</p>
+              <p>Enter your updated bid on the bid page:</p>
+              <p><a href="{{BID_URL}}" target="_blank" rel="noopener noreferrer">{{BID_URL}}</a></p>
+              <p><strong>Bid deadline:</strong> {{BID_DEADLINE}}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

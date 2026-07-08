@@ -31,11 +31,11 @@ const formatBomJobSummary = (job) => {
   }
 }
 
-const assertBomJobAccess = async (jobId, plantUserId) => {
+const assertBomJobAccess = async (jobId, req) => {
   const job = await BOMJob.findById(jobId).lean()
   if (!job) return { error: 'BOM job not found', code: 404 }
 
-  const access = await assertPlantProjectAccess(job.leadId, plantUserId)
+  const access = await assertPlantProjectAccess(job.leadId, req)
   if (access.error) return access
 
   return { job, ...access }

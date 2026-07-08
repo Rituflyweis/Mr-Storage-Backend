@@ -7,6 +7,11 @@ const { success, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const {
+  mapEscalationLeadRow,
+  ESCALATION_LEAD_POPULATE,
+  loadEscalationWithRelations,
+} = require('../../utils/escalationLeadRow')
 
 exports.getAllEscalations = asyncHandler(async (req, res) => {
   const { status, assignedSales, page = 1, limit = 20 } = req.query
@@ -19,26 +24,36 @@ exports.getAllEscalations = asyncHandler(async (req, res) => {
     filter.leadId = { $in: leadIds }
   }
 
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+
   const [escalations, total] = await Promise.all([
     Escalation.find(filter)
-      .populate('leadId', 'projectName lifecycleStatus')
-      .populate('customerId', 'firstName lastName email')
-      .populate('raisedBy', 'name email')
-      .populate('resolvedAssignedTo', 'name')
+      .populate(ESCALATION_LEAD_POPULATE)
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit).limit(Number(limit)).lean(),
-    Escalation.countDocuments(filter)
+      .skip((parsedPage - 1) * parsedLimit)
+      .limit(parsedLimit)
+      .lean(),
+    Escalation.countDocuments(filter),
   ])
 
-  return success(res, { escalations, total, page: Number(page), limit: Number(limit) })
+  return success(res, {
+    leads: escalations.map(mapEscalationLeadRow),
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
 })
 
 exports.resolveEscalation = asyncHandler(async (req, res) => {
   const escalation = await Escalation.findById(req.params.escalationId)
   if (!escalation) return notFound(res, 'Escalation not found')
 
+  const lead = await Lead.findById(escalation.leadId).select('assignedSales').lean()
+
   escalation.status = 'resolved'
   escalation.resolvedBy = req.user._id
+  escalation.resolvedAssignedTo = lead?.assignedSales || escalation.resolvedAssignedTo || null
   escalation.resolvedAt = new Date()
   await escalation.save()
 
@@ -48,7 +63,8 @@ exports.resolveEscalation = asyncHandler(async (req, res) => {
     metadata: { escalationId: escalation._id, note: req.body.note || '' }
   })
 
-  return success(res, { escalation }, 'Escalation resolved')
+  const populated = await loadEscalationWithRelations(escalation._id)
+  return success(res, { lead: mapEscalationLeadRow(populated) }, 'Escalation resolved')
 })
 
 exports.assignEscalation = asyncHandler(async (req, res) => {
@@ -103,5 +119,6 @@ exports.assignEscalation = asyncHandler(async (req, res) => {
   }
   await leadListSocket.emitLeadListUpdated(escalation.leadId, { trigger: 'escalation_reassign' })
 
-  return success(res, { escalation }, 'Escalation resolved and lead reassigned')
+  const populated = await loadEscalationWithRelations(escalation._id)
+  return success(res, { lead: mapEscalationLeadRow(populated) }, 'Escalation resolved and lead reassigned')
 })

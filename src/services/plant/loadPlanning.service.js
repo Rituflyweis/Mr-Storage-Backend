@@ -1,3 +1,108 @@
+const BUNDLE_PLANNING_SERVICE_VERSION = 'bundle-planning-v5.2-semi-first-final-hotshot'
+
+/* =========================================================
+ * Optional model loading
+ * =========================================================
+ * This service can still be used as a pure utility with plain vendorLines.
+ * Only load planning is changed here. No shipper comparison, consolidator,
+ * or schema changes are required.
+ *
+ * For production load planning, use generateBundlesFromVendorLinesWithBomWeights().
+ * That function reads QuoteComparisonResult/BOMItem and enriches each vendor line
+ * with the matched BOM physical weight before bundling.
+ */
+const loadModel = (name) => {
+  const candidates = [
+    `../models/${name}`,
+    `../../models/${name}`,
+    `../../../models/${name}`,
+  ]
+
+  for (const path of candidates) {
+    try {
+      return require(path)
+    } catch (err) {
+      if (err && err.code !== 'MODULE_NOT_FOUND') throw err
+    }
+  }
+
+  return null
+}
+
+let BOMItemModel = null
+let QuoteComparisonResultModel = null
+
+const getBOMItemModel = () => {
+  if (!BOMItemModel) BOMItemModel = loadModel('BOMItem')
+  return BOMItemModel
+}
+
+const getQuoteComparisonResultModel = () => {
+  if (!QuoteComparisonResultModel) QuoteComparisonResultModel = loadModel('QuoteComparisonResult')
+  return QuoteComparisonResultModel
+}
+
+const getIdString = (value) => {
+  if (value === null || value === undefined || value === '') return ''
+
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
+
+  // Mongo export shape: { "$oid": "..." }
+  if (value && typeof value === 'object' && value.$oid) {
+    return String(value.$oid)
+  }
+
+  // Native MongoDB / Mongoose ObjectId.
+  // IMPORTANT: handle this before reading value._id.
+  if (value && typeof value === 'object' && typeof value.toHexString === 'function') {
+    try {
+      return value.toHexString()
+    } catch (_) {
+      // fall through
+    }
+  }
+
+  // Some ObjectId versions expose _bsontype.
+  if (
+    value &&
+    typeof value === 'object' &&
+    (value._bsontype === 'ObjectId' || value._bsontype === 'ObjectID')
+  ) {
+    try {
+      return String(value)
+    } catch (_) {
+      return ''
+    }
+  }
+
+  // Mongoose document / populated object.
+  // Only access _id after ObjectId handling above.
+  if (value && typeof value === 'object') {
+    const hasOwnId = Object.prototype.hasOwnProperty.call(value, '_id')
+
+    if (hasOwnId && value._id !== value) {
+      return getIdString(value._id)
+    }
+
+    if (hasOwnId && value._id === value) {
+      try {
+        return String(value)
+      } catch (_) {
+        return ''
+      }
+    }
+  }
+
+  try {
+    const asString = String(value)
+    if (asString === '[object Object]') return ''
+    return asString
+  } catch (_) {
+    return ''
+  }
+}
+
 const TRUCK_TYPES = {
   SEMI_53: {
     truckType: 'SEMI_53',
@@ -22,7 +127,14 @@ const BUNDLE_LIMITS = {
   maxBundleLengthFeet: 53,
 }
 
+// Vendor quote lines usually only carry length; use standard freight envelope when width/height are absent.
+const DEFAULT_BUNDLE_ENVELOPE_WIDTH_FEET = 8.5
+const DEFAULT_BUNDLE_ENVELOPE_HEIGHT_FEET = 8
+const HOTSHOT_BUNDLE_ENVELOPE_WIDTH_FEET = 8
+
 const WEIGHT_BASIS = {
+  BOM_MATCHED_TOTAL: 'BOM_MATCHED_TOTAL_WEIGHT',
+  BOM_MATCHED_UNIT: 'BOM_MATCHED_UNIT_WEIGHT',
   EXPLICIT_TOTAL: 'EXPLICIT_TOTAL_WEIGHT',
   EXPLICIT_UNIT: 'EXPLICIT_UNIT_WEIGHT',
   LEGACY_TOTAL_ASSUMED: 'LEGACY_TOTAL_ASSUMED',
@@ -63,6 +175,67 @@ const isMissingWeight = (value) => {
   return !Number.isFinite(n) || n <= 0
 }
 
+const firstPositiveNumber = (...values) => {
+  for (const value of values) {
+    const n = toNumber(value, 0)
+    if (n > 0) return n
+  }
+  return 0
+}
+
+const getItemTotalWeight = (item) => Number(item?.totalWeight ?? item?.weight ?? 0)
+
+const getBomMatchedWeight = (line) => {
+  const rawRow = line.rawRow || {}
+  const expected = line.expected || line.comparisonExpected || rawRow.expected || {}
+  const sourceSnapshot = line.sourceLineSnapshot || {}
+
+  const totalWeight = firstPositiveNumber(
+    line.bomMatchedTotalWeight,
+    line.matchedBomTotalWeight,
+    line.bomTotalWeight,
+    line.bomItemWeight,
+    line.expectedTotalWeight,
+    rawRow.bomMatchedTotalWeight,
+    rawRow.bomMatchedWeight?.totalWeight,
+    rawRow.matchedBomTotalWeight,
+    sourceSnapshot.bomMatchedTotalWeight,
+    sourceSnapshot.expectedTotalWeight,
+    expected.totalWeight
+  )
+
+  const unitWeight = firstPositiveNumber(
+    line.bomMatchedUnitWeight,
+    line.matchedBomUnitWeight,
+    line.bomUnitWeight,
+    rawRow.bomMatchedUnitWeight,
+    rawRow.bomMatchedWeight?.unitWeight,
+    sourceSnapshot.bomMatchedUnitWeight,
+    expected.unitWeight
+  )
+
+  const matchedBomItemIds =
+    line.matchedBomItemIds ||
+    rawRow.matchedBomItemIds ||
+    rawRow.bomMatchedWeight?.matchedBomItemIds ||
+    expected.bomItemIds ||
+    []
+
+  const weightSource =
+    line.weightSource ||
+    line.bomWeightSource ||
+    rawRow.bomMatchedWeightSource ||
+    rawRow.weightSource ||
+    (totalWeight > 0 || unitWeight > 0 ? 'bom_matched' : 'missing')
+
+  return {
+    totalWeight,
+    unitWeight,
+    matchedBomItemIds,
+    weightSource,
+  }
+}
+
 const getPhysicalQty = (line) => {
   if (line.pieceQty != null && Number(line.pieceQty) > 0) {
     return Number(line.pieceQty)
@@ -94,6 +267,23 @@ const classifyBundleType = (line) => {
     ${line.vendorProductCode || ''}
     ${line.description || ''}
   `)
+
+  // Flexible/rolled materials should not be treated as rigid framing just
+  // because the description contains words like "PURLIN STRAPPING". They are
+  // normally shipped coiled/boxed and must not create a fake 300 ft truck load.
+  if (
+    text.includes('STRAP') ||
+    text.includes('STRAPPING') ||
+    text.includes('BAND') ||
+    text.includes('BANDS') ||
+    text.includes('BUTYL') ||
+    text.includes('SEALANT') ||
+    text.includes('CLOSURE') ||
+    text.includes('CABLE') ||
+    text.includes('CBL')
+  ) {
+    return 'accessories'
+  }
 
   if (
     text.includes('PANEL') ||
@@ -155,6 +345,48 @@ const classifyBundleType = (line) => {
   }
 
   return 'mixed'
+}
+
+const isFlexibleOrRolledMaterial = (line) => {
+  const text = normalizeText(`
+    ${line.category || ''}
+    ${line.partCode || ''}
+    ${line.vendorProductCode || ''}
+    ${line.description || ''}
+  `)
+
+  return (
+    text.includes('STRAP') ||
+    text.includes('STRAPPING') ||
+    text.includes('BAND') ||
+    text.includes('BANDS') ||
+    text.includes('BUTYL') ||
+    text.includes('SEALANT') ||
+    text.includes('CLOSURE') ||
+    text.includes('CABLE') ||
+    text.includes('CBL') ||
+    text.includes('SCREW') ||
+    text.includes('BOLT') ||
+    text.includes('FASTENER') ||
+    text.includes('ANCHOR') ||
+    text.includes('RIVET')
+  )
+}
+
+const getShippingLengthFeet = (line) => {
+  const reportedLengthFeet = toNumber(line?.lengthFeet, 0)
+  if (reportedLengthFeet <= 0) return 0
+
+  const bundleType = classifyBundleType(line)
+
+  // Fasteners/accessories/flexible materials may have a cut length or roll
+  // length in the BOM/quote, but that is not the physical truck length. Use 0
+  // for truck max-length planning while preserving the reported length in the
+  // item snapshot for audit.
+  if (isFlexibleOrRolledMaterial(line)) return 0
+  if ((bundleType === 'fasteners' || bundleType === 'accessories') && reportedLengthFeet > 20) return 0
+
+  return reportedLengthFeet
 }
 
 const getLengthBucket = (lengthFeet) => {
@@ -374,6 +606,36 @@ const isHighQuantityEachLine = (line) => {
 const resolveBundleItemWeight = (line) => {
   const warnings = []
 
+  // Preferred production source: BOM-matched physical weight.
+  // Vendor quote PDFs usually do not carry row-wise physical weight, but after
+  // comparison we know which BOM row matched this vendor row. Use that BOM
+  // weight first so bundle/truck planning is based on physical material weight.
+  const bomMatchedWeight = getBomMatchedWeight(line)
+  if (bomMatchedWeight.totalWeight > 0) {
+    return {
+      rawWeight: toNumber(line.weight, 0),
+      resolvedWeight: roundNumber(bomMatchedWeight.totalWeight),
+      multiplier: 1,
+      basis: WEIGHT_BASIS.BOM_MATCHED_TOTAL,
+      confidence: 1,
+      warnings,
+      source: bomMatchedWeight,
+    }
+  }
+
+  if (bomMatchedWeight.unitWeight > 0) {
+    const multiplier = getWeightMultiplier(line)
+    return {
+      rawWeight: toNumber(line.weight, 0),
+      resolvedWeight: roundNumber(bomMatchedWeight.unitWeight * multiplier),
+      multiplier,
+      basis: WEIGHT_BASIS.BOM_MATCHED_UNIT,
+      confidence: 0.98,
+      warnings,
+      source: bomMatchedWeight,
+    }
+  }
+
   // Future-safe support. These fields are not required by your current schema,
   // but this lets the service work correctly if extractor starts sending them later.
   const explicitTotalWeight = toNumber(line.totalWeight, 0)
@@ -490,6 +752,25 @@ const toBundleItem = (line) => {
   const weightResolution = resolveBundleItemWeight(line)
   const weightMissing = isMissingWeight(weightResolution.resolvedWeight)
 
+  const qty = getPhysicalQty(line)
+
+  const totalWeight = weightMissing
+    ? 0
+    : Number(weightResolution.resolvedWeight || 0)
+
+  const unitWeight =
+    Number(weightResolution.source?.unitWeight || 0) > 0
+      ? Number(weightResolution.source.unitWeight)
+      : qty > 0 && totalWeight > 0
+        ? roundNumber(totalWeight / qty, 6)
+        : 0
+
+  const weightSource =
+    weightResolution.source?.weightSource ||
+    line.weightSource ||
+    line.rawRow?.bomMatchedWeightSource ||
+    ''
+
   return {
     vendorQuoteLineId: line._id,
 
@@ -498,16 +779,20 @@ const toBundleItem = (line) => {
     category: line.category || '',
     color: line.color || '',
 
-    qty: getPhysicalQty(line),
+    qty,
 
     lengthFeet: line.lengthFeet || null,
     widthFeet: line.widthFeet || null,
     heightFeet: line.heightFeet || null,
 
-    // IMPORTANT:
-    // No schema change. This existing field now stores the resolved TOTAL line weight.
-    // It is no longer a blind copy of VendorQuoteLine.weight.
-    weight: weightMissing ? 0 : Number(weightResolution.resolvedWeight || 0),
+    // Backward compatibility: keep as total line weight.
+    weight: totalWeight,
+
+    // New clear fields.
+    unitWeight,
+    totalWeight,
+    weightBasis: weightResolution.basis,
+    weightSource,
 
     markIds: line.pieceMark ? [line.pieceMark] : [],
 
@@ -529,15 +814,25 @@ const toBundleItem = (line) => {
 
       lengthText: line.lengthText,
       lengthFeet: line.lengthFeet,
+      reportedLengthFeet: line.lengthFeet,
+      shippingLengthFeet: getShippingLengthFeet(line),
 
       weight: line.weight,
       rawWeight: weightResolution.rawWeight,
-      resolvedWeight: weightResolution.resolvedWeight,
+      resolvedWeight: totalWeight,
+      unitWeight,
+      totalWeight,
+
       weightMultiplier: weightResolution.multiplier,
       weightBasis: weightResolution.basis,
       weightConfidence: weightResolution.confidence,
       weightMissing,
       weightWarnings: weightResolution.warnings,
+      weightSource,
+
+      bomMatchedTotalWeight: weightResolution.source?.totalWeight || line.rawRow?.bomMatchedTotalWeight || null,
+      bomMatchedUnitWeight: weightResolution.source?.unitWeight || line.rawRow?.bomMatchedUnitWeight || null,
+      matchedBomItemIds: weightResolution.source?.matchedBomItemIds || line.rawRow?.matchedBomItemIds || [],
 
       unitPrice: line.unitPrice,
       priceUnit: line.priceUnit,
@@ -560,7 +855,7 @@ const getBundleWarnings = (bundle) => {
       item.sourceLineSnapshot?.weightMissing === true ||
       item.sourceLineSnapshot?.weightBasis === WEIGHT_BASIS.MISSING ||
       item.sourceLineSnapshot?.weightBasis === WEIGHT_BASIS.PRICE_OR_COST_DETECTED ||
-      Number(item.weight || 0) <= 0
+      getItemTotalWeight(item) <= 0
     )
   })
 
@@ -571,7 +866,7 @@ const getBundleWarnings = (bundle) => {
   }
 
   const assumedWeightItems = (bundle.items || []).filter((item) => {
-    const basis = item.sourceLineSnapshot?.weightBasis
+    const basis = item.sourceLineSnapshot?.weightBasis || item.weightBasis
     const confidence = Number(item.sourceLineSnapshot?.weightConfidence || 0)
 
     return (
@@ -645,11 +940,38 @@ const createEmptyBundle = (counter, bundleType) => ({
   status: 'draft',
 })
 
-const finalizeBundle = (bundle) => ({
-  ...bundle,
-  totalWeight: roundNumber(bundle.totalWeight || 0),
-  warnings: getBundleWarnings(bundle),
-})
+const applyBundleEnvelopeDefaults = (bundle) => {
+  if (!bundle?.items?.length) return bundle
+
+  const width = toNumber(bundle.estimatedWidthFeet, 0)
+  const height = toNumber(bundle.estimatedHeightFeet, 0)
+  if (width > 0 && height > 0) return bundle
+
+  const weight = toNumber(bundle.totalWeight, 0)
+  const length = toNumber(bundle.maxLengthFeet, 0)
+  const hotshotFits =
+    weight > 0 &&
+    weight <= TRUCK_TYPES.HOTSHOT_40.maxWeight &&
+    length <= TRUCK_TYPES.HOTSHOT_40.maxLengthFeet
+  const defaultWidth = hotshotFits
+    ? HOTSHOT_BUNDLE_ENVELOPE_WIDTH_FEET
+    : DEFAULT_BUNDLE_ENVELOPE_WIDTH_FEET
+
+  return {
+    ...bundle,
+    estimatedWidthFeet: width > 0 ? roundNumber(width) : defaultWidth,
+    estimatedHeightFeet: height > 0 ? roundNumber(height) : DEFAULT_BUNDLE_ENVELOPE_HEIGHT_FEET,
+  }
+}
+
+const finalizeBundle = (bundle) => {
+  const withEnvelope = applyBundleEnvelopeDefaults(bundle)
+  return {
+    ...withEnvelope,
+    totalWeight: roundNumber(withEnvelope.totalWeight || 0),
+    warnings: getBundleWarnings(withEnvelope),
+  }
+}
 
 const assignLoadSequence = (bundles) => {
   return [...bundles]
@@ -689,7 +1011,7 @@ const generateBundlesFromVendorLines = (vendorLines) => {
       const bWeight = resolveBundleItemWeight(b).resolvedWeight
 
       return (
-        (b.lengthFeet || 0) - (a.lengthFeet || 0) ||
+        getShippingLengthFeet(b) - getShippingLengthFeet(a) ||
         (bWeight || 0) - (aWeight || 0)
       )
     })
@@ -699,8 +1021,8 @@ const generateBundlesFromVendorLines = (vendorLines) => {
     for (const line of sorted) {
       const item = toBundleItem(line)
 
-      const lineWeight = Number(item.weight || 0)
-      const lineLength = Number(item.lengthFeet || 0)
+      const lineWeight = getItemTotalWeight(item)
+      const lineLength = getShippingLengthFeet(line)
 
       const exceedsWeight =
         bundle.items.length > 0 &&
@@ -739,33 +1061,38 @@ const generateBundlesFromVendorLines = (vendorLines) => {
   return assignLoadSequence(bundles)
 }
 
-const selectTruckTypeForBundle = (bundle) => {
+const resolveTruckConfigForBundle = (bundle) => {
   const weight = Number(bundle.totalWeight || 0)
   const length = Number(bundle.maxLengthFeet || 0)
 
-  if (weight <= 0) {
-    if (length <= 40) return TRUCK_TYPES.HOTSHOT_40
-    if (length <= 53) return TRUCK_TYPES.SEMI_53
-    return null
-  }
+  const hotshotFits =
+    weight > 0 &&
+    weight <= TRUCK_TYPES.HOTSHOT_40.maxWeight &&
+    length <= TRUCK_TYPES.HOTSHOT_40.maxLengthFeet
 
-  if (length <= 40 && weight <= 18000) return TRUCK_TYPES.HOTSHOT_40
-  if (length <= 53 && weight <= 45000) return TRUCK_TYPES.SEMI_53
-
-  return null
+  return hotshotFits ? TRUCK_TYPES.HOTSHOT_40 : TRUCK_TYPES.SEMI_53
 }
 
+const selectTruckTypeForBundle = (bundle) => resolveTruckConfigForBundle(bundle)
+
 const canFitBundleInPackingList = (packingList, bundle) => {
-  const newWeight = packingList.totalWeight + Number(bundle.totalWeight || 0)
+  const bundleLength = Number(bundle.maxLengthFeet || 0)
+  const bundleWeight = Number(bundle.totalWeight || 0)
+
+  if (bundleLength > Number(packingList.maxTruckLengthFeet || 0)) {
+    return false
+  }
+
+  const newWeight = Number(packingList.totalWeight || 0) + bundleWeight
 
   const newLength = Math.max(
     packingList.maxLengthFeet || 0,
-    bundle.maxLengthFeet || 0
+    bundleLength
   )
 
   return (
-    newWeight <= packingList.maxTruckWeight &&
-    newLength <= packingList.maxTruckLengthFeet
+    newWeight <= Number(packingList.maxTruckWeight || 0) &&
+    newLength <= Number(packingList.maxTruckLengthFeet || 0)
   )
 }
 
@@ -798,6 +1125,27 @@ const createEmptyPackingList = (counter, truckConfig) => ({
   warnings: [],
   status: 'draft',
 })
+
+const applyTruckConfigToPackingList = (packingList, truckConfig) => {
+  packingList.truckType = truckConfig.truckType
+  packingList.truckLabel = truckConfig.label
+  packingList.maxTruckWeight = truckConfig.maxWeight
+  packingList.hardMaxTruckWeight = truckConfig.hardMaxWeight
+  packingList.maxTruckLengthFeet = truckConfig.maxLengthFeet
+
+  return packingList
+}
+
+const canPackingListUseHotshot = (packingList) => {
+  const weight = Number(packingList.totalWeight || 0)
+  const length = Number(packingList.maxLengthFeet || 0)
+
+  return (
+    weight > 0 &&
+    weight <= TRUCK_TYPES.HOTSHOT_40.maxWeight &&
+    length <= TRUCK_TYPES.HOTSHOT_40.maxLengthFeet
+  )
+}
 
 const addBundleToPackingList = (packingList, bundle) => {
   packingList.bundleIds.push(bundle._id)
@@ -934,6 +1282,13 @@ const generateMixedTruckPackingLists = (bundles) => {
   const packingLists = []
   let counter = 1
 
+  /*
+   * Shipment-level truck planning:
+   * - Do not select a Hot Shot just because a single bundle fits.
+   * - Pack using SEMI_53 capacity first to minimize truck count.
+   * - After packing is complete, only downgrade the final leftover truck
+   *   to HOTSHOT_40 if that full leftover truck fits Hot Shot limits.
+   */
   for (const bundle of sorted) {
     let placed = false
 
@@ -947,17 +1302,28 @@ const generateMixedTruckPackingLists = (bundles) => {
 
     if (placed) continue
 
-    const truckConfig = selectTruckTypeForBundle(bundle)
-
-    if (!truckConfig) {
-      throw new Error(
-        `No truck can carry bundle ${bundle.bundleNo}. Weight=${bundle.totalWeight}, Length=${bundle.maxLengthFeet}`
-      )
-    }
-
-    const packingList = createEmptyPackingList(counter++, truckConfig)
+    const packingList = createEmptyPackingList(counter++, TRUCK_TYPES.SEMI_53)
     addBundleToPackingList(packingList, bundle)
     packingLists.push(packingList)
+  }
+
+  /*
+   * Downgrade rule:
+   * - If the whole shipment is one small truck, use HOTSHOT_40.
+   * - If multiple trucks are needed, only the final leftover truck can become HOTSHOT_40.
+   * This prevents inefficient results like 7 Hot Shots + 4 Semis.
+   */
+  if (packingLists.length === 1) {
+    if (canPackingListUseHotshot(packingLists[0])) {
+      applyTruckConfigToPackingList(packingLists[0], TRUCK_TYPES.HOTSHOT_40)
+    }
+  } else if (packingLists.length > 1) {
+    const lastIndex = packingLists.length - 1
+    const lastPackingList = packingLists[lastIndex]
+
+    if (canPackingListUseHotshot(lastPackingList)) {
+      applyTruckConfigToPackingList(lastPackingList, TRUCK_TYPES.HOTSHOT_40)
+    }
   }
 
   return finalizePackingLists(packingLists)
@@ -974,7 +1340,7 @@ const recalculateBundleMetrics = (bundle) => {
 
   for (const item of items) {
     totalQty += Number(item.qty || 0)
-    totalWeight += Number(item.weight || 0)
+    totalWeight += getItemTotalWeight(item)
     maxLengthFeet = Math.max(maxLengthFeet, Number(item.lengthFeet || 0))
     estimatedWidthFeet = Math.max(estimatedWidthFeet, Number(item.widthFeet || 0))
     estimatedHeightFeet = Math.max(estimatedHeightFeet, Number(item.heightFeet || 0))
@@ -988,6 +1354,324 @@ const recalculateBundleMetrics = (bundle) => {
     estimatedWidthFeet,
     estimatedHeightFeet,
   })
+}
+
+/* =========================================================
+ * BOM weight enrichment for load planning
+ * =========================================================
+ * Why this exists:
+ * - Vendor quote PDFs usually do not contain physical row weight.
+ * - BOMItem.weight is the reliable physical weight extracted from the .out BOM.
+ * - After shipper comparison, QuoteComparisonResult tells us which VendorQuoteLine
+ *   matched which BOM row. We use that matched BOM weight for BundleItem.weight.
+ *
+ * This avoids the old bug where bundle totalWeight stayed 0 because the bundle
+ * service only looked at VendorQuoteLine.weight / unitWeight / totalWeight.
+ */
+const uniqueIdStrings = (values = []) => [
+  ...new Set((values || []).map(getIdString).filter(Boolean)),
+]
+
+const getVendorIdsFromComparisonResult = (result) => uniqueIdStrings([
+  ...(result.vendorQuoteLineIds || []),
+  result.vendorQuoteLineId,
+])
+
+const getBomIdsFromComparisonResult = (result) => {
+  const expected = result?.expected || {}
+
+  // v4.7/v4.8 row-preserved comparison stores the matched BOMItem id in
+  // QuoteComparisonResult.consolidatedItemId even though the field name is old.
+  // Newer comparison versions may also store expected.bomItemIds / expected.totalWeight.
+  // This load-planning service supports both, so no comparison-service change is required.
+  return uniqueIdStrings([
+    ...(Array.isArray(expected.bomItemIds) ? expected.bomItemIds : []),
+    expected.bomItemId,
+    expected._id,
+    result?.bomItemId,
+    ...(Array.isArray(result?.bomItemIds) ? result.bomItemIds : []),
+    result?.consolidatedItemId,
+  ])
+}
+
+const toPlainVendorLine = (line) => {
+  if (!line) return {}
+  if (typeof line.toObject === 'function') return line.toObject()
+  return { ...line }
+}
+
+const getLineId = (line) => getIdString(line?._id || line?.id || line?.vendorQuoteLineId)
+
+const normalizeMatchText = (value) => normalizeText(value).replace(/[^A-Z0-9]/g, '')
+
+const almostSameLengthFeet = (a, b, toleranceFeet = 0.08) => {
+  const x = toNumber(a, 0)
+  const y = toNumber(b, 0)
+
+  if (x <= 0 && y <= 0) return true
+  if (x <= 0 || y <= 0) return false
+
+  return Math.abs(x - y) <= toleranceFeet
+}
+
+const sameQty = (a, b) => {
+  const x = toNumber(a, 0)
+  const y = toNumber(b, 0)
+
+  if (x <= 0 || y <= 0) return false
+  return Math.abs(x - y) < 0.0001
+}
+
+const scoreDirectBomCandidate = (line, bomItem) => {
+  let score = 0
+
+  const lineMark = normalizeMatchText(line.pieceMark || line.pieceMarkNormalized)
+  const bomMark = normalizeMatchText(bomItem.markId)
+  const linePart = normalizeMatchText(line.partCode || line.vendorProductCode || line.partCodeNormalized || line.vendorProductCodeNormalized)
+  const bomPart = normalizeMatchText(bomItem.partCode || bomItem.partCodeNormalized)
+  const lineDescription = normalizeMatchText(line.description)
+  const bomDescription = normalizeMatchText(bomItem.description)
+
+  if (lineMark && bomMark && lineMark === bomMark) score += 100
+  if (linePart && bomPart && linePart === bomPart) score += 35
+  if (sameQty(line.pieceQty || line.qty, bomItem.quantity)) score += 25
+  if (almostSameLengthFeet(line.lengthFeet, bomItem.lengthFeet)) score += 25
+
+  if (lineDescription && bomDescription) {
+    if (lineDescription === bomDescription) score += 15
+    else if (lineDescription.includes(bomDescription) || bomDescription.includes(lineDescription)) score += 8
+  }
+
+  // Without a mark, require stronger physical identity to avoid wrong weights.
+  if (!lineMark || !bomMark) {
+    const hasStrongNonMarkMatch =
+      (linePart && bomPart && linePart === bomPart) &&
+      sameQty(line.pieceQty || line.qty, bomItem.quantity) &&
+      almostSameLengthFeet(line.lengthFeet, bomItem.lengthFeet)
+
+    if (!hasStrongNonMarkMatch) return 0
+  }
+
+  return score
+}
+
+const fillMissingWeightsByDirectBomMatch = async ({
+  weightByVendorLineId,
+  vendorLines = [],
+} = {}) => {
+  const BOMItem = getBOMItemModel()
+  if (!BOMItem || !Array.isArray(vendorLines) || !vendorLines.length) return weightByVendorLineId
+
+  const missingVendorLines = vendorLines.filter((line) => {
+    const lineId = getLineId(line)
+    return lineId && !weightByVendorLineId.has(lineId)
+  })
+
+  if (!missingVendorLines.length) return weightByVendorLineId
+
+  const leadIds = uniqueIdStrings(missingVendorLines.map((line) => line.leadId))
+  if (!leadIds.length) return weightByVendorLineId
+
+  const bomItems = await BOMItem.find({ leadId: { $in: leadIds } })
+    .select('_id leadId weight quantity lengthFeet lengthRaw partCode partCodeNormalized description markId')
+    .lean()
+
+  const validBomItems = (bomItems || []).filter((item) => toNumber(item.weight, 0) > 0)
+  if (!validBomItems.length) return weightByVendorLineId
+
+  const usedBomIds = new Set()
+
+  for (const line of missingVendorLines) {
+    const lineId = getLineId(line)
+    if (!lineId) continue
+
+    let best = null
+    let bestScore = 0
+
+    for (const bomItem of validBomItems) {
+      const bomId = getIdString(bomItem._id)
+      if (!bomId || usedBomIds.has(bomId)) continue
+
+      if (getIdString(bomItem.leadId) !== getIdString(line.leadId)) continue
+
+      const score = scoreDirectBomCandidate(line, bomItem)
+      if (score > bestScore) {
+        best = bomItem
+        bestScore = score
+      }
+    }
+
+    // 100+ means exact mark match. 150+ is strong mark/qty/length/description.
+    // 85+ allows non-mark exact part+qty+length rows.
+    if (!best || bestScore < 85) continue
+
+    const totalWeight = roundNumber(best.weight, 4)
+    const totalQty = toNumber(best.quantity, 0)
+    const unitWeight = totalQty > 0 ? roundNumber(totalWeight / totalQty, 6) : null
+    const bomId = getIdString(best._id)
+
+    usedBomIds.add(bomId)
+    weightByVendorLineId.set(lineId, {
+      totalWeight,
+      groupTotalWeight: totalWeight,
+      unitWeight,
+      matchedBomItemIds: [bomId],
+      weightSource: 'bom_direct_fallback',
+      comparisonResultId: null,
+    })
+  }
+
+  return weightByVendorLineId
+}
+
+const buildBomWeightLookupFromComparisonResults = async ({
+  shipperRequestId,
+  comparisonResults = null,
+  vendorLines = [],
+} = {}) => {
+  const weightByVendorLineId = new Map()
+
+  let results = comparisonResults
+
+  if (!Array.isArray(results)) {
+    const QuoteComparisonResult = getQuoteComparisonResultModel()
+    if (!QuoteComparisonResult) {
+      return weightByVendorLineId
+    }
+
+    const query = {
+      status: 'matched',
+    }
+
+    if (shipperRequestId) query.shipperRequestId = shipperRequestId
+
+    // Important: do not pre-filter with vendorQuoteLineId here.
+    // Some projects had ObjectId/string casting mismatch or old array-field shape,
+    // which returned zero comparison rows and silently created 0-weight bundles.
+    // Pull matched rows for the shipper request first, then filter in memory.
+    results = await QuoteComparisonResult.find(query).lean()
+  }
+
+  const vendorLineIds = new Set(uniqueIdStrings(vendorLines.map(getLineId)))
+  let matchedResults = (results || []).filter((result) => result && result.status === 'matched')
+
+  if (vendorLineIds.size) {
+    matchedResults = matchedResults.filter((result) => {
+      const ids = getVendorIdsFromComparisonResult(result)
+      return ids.some((id) => vendorLineIds.has(id))
+    })
+  }
+
+  if (!matchedResults.length) {
+    return fillMissingWeightsByDirectBomMatch({ weightByVendorLineId, vendorLines })
+  }
+
+  const bomIdsNeeded = uniqueIdStrings(matchedResults.flatMap(getBomIdsFromComparisonResult))
+  const bomWeightById = new Map()
+
+  if (bomIdsNeeded.length) {
+    const BOMItem = getBOMItemModel()
+    if (BOMItem) {
+      const bomItems = await BOMItem.find({ _id: { $in: bomIdsNeeded } })
+        .select('_id weight quantity lengthFeet lengthRaw partCode description markId')
+        .lean()
+
+      for (const item of bomItems || []) {
+        bomWeightById.set(getIdString(item._id), {
+          totalWeight: toNumber(item.weight, 0),
+          qty: toNumber(item.quantity, 0),
+          bomItem: item,
+        })
+      }
+    }
+  }
+
+  for (const result of matchedResults) {
+    const vendorIds = getVendorIdsFromComparisonResult(result)
+    if (!vendorIds.length) continue
+
+    const expected = result.expected || {}
+    const bomIds = getBomIdsFromComparisonResult(result)
+
+    let totalWeight = toNumber(expected.totalWeight, 0)
+    let totalQty = toNumber(expected.totalQty, 0)
+
+    if (totalWeight <= 0 && bomIds.length) {
+      totalWeight = bomIds.reduce((sum, id) => sum + toNumber(bomWeightById.get(id)?.totalWeight, 0), 0)
+    }
+
+    if (totalQty <= 0 && bomIds.length) {
+      totalQty = bomIds.reduce((sum, id) => sum + toNumber(bomWeightById.get(id)?.qty, 0), 0)
+    }
+
+    if (totalWeight <= 0) continue
+
+    // Row-preserved comparison normally has one vendor line per BOM row.
+    // If a result ever contains multiple vendor lines, split the expected BOM
+    // total weight across those vendor lines so bundle totals remain accurate.
+    const perVendorLineWeight = roundNumber(totalWeight / vendorIds.length, 4)
+    const unitWeight = totalQty > 0 ? roundNumber(totalWeight / totalQty, 6) : null
+
+    for (const vendorId of vendorIds) {
+      weightByVendorLineId.set(vendorId, {
+        totalWeight: perVendorLineWeight,
+        groupTotalWeight: roundNumber(totalWeight, 4),
+        unitWeight,
+        matchedBomItemIds: bomIds,
+        weightSource: 'bom_matched',
+        comparisonResultId: getIdString(result._id),
+      })
+    }
+  }
+
+  await fillMissingWeightsByDirectBomMatch({ weightByVendorLineId, vendorLines })
+
+  return weightByVendorLineId
+}
+
+const enrichVendorLinesWithBomWeights = async (vendorLines = [], options = {}) => {
+  const weightByVendorLineId = await buildBomWeightLookupFromComparisonResults({
+    shipperRequestId: options.shipperRequestId,
+    comparisonResults: options.comparisonResults,
+    vendorLines,
+  })
+
+  if (!weightByVendorLineId.size) {
+    return vendorLines
+  }
+
+  return (vendorLines || []).map((line) => {
+    const lineId = getLineId(line)
+    const weight = weightByVendorLineId.get(lineId)
+    if (!weight || weight.totalWeight <= 0) return line
+
+    const plainLine = toPlainVendorLine(line)
+
+    return {
+      ...plainLine,
+      // Keep top-level fields too, because resolveBundleItemWeight checks both
+      // top-level and rawRow for BOM-matched weights.
+      bomMatchedTotalWeight: weight.totalWeight,
+      bomMatchedUnitWeight: weight.unitWeight,
+      weightSource: weight.weightSource || 'bom_matched',
+      matchedBomItemIds: weight.matchedBomItemIds,
+      rawRow: {
+        ...(plainLine.rawRow || {}),
+        bomMatchedTotalWeight: weight.totalWeight,
+        bomMatchedGroupTotalWeight: weight.groupTotalWeight,
+        bomMatchedUnitWeight: weight.unitWeight,
+        bomMatchedQty: line.pieceQty || line.qty || null,
+        bomMatchedWeightSource: weight.weightSource || 'bom_matched',
+        matchedBomItemIds: weight.matchedBomItemIds,
+        comparisonResultId: weight.comparisonResultId,
+      },
+    }
+  })
+}
+
+const generateBundlesFromVendorLinesWithBomWeights = async (vendorLines = [], options = {}) => {
+  const enrichedVendorLines = await enrichVendorLinesWithBomWeights(vendorLines, options)
+  return generateBundlesFromVendorLines(enrichedVendorLines)
 }
 
 const aggregateBundlePlanSummary = (bundles = []) => {
@@ -1021,11 +1705,15 @@ const aggregateBundlePlanSummary = (bundles = []) => {
 }
 
 module.exports = {
+  BUNDLE_PLANNING_SERVICE_VERSION,
   TRUCK_TYPES,
   BUNDLE_LIMITS,
   WEIGHT_BASIS,
 
   generateBundlesFromVendorLines,
+  generateBundlesFromVendorLinesWithBomWeights,
+  enrichVendorLinesWithBomWeights,
+  buildBomWeightLookupFromComparisonResults,
   generateMixedTruckPackingLists,
 
   assignLoadSequence,
@@ -1038,4 +1726,5 @@ module.exports = {
   getPhysicalQty,
   getBundleWarnings,
   resolveBundleItemWeight,
+  getBomMatchedWeight,
 }

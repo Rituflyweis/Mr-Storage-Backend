@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const { INVOICE_STATUSES } = require('../config/constants')
+const { INVOICE_STATUSES, INVOICE_VALUE_TYPES } = require('../config/constants')
 const { computeInvoiceDueDate } = require('../utils/invoiceDueDate')
 
 const LineItemSchema = new mongoose.Schema(
@@ -9,8 +9,25 @@ const LineItemSchema = new mongoose.Schema(
     items:    { type: [String], default: [] },
     rate:     { type: Number, default: 0 },
     markup:   { type: Number, default: 0 },
+    markupType: {
+      type: String,
+      enum: INVOICE_VALUE_TYPES,
+      default: 'amount',
+    },
     quantity: { type: Number, default: 1 },
     tax:      { type: Number, default: 0 },
+    taxType: {
+      type: String,
+      enum: INVOICE_VALUE_TYPES,
+      default: 'amount',
+    },
+    /** Rate after per-unit markup (display / email) */
+    effectiveRate: { type: Number, default: 0 },
+    /** Total markup dollars for this line (markup per unit × qty) */
+    markupAmount: { type: Number, default: 0 },
+    /** Computed tax dollars for this line */
+    taxAmount: { type: Number, default: 0 },
+    /** Line subtotal excluding tax: (effectiveRate × qty) */
     total:    { type: Number, default: 0 },
   },
   { _id: true }

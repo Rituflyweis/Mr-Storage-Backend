@@ -15,6 +15,13 @@ const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.se
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog } = require('../../services/auditActivity.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { getScopedLeadIds } = require('../../utils/plantAccessScope')
+const { sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
+const { computeShipperFilesStats } = require('../../utils/shipperFilesStats')
+const {
+  buildAmountComparisonForRequest,
+  loadConsolidatedBomCostMap,
+} = require('../../utils/shipperAmountComparison')
 const { validatePlantLifecycleTransition } = require('../../utils/plantLifecycle')
 const { getLatestBomJobsByBuilding, formatBomJobSummary } = require('../../utils/plantBomAccess')
 const { processBOMJob, inferFileFormat } = require('../../services/plant/bom.service')
@@ -26,7 +33,6 @@ const {
 } = require('../../services/plant/consolidator.service')
 const { sendConsolidatedBOMToVendor } = require('../../services/email/mailer')
 const { buildVendorUploadPageUrl } = require('../../utils/vendorUpload.util')
-const { buildDateFilter } = require('../../utils/dateRange')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS } = require('../../config/constants')
@@ -34,14 +40,7 @@ const { AUDIT_ACTIONS } = require('../../config/constants')
 const BOM_CONFIRMED_STATUSES = ['bom_confirmed', 'completed']
 const BOM_STARTED_STATUSES = ['bom_pending', 'bom_approved', 'bom_confirmed', 'completed']
 
-const getAssignedLeadIds = async (plantUserId, query) => {
-  const poFilter = {
-    assignedTo: plantUserId,
-    status: 'approved',
-    ...buildDateFilter(query, 'createdAt'),
-  }
-  return POOrder.distinct('leadId', poFilter)
-}
+const getAssignedLeadIds = async (req, query = req.query) => getScopedLeadIds(req, query)
 
 const getLatestDrawing = (drawings = []) =>
   drawings.reduce((latest, drawing) =>
@@ -150,7 +149,7 @@ const mapProjectRow = (lead, buildings = []) => {
 }
 
 exports.getProjectStats = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id, req.query)
+  const leadIds = await getAssignedLeadIds(req, req.query)
 
   if (!leadIds.length) {
     return success(res, {
@@ -186,7 +185,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
 
-  const leadIds = await getAssignedLeadIds(req.user._id, req.query)
+  const leadIds = await getAssignedLeadIds(req, req.query)
   if (!leadIds.length) {
     return success(res, { projects: [], total: 0, page: parsedPage, limit: parsedLimit })
   }
@@ -266,7 +265,7 @@ const formatAgreement = (lead) => {
 
 const guardProject = async (req, res) => {
   const { leadId } = req.params
-  const result = await assertPlantProjectAccess(leadId, req.user._id)
+  const result = await assertPlantProjectAccess(leadId, req)
   if (result.error) {
     if (result.code === 404) {
       notFound(res, result.error)
@@ -728,12 +727,15 @@ exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
   if (!access) return
   const leadId = access.lead._id
 
-  const requests = await ShipperRequest.find({ leadId })
-    .populate('vendorId', 'vendorName vendorCode email')
-    .sort({ createdAt: -1 })
-    .lean()
+  const requests = sortShipperRequestsByLowestBid(
+    await ShipperRequest.find({ leadId })
+      .populate('vendorId', 'vendorName vendorCode email')
+      .lean()
+  )
+  const bomCostById = await loadConsolidatedBomCostMap(requests)
 
   return success(res, {
+    stats: computeShipperFilesStats(requests),
     shipperFiles: requests.map((r) => ({
       _id: r._id,
       vendorId: r.vendorId?._id || r.vendorId,
@@ -744,6 +746,7 @@ exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
       submittedAt: r.submittedAt,
       quoteValue: r.quoteValue,
       sentAt: r.sentAt,
+      amountComparison: buildAmountComparisonForRequest(r, bomCostById),
     })),
   })
 })

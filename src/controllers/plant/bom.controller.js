@@ -2,7 +2,6 @@ const BOMJob = require('../../models/BOMJob')
 const BOMItem = require('../../models/BOMItem')
 const Building = require('../../models/Building')
 const Lead = require('../../models/Lead')
-const POOrder = require('../../models/POOrder')
 const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const SMDTItem = require('../../models/SMDTItem')
 const auditService = require('../../services/audit.service')
@@ -10,6 +9,12 @@ const { processBOMJob, calculateTotalCost, inferFileFormat } = require('../../se
 const { getActiveCostVersion, normalizeCode } = require('../../services/plant/smdt.service')
 const { assertBomJobAccess } = require('../../utils/plantBomAccess')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { getScopedLeadIds } = require('../../utils/plantAccessScope')
+const {
+  mapProjectNameFallbackFields,
+  LEAD_PROJECT_LIST_SELECT,
+  LEAD_PROJECT_LIST_POPULATE,
+} = require('../../utils/plantProjectListFields')
 const { success, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, BOM_ITEM_FILTERS } = require('../../config/constants')
@@ -41,9 +46,6 @@ const mapJobStatusToFileStatus = (status) => {
   return status || 'uploaded'
 }
 
-const getAssignedLeadIds = async (plantUserId) =>
-  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
-
 const getLatestJobsForLeadIds = async (leadIds) => {
   if (!leadIds.length) return []
   return BOMJob.aggregate([
@@ -55,7 +57,7 @@ const getLatestJobsForLeadIds = async (leadIds) => {
 }
 
 exports.getBOMStats = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getScopedLeadIds(req)
   if (!leadIds.length) {
     return success(res, {
       totalBomFilesUploaded: 0,
@@ -88,7 +90,7 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))
   const skip = (page - 1) * limit
 
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getScopedLeadIds(req)
   if (!leadIds.length) {
     return success(res, { projects: [], total: 0, page, limit })
   }
@@ -100,7 +102,8 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
 
   const leadIdSet = [...new Set(latestJobs.map((j) => String(j.leadId)))]
   const leads = await Lead.find({ _id: { $in: leadIdSet } })
-    .select('_id projectName jobId')
+    .select(`_id ${LEAD_PROJECT_LIST_SELECT}`)
+    .populate(LEAD_PROJECT_LIST_POPULATE)
     .lean()
   const leadMap = new Map(leads.map((l) => [String(l._id), l]))
 
@@ -112,6 +115,7 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
         leadId: lead._id,
         projectId: lead.jobId || '',
         projectName: lead.projectName || '',
+        ...mapProjectNameFallbackFields(lead),
         buildingId: job.buildingId,
         buildingNumber: job.buildingNumber,
         uploadDate: job.createdAt,
@@ -130,7 +134,7 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
 
 exports.getConsolidatedBOMUrl = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -162,7 +166,7 @@ exports.getConsolidatedBOMUrl = asyncHandler(async (req, res) => {
 })
 
 exports.getJobStatus = asyncHandler(async (req, res) => {
-  const result = await assertBomJobAccess(req.params.jobId, req.user._id)
+  const result = await assertBomJobAccess(req.params.jobId, req)
   if (result.error) {
     if (result.code === 404) return notFound(res, result.error)
     return forbidden(res, result.error)
@@ -208,7 +212,7 @@ exports.getJobsStatusBatch = asyncHandler(async (req, res) => {
       results.push({ jobId, error: 'Not found' })
       continue
     }
-    const access = await assertBomJobAccess(job._id, req.user._id)
+    const access = await assertBomJobAccess(job._id, req)
     if (access.error) {
       results.push({ jobId, error: access.error })
       continue
@@ -231,7 +235,7 @@ exports.getJobsStatusBatch = asyncHandler(async (req, res) => {
 })
 
 exports.getBOMJob = asyncHandler(async (req, res) => {
-  const result = await assertBomJobAccess(req.params.jobId, req.user._id)
+  const result = await assertBomJobAccess(req.params.jobId, req)
   if (result.error) {
     if (result.code === 404) return notFound(res, result.error)
     return forbidden(res, result.error)
@@ -309,7 +313,7 @@ exports.priceBOMItem = asyncHandler(async (req, res) => {
   const item = await BOMItem.findById(req.params.bomItemId)
   if (!item) return notFound(res, 'BOM item not found')
 
-  const access = await assertBomJobAccess(item.bomJobId, req.user._id)
+  const access = await assertBomJobAccess(item.bomJobId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -391,7 +395,7 @@ exports.confirmBuildingBOM = asyncHandler(async (req, res) => {
   const job = await BOMJob.findOne({ buildingId, leadId: building.leadId }).sort({ createdAt: -1 })
   if (!job) return notFound(res, 'No BOM job for this building')
 
-  const jobAccess = await assertBomJobAccess(job._id, req.user._id)
+  const jobAccess = await assertBomJobAccess(job._id, req)
   if (jobAccess.error) {
     if (jobAccess.code === 404) return notFound(res, jobAccess.error)
     return forbidden(res, jobAccess.error)

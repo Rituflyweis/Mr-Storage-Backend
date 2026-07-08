@@ -56,6 +56,8 @@ const INVOICE_CREATE_MIN_LIFECYCLE_STAGE = 'proposal_sent'
 const PRIORITY_LEVELS = ['low', 'medium', 'high', 'urgent']
 const QUOTATION_STATUSES = ['draft', 'sent', 'accepted', 'rejected']
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
+/** Line-item markup/tax input mode: percentage (of rate / line subtotal) or flat amount */
+const INVOICE_VALUE_TYPES = ['percentage', 'amount']
 const FOLLOW_UP_STATUSES = ['pending', 'completed']
 const FOLLOW_UP_MODES = ['call', 'email', 'meeting']
 const MEETING_MODES = ['online', 'offline']
@@ -89,6 +91,7 @@ const AUDIT_ACTIONS = {
   LEAD_TERMINATED:          'lead.terminated',
   LEAD_NOTE_ADDED:          'lead.note_added',
   BUILDINGS_CREATED:        'lead.buildings_created',
+  BUILDINGS_SYNCED:         'lead.buildings_synced',
   DRAWING_UPLOADED:         'drawing.uploaded',
   DRAWING_REVIEWED:         'drawing.reviewed',
   BOM_APPROVED:             'bom.approved',
@@ -142,8 +145,13 @@ const AUDIT_ACTIONS = {
   CARRIER_CREATED:           'carrier.created',
   CARRIER_UPDATED:           'carrier.updated',
   DELIVERY_CREATED:          'delivery.created',
+  DELIVERY_EDITED:           'delivery.edited',
+  DELIVERY_RESCHEDULED:      'delivery.rescheduled',
   FREIGHT_BIDS_SENT:         'freight_bids.sent',
+  FREIGHT_BID_SUBMITTED:     'freight_bid.submitted',
+  ALL_FREIGHT_BIDS_SUBMITTED: 'freight_bids.all_submitted',
   FREIGHT_BID_SELECTED:      'freight_bid.selected',
+  FREIGHT_BID_RESUBMIT_REQUESTED: 'freight_bid.resubmit_requested',
 
   SMDT_BULK_UPLOADED:        'smdt.bulk_uploaded',
   SMDT_ITEM_ADDED:           'smdt.item_added',
@@ -177,8 +185,8 @@ const ACTIVE_SHIPPER_REQUEST_STATUSES = [
 ]
 
 const CARRIER_STATUSES = ['active', 'inactive']
-const FREIGHT_BID_STATUSES = ['sent', 'submitted', 'selected', 'rejected', 'expired']
-const ACTIVE_FREIGHT_BID_STATUSES = ['sent', 'submitted']
+const FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested', 'selected', 'rejected', 'expired']
+const ACTIVE_FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested']
 const BUNDLE_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
 const BUNDLE_STATUSES = ['draft', 'confirmed', 'assigned_to_truck', 'loaded']
 const PACKING_LIST_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
@@ -224,6 +232,7 @@ module.exports = {
   PRIORITY_LEVELS,
   QUOTATION_STATUSES,
   INVOICE_STATUSES,
+  INVOICE_VALUE_TYPES,
   FOLLOW_UP_STATUSES,
   FOLLOW_UP_MODES,
   MEETING_MODES,

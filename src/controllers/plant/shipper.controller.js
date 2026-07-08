@@ -1,4 +1,3 @@
-const POOrder = require('../../models/POOrder')
 const crypto = require('crypto')
 const ShipperRequest = require('../../models/ShipperRequest')
 const ShipperComparisonJob = require('../../models/ShipperComparisonJob')
@@ -10,8 +9,17 @@ const BundlePlan = require('../../models/BundlePlan')
 const PackingListPlan = require('../../models/PackingListPlan')
 const Bundle = require('../../models/Bundle')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { getScopedLeadIds } = require('../../utils/plantAccessScope')
+const {
+  mapProjectNameFallbackFields,
+  LEAD_PROJECT_LIST_SELECT,
+  LEAD_PROJECT_LIST_POPULATE,
+} = require('../../utils/plantProjectListFields')
 const { processShipperComparisonJob } = require('../../services/plant/shipperComparison.service')
-const { generateBundlesFromVendorLines } = require('../../services/plant/loadPlanning.service')
+const {
+  BUNDLE_PLANNING_SERVICE_VERSION,
+  generateBundlesFromVendorLinesWithBomWeights,
+} = require('../../services/plant/loadPlanning.service')
 const {
   sendShipperApprovalEmail,
   sendShipperRejectionEmail,
@@ -25,12 +33,24 @@ const {
   buildAutoResubmitNote,
   RESUBMIT_ALLOWED_STATUSES,
 } = require('../../utils/vendorUpload.util')
+const {
+  COMPARISON_RESULT_CATEGORIES,
+  getStatusesForCategory,
+  mapComparisonResultRow,
+  aggregateComparisonStats,
+} = require('../../utils/shipperComparisonCategories')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const { SHIPPER_REQUEST_LATEST_FIRST_SORT, sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
+const { computeShipperFilesStats } = require('../../utils/shipperFilesStats')
+const {
+  buildShipperAmountComparison,
+  buildAmountComparisonForRequest,
+  loadConsolidatedBomCostMap,
+} = require('../../utils/shipperAmountComparison')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
-const getAssignedLeadIds = async (plantUserId) =>
-  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+const getAssignedLeadIds = async (req) => getScopedLeadIds(req)
 
 const resolveFileReceivedStatus = (total, received) => {
   if (!total || total <= 0) return 'none'
@@ -50,12 +70,16 @@ const getNextBundlePlanNumber = async () => {
 }
 
 exports.getShipperProjects = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) return success(res, { projects: [], total: 0 })
 
   const requests = await ShipperRequest.find({ leadId: { $in: leadIds } })
-    .populate('leadId', 'projectName jobId')
-    .sort({ createdAt: -1 })
+    .populate({
+      path: 'leadId',
+      select: LEAD_PROJECT_LIST_SELECT,
+      populate: LEAD_PROJECT_LIST_POPULATE,
+    })
+    .sort(SHIPPER_REQUEST_LATEST_FIRST_SORT)
     .lean()
 
   const projectMap = new Map()
@@ -71,6 +95,7 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
         projectId: lead.jobId || '',
         jobId: lead.jobId || '',
         projectName: lead.projectName || '',
+        ...mapProjectNameFallbackFields(lead),
         totalShipperFiles: 0,
         receivedShipperFiles: 0,
         fileReceivedStatus: 'none',
@@ -98,23 +123,59 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
   return success(res, { projects, total: projects.length })
 })
 
-exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
+exports.getShipperFilesStats = asyncHandler(async (req, res) => {
+  const leadIds = await getAssignedLeadIds(req)
+  if (!leadIds.length) {
+    return success(res, computeShipperFilesStats([]))
+  }
+
+  const requests = await ShipperRequest.find({ leadId: { $in: leadIds } })
+    .select('status submittedFileUrl sentAt resubmitCount')
+    .lean()
+
+  return success(res, computeShipperFilesStats(requests))
+})
+
+exports.getProjectShipperFilesStats = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
   }
 
   const requests = await ShipperRequest.find({ leadId })
-    .populate('vendorId', 'vendorName vendorCode')
-    .sort({ createdAt: -1 })
+    .select('status submittedFileUrl sentAt resubmitCount')
     .lean()
 
   return success(res, {
     leadId,
     projectId: access.lead.jobId || '',
     projectName: access.lead.projectName || '',
+    ...computeShipperFilesStats(requests),
+  })
+})
+
+exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const access = await assertPlantProjectAccess(leadId, req)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const requests = sortShipperRequestsByLowestBid(
+    await ShipperRequest.find({ leadId })
+      .populate('vendorId', 'vendorName vendorCode')
+      .lean()
+  )
+  const bomCostById = await loadConsolidatedBomCostMap(requests)
+
+  return success(res, {
+    leadId,
+    projectId: access.lead.jobId || '',
+    projectName: access.lead.projectName || '',
+    stats: computeShipperFilesStats(requests),
     shipperRequests: requests.map((r) => ({
       requestId: r._id,
       vendorId: r.vendorId?._id || r.vendorId,
@@ -128,6 +189,7 @@ exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
       resubmitCount: r.resubmitCount || 0,
       resubmitRequestedAt: r.resubmitRequestedAt || null,
       canRequestResubmit: ['submitted', 'comparison_completed', 'comparison_failed', 'resubmit_requested'].includes(r.status),
+      amountComparison: buildAmountComparisonForRequest(r, bomCostById),
     })),
     total: requests.length,
   })
@@ -142,11 +204,19 @@ exports.getShipperRequestDocument = asyncHandler(async (req, res) => {
 
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
   }
+
+  const consolidatedBom = request.consolidatedBOMId
+    ? await ConsolidatedBOM.findById(request.consolidatedBOMId).select('totalCost').lean()
+    : null
+  const amountComparison = buildShipperAmountComparison(
+    consolidatedBom?.totalCost,
+    request.quoteValue
+  )
 
   return success(res, {
     requestId: request._id,
@@ -161,6 +231,7 @@ exports.getShipperRequestDocument = asyncHandler(async (req, res) => {
     uploadedDate: request.submittedAt || null,
     rates: request.quoteValue ?? null,
     fileStatus: request.status,
+    amountComparison,
   })
 })
 
@@ -169,7 +240,7 @@ exports.compareShipperRequest = asyncHandler(async (req, res) => {
   const request = await ShipperRequest.findById(requestId).select('leadId vendorId submittedFileUrl')
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -218,7 +289,7 @@ exports.getComparisonJobStatus = asyncHandler(async (req, res) => {
   const job = await ShipperComparisonJob.findById(jobId).lean()
   if (!job) return notFound(res, 'Comparison job not found')
 
-  const access = await assertPlantProjectAccess(job.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(job.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -254,7 +325,7 @@ exports.getComparisonJobsStatusBatch = asyncHandler(async (req, res) => {
       continue
     }
 
-    const access = await assertPlantProjectAccess(job.leadId, req.user._id)
+    const access = await assertPlantProjectAccess(job.leadId, req)
     if (access.error) {
       rows.push({ compareJobId: jobId, error: access.error })
       continue
@@ -280,7 +351,7 @@ exports.approveShipperRequest = asyncHandler(async (req, res) => {
     .populate('leadId', 'projectName jobId customerId')
   if (!selected) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(selected.leadId._id, req.user._id)
+  const access = await assertPlantProjectAccess(selected.leadId._id, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -401,7 +472,7 @@ exports.requestShipperResubmit = asyncHandler(async (req, res) => {
 
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId._id, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId._id, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -529,7 +600,7 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
     .lean()
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
@@ -538,9 +609,13 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
   const summary = request.comparisonSummary || null
   const blockers = getComparisonBlockers(summary)
   const canProceedToApproval = request.comparisonStatus === 'completed' && blockers.length === 0
-  const results = await QuoteComparisonResult.find({ shipperRequestId: request._id })
-    .sort({ createdAt: -1 })
-    .lean()
+
+  const [stats, results] = await Promise.all([
+    aggregateComparisonStats(QuoteComparisonResult, request._id),
+    QuoteComparisonResult.find({ shipperRequestId: request._id })
+      .sort({ createdAt: -1 })
+      .lean(),
+  ])
 
   return success(res, {
     requestId: request._id,
@@ -555,20 +630,10 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
     comparisonRanAt: request.comparisonRanAt,
     comparisonError: request.comparisonError,
     summary,
+    stats,
     exceptionsCount: Array.isArray(request.exceptions) ? request.exceptions.length : 0,
     resultCount: results.length,
-    results: results.map((row) => ({
-      resultId: row._id,
-      status: row.status,
-      severity: row.severity,
-      expected: row.expected,
-      received: row.received,
-      difference: row.difference,
-      matchMethod: row.matchMethod,
-      matchConfidence: row.matchConfidence,
-      reason: row.reason,
-      createdAt: row.createdAt,
-    })),
+    results: results.map(mapComparisonResultRow),
     canProceedToApproval,
     blockers,
     resubmitAvailable: RESUBMIT_ALLOWED_STATUSES.has(request.status),
@@ -584,6 +649,15 @@ exports.getShipperComparisonResults = asyncHandler(async (req, res) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20))
   const status = req.query.status ? String(req.query.status).trim() : null
   const severity = req.query.severity ? String(req.query.severity).trim() : null
+  const category = req.query.category ? String(req.query.category).trim().toLowerCase() : 'all'
+
+  if (status && category && category !== 'all') {
+    return badRequest(res, 'Use either category or status filter, not both')
+  }
+
+  if (category && category !== 'all' && !COMPARISON_RESULT_CATEGORIES.includes(category)) {
+    return badRequest(res, `Invalid category. Use: ${COMPARISON_RESULT_CATEGORIES.join(', ')}`)
+  }
 
   const request = await ShipperRequest.findById(requestId)
     .populate('vendorId', 'vendorName vendorCode')
@@ -591,15 +665,24 @@ exports.getShipperComparisonResults = asyncHandler(async (req, res) => {
     .lean()
   if (!request) return notFound(res, 'Shipper request not found')
 
-  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req.user._id)
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
     return forbidden(res, access.error)
   }
 
   const filter = { shipperRequestId: request._id }
-  if (status) filter.status = status
   if (severity) filter.severity = severity
+
+  if (status) {
+    filter.status = status
+  } else if (category && category !== 'all') {
+    const statuses = getStatusesForCategory(category)
+    if (!statuses) {
+      return badRequest(res, `Invalid category. Use: ${COMPARISON_RESULT_CATEGORIES.join(', ')}`)
+    }
+    filter.status = { $in: statuses }
+  }
 
   const [total, rows] = await Promise.all([
     QuoteComparisonResult.countDocuments(filter),
@@ -620,25 +703,15 @@ exports.getShipperComparisonResults = asyncHandler(async (req, res) => {
     vendorCode: request.vendorId?.vendorCode || '',
     status: request.status,
     comparisonStatus: request.comparisonStatus,
-    filters: { status, severity },
+    category: category || 'all',
+    filters: { status, severity, category: category || 'all' },
     pagination: {
       page,
       limit,
       total,
-      pages: Math.ceil(total / limit),
+      pages: Math.ceil(total / limit) || 0,
     },
-    results: rows.map((row) => ({
-      resultId: row._id,
-      status: row.status,
-      severity: row.severity,
-      expected: row.expected,
-      received: row.received,
-      difference: row.difference,
-      matchMethod: row.matchMethod,
-      matchConfidence: row.matchConfidence,
-      reason: row.reason,
-      createdAt: row.createdAt,
-    })),
+    results: rows.map(mapComparisonResultRow),
   })
 })
 
@@ -655,7 +728,7 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
 
   const leadId = request.leadId?._id || request.leadId
 
-  const access = await assertPlantProjectAccess(leadId, req.user._id)
+  const access = await assertPlantProjectAccess(leadId, req)
 
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)
@@ -726,89 +799,15 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
     return badRequest(res, 'No valid vendor quote lines found for this shipper request')
   }
 
-  /**
-   * Weight backfill for the load planner.
-   *
-   * Some vendor quote formats (notably Central States) have NO weight column,
-   * so every parsed line lands with weight = null. Load planning keys truck/
-   * bundle limits off weight, producing an all-zero, "not trustworthy" plan.
-   *
-   * The real per-mark weights live in the BOM the request was built from. We
-   * join them back by part-mark (the consolidated BOM stores the source
-   * bomItemIds; we fall back to the lead's BOM items if those are absent).
-   */
-  const normMark = (v) => String(v || '').trim().toUpperCase().replace(/\s+/g, '')
-
-  const someWeightMissing = vendorLines.some((line) => {
-    const w = Number(line.weight)
-    return !Number.isFinite(w) || w <= 0
+  const generatedBundles = await generateBundlesFromVendorLinesWithBomWeights(vendorLines, {
+    shipperRequestId: request._id,
   })
 
-  if (someWeightMissing) {
-    const consolidated = await ConsolidatedBOM.findById(request.consolidatedBOMId)
-      .select('items.bomItemIds')
-      .lean()
-
-    const bomItemIds = (consolidated?.items || []).flatMap((it) => it.bomItemIds || [])
-
-    const bomQuery = bomItemIds.length
-      ? { _id: { $in: bomItemIds } }
-      : { leadId: request.leadId }
-
-    const bomItems = await BOMItem.find(bomQuery)
-      .select('markId partCode quantity weight')
-      .lean()
-
-    const normPart = (v) => String(v || '').trim().toUpperCase()
-
-    // Exact, length-correct weights keyed by mark (BOM line weight is the total
-    // for that line, which equals the vendor line's piece set).
-    const weightByMark = new Map()
-    // Fallback: per-piece weight by part code, for lines that share no mark with
-    // the BOM (e.g. fasteners, which carry a part code but no mark). Estimated
-    // as totalWeight / totalQty for that part, then scaled by the vendor qty.
-    const partAgg = new Map()
-
-    for (const bi of bomItems) {
-      const w = Number(bi.weight)
-      if (!Number.isFinite(w) || w <= 0) continue
-
-      const markKey = normMark(bi.markId)
-      if (markKey) weightByMark.set(markKey, (weightByMark.get(markKey) || 0) + w)
-
-      const partKey = normPart(bi.partCode)
-      if (partKey) {
-        const agg = partAgg.get(partKey) || { weight: 0, qty: 0 }
-        agg.weight += w
-        agg.qty += Number(bi.quantity) || 0
-        partAgg.set(partKey, agg)
-      }
-    }
-
-    for (const line of vendorLines) {
-      const w = Number(line.weight)
-      if (Number.isFinite(w) && w > 0) continue
-
-      const byMark = weightByMark.get(normMark(line.pieceMark))
-      if (byMark != null) {
-        line.weight = byMark
-        continue
-      }
-
-      const agg = partAgg.get(normPart(line.partCode))
-      if (agg && agg.qty > 0) {
-        const qty = Number(line.qty ?? line.pieceQty) || 1
-        line.weight = (agg.weight / agg.qty) * qty
-      }
-    }
-  }
-
-  const missingWeightLines = vendorLines.filter((line) => {
-    const weight = Number(line.weight)
-    return !Number.isFinite(weight) || weight <= 0
-  })
-
-  const generatedBundles = generateBundlesFromVendorLines(vendorLines)
+  const missingWeightItemCount = generatedBundles.reduce((sum, bundle) => {
+    return sum + (bundle.items || []).filter((item) => {
+      return item.sourceLineSnapshot?.weightMissing === true || Number(item.weight || 0) <= 0
+    }).length
+  }, 0)
 
   if (!generatedBundles.length) {
     return badRequest(res, 'No bundles could be generated from vendor lines')
@@ -830,9 +829,9 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
     ...new Set([
       ...generatedBundles.flatMap((bundle) => bundle.warnings || []),
 
-      ...(missingWeightLines.length
+      ...(missingWeightItemCount
         ? [
-            `${missingWeightLines.length} vendor line(s) have missing/zero weight. Bundle weight and truck planning may be inaccurate.`,
+            `${missingWeightItemCount} bundle item(s) have missing/zero weight after BOM matching. Bundle weight and truck planning may be inaccurate.`,
           ]
         : []),
 
@@ -843,6 +842,28 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
         : []),
     ]),
   ]
+
+  if (totalWeight <= 0) {
+    return badRequest(res, 'Bundle plan generation failed: BOM matched weight was not applied, so generated total weight is zero. Nothing was saved.', {
+      serviceVersion: BUNDLE_PLANNING_SERVICE_VERSION,
+      shipperRequestId: request._id,
+      vendorLineCount: vendorLines.length,
+      generatedBundleCount: generatedBundles.length,
+      missingWeightItemCount,
+      hint: 'Check QuoteComparisonResult matched rows and BOMItem.weight for this shipperRequestId. The controller must call generateBundlesFromVendorLinesWithBomWeights.',
+    })
+  }
+
+  if (missingWeightItemCount >= vendorLines.length) {
+    return badRequest(res, 'Bundle plan generation failed: all vendor lines still have zero/missing weight after BOM matching. Nothing was saved.', {
+      serviceVersion: BUNDLE_PLANNING_SERVICE_VERSION,
+      shipperRequestId: request._id,
+      vendorLineCount: vendorLines.length,
+      generatedBundleCount: generatedBundles.length,
+      totalWeight,
+      missingWeightItemCount,
+    })
+  }
 
   let bundlePlan
   const wasRegenerated = Boolean(existingPlan)
@@ -916,7 +937,7 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
       totalBundles: bundles.length,
       totalWeight,
       maxLengthFeet,
-      missingWeightLineCount: missingWeightLines.length,
+      missingWeightItemCount: missingWeightItemCount,
       regenerated: wasRegenerated,
     },
   })
@@ -932,8 +953,8 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
       totalWeight: bundlePlan.totalWeight,
       maxLengthFeet: bundlePlan.maxLengthFeet,
 
-      missingWeightLineCount: missingWeightLines.length,
-      hasWeightWarning: missingWeightLines.length > 0 || totalWeight <= 0,
+      missingWeightItemCount: missingWeightItemCount,
+      hasWeightWarning: missingWeightItemCount > 0 || totalWeight <= 0,
 
       warnings: bundlePlan.warnings || [],
     },

@@ -60,11 +60,30 @@ const DeliverySchema = new mongoose.Schema(
     pickupTime: { type: String, default: '' },
     deliveryDate: { type: Date, default: null },
     deliveryTime: { type: String, default: '' },
+    timeWindowStart: { type: String, default: '' },
+    timeWindowEnd: { type: String, default: '' },
     timings: { type: String, default: '' },
     receivingPoc: { type: String, default: '' },
     pickupContactPhone: { type: String, default: '' },
     specialRequirements: { type: String, default: '' },
     additionalNotes: { type: String, default: '' },
+    rescheduleHistory: {
+      type: [
+        new mongoose.Schema(
+          {
+            date: { type: Date, default: null },
+            timeWindowStart: { type: String, default: '' },
+            timeWindowEnd: { type: String, default: '' },
+            reason: { type: String, default: '' },
+            additionalNotes: { type: String, default: '' },
+            rescheduledAt: { type: Date, default: Date.now },
+            rescheduledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+          },
+          { _id: true }
+        ),
+      ],
+      default: [],
+    },
     selectedCarrierBidId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'FreightBid',

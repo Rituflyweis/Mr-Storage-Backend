@@ -44,6 +44,7 @@ app.use('/sales',         require('./src/routes/sales/index'))
 app.use('/api/account', require('./src/routes/account/index'))
 app.use('/api/plant',   require('./src/routes/plant/index'))
 app.use('/api',         require('./src/routes/common/index'))
+app.use('/api/v1',      require('./src/routes/material/index'))
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
