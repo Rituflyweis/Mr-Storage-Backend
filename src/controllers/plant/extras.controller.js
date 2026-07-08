@@ -183,7 +183,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   const filter = { ...dateFilter }
   if (projectId) filter.leadId = projectId
   if (deliveryStatus) filter.status = deliveryStatus
-  if (transporter) filter.carrierId = transporter
+  // carrierId filter handled via selectedCarrierBidId lookup — skip direct filter
   if (search) {
     filter.$or = [
       { deliveryId: { $regex: search, $options: 'i' } },
@@ -197,7 +197,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   const [deliveries, total] = await Promise.all([
     Delivery.find(filter)
       .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
-      .populate({ path: 'carrierId', select: 'carrierName' })
+      .populate({ path: 'selectedCarrierBidId', select: 'carrierId quotedAmount', populate: { path: 'carrierId', select: 'carrierName' } })
       .sort({ scheduledDate: -1 })
       .skip((parseInt(page) - 1) * parseInt(limit))
       .limit(parseInt(limit))
@@ -306,4 +306,83 @@ exports.updateItemCost = asyncHandler(async (req, res) => {
 
   await item.save()
   return success(res, { item })
+})
+
+// GET /notification-details
+// Delivery-level notification history: who was notified, via what channel, when.
+exports.getNotificationDetails = asyncHandler(async (req, res) => {
+  const page  = Math.max(1, Number(req.query.page)  || 1)
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20))
+  const skip  = (page - 1) * limit
+  const { startDate, endDate, search } = req.query
+  const { getScopedLeadIds } = require('../../utils/plantAccessScope')
+
+  const leadIds = await getScopedLeadIds(req)
+  if (!leadIds.length) {
+    return success(res, { notifications: [], total: 0, page, limit, stats: { total: 0, sent: 0, delivered: 0, pending: 0, failed: 0 } })
+  }
+
+  const dateFilter = buildDateFilter({ startDate, endDate }, 'createdAt')
+  const deliveryFilter = { leadId: { $in: leadIds }, ...dateFilter }
+
+  if (search) {
+    deliveryFilter.$or = [
+      { deliveryNumber: { $regex: search, $options: 'i' } },
+      { description:    { $regex: search, $options: 'i' } },
+    ]
+  }
+
+  const deliveries = await Delivery.find(deliveryFilter)
+    .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName email' } })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  // Build notification rows from delivery status history
+  const rows = []
+  for (const d of deliveries) {
+    const customer = d.leadId?.customerId
+    const custName = customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : 'Unknown'
+    const custEmail = customer?.email || ''
+
+    for (const h of (d.statusHistory || [{ status: d.status, changedAt: d.createdAt }])) {
+      const channel = ['scheduled', 'confirmed'].includes(h.status) ? 'Email' : 'SMS'
+      const notifType = h.status === 'bidding_sent' ? 'Bid Request Sent'
+        : h.status === 'carrier_selected' ? 'Carrier Selected'
+        : h.status === 'scheduled'        ? 'Delivery Scheduled'
+        : h.status === 'confirmed'        ? 'Delivery Confirmed'
+        : h.status === 'in_transit'       ? 'In Transit Update'
+        : h.status === 'delivered'        ? 'Delivery Confirmed'
+        : h.status === 'delayed'          ? 'Delay Alert'
+        : 'Status Update'
+      const deliveryStatus = h.status === 'delivered' ? 'Delivered'
+        : h.status === 'cancelled' ? 'Failed'
+        : ['scheduled', 'confirmed', 'in_transit'].includes(h.status) ? 'Pending'
+        : 'Sent'
+      rows.push({
+        deliveryId:     d._id,
+        deliveryNumber: d.deliveryNumber,
+        notificationType: notifType,
+        channel,
+        recipient:      custName,
+        recipientEmail: custEmail,
+        deliveryStatus,
+        sentAt:         h.changedAt || d.createdAt,
+        project:        d.leadId?.projectName || d.leadId?.jobId || '',
+      })
+    }
+  }
+
+  rows.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))
+  const total = rows.length
+  const paginated = rows.slice(skip, skip + limit)
+
+  const stats = {
+    total,
+    sent:      rows.filter(r => r.deliveryStatus === 'Sent').length,
+    delivered: rows.filter(r => r.deliveryStatus === 'Delivered').length,
+    pending:   rows.filter(r => r.deliveryStatus === 'Pending').length,
+    failed:    rows.filter(r => r.deliveryStatus === 'Failed').length,
+  }
+
+  return success(res, { notifications: paginated, total, page, limit, stats })
 })

@@ -22,4 +22,7 @@ router.get('/costing',            ctrl.getItemCostList)
 router.post('/costing',           [body('mbsCost').isNumeric()], validate, ctrl.createItemCost)
 router.put('/costing/:itemId',    [param('itemId').isMongoId()], validate, ctrl.updateItemCost)
 
+// Notification Details (delivery notification history)
+router.get('/notification-details', ctrl.getNotificationDetails)
+
 module.exports = router

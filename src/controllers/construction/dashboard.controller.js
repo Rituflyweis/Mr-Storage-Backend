@@ -7,9 +7,20 @@ const FreightCarrier = require('../../models/FreightCarrier')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
+const CONSTRUCTION_STAGES = [
+  'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
+  'material_check', 'production_planning', 'fabrication_started', 'quality_inspection',
+  'packing_bundling', 'shipper_prepared', 'ready_for_delivery', 'dispatched', 'delivered',
+]
+const CONSTRUCTION_ACTIVE_STAGES = [
+  'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
+  'material_check', 'production_planning', 'fabrication_started', 'quality_inspection',
+  'packing_bundling', 'shipper_prepared', 'ready_for_delivery',
+]
+
 const getConstructionLeadIds = async () => {
   const leads = await Lead.find({
-    lifecycleStatus: { $in: ['po_received', 'in_production', 'dispatched', 'delivered'] },
+    lifecycleStatus: { $in: CONSTRUCTION_STAGES },
     isTerminated: { $ne: true },
   }).select('_id').lean()
   return leads.map((l) => l._id)
@@ -29,8 +40,8 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     upcomingDeadlineLeads,
   ] = await Promise.all([
     Lead.countDocuments({ _id: { $in: leadIds } }),
-    Lead.countDocuments({ _id: { $in: leadIds }, lifecycleStatus: { $in: ['po_received', 'in_production'] } }),
-    Lead.countDocuments({ _id: { $in: leadIds }, lifecycleStatus: { $in: ['delivered'] } }),
+    Lead.countDocuments({ _id: { $in: leadIds }, lifecycleStatus: { $in: CONSTRUCTION_ACTIVE_STAGES } }),
+    Lead.countDocuments({ _id: { $in: leadIds }, lifecycleStatus: 'delivered' }),
     Delivery.find({ leadId: { $in: leadIds }, status: { $ne: 'draft' } })
       .select('status deliveryDate leadId')
       .populate('leadId', 'projectName jobId location')
