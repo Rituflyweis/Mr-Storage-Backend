@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "Construction AI \u2014 Full API",
+    "name": "Construction AI — Full API",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -91,7 +91,7 @@
   ],
   "item": [
     {
-      "name": "Auth \u2014 Staff",
+      "name": "Auth — Staff",
       "item": [
         {
           "name": "Login",
@@ -280,7 +280,7 @@
       ]
     },
     {
-      "name": "Public \u2014 Chat",
+      "name": "Public — Chat",
       "item": [
         {
           "name": "Chat Init",
@@ -334,7 +334,7 @@
       ]
     },
     {
-      "name": "Admin \u2014 Dashboard",
+      "name": "Admin — Dashboard",
       "item": [
         {
           "name": "Lead Stats",
@@ -472,7 +472,7 @@
       ]
     },
     {
-      "name": "Admin \u2014 Customers",
+      "name": "Admin — Customers",
       "item": [
         {
           "name": "Customer Stats",
@@ -745,7 +745,7 @@
       ]
     },
     {
-      "name": "Admin \u2014 Leads",
+      "name": "Admin — Leads",
       "item": [
         {
           "name": "Lead Stats",
@@ -1333,7 +1333,7 @@
       ]
     },
     {
-      "name": "Admin \u2014 Meetings",
+      "name": "Admin — Meetings",
       "item": [
         {
           "name": "List Meetings",
@@ -1461,7 +1461,7 @@
       ]
     },
     {
-      "name": "Admin \u2014 Follow-ups",
+      "name": "Admin — Follow-ups",
       "item": [
         {
           "name": "List Follow-ups",
@@ -1676,7 +1676,7 @@
       ]
     },
     {
-      "name": "Admin \u2014 Employees",
+      "name": "Admin — Employees",
       "item": [
         {
           "name": "Employee Stats",
@@ -1988,7 +1988,7 @@
       ]
     },
     {
-      "name": "Admin \u2014 Escalations",
+      "name": "Admin — Escalations",
       "item": [
         {
           "name": "List Escalations",
@@ -2111,7 +2111,7 @@
       ]
     },
     {
-      "name": "Admin \u2014 PO Orders",
+      "name": "Admin — PO Orders",
       "item": [
         {
           "name": "List PO Orders",
@@ -2221,7 +2221,7 @@
       ]
     },
     {
-      "name": "Admin \u2014 Financials",
+      "name": "Admin — Financials",
       "item": [
         {
           "name": "Financial Overview",
@@ -2331,7 +2331,7 @@
       ]
     },
     {
-      "name": "Sales \u2014 Dashboard",
+      "name": "Sales — Dashboard",
       "item": [
         {
           "name": "Stats (v2)",
@@ -2554,7 +2554,7 @@
       ]
     },
     {
-      "name": "Sales \u2014 Leads",
+      "name": "Sales — Leads",
       "item": [
         {
           "name": "List My Leads",
@@ -3107,11 +3107,351 @@
               ]
             }
           }
+        },
+        {
+          "name": "Leads by Score",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/by-score?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "by-score"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Leads ranked by score; supports temperature/status/search filters"
+          },
+          "response": []
+        },
+        {
+          "name": "Leads with PO",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/with-po?poStatus=pending&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "with-po"
+              ],
+              "query": [
+                {
+                  "key": "poStatus",
+                  "value": "pending"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Leads that have a PO order, filterable by poStatus"
+          },
+          "response": []
+        },
+        {
+          "name": "Export Leads (Excel)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/export/excel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "export",
+                "excel"
+              ]
+            },
+            "description": "Download lead list as Excel file"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Temperature",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"temperature\": \"warm\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/temperature",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "%7B%7BleadId%7D%7D",
+                "temperature"
+              ]
+            },
+            "description": "Set lead temperature (hot/warm/cold)"
+          },
+          "response": []
+        },
+        {
+          "name": "Lead Agreement",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/agreement",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "%7B%7BleadId%7D%7D",
+                "agreement"
+              ]
+            },
+            "description": "Get agreement document for a lead"
+          },
+          "response": []
+        },
+        {
+          "name": "Lead Notes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/notes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "%7B%7BleadId%7D%7D",
+                "notes"
+              ]
+            },
+            "description": "List all notes for a lead"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Lead Note",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Follow-up call scheduled\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/notes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "%7B%7BleadId%7D%7D",
+                "notes"
+              ]
+            },
+            "description": "Add a note to a lead"
+          },
+          "response": []
+        },
+        {
+          "name": "Chat Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/chat-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "%7B%7BleadId%7D%7D",
+                "chat-status"
+              ]
+            },
+            "description": "Get AI chat lifecycle status for lead"
+          },
+          "response": []
+        },
+        {
+          "name": "End Chat",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/chat/end",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "%7B%7BleadId%7D%7D",
+                "chat",
+                "end"
+              ]
+            },
+            "description": "End the AI chat session for lead"
+          },
+          "response": []
+        },
+        {
+          "name": "Reopen Chat",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/leads/{{leadId}}/chat/reopen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "leads",
+                "%7B%7BleadId%7D%7D",
+                "chat",
+                "reopen"
+              ]
+            },
+            "description": "Reopen a closed AI chat session"
+          },
+          "response": []
         }
       ]
     },
     {
-      "name": "Sales \u2014 Follow-ups",
+      "name": "Sales — Follow-ups",
       "item": [
         {
           "name": "Follow-up Stats",
@@ -3312,7 +3652,7 @@
           }
         },
         {
-          "name": "AI Script \u2014 Chat",
+          "name": "AI Script — Chat",
           "request": {
             "method": "POST",
             "header": [
@@ -3341,24 +3681,6 @@
               "mode": "raw",
               "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Help me write a follow-up email for a warm lead\"\n    }\n  ],\n  \"leadId\": \"{{leadId}}\"\n}"
             }
-          }
-        },
-        {
-          "name": "AI Script \u2014 Socket.IO (manual setup)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/admin",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "admin"
-              ],
-              "query": []
-            },
-            "description": "## AI Script Socket Tester\n\nThis is **not** an HTTP request \u2014 Postman collection JSON cannot store Socket.IO requests directly. Use one of the options below.\n\n---\n\n### Option A \u2014 Browser tester (fastest)\n\nOpen `tests/ai_script_socket_test.html` in any browser. Paste `accessToken` and click Connect.\n\n### Option B \u2014 Postman Socket.IO request (manual)\n\n1. In Postman, click **New \u2192 Socket.IO** (not WebSocket).\n2. **URL**: `http://localhost:5001/admin` (replace port if different; the `/admin` namespace is required).\n3. Settings tab \u2192 **Socket.IO version: v4**.\n4. **Auth** sub-tab \u2192 key `token`, value `<paste accessToken from POST /api/auth/login>`. This becomes `socket.handshake.auth.token`.\n5. **Events** panel \u2192 add and toggle ON these listeners:\n   - `ai_script:sessions`\n   - `ai_script:session`\n   - `ai_script:typing`\n   - `ai_script:chunk`\n   - `ai_script:done`\n   - `ai_script:error`\n6. Click **Connect**.\n\n### Emit events\n\n**ai_script:list** \u2014 payload:\n```json\n{}\n```\n\n**ai_script:start** \u2014 payload:\n```json\n{ \"leadId\": \"<optional_lead_id>\", \"sessionId\": null }\n```\nResponse on `ai_script:session` returns `sessionId` and full message history.\n\n**ai_script:message** \u2014 payload:\n```json\n{\n  \"sessionId\": \"<from ai_script:session>\",\n  \"content\": \"Draft a follow-up call script for a hesitant lead\",\n  \"leadId\": null\n}\n```\nWatch sequence: `ai_script:typing` \u2192 multiple `ai_script:chunk` (with `delta`) \u2192 `ai_script:done` (with full `reply`).\n\n**ai_script:end** \u2014 payload:\n```json\n{ \"sessionId\": \"<id>\" }\n```\n\n---\n\n### Notes\n\n- Allowed roles: `sales`, `admin`. Customer JWTs are rejected.\n- If `sessionId` omitted in `ai_script:message`, server resumes latest session for `{user, leadId}` or creates a new one.\n- Partial reply on mid-stream error is **not** persisted \u2014 only successful turns are saved to `AIScriptSession`.\n- Lead context (project, building type, lifecycle, quote value, AI score) auto-injected into system prompt when `leadId` is on the session.\n- REST fallback `POST /api/sales/followups/ai-script` is unchanged and shares the same backing model + service."
           }
         },
         {
@@ -3420,7 +3742,160 @@
       ]
     },
     {
-      "name": "Sales \u2014 Quotations & PO",
+      "name": "Sales — Meetings",
+      "item": [
+        {
+          "name": "List Meetings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/meetings?status=scheduled&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "meetings"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "scheduled"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "List meetings; filter by status / search / leadId"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Meeting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"leadId\": \"{{leadId}}\",\n  \"title\": \"Project Discussion\",\n  \"meetingTime\": \"2026-07-10T10:00:00Z\",\n  \"mode\": \"online\",\n  \"meetingLink\": \"https://meet.google.com/xyz\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/meetings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "meetings"
+              ]
+            },
+            "description": "Schedule a new meeting"
+          },
+          "response": []
+        },
+        {
+          "name": "Edit Meeting",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated Title\",\n  \"status\": \"scheduled\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/meetings/{{meetingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "meetings",
+                "%7B%7BmeetingId%7D%7D"
+              ]
+            },
+            "description": "Update meeting details"
+          },
+          "response": []
+        },
+        {
+          "name": "Complete Meeting",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/meetings/{{meetingId}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "meetings",
+                "%7B%7BmeetingId%7D%7D",
+                "complete"
+              ]
+            },
+            "description": "Mark meeting as completed"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Sales — Quotations & PO",
       "item": [
         {
           "name": "My Quotations",
@@ -3530,7 +4005,7 @@
       ]
     },
     {
-      "name": "Sales \u2014 Customers",
+      "name": "Sales — Customers",
       "item": [
         {
           "name": "Customer Stats",
@@ -3706,11 +4181,77 @@
               "raw": "{\n  \"projectName\": \"New Warehouse\",\n  \"buildingType\": \"Warehouse\",\n  \"location\": \"Chennai\",\n  \"roofStyle\": \"Gable\",\n  \"width\": 100,\n  \"length\": 50,\n  \"height\": 20\n}"
             }
           }
+        },
+        {
+          "name": "Update Customer",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"phone\": \"1234567890\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "customers",
+                "%7B%7BcustomerId%7D%7D"
+              ]
+            },
+            "description": "Update customer details"
+          },
+          "response": []
+        },
+        {
+          "name": "Project Agreement",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales/customers/{{customerId}}/projects/{{leadId}}/agreement",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales",
+                "customers",
+                "%7B%7BcustomerId%7D%7D",
+                "projects",
+                "%7B%7BleadId%7D%7D",
+                "agreement"
+              ]
+            },
+            "description": "Get agreement document for a specific project"
+          },
+          "response": []
         }
       ]
     },
     {
-      "name": "Common \u2014 Quotations",
+      "name": "Common — Quotations",
       "item": [
         {
           "name": "Create Quotation",
@@ -3874,7 +4415,7 @@
       ]
     },
     {
-      "name": "Common \u2014 Invoices",
+      "name": "Common — Invoices",
       "item": [
         {
           "name": "Create Invoice",
@@ -4037,7 +4578,7 @@
       ]
     },
     {
-      "name": "Common \u2014 Payment Schedules",
+      "name": "Common — Payment Schedules",
       "item": [
         {
           "name": "Create Schedule (leadId-based)",
@@ -4097,7 +4638,7 @@
       ]
     },
     {
-      "name": "Common \u2014 Documents & Uploads",
+      "name": "Common — Documents & Uploads",
       "item": [
         {
           "name": "Get Presigned URL",
@@ -4225,7 +4766,7 @@
       ]
     },
     {
-      "name": "Account \u2014 Dashboard",
+      "name": "Account — Dashboard",
       "item": [
         {
           "name": "Financial Stats",
@@ -4451,7 +4992,7 @@
       ]
     },
     {
-      "name": "Account \u2014 Projects",
+      "name": "Account — Projects",
       "item": [
         {
           "name": "List Completed Projects",
@@ -4491,7 +5032,7 @@
       ]
     },
     {
-      "name": "Account \u2014 Invoices",
+      "name": "Account — Invoices",
       "item": [
         {
           "name": "List Invoices (Grouped by Project)",
@@ -4624,7 +5165,7 @@
       ]
     },
     {
-      "name": "Account \u2014 Expenses",
+      "name": "Account — Expenses",
       "item": [
         {
           "name": "Expense Stats",
@@ -4800,7 +5341,7 @@
       ]
     },
     {
-      "name": "Account \u2014 Tax",
+      "name": "Account — Tax",
       "item": [
         {
           "name": "Tax Stats",
@@ -4926,7 +5467,7 @@
       ]
     },
     {
-      "name": "Customer \u2014 Auth",
+      "name": "Customer — Auth",
       "item": [
         {
           "name": "Customer Login",
@@ -5103,7 +5644,7 @@
       ]
     },
     {
-      "name": "Customer \u2014 Dashboard",
+      "name": "Customer — Dashboard",
       "item": [
         {
           "name": "Dashboard",
@@ -5132,7 +5673,7 @@
       ]
     },
     {
-      "name": "Customer \u2014 Projects",
+      "name": "Customer — Projects",
       "item": [
         {
           "name": "List My Projects",
@@ -5231,7 +5772,7 @@
       ]
     },
     {
-      "name": "Customer \u2014 Documents",
+      "name": "Customer — Documents",
       "item": [
         {
           "name": "All Documents",
@@ -5266,7 +5807,7 @@
       ]
     },
     {
-      "name": "Customer \u2014 Payments",
+      "name": "Customer — Payments",
       "item": [
         {
           "name": "Payments Overview",
@@ -5326,7 +5867,7 @@
       ]
     },
     {
-      "name": "Customer \u2014 Upload",
+      "name": "Customer — Upload",
       "item": [
         {
           "name": "Get Presigned URL",
@@ -5363,7 +5904,7 @@
       ]
     },
     {
-      "name": "Customer \u2014 Profile",
+      "name": "Customer — Profile",
       "item": [
         {
           "name": "Get Profile",
