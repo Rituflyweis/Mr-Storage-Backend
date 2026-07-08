@@ -9,5 +9,8 @@ router.use('/projects',  ...guard, require('./project.routes'))
 router.use('/invoices',  ...guard, require('./invoice.routes'))
 router.use('/expenses',  ...guard, require('./expense.routes'))
 router.use('/tax',       ...guard, require('./tax.routes'))
+router.use('/analytics', ...guard, require('./analytics.routes'))
+router.use('/payments',  ...guard, require('./payments.routes'))
+router.use('/reports',   ...guard, require('./reports.routes'))
 
 module.exports = router

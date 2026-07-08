@@ -1,5 +1,6 @@
 const Invoice = require('../../models/Invoice')
 const Expense = require('../../models/Expense')
+const Lead = require('../../models/Lead')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -191,4 +192,64 @@ exports.getExpenseTrend = asyncHandler(async (req, res) => {
   }
 
   return success(res, { points })
+})
+
+exports.getCostBreakdown = asyncHandler(async (req, res) => {
+  const dateFilter = buildDateFilter(req.query, 'date')
+  const expenses = await Expense.find({ isActive: true, ...dateFilter }).select('amount category').lean()
+
+  const breakdown = { material: 0, labour: 0, logistics: 0, other: 0 }
+  for (const e of expenses) {
+    if (e.category === 'materials') breakdown.material += e.amount
+    else if (e.category === 'labour') breakdown.labour += e.amount
+    else if (['transport', 'equipment'].includes(e.category)) breakdown.logistics += e.amount
+    else breakdown.other += e.amount
+  }
+  const total = Object.values(breakdown).reduce((s, v) => s + v, 0)
+
+  return success(res, { breakdown, total })
+})
+
+exports.getWipProjects = asyncHandler(async (req, res) => {
+  const leads = await Lead.find({
+    lifecycleStatus: { $in: ['po_received', 'in_production', 'dispatched'] },
+    isTerminated: { $ne: true },
+  }).select('_id projectName jobId lifecycleStatus').limit(10).lean()
+
+  const leadIds = leads.map((l) => l._id)
+  const [invoices, expenses] = await Promise.all([
+    Invoice.find({ leadId: { $in: leadIds } }).select('leadId totalAmount status').lean(),
+    Expense.find({ leadId: { $in: leadIds }, isActive: true }).select('leadId amount').lean(),
+  ])
+
+  const invMap = {}
+  for (const i of invoices) {
+    const key = String(i.leadId)
+    invMap[key] = (invMap[key] || 0) + i.totalAmount
+  }
+  const expMap = {}
+  for (const e of expenses) {
+    const key = String(e.leadId)
+    expMap[key] = (expMap[key] || 0) + e.amount
+  }
+
+  const projects = leads.map((lead) => {
+    const key = String(lead._id)
+    const revenue = invMap[key] || 0
+    const totalCost = expMap[key] || 0
+    const netProfit = revenue - totalCost
+    const profitMargin = revenue > 0 ? Math.round((netProfit / revenue) * 100 * 10) / 10 : 0
+    return {
+      leadId: lead._id,
+      projectName: lead.projectName,
+      jobId: lead.jobId,
+      lifecycleStatus: lead.lifecycleStatus,
+      revenue,
+      totalCost,
+      netProfit,
+      profitMargin,
+    }
+  })
+
+  return success(res, { projects })
 })

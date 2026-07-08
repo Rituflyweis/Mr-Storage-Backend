@@ -1,0 +1,302 @@
+{
+  "info": {
+    "name": "SM-3 Sales Panel",
+    "_postman_id": "sales-panel-v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "All Sales Panel endpoints"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api" },
+    { "key": "token",   "value": "" },
+    { "key": "leadId",  "value": "" },
+    { "key": "followUpId", "value": "" },
+    { "key": "invoiceId",  "value": "" },
+    { "key": "paymentFollowUpId", "value": "" },
+    { "key": "notificationId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\"email\":\"sales@example.com\",\"password\":\"password123\"}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Stats",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/dashboard/stats" }
+        },
+        {
+          "name": "Conversion Funnel",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/dashboard/conversion-funnel" }
+        },
+        {
+          "name": "Performance Trend",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/dashboard/performance-trend?period=customers&range=7d", "query": [{"key":"period","value":"customers"},{"key":"range","value":"7d"}] } }
+        },
+        {
+          "name": "Today Tasks",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/dashboard/today-tasks" }
+        },
+        {
+          "name": "Lead Stats",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/dashboard/lead-stats" }
+        },
+        {
+          "name": "Customer Stats",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/dashboard/customer-stats" }
+        },
+        {
+          "name": "AI Support Summary [NEW]",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/dashboard/ai-support-summary" }
+        }
+      ]
+    },
+    {
+      "name": "Assigned Leads",
+      "item": [
+        {
+          "name": "Get Leads",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/leads?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+        },
+        {
+          "name": "Get Leads by Score",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/leads/by-score?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+        },
+        {
+          "name": "Lead Scoring Table",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/leads/scored" }
+        },
+        {
+          "name": "Create Lead",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/sales/leads",
+            "body": { "mode": "raw", "raw": "{\"customerId\":\"{{customerId}}\",\"projectName\":\"Workshop Texas\",\"buildingType\":\"Workshop\",\"location\":\"Texas\",\"quoteValue\":12500}" }
+          }
+        },
+        {
+          "name": "Get Lead Detail",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/leads/{{leadId}}/detail" }
+        },
+        {
+          "name": "Log Activity",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/sales/leads/{{leadId}}/activity",
+            "body": { "mode": "raw", "raw": "{\"activityType\":\"call\",\"outcome\":\"positive\",\"notes\":\"Discussed pricing\"}" }
+          }
+        },
+        {
+          "name": "Update Lead Temperature",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/sales/leads/{{leadId}}/temperature",
+            "body": { "mode": "raw", "raw": "{\"temperature\":\"hot\"}" }
+          }
+        },
+        {
+          "name": "Export Leads (CSV)",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/leads/export" }
+        },
+        {
+          "name": "Export Leads (Excel)",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/leads/export/excel" }
+        }
+      ]
+    },
+    {
+      "name": "Follow-ups",
+      "item": [
+        {
+          "name": "Overview — Stats",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/followups/stats" }
+        },
+        {
+          "name": "Upcoming Follow-ups",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/followups/upcoming" }
+        },
+        {
+          "name": "Follow-up Trend",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/trend?range=7d", "query": [{"key":"range","value":"7d"}] } }
+        },
+        {
+          "name": "Response Rate",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/followups/response-rate" }
+        },
+        {
+          "name": "Smart Follow-Up Reminders [NEW]",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/followups/smart-reminders" }
+        },
+        {
+          "name": "Follow-Up KPIs [NEW]",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/followups/kpis" }
+        },
+        {
+          "name": "Create Follow-Up",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/sales/followups",
+            "body": { "mode": "raw", "raw": "{\"leadId\":\"{{leadId}}\",\"followUpDate\":\"2025-02-01T14:00:00Z\",\"modeOfContact\":\"call\",\"priority\":\"high\"}" }
+          }
+        },
+        {
+          "name": "Complete Follow-Up",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/sales/followups/{{followUpId}}/complete"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lead Communication Timeline",
+      "item": [
+        {
+          "name": "Get Timeline",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/communication-timeline?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+        },
+        {
+          "name": "Get Timeline by Lead",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/communication-timeline?leadId={{leadId}}", "query": [{"key":"leadId","value":"{{leadId}}"}] } }
+        }
+      ]
+    },
+    {
+      "name": "AI Follow-Up Script Generator",
+      "item": [
+        {
+          "name": "Get AI Script Sessions",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/followups/ai-script" }
+        },
+        {
+          "name": "Generate AI Script",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/sales/followups/ai-script",
+            "body": { "mode": "raw", "raw": "{\"leadId\":\"{{leadId}}\",\"messages\":[{\"role\":\"user\",\"content\":\"Generate a follow-up script for a warehouse lead\"}]}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment Follow-Up [NEW]",
+      "item": [
+        {
+          "name": "Get Payment Follow-Ups",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/payment-followup?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+        },
+        {
+          "name": "Get Payment Follow-Ups by Status",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/payment-followup?status=pending", "query": [{"key":"status","value":"pending"}] } }
+        },
+        {
+          "name": "Create Payment Follow-Up",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/sales/followups/payment-followup",
+            "body": { "mode": "raw", "raw": "{\"invoiceId\":\"{{invoiceId}}\",\"leadId\":\"{{leadId}}\",\"nextFollowUp\":\"2025-02-01T00:00:00Z\",\"notes\":\"Client promised payment by end of week\"}" }
+          }
+        },
+        {
+          "name": "Update Payment Follow-Up Status",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/sales/followups/payment-followup/{{paymentFollowUpId}}/status",
+            "body": { "mode": "raw", "raw": "{\"status\":\"confirmed\"}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications [NEW]",
+      "item": [
+        {
+          "name": "Get All Notifications",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+        },
+        {
+          "name": "Get Unread Notifications",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?read=false", "query": [{"key":"read","value":"false"}] } }
+        },
+        {
+          "name": "Get High Priority Notifications",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?priority=high", "query": [{"key":"priority","value":"high"}] } }
+        },
+        {
+          "name": "Filter by Type (lead/task/meeting/escalation/payment)",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?type=lead", "query": [{"key":"type","value":"lead"}] } }
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/notifications/{{notificationId}}/read"
+          }
+        },
+        {
+          "name": "Mark All as Read",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/notifications/read-all"
+          }
+        },
+        {
+          "name": "Delete Notification",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/notifications/{{notificationId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invoices",
+      "item": [
+        {
+          "name": "Get Lead Invoices",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/leads/{{leadId}}/invoices" }
+        },
+        {
+          "name": "Create Invoice",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/leads/{{leadId}}/invoices",
+            "body": { "mode": "raw", "raw": "{\"invoiceNumber\":\"INV-2460\",\"date\":\"2025-10-25\",\"daysToPay\":15,\"lineItems\":[{\"description\":\"Steel structure\",\"rate\":75000,\"quantity\":1,\"tax\":10}]}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Meetings",
+      "item": [
+        {
+          "name": "Get Meetings",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/sales/meetings" }
+        }
+      ]
+    }
+  ]
+}
