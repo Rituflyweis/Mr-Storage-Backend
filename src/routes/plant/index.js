@@ -20,15 +20,7 @@ router.get('/packing-list-plans/:packingListPlanId',
   packingListPlanCtrl.getPackingListPlanPublic
 )
 
-const adminPlantScope = require('../../middleware/adminPlantScope')
-
-router.use(verifyToken, roleGuard(['plant', 'admin']))
-
-// Admin gets full cross-project scope (no assignedTo filter)
-router.use((req, _res, next) => {
-  if (req.user?.role === 'admin') adminPlantScope(req, _res, next)
-  else next()
-})
+router.use(verifyToken, roleGuard(['plant']))
 
 router.use('/dashboard',         require('./dashboard.routes'))
 router.use('/projects',          require('./project.routes'))
