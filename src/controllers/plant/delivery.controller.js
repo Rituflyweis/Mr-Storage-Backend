@@ -11,6 +11,7 @@ const ShipperRequest = require('../../models/ShipperRequest')
 const Vendor = require('../../models/Vendor')
 const auditService = require('../../services/audit.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
 const {
   computeFreightEnvelopeDimensions,
@@ -105,8 +106,7 @@ const makeDeliveryStatusHistory = (delivery) => {
     .sort((a, b) => new Date(a.changedAt || 0).getTime() - new Date(b.changedAt || 0).getTime())
 }
 
-const getAssignedLeadIds = async (plantUserId) =>
-  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+const getAssignedLeadIds = (req) => getScopedLeadIds(req)
 
 const getNextDeliveryNumber = async () => {
   const latest = await Delivery.findOne({
@@ -1163,7 +1163,7 @@ exports.getDeliveryDetail = asyncHandler(async (req, res) => {
 })
 
 exports.getFreightLoadStats = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) {
     return success(res, {
       totalLoads: 0,
@@ -1236,7 +1236,7 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
     baseFilter.status = { $ne: 'draft' }
   }
 
-  const assignedLeadIds = await getAssignedLeadIds(req.user._id)
+  const assignedLeadIds = await getAssignedLeadIds(req)
   if (!assignedLeadIds.length) {
     return success(res, { requests: [], total: 0, page, limit })
   }
@@ -1365,7 +1365,7 @@ exports.getFreightLoads = asyncHandler(async (req, res) => {
 })
 
 exports.getAwardedLoadStats = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) {
     return success(res, {
       totalAwarded: 0,
@@ -1406,7 +1406,7 @@ exports.getAwardedLoads = asyncHandler(async (req, res) => {
 })
 
 exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) {
     return success(res, { dates: [] })
   }
@@ -1476,7 +1476,7 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
 })
 
 exports.getAllDeliveryStats = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) {
     return success(res, {
       totalCount: 0,
@@ -1499,7 +1499,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20))
   const skip = (page - 1) * limit
 
-  const assignedLeadIds = await getAssignedLeadIds(req.user._id)
+  const assignedLeadIds = await getAssignedLeadIds(req)
   if (!assignedLeadIds.length) {
     return success(res, { deliveries: [], total: 0, page, limit })
   }
