@@ -6,7 +6,8 @@ require('dotenv').config()
 const mongoose = require('mongoose')
 const bcrypt = require('bcryptjs')
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://aadith:aadith1234@cluster0.t0dus6t.mongodb.net/?appName=Cluster0'
+const MONGO_URI = process.env.MONGO_URI
+if (!MONGO_URI) { console.error('❌ MONGO_URI env variable is required'); process.exit(1) }
 
 const User               = require('../src/models/User')
 const Customer           = require('../src/models/Customer')
