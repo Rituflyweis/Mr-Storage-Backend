@@ -21,8 +21,14 @@ router.put('/profile',  ctrl.updateProfile)
 router.get('/dashboard', ctrl.getDashboard)
 
 // Projects
-router.get('/projects',          ctrl.getProjects)
-router.get('/projects/:leadId',  ctrl.getProject)
+router.get('/projects',                       ctrl.getProjects)
+router.get('/projects/:leadId/stats',         ctrl.getProjectStats)
+router.get('/projects/:leadId/drawings',      ctrl.getProjectDrawings)
+router.get('/projects/:leadId/activity',      ctrl.getProjectActivity)
+router.get('/projects/:leadId/notes',         ctrl.getProjectNotes)
+router.get('/projects/:leadId/followups',     ctrl.getProjectFollowUps)
+router.get('/projects/:leadId/meetings',      ctrl.getProjectMeetings)
+router.get('/projects/:leadId',               ctrl.getProject)
 router.post('/projects',
   [
     body('buildingType').notEmpty().withMessage('buildingType is required'),

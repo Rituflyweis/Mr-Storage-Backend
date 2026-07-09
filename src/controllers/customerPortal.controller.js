@@ -10,6 +10,10 @@ const FreightCarrier = require('../models/FreightCarrier')
 const Quotation = require('../models/Quotation')
 const QuoteSummary = require('../models/QuoteSummary')
 const PaymentSchedule = require('../models/PaymentSchedule')
+const DrawingDocument = require('../models/DrawingDocument')
+const FollowUp = require('../models/FollowUp')
+const Meeting = require('../models/Meeting')
+const AuditLog = require('../models/AuditLog')
 const { success, created, notFound, forbidden, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
 const bcrypt = require('bcryptjs')
@@ -550,4 +554,170 @@ exports.getTaxReport = asyncHandler(async (req, res) => {
   const totalTaxDue = rows.reduce((s, r) => s + r.taxDue, 0)
 
   return success(res, { rows, summary: { totalContractAmount, totalTaxDue } })
+})
+
+// ── Project sub-routes ────────────────────────────────────────────────────────
+
+const assertProjectOwner = async (req) => {
+  const lead = await Lead.findById(req.params.leadId).select('customerId').lean()
+  if (!lead) return null
+  if (String(lead.customerId) !== String(req.customer._id)) return null
+  return lead
+}
+
+// GET /projects/:leadId/stats
+exports.getProjectStats = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const leadId = req.params.leadId
+
+  const [totalDeliveries, deliveredCount, inTransitCount, invoices, followUps, meetings] = await Promise.all([
+    Delivery.countDocuments({ leadId }),
+    Delivery.countDocuments({ leadId, status: 'delivered' }),
+    Delivery.countDocuments({ leadId, status: 'in_transit' }),
+    Invoice.find({ leadId }).select('status totalAmount').lean(),
+    FollowUp.countDocuments({ leadId }),
+    Meeting.countDocuments({ leadId }),
+  ])
+
+  const totalInvoiced = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const pendingInvoices = invoices.filter(i => ['draft', 'sent', 'overdue'].includes(i.status)).length
+
+  return success(res, {
+    deliveries: { total: totalDeliveries, delivered: deliveredCount, inTransit: inTransitCount },
+    payments:   { totalInvoiced, totalPaid, pending: totalInvoiced - totalPaid, pendingInvoices },
+    followUps,
+    meetings,
+  })
+})
+
+// GET /projects/:leadId/drawings
+exports.getProjectDrawings = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const { type } = req.query
+  const filter = { leadId: req.params.leadId }
+  if (type) filter.documentType = type
+
+  const drawings = await DrawingDocument.find(filter)
+    .populate('uploadedBy', 'name')
+    .populate('approvedBy', 'name')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  // Also include documents embedded in Lead
+  const fullLead = await Lead.findById(req.params.leadId).select('documents').lean()
+  const embeddedDocs = (fullLead?.documents || []).map(d => ({
+    _id: d._id,
+    name: d.name,
+    fileUrl: d.url,
+    documentType: d.type,
+    status: 'approved',
+    uploadedAt: d.uploadedAt,
+  }))
+
+  return success(res, { drawings, embeddedDocuments: embeddedDocs, total: drawings.length + embeddedDocs.length })
+})
+
+// GET /projects/:leadId/activity
+exports.getProjectActivity = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const page  = Math.max(1, Number(req.query.page)  || 1)
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20))
+  const skip  = (page - 1) * limit
+
+  const [logs, total] = await Promise.all([
+    AuditLog.find({ leadId: req.params.leadId })
+      .populate('performedBy', 'name role')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    AuditLog.countDocuments({ leadId: req.params.leadId }),
+  ])
+
+  return success(res, { activity: logs, total, page, limit })
+})
+
+// GET /projects/:leadId/notes
+exports.getProjectNotes = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const fullLead = await Lead.findById(req.params.leadId)
+    .select('leadNotes notes')
+    .populate('leadNotes.addedBy', 'name role')
+    .lean()
+
+  return success(res, {
+    notes: fullLead?.leadNotes || [],
+    generalNotes: fullLead?.notes || '',
+    total: (fullLead?.leadNotes || []).length,
+  })
+})
+
+// GET /projects/:leadId/followups
+exports.getProjectFollowUps = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const { status, page = 1, limit = 20 } = req.query
+  const filter = { leadId: req.params.leadId }
+  if (status) filter.status = status
+
+  const skip = (Number(page) - 1) * Number(limit)
+
+  const [followUps, total] = await Promise.all([
+    FollowUp.find(filter)
+      .populate('assignedTo', 'name email')
+      .sort({ followUpDate: 1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean(),
+    FollowUp.countDocuments(filter),
+  ])
+
+  const stats = {
+    total,
+    pending:   await FollowUp.countDocuments({ leadId: req.params.leadId, status: 'pending' }),
+    completed: await FollowUp.countDocuments({ leadId: req.params.leadId, status: 'completed' }),
+  }
+
+  return success(res, { followUps, total, page: Number(page), limit: Number(limit), stats })
+})
+
+// GET /projects/:leadId/meetings
+exports.getProjectMeetings = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const { status, page = 1, limit = 20 } = req.query
+  const filter = { leadId: req.params.leadId }
+  if (status) filter.status = status
+
+  const skip = (Number(page) - 1) * Number(limit)
+
+  const [meetings, total] = await Promise.all([
+    Meeting.find(filter)
+      .populate('createdBy', 'name email')
+      .sort({ meetingTime: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean(),
+    Meeting.countDocuments(filter),
+  ])
+
+  const stats = {
+    total,
+    scheduled:  await Meeting.countDocuments({ leadId: req.params.leadId, status: 'scheduled' }),
+    completed:  await Meeting.countDocuments({ leadId: req.params.leadId, status: 'completed' }),
+    cancelled:  await Meeting.countDocuments({ leadId: req.params.leadId, status: 'cancelled' }),
+  }
+
+  return success(res, { meetings, total, page: Number(page), limit: Number(limit), stats })
 })
