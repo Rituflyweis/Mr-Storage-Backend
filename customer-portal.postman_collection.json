@@ -6,9 +6,11 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000/api", "type": "string" },
+    { "key": "baseUrl", "value": "https://mr-storage-backend-1.onrender.com/api", "type": "string" },
+    { "key": "localUrl", "value": "http://localhost:5001/api", "type": "string" },
     { "key": "customerToken", "value": "", "type": "string" },
-    { "key": "leadId", "value": "", "type": "string" }
+    { "key": "leadId", "value": "69e6137ce2dc3d6e7468ca58", "type": "string" },
+    { "key": "docId", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -22,12 +24,12 @@
             "url": { "raw": "{{baseUrl}}/customer/auth/login", "host": ["{{baseUrl}}"], "path": ["customer", "auth", "login"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"customer@example.com\",\n  \"password\": \"password123\"\n}"
+              "raw": "{\n  \"email\": \"customer1@example.com\",\n  \"password\": \"Test@1234\"\n}"
             }
           },
           "event": [{
             "listen": "test",
-            "script": { "exec": ["const r = pm.response.json();\nif (r.data?.token) pm.collectionVariables.set('customerToken', r.data.token);"] }
+            "script": { "exec": ["const r = pm.response.json();\nconst token = r.data?.accessToken || r.data?.token;\nif (token) pm.collectionVariables.set('customerToken', token);"] }
           }]
         },
         {
@@ -124,7 +126,11 @@
       "name": "Projects",
       "item": [
         {
-          "name": "Get My Projects",
+          "name": "Get All Projects",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["const r = pm.response.json();\nconst first = r.data?.projects?.[0];\nif (first?._id) pm.collectionVariables.set('leadId', first._id);"] }
+          }],
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -135,10 +141,11 @@
               "query": [
                 { "key": "page", "value": "1" },
                 { "key": "limit", "value": "20" },
-                { "key": "lifecycleStatus", "value": "", "disabled": true }
+                { "key": "lifecycleStatus", "value": "", "disabled": true, "description": "filter by status" }
               ]
             }
-          }
+          },
+          "_postman_note": "Returns: projects[], total. Auto-sets {{leadId}} to first project. Each project has: _id, projectName, jobId, lifecycleStatus, location, buildingType, quoteValue"
         },
         {
           "name": "Get Project Detail",
@@ -150,7 +157,160 @@
               "host": ["{{baseUrl}}"],
               "path": ["customer", "projects", "{{leadId}}"]
             }
-          }
+          },
+          "_postman_note": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule"
+        },
+        {
+          "name": "Get Project Stats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "projects", "{{leadId}}", "stats"]
+            }
+          },
+          "_postman_note": "Returns: deliveries{total,delivered,inTransit}, payments{totalInvoiced,totalPaid,pending,pendingInvoices}, followUps count, meetings count"
+        },
+        {
+          "name": "Get Project Drawings & Images",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "projects", "{{leadId}}", "drawings"],
+              "query": [
+                { "key": "type", "value": "", "disabled": true, "description": "filter: architectural | structural | electrical | mechanical | site | other" }
+              ]
+            }
+          },
+          "_postman_note": "Returns: drawings[] (DrawingDocument records), embeddedDocuments[] (from lead.documents), total. Each drawing: name, fileUrl, fileType, fileSize, documentType, status, uploadedBy, approvedBy, notes"
+        },
+        {
+          "name": "Get Project Recent Activity",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/activity?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "projects", "{{leadId}}", "activity"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "_postman_note": "Returns: activity[] (AuditLog records), total, page, limit. Each entry: type, action, performedBy{name,role}, metadata, createdAt"
+        },
+        {
+          "name": "Get Project Notes",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/notes",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "projects", "{{leadId}}", "notes"]
+            }
+          },
+          "_postman_note": "Returns: notes[] (lead.leadNotes array), generalNotes (lead.notes string), total. Each note: note, addedAt, addedBy"
+        },
+        {
+          "name": "Get Project Follow Ups",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/followups?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "projects", "{{leadId}}", "followups"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "", "disabled": true, "description": "pending | completed | cancelled" }
+              ]
+            }
+          },
+          "_postman_note": "Returns: followUps[], total, page, limit, stats{total,pending,completed}. Each: followUpDate, modeOfContact, notes, status, assignedTo{name,email}"
+        },
+        {
+          "name": "Get Project Meetings",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/meetings?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "projects", "{{leadId}}", "meetings"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "", "disabled": true, "description": "scheduled | completed | cancelled" }
+              ]
+            }
+          },
+          "_postman_note": "Returns: meetings[], total, page, limit, stats{total,scheduled,completed,cancelled}. Each: title, meetingTime, mode(online/offline), meetingLink, status, createdBy{name,email}"
+        },
+        {
+          "name": "Get Project RFQ",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/rfq", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "rfq"] }
+          },
+          "_postman_note": "Returns: rfq{jobId, buildingType, roofStyle, sqft, width, length, location, description, quoteValue, isQuoteReady, lifecycleStatus, aiSummary, aiQuoteData}, quotation"
+        },
+        {
+          "name": "Update Project RFQ (building specs)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/rfq", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "rfq"] },
+            "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"warehouse\",\n  \"roofStyle\": \"gable\",\n  \"sqft\": \"6000\",\n  \"width\": 60,\n  \"length\": 100,\n  \"location\": \"Dallas, TX\",\n  \"description\": \"Updated specs\"\n}" }
+          },
+          "_postman_note": "Only allowed before deal_closed stage. Returns: updated fields. Locked stages: deal_closed, payment_done, converted_to_po, sent_to_admin, released_to_plant"
+        },
+        {
+          "name": "Cancel Project",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/cancel", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "cancel"] },
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Customer decided to postpone the project\"\n}" }
+          },
+          "_postman_note": "Sets isTerminated=true. Reason is required. Cannot cancel if already cancelled or delivered. Reflected in stats.cancelled count."
+        },
+        {
+          "name": "Approve Drawing",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/approve", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "drawings", "{{docId}}", "approve"] }
+          },
+          "_postman_note": "Sets drawing status to approved. Returns: {_id, name, status}. Set {{docId}} from drawings list response."
+        },
+        {
+          "name": "Request Drawing Revision",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/request-revision", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "drawings", "{{docId}}", "request-revision"] },
+            "body": { "mode": "raw", "raw": "{\n  \"note\": \"Please adjust the roof pitch from 3:12 to 4:12\"\n}" }
+          },
+          "_postman_note": "Sets drawing status to under_review + saves revisionNote. Note is required. Returns: {_id, name, status, revisionNote}."
         },
         {
           "name": "Create Project (Enquiry)",

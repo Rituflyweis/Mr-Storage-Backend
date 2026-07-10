@@ -168,10 +168,21 @@ exports.getProjects = asyncHandler(async (req, res) => {
   const { lifecycleStatus, page = 1, limit = 20 } = req.query
   const skip = (Number(page) - 1) * Number(limit)
 
-  const filter = { customerId: req.customer._id }
+  const baseFilter = { customerId: req.customer._id }
+  const filter = { ...baseFilter }
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
 
-  const [projects, total] = await Promise.all([
+  const ACTIVE_STAGES = [
+    'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
+    'material_check', 'production_planning', 'fabrication_started', 'quality_inspection',
+    'packing_bundling', 'shipper_prepared', 'ready_for_delivery', 'dispatched',
+  ]
+  const WIP_STAGES = [
+    'initial_contact', 'requirements_gathered', 'proposal_sent',
+    'negotiation', 'deal_closed', 'payment_done', 'converted_to_po', 'sent_to_admin',
+  ]
+
+  const [projects, total, activeCount, wipCount, cancelledCount] = await Promise.all([
     Lead.find(filter)
       .select('jobId projectName buildingType location lifecycleStatus quoteValue isQuoteReady source documents assignedSales')
       .populate('assignedSales', 'name email')
@@ -180,9 +191,20 @@ exports.getProjects = asyncHandler(async (req, res) => {
       .limit(Number(limit))
       .lean(),
     Lead.countDocuments(filter),
+    Lead.countDocuments({ ...baseFilter, lifecycleStatus: { $in: ACTIVE_STAGES } }),
+    Lead.countDocuments({ ...baseFilter, lifecycleStatus: { $in: WIP_STAGES } }),
+    Lead.countDocuments({ ...baseFilter, isTerminated: true }),
   ])
 
+  const totalAll = await Lead.countDocuments(baseFilter)
+
   return success(res, {
+    stats: {
+      total: totalAll,
+      active: activeCount,
+      workInProgress: wipCount,
+      cancelled: cancelledCount,
+    },
     projects: projects.map(enrichLeadDocument),
     total,
     page: Number(page),
@@ -720,4 +742,149 @@ exports.getProjectMeetings = asyncHandler(async (req, res) => {
   }
 
   return success(res, { meetings, total, page: Number(page), limit: Number(limit), stats })
+})
+
+// ── Cancel Project ────────────────────────────────────────────────────────────
+
+// POST /projects/:leadId/cancel
+exports.cancelProject = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId).select('customerId isTerminated lifecycleStatus projectName jobId')
+  if (!lead) return notFound(res, 'Project not found')
+  if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
+  if (lead.isTerminated) return badRequest(res, 'Project is already cancelled')
+  if (lead.lifecycleStatus === 'delivered') return badRequest(res, 'Cannot cancel a delivered project')
+
+  const { reason } = req.body
+  if (!reason || !reason.trim()) return badRequest(res, 'Cancellation reason is required')
+
+  lead.isTerminated = true
+  lead.terminationReason = reason.trim()
+  lead.terminatedAt = new Date()
+  await lead.save()
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_CANCELLED || 'lead.cancelled',
+    leadId: lead._id,
+    customerId: req.customer._id,
+    performedBy: req.customer._id,
+    metadata: { reason: reason.trim(), jobId: lead.jobId },
+  })
+
+  return success(res, { message: 'Project cancelled successfully', leadId: lead._id, jobId: lead.jobId })
+})
+
+// ── RFQ (Request for Quotation) ───────────────────────────────────────────────
+
+// GET /projects/:leadId/rfq
+exports.getProjectRFQ = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId)
+    .select('customerId buildingType roofStyle sqft width length location description quoteValue isQuoteReady lifecycleStatus aiQuoteData aiContextSummary jobId projectName')
+    .lean()
+  if (!lead) return notFound(res, 'Project not found')
+  if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
+
+  const quotation = await Quotation.findOne({ leadId: req.params.leadId }).sort({ createdAt: -1 }).lean()
+
+  return success(res, {
+    rfq: {
+      jobId: lead.jobId,
+      projectName: lead.projectName,
+      buildingType: lead.buildingType,
+      roofStyle: lead.roofStyle,
+      sqft: lead.sqft,
+      width: lead.width,
+      length: lead.length,
+      location: lead.location,
+      description: lead.description,
+      quoteValue: lead.quoteValue,
+      isQuoteReady: lead.isQuoteReady,
+      lifecycleStatus: lead.lifecycleStatus,
+      aiSummary: lead.aiContextSummary || null,
+      aiQuoteData: lead.aiQuoteData || null,
+    },
+    quotation: quotation || null,
+  })
+})
+
+// PUT /projects/:leadId/rfq  — customer updates building specs (only before deal_closed)
+exports.updateProjectRFQ = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId).select('customerId lifecycleStatus isTerminated')
+  if (!lead) return notFound(res, 'Project not found')
+  if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
+  if (lead.isTerminated) return badRequest(res, 'Cannot update a cancelled project')
+
+  const LOCKED_STAGES = ['deal_closed', 'payment_done', 'converted_to_po', 'sent_to_admin', 'released_to_plant']
+  if (LOCKED_STAGES.includes(lead.lifecycleStatus)) {
+    return badRequest(res, 'Quote is already locked. Contact your sales rep to make changes.')
+  }
+
+  const allowed = ['buildingType', 'roofStyle', 'sqft', 'width', 'length', 'location', 'description']
+  const updates = {}
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key]
+  }
+  if (!Object.keys(updates).length) return badRequest(res, 'No valid fields to update')
+
+  await Lead.updateOne({ _id: lead._id }, { $set: updates })
+
+  return success(res, { message: 'RFQ updated successfully', updated: updates })
+})
+
+// ── Drawing Approve / Request Revision ───────────────────────────────────────
+
+// POST /projects/:leadId/drawings/:docId/approve
+exports.approveDrawing = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId).select('customerId').lean()
+  if (!lead) return notFound(res, 'Project not found')
+  if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
+
+  const doc = await DrawingDocument.findOne({ _id: req.params.docId, leadId: req.params.leadId })
+  if (!doc) return notFound(res, 'Drawing not found')
+  if (doc.status === 'approved') return badRequest(res, 'Drawing is already approved')
+
+  doc.status = 'approved'
+  doc.approvedAt = new Date()
+  doc.revisionNote = ''
+  await doc.save()
+
+  await auditService.log({
+    type: 'drawing',
+    action: 'drawing.approved',
+    leadId: lead._id,
+    customerId: req.customer._id,
+    performedBy: req.customer._id,
+    metadata: { docId: doc._id, name: doc.name },
+  })
+
+  return success(res, { message: 'Drawing approved', drawing: { _id: doc._id, name: doc.name, status: doc.status } })
+})
+
+// POST /projects/:leadId/drawings/:docId/request-revision
+exports.requestDrawingRevision = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId).select('customerId').lean()
+  if (!lead) return notFound(res, 'Project not found')
+  if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
+
+  const doc = await DrawingDocument.findOne({ _id: req.params.docId, leadId: req.params.leadId })
+  if (!doc) return notFound(res, 'Drawing not found')
+
+  const { note } = req.body
+  if (!note || !note.trim()) return badRequest(res, 'Revision note is required')
+
+  doc.status = 'under_review'
+  doc.revisionNote = note.trim()
+  doc.revisionRequestedAt = new Date()
+  await doc.save()
+
+  await auditService.log({
+    type: 'drawing',
+    action: 'drawing.revision_requested',
+    leadId: lead._id,
+    customerId: req.customer._id,
+    performedBy: req.customer._id,
+    metadata: { docId: doc._id, name: doc.name, note: note.trim() },
+  })
+
+  return success(res, { message: 'Revision requested', drawing: { _id: doc._id, name: doc.name, status: doc.status, revisionNote: doc.revisionNote } })
 })

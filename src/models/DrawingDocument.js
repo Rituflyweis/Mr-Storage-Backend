@@ -13,9 +13,11 @@ const DrawingDocumentSchema = new mongoose.Schema(
     documentType: { type: String, enum: DOC_TYPES, default: 'other' },
     status:       { type: String, enum: DOC_STATUSES, default: 'pending' },
     uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    approvedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    approvedAt:   { type: Date, default: null },
-    notes:        { type: String, default: '', trim: true },
+    approvedBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    approvedAt:      { type: Date, default: null },
+    notes:           { type: String, default: '', trim: true },
+    revisionNote:    { type: String, default: '', trim: true },
+    revisionRequestedAt: { type: Date, default: null },
   },
   { timestamps: true }
 )

@@ -22,13 +22,18 @@ router.get('/dashboard', ctrl.getDashboard)
 
 // Projects
 router.get('/projects',                       ctrl.getProjects)
-router.get('/projects/:leadId/stats',         ctrl.getProjectStats)
-router.get('/projects/:leadId/drawings',      ctrl.getProjectDrawings)
-router.get('/projects/:leadId/activity',      ctrl.getProjectActivity)
-router.get('/projects/:leadId/notes',         ctrl.getProjectNotes)
-router.get('/projects/:leadId/followups',     ctrl.getProjectFollowUps)
-router.get('/projects/:leadId/meetings',      ctrl.getProjectMeetings)
-router.get('/projects/:leadId',               ctrl.getProject)
+router.get('/projects/:leadId/stats',                              ctrl.getProjectStats)
+router.get('/projects/:leadId/rfq',                                ctrl.getProjectRFQ)
+router.put('/projects/:leadId/rfq',                                ctrl.updateProjectRFQ)
+router.post('/projects/:leadId/cancel',                            ctrl.cancelProject)
+router.get('/projects/:leadId/drawings',                           ctrl.getProjectDrawings)
+router.post('/projects/:leadId/drawings/:docId/approve',           ctrl.approveDrawing)
+router.post('/projects/:leadId/drawings/:docId/request-revision',  ctrl.requestDrawingRevision)
+router.get('/projects/:leadId/activity',                           ctrl.getProjectActivity)
+router.get('/projects/:leadId/notes',                              ctrl.getProjectNotes)
+router.get('/projects/:leadId/followups',                          ctrl.getProjectFollowUps)
+router.get('/projects/:leadId/meetings',                           ctrl.getProjectMeetings)
+router.get('/projects/:leadId',                                    ctrl.getProject)
 router.post('/projects',
   [
     body('buildingType').notEmpty().withMessage('buildingType is required'),
