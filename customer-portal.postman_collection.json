@@ -1,36 +1,42 @@
 {
   "info": {
-    "name": "Customer Portal - The Steel",
+    "name": "Customer Portal - Mr Storage",
     "_postman_id": "customer-portal-steelpro",
-    "description": "All Customer Portal APIs for The Steel / Mr-Storage Backend",
+    "description": "All Customer Portal APIs — Mr Storage Backend\n\nBase URL: https://mr-storage-backend-1.onrender.com/api\nLocal URL: http://localhost:5001/api\n\nTest credentials:\n  email: customer1@example.com\n  password: Test@1234\n\nFlow: Run Login first → token auto-saved → all requests work.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "https://mr-storage-backend-1.onrender.com/api", "type": "string" },
-    { "key": "localUrl", "value": "http://localhost:5001/api", "type": "string" },
-    { "key": "customerToken", "value": "", "type": "string" },
-    { "key": "leadId", "value": "69e6137ce2dc3d6e7468ca58", "type": "string" },
-    { "key": "docId", "value": "", "type": "string" }
+    { "key": "baseUrl",       "value": "https://mr-storage-backend-1.onrender.com/api", "type": "string" },
+    { "key": "localUrl",      "value": "http://localhost:5001/api",                      "type": "string" },
+    { "key": "customerToken", "value": "",                                                "type": "string" },
+    { "key": "leadId",        "value": "69e6137ce2dc3d6e7468ca58",                       "type": "string", "description": "warehouse - Texas (PRO-001)" },
+    { "key": "leadId2",       "value": "69e613ada26a02d9b65a0fbf",                       "type": "string", "description": "office - Bangalore (PRO-002)" },
+    { "key": "docId",         "value": "",                                                "type": "string", "description": "Auto-set by Get Drawings request" }
   ],
   "item": [
     {
-      "name": "Auth",
+      "name": "🔐 Auth",
       "item": [
         {
           "name": "Login",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const r = pm.response.json();",
+              "const token = r.data?.accessToken || r.data?.token;",
+              "if (token) {",
+              "  pm.collectionVariables.set('customerToken', token);",
+              "  console.log('✅ Token saved');",
+              "}"
+            ]}
+          }],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{baseUrl}}/customer/auth/login", "host": ["{{baseUrl}}"], "path": ["customer", "auth", "login"] },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"customer1@example.com\",\n  \"password\": \"Test@1234\"\n}"
-            }
-          },
-          "event": [{
-            "listen": "test",
-            "script": { "exec": ["const r = pm.response.json();\nconst token = r.data?.accessToken || r.data?.token;\nif (token) pm.collectionVariables.set('customerToken', token);"] }
-          }]
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"customer1@example.com\",\n  \"password\": \"Test@1234\"\n}" },
+            "description": "Returns accessToken + refreshToken. Test script auto-saves token to {{customerToken}}."
+          }
         },
         {
           "name": "Refresh Token",
@@ -38,7 +44,7 @@
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{baseUrl}}/customer/auth/refresh", "host": ["{{baseUrl}}"], "path": ["customer", "auth", "refresh"] },
-            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"<your_refresh_token>\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"<paste_refresh_token_here>\"\n}" }
           }
         },
         {
@@ -47,7 +53,7 @@
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{baseUrl}}/customer/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["customer", "auth", "forgot-password"] },
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"customer@example.com\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"customer1@example.com\"\n}" }
           }
         },
         {
@@ -56,7 +62,7 @@
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{baseUrl}}/customer/auth/verify-otp", "host": ["{{baseUrl}}"], "path": ["customer", "auth", "verify-otp"] },
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"customer@example.com\",\n  \"otp\": \"123456\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"customer1@example.com\",\n  \"otp\": \"123456\"\n}" }
           }
         },
         {
@@ -65,7 +71,7 @@
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{baseUrl}}/customer/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["customer", "auth", "reset-password"] },
-            "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"<token_from_email>\",\n  \"newPassword\": \"newpassword123\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"resetToken\": \"<token_from_email>\",\n  \"newPassword\": \"Test@1234\"\n}" }
           }
         },
         {
@@ -73,24 +79,25 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Content-Type",  "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{customerToken}}" }
             ],
             "url": { "raw": "{{baseUrl}}/customer/auth/change-password", "host": ["{{baseUrl}}"], "path": ["customer", "auth", "change-password"] },
-            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"oldpassword\",\n  \"newPassword\": \"newpassword123\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"Test@1234\",\n  \"newPassword\": \"NewPass@1234\"\n}" }
           }
         }
       ]
     },
     {
-      "name": "Profile",
+      "name": "👤 Profile",
       "item": [
         {
           "name": "Get Profile",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": { "raw": "{{baseUrl}}/customer/profile", "host": ["{{baseUrl}}"], "path": ["customer", "profile"] }
+            "url": { "raw": "{{baseUrl}}/customer/profile", "host": ["{{baseUrl}}"], "path": ["customer", "profile"] },
+            "description": "Returns: firstName, lastName, email, phone, photo, customerId, createdAt"
           }
         },
         {
@@ -98,38 +105,44 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Content-Type",  "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{customerToken}}" }
             ],
             "url": { "raw": "{{baseUrl}}/customer/profile", "host": ["{{baseUrl}}"], "path": ["customer", "profile"] },
-            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"phone\": \"+1234567890\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Test Customer\",\n  \"lastName\": \"Smith\",\n  \"phone\": \"+1-555-0100\"\n}" }
           }
         }
       ]
     },
     {
-      "name": "Dashboard",
+      "name": "📊 Dashboard",
       "item": [
         {
           "name": "Get Dashboard",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": { "raw": "{{baseUrl}}/customer/dashboard", "host": ["{{baseUrl}}"], "path": ["customer", "dashboard"] }
-          },
-          "response": [],
-          "_postman_note": "Returns: activeProjects, closedProjects, drawingsAndApprovals, deliveryTracking (inTransit/staged/ready/totalToday/upcomingDeliveries/deliveriesThisWeek/delayedDeliveries/rescheduledDeliveries), shipmentBreakdown, nextDelivery, totalProjectValue, totalPaid, totalPending, upcomingInvoice"
+            "url": { "raw": "{{baseUrl}}/customer/dashboard", "host": ["{{baseUrl}}"], "path": ["customer", "dashboard"] },
+            "description": "Returns: activeProjects, closedProjects, drawingsAndApprovals, deliveryTracking { inTransit, staged, ready, totalToday, upcomingDeliveries, deliveriesThisWeek, delayedDeliveries, rescheduledDeliveries }, shipmentBreakdown, nextDelivery, totalProjectValue, totalPaid, totalPending, upcomingInvoice"
+          }
         }
       ]
     },
     {
-      "name": "Projects",
+      "name": "🏗️ Projects",
       "item": [
         {
-          "name": "Get All Projects",
+          "name": "Get All Projects (with stats)",
           "event": [{
             "listen": "test",
-            "script": { "exec": ["const r = pm.response.json();\nconst first = r.data?.projects?.[0];\nif (first?._id) pm.collectionVariables.set('leadId', first._id);"] }
+            "script": { "exec": [
+              "const r = pm.response.json();",
+              "const first = r.data?.projects?.[0];",
+              "if (first?._id) {",
+              "  pm.collectionVariables.set('leadId', first._id);",
+              "  console.log('leadId set to', first._id, '—', first.projectName);",
+              "}"
+            ]}
           }],
           "request": {
             "method": "GET",
@@ -139,42 +152,98 @@
               "host": ["{{baseUrl}}"],
               "path": ["customer", "projects"],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "lifecycleStatus", "value": "", "disabled": true, "description": "filter by status" }
+                { "key": "page",            "value": "1" },
+                { "key": "limit",           "value": "20" },
+                { "key": "lifecycleStatus", "value": "", "disabled": true, "description": "fabrication_started | quality_inspection | delivered | initial_contact ..." }
               ]
-            }
-          },
-          "_postman_note": "Returns: projects[], total. Auto-sets {{leadId}} to first project. Each project has: _id, projectName, jobId, lifecycleStatus, location, buildingType, quoteValue"
+            },
+            "description": "Returns projects list + stats cards (matches Figma):\n\nstats:\n  total         → Total Projects card\n  active        → Active Projects card  (plant stages: released_to_plant → dispatched)\n  workInProgress → Work in Progress card (sales stages: initial_contact → sent_to_admin)\n  cancelled     → Canceled card          (isTerminated: true)\n\nEach project: _id, projectName, jobId, lifecycleStatus, location, buildingType, quoteValue\n\nTest data:\n  PRO-001 warehouse - Texas    (fabrication_started)  ← leadId default\n  PRO-002 office - Bangalore   (quality_inspection)\n  PRO-011 (initial_contact)    [cancelled]"
+          }
         },
         {
           "name": "Get Project Detail",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/customer/projects/{{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["customer", "projects", "{{leadId}}"]
-            }
-          },
-          "_postman_note": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule"
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}"] },
+            "description": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule"
+          }
         },
         {
           "name": "Get Project Stats",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["customer", "projects", "{{leadId}}", "stats"]
-            }
-          },
-          "_postman_note": "Returns: deliveries{total,delivered,inTransit}, payments{totalInvoiced,totalPaid,pending,pendingInvoices}, followUps count, meetings count"
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/stats", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "stats"] },
+            "description": "Returns stats for a single project:\n  deliveries { total, delivered, inTransit }\n  payments   { totalInvoiced, totalPaid, pending, pendingInvoices }\n  followUps  (count)\n  meetings   (count)"
+          }
         },
         {
+          "name": "Get Project RFQ",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/rfq", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "rfq"] },
+            "description": "Returns the RFQ (Request for Quotation) details:\n  rfq { jobId, projectName, buildingType, roofStyle, sqft, width, length, location, description, quoteValue, isQuoteReady, lifecycleStatus, aiSummary, aiQuoteData }\n  quotation (latest Quotation doc or null)\n\nMock data (PRO-001):\n  buildingType: warehouse\n  roofStyle: gable\n  sqft: 6000\n  width: 60, length: 120\n  quoteValue: 250000\n  isQuoteReady: true"
+          }
+        },
+        {
+          "name": "Update Project RFQ",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/rfq", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "rfq"] },
+            "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"warehouse\",\n  \"roofStyle\": \"gable\",\n  \"sqft\": \"6000\",\n  \"width\": 60,\n  \"length\": 120,\n  \"location\": \"Dallas, TX\",\n  \"description\": \"Steel warehouse with clear-span design, 20ft eave height, sliding doors on south wall\"\n}" },
+            "description": "Update building specs before quote is locked.\n\nAllowed fields: buildingType, roofStyle, sqft, width, length, location, description\n\nLocked (returns 400) if lifecycleStatus is:\n  deal_closed | payment_done | converted_to_po | sent_to_admin | released_to_plant"
+          }
+        },
+        {
+          "name": "Cancel Project",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/cancel", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "cancel"] },
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Customer decided to postpone the project due to budget constraints\"\n}" },
+            "description": "Cancels a project (sets isTerminated: true).\n\nRules:\n  - reason is required\n  - Cannot cancel if already cancelled\n  - Cannot cancel if lifecycleStatus is 'delivered'\n\nReflected in GET /projects → stats.cancelled count."
+          }
+        },
+        {
+          "name": "Create Project (Enquiry)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/projects", "host": ["{{baseUrl}}"], "path": ["customer", "projects"] },
+            "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"warehouse\",\n  \"location\": \"Pune, Maharashtra\",\n  \"roofStyle\": \"gable\",\n  \"sqft\": \"5000\",\n  \"width\": 50,\n  \"length\": 100,\n  \"description\": \"Steel warehouse — clear span, 18ft eave height\"\n}" },
+            "description": "Creates a new project enquiry (lead) for this customer. Sets lifecycleStatus: initial_contact."
+          }
+        }
+      ]
+    },
+    {
+      "name": "🖼️ Project Drawings",
+      "item": [
+        {
           "name": "Get Project Drawings & Images",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const r = pm.response.json();",
+              "const first = r.data?.drawings?.[0];",
+              "if (first?._id) {",
+              "  pm.collectionVariables.set('docId', first._id);",
+              "  console.log('docId set to', first._id, '—', first.name);",
+              "}"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -182,13 +251,38 @@
               "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings",
               "host": ["{{baseUrl}}"],
               "path": ["customer", "projects", "{{leadId}}", "drawings"],
-              "query": [
-                { "key": "type", "value": "", "disabled": true, "description": "filter: architectural | structural | electrical | mechanical | site | other" }
-              ]
-            }
-          },
-          "_postman_note": "Returns: drawings[] (DrawingDocument records), embeddedDocuments[] (from lead.documents), total. Each drawing: name, fileUrl, fileType, fileSize, documentType, status, uploadedBy, approvedBy, notes"
+              "query": [{ "key": "type", "value": "", "disabled": true, "description": "architectural | structural | fabrication | erection | specification | other" }]
+            },
+            "description": "Returns:\n  drawings[]        — DrawingDocument records (with status, revisionNote, fileUrl)\n  embeddedDocuments[] — from lead.documents array\n  total\n\nTest script auto-saves first drawing _id to {{docId}}.\n\nMock data (PRO-001):\n  Foundation Plan Rev A   (architectural, approved)\n  Structural Steel Layout (structural,   approved)\n  Roof Panel Layout       (architectural, approved)\n  Electrical Plan         (other,         under_review)\n  Site Elevation          (other,         approved)\n\nStatuses: pending | approved | rejected | under_review"
+          }
         },
+        {
+          "name": "Approve Drawing",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/approve", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "drawings", "{{docId}}", "approve"] },
+            "description": "Customer approves a drawing.\n\nSets status → approved, approvedAt → now.\nReturns: { _id, name, status }\n\nRun 'Get Project Drawings' first to populate {{docId}}."
+          }
+        },
+        {
+          "name": "Request Drawing Revision",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/request-revision", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "drawings", "{{docId}}", "request-revision"] },
+            "body": { "mode": "raw", "raw": "{\n  \"note\": \"Please adjust the roof pitch from 3:12 to 4:12 and increase eave height to 22ft\"\n}" },
+            "description": "Customer requests a revision on a drawing.\n\nSets status → under_review, saves revisionNote + revisionRequestedAt.\nnote is required.\nReturns: { _id, name, status, revisionNote }"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📋 Project Activity & Notes",
+      "item": [
         {
           "name": "Get Project Recent Activity",
           "request": {
@@ -199,26 +293,27 @@
               "host": ["{{baseUrl}}"],
               "path": ["customer", "projects", "{{leadId}}", "activity"],
               "query": [
-                { "key": "page", "value": "1" },
+                { "key": "page",  "value": "1" },
                 { "key": "limit", "value": "20" }
               ]
-            }
-          },
-          "_postman_note": "Returns: activity[] (AuditLog records), total, page, limit. Each entry: type, action, performedBy{name,role}, metadata, createdAt"
+            },
+            "description": "Returns paginated AuditLog records for this project.\n  activity[] { type, action, performedBy{name,role}, metadata, createdAt }\n  total, page, limit\n\nMock data (PRO-001): 28 audit log entries\n  lead.released_to_plant, invoice.created, drawing.approved, etc."
+          }
         },
         {
           "name": "Get Project Notes",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/notes",
-              "host": ["{{baseUrl}}"],
-              "path": ["customer", "projects", "{{leadId}}", "notes"]
-            }
-          },
-          "_postman_note": "Returns: notes[] (lead.leadNotes array), generalNotes (lead.notes string), total. Each note: note, addedAt, addedBy"
-        },
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/notes", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "notes"] },
+            "description": "Returns:\n  notes[]      — lead.leadNotes array { note, addedAt, addedBy }\n  generalNotes — lead.notes string\n  total\n\nMock data (PRO-001):\n  'Customer confirmed site ready for foundation work'\n  'Structural drawings approved by client on call'\n  'Color selection: Galvalume Silver exterior panels'"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📞 Project Follow Ups & Meetings",
+      "item": [
         {
           "name": "Get Project Follow Ups",
           "request": {
@@ -229,13 +324,13 @@
               "host": ["{{baseUrl}}"],
               "path": ["customer", "projects", "{{leadId}}", "followups"],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
+                { "key": "page",   "value": "1" },
+                { "key": "limit",  "value": "20" },
                 { "key": "status", "value": "", "disabled": true, "description": "pending | completed | cancelled" }
               ]
-            }
-          },
-          "_postman_note": "Returns: followUps[], total, page, limit, stats{total,pending,completed}. Each: followUpDate, modeOfContact, notes, status, assignedTo{name,email}"
+            },
+            "description": "Returns:\n  followUps[] { followUpDate, modeOfContact, notes, status, assignedTo{name,email} }\n  total, page, limit\n  stats { total, pending, completed }\n\nmodeOfContact values: phone | email | video_call | in_person\n\nMock data (PRO-001): 3 follow-ups\n  ✅ Call back after quote review              (completed)\n  ✅ Engineering review — BOM approval        (completed, email)\n  ⏳ Delivery timeline confirmation            (pending, phone)"
+          }
         },
         {
           "name": "Get Project Meetings",
@@ -247,93 +342,21 @@
               "host": ["{{baseUrl}}"],
               "path": ["customer", "projects", "{{leadId}}", "meetings"],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
+                { "key": "page",   "value": "1" },
+                { "key": "limit",  "value": "20" },
                 { "key": "status", "value": "", "disabled": true, "description": "scheduled | completed | cancelled" }
               ]
-            }
-          },
-          "_postman_note": "Returns: meetings[], total, page, limit, stats{total,scheduled,completed,cancelled}. Each: title, meetingTime, mode(online/offline), meetingLink, status, createdBy{name,email}"
-        },
-        {
-          "name": "Get Project RFQ",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/rfq", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "rfq"] }
-          },
-          "_postman_note": "Returns: rfq{jobId, buildingType, roofStyle, sqft, width, length, location, description, quoteValue, isQuoteReady, lifecycleStatus, aiSummary, aiQuoteData}, quotation"
-        },
-        {
-          "name": "Update Project RFQ (building specs)",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/rfq", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "rfq"] },
-            "body": { "mode": "raw", "raw": "{\n  \"buildingType\": \"warehouse\",\n  \"roofStyle\": \"gable\",\n  \"sqft\": \"6000\",\n  \"width\": 60,\n  \"length\": 100,\n  \"location\": \"Dallas, TX\",\n  \"description\": \"Updated specs\"\n}" }
-          },
-          "_postman_note": "Only allowed before deal_closed stage. Returns: updated fields. Locked stages: deal_closed, payment_done, converted_to_po, sent_to_admin, released_to_plant"
-        },
-        {
-          "name": "Cancel Project",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/cancel", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "cancel"] },
-            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Customer decided to postpone the project\"\n}" }
-          },
-          "_postman_note": "Sets isTerminated=true. Reason is required. Cannot cancel if already cancelled or delivered. Reflected in stats.cancelled count."
-        },
-        {
-          "name": "Approve Drawing",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/approve", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "drawings", "{{docId}}", "approve"] }
-          },
-          "_postman_note": "Sets drawing status to approved. Returns: {_id, name, status}. Set {{docId}} from drawings list response."
-        },
-        {
-          "name": "Request Drawing Revision",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/request-revision", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "drawings", "{{docId}}", "request-revision"] },
-            "body": { "mode": "raw", "raw": "{\n  \"note\": \"Please adjust the roof pitch from 3:12 to 4:12\"\n}" }
-          },
-          "_postman_note": "Sets drawing status to under_review + saves revisionNote. Note is required. Returns: {_id, name, status, revisionNote}."
-        },
-        {
-          "name": "Create Project (Enquiry)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
-            ],
-            "url": { "raw": "{{baseUrl}}/customer/projects", "host": ["{{baseUrl}}"], "path": ["customer", "projects"] },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"buildingType\": \"warehouse\",\n  \"location\": \"Pune, Maharashtra\",\n  \"roofStyle\": \"gable\",\n  \"sqft\": \"5000\",\n  \"width\": 50,\n  \"length\": 100,\n  \"description\": \"Steel warehouse building\"\n}"
-            }
+            },
+            "description": "Returns:\n  meetings[] { title, meetingTime, mode, meetingLink, status, createdBy{name,email} }\n  total, page, limit\n  stats { total, scheduled, completed, cancelled }\n\nmode values: online | offline\n\nMock data (PRO-001): 4 meetings\n  ✅ Kickoff Meeting              (online,   completed)\n  ✅ Site survey                  (online,   completed)\n  ✅ Midpoint Progress Review     (offline,  completed)\n  📅 Pre-Delivery Inspection Call (online,   scheduled — 2026-07-25)"
           }
         }
       ]
     },
     {
-      "name": "Drawings & Documents",
+      "name": "📄 Documents",
       "item": [
         {
-          "name": "Get All Documents (Drawings + Docs)",
+          "name": "Get All Documents",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -341,8 +364,9 @@
               "raw": "{{baseUrl}}/customer/documents",
               "host": ["{{baseUrl}}"],
               "path": ["customer", "documents"],
-              "query": [{ "key": "type", "value": "", "disabled": true, "description": "filter: drawing | approval | contract | invoice | document" }]
-            }
+              "query": [{ "key": "type", "value": "", "disabled": true, "description": "drawing | approval | contract | invoice | document | general | photo | other" }]
+            },
+            "description": "Returns all documents attached to all customer projects (lead.documents). Filterable by type."
           }
         },
         {
@@ -374,10 +398,10 @@
       ]
     },
     {
-      "name": "Delivery Schedule",
+      "name": "🚚 Delivery Schedule",
       "item": [
         {
-          "name": "Upcoming Deliveries",
+          "name": "Get Upcoming Deliveries",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -386,12 +410,12 @@
               "host": ["{{baseUrl}}"],
               "path": ["customer", "deliveries"],
               "query": [{ "key": "tab", "value": "upcoming", "description": "upcoming | past | rescheduled" }]
-            }
-          },
-          "_postman_note": "Returns: deliveries[], total, tabs{upcoming, past, rescheduled counts}. Each delivery has: deliveryId, deliveryNumber, status, description, deliveryDate, timings, siteContact, deliveryCompany, project"
+            },
+            "description": "Returns: deliveries[], total, tabs{ upcoming, past, rescheduled counts }.\nEach delivery: deliveryId, deliveryNumber, status, description, deliveryDate, timings, siteContact, deliveryCompany, project"
+          }
         },
         {
-          "name": "Past Deliveries",
+          "name": "Get Past Deliveries",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -404,7 +428,7 @@
           }
         },
         {
-          "name": "Rescheduled Deliveries",
+          "name": "Get Rescheduled Deliveries",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -419,16 +443,16 @@
       ]
     },
     {
-      "name": "Payments",
+      "name": "💳 Payments",
       "item": [
         {
           "name": "Get Payments (Upcoming + Overdue + History)",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": { "raw": "{{baseUrl}}/customer/payments", "host": ["{{baseUrl}}"], "path": ["customer", "payments"] }
-          },
-          "_postman_note": "Returns: upcoming[], overdue[], paid[] — each has invoice details + dueDate + lead info"
+            "url": { "raw": "{{baseUrl}}/customer/payments", "host": ["{{baseUrl}}"], "path": ["customer", "payments"] },
+            "description": "Returns: upcoming[], overdue[], paid[] — each has invoice details + dueDate + lead info"
+          }
         },
         {
           "name": "Get Invoices",
@@ -439,7 +463,7 @@
               "raw": "{{baseUrl}}/customer/payments/invoices",
               "host": ["{{baseUrl}}"],
               "path": ["customer", "payments", "invoices"],
-              "query": [{ "key": "status", "value": "", "disabled": true, "description": "paid | sent | draft" }]
+              "query": [{ "key": "status", "value": "", "disabled": true, "description": "paid | sent | draft | overdue" }]
             }
           }
         },
@@ -448,28 +472,26 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
-            "url": { "raw": "{{baseUrl}}/customer/payments/tax-report", "host": ["{{baseUrl}}"], "path": ["customer", "payments", "tax-report"] }
-          },
-          "_postman_note": "Returns: rows[] (date, invoiceNumber, projectId, projectName, buildingType, location, contractAmount, taxRate%, taxDue), summary{totalContractAmount, totalTaxDue}"
+            "url": { "raw": "{{baseUrl}}/customer/payments/tax-report", "host": ["{{baseUrl}}"], "path": ["customer", "payments", "tax-report"] },
+            "description": "Returns:\n  rows[] { date, invoiceNumber, projectId, projectName, buildingType, location, contractAmount, taxRate(%), taxDue }\n  summary { totalContractAmount, totalTaxDue }"
+          }
         }
       ]
     },
     {
-      "name": "Upload",
+      "name": "☁️ Upload",
       "item": [
         {
           "name": "Get Presigned URL (S3 Upload)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Content-Type",  "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{customerToken}}" }
             ],
             "url": { "raw": "{{baseUrl}}/customer/upload/presigned-url", "host": ["{{baseUrl}}"], "path": ["customer", "upload", "presigned-url"] },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fileName\": \"document.pdf\",\n  \"fileType\": \"application/pdf\",\n  \"folder\": \"customer-uploads\"\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"fileName\": \"my-document.pdf\",\n  \"fileType\": \"application/pdf\",\n  \"folder\": \"customer-uploads\"\n}" },
+            "description": "Returns a pre-signed S3 URL for direct browser upload. PUT the file to the returned URL."
           }
         }
       ]
