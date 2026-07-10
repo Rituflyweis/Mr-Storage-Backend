@@ -497,12 +497,11 @@ exports.getPaymentInvoices = asyncHandler(async (req, res) => {
 
   const [invoices, leads] = await Promise.all([
     Invoice.find(invoiceFilter).select('-paidBy -createdBy -__v').sort({ createdAt: -1 }).lean(),
-    Lead.find({ customerId }).select('buildingType location lifecycleStatus').lean(),
+    Lead.find({ customerId }).select('projectName jobId buildingType location lifecycleStatus quoteValue').lean(),
   ])
 
   const leadMap = Object.fromEntries(leads.map(l => [String(l._id), l]))
 
-  // Group invoices by leadId
   const grouped = {}
   for (const inv of invoices) {
     const key = String(inv.leadId)
@@ -510,24 +509,84 @@ exports.getPaymentInvoices = asyncHandler(async (req, res) => {
     grouped[key].push({ ...inv, dueDate: computeDueDate(inv) })
   }
 
+  const now = new Date()
   const projects = Object.entries(grouped).map(([leadId, invs]) => {
     const lead = leadMap[leadId]
-    const projectTotal   = invs.reduce((s, i) => s + i.totalAmount, 0)
-    const projectPaid    = invs.filter(i => i.status === 'paid').reduce((s, i) => s + i.totalAmount, 0)
-    const projectPending = invs.filter(i => i.status !== 'paid').reduce((s, i) => s + i.totalAmount, 0)
+    const projectTotal   = invs.reduce((s, i) => s + (i.totalAmount || 0), 0)
+    const projectPaid    = invs.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
+    const projectPending = invs.filter(i => ['sent', 'draft', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
+    const overdueAmount  = invs.filter(i => i.status === 'overdue' || (i.dueDate && new Date(i.dueDate) < now && i.status !== 'paid')).reduce((s, i) => s + (i.totalAmount || 0), 0)
 
     return {
-      lead: lead
-        ? { _id: lead._id, buildingType: lead.buildingType, location: lead.location, lifecycleStatus: lead.lifecycleStatus }
-        : { _id: leadId },
+      lead: lead ? {
+        _id:             lead._id,
+        jobId:           lead.jobId,
+        projectName:     lead.projectName,
+        buildingType:    lead.buildingType,
+        location:        lead.location,
+        lifecycleStatus: lead.lifecycleStatus,
+        quoteValue:      lead.quoteValue,
+      } : { _id: leadId },
       invoices: invs,
-      projectTotal,
-      projectPaid,
-      projectPending,
+      summary: {
+        projectTotal,
+        projectPaid,
+        projectPending,
+        overdueAmount,
+        paidPercent: projectTotal > 0 ? Math.round((projectPaid / projectTotal) * 100) : 0,
+        invoiceCount: invs.length,
+      },
     }
   })
 
   return success(res, { projects })
+})
+
+// GET /payments/invoice-stats  — Figma cards: Total Project Value, Pending Amount, Amount Paid, Upcoming Invoice Due
+exports.getInvoiceStats = asyncHandler(async (req, res) => {
+  const customerId = req.customer._id
+  const now = new Date()
+
+  const [invoices, leads] = await Promise.all([
+    Invoice.find({ customerId }).select('status totalAmount dueDate date leadId').lean(),
+    Lead.find({ customerId }).select('quoteValue projectName jobId').lean(),
+  ])
+
+  const totalProjectValue = leads.reduce((s, l) => s + (l.quoteValue || 0), 0)
+  const amountPaid        = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const pendingAmount     = invoices.filter(i => ['sent', 'draft', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
+
+  // Next upcoming due invoice
+  const upcomingInvoice = invoices
+    .filter(i => i.status === 'sent' && i.dueDate && new Date(i.dueDate) >= now)
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0] || null
+
+  // If no sent invoice, pick the nearest draft
+  const nextDraft = !upcomingInvoice
+    ? invoices.filter(i => i.status === 'draft').sort((a, b) => new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt))[0] || null
+    : null
+
+  const nextDue = upcomingInvoice || nextDraft
+
+  return success(res, {
+    totalProjectValue,
+    pendingAmount,
+    amountPaid,
+    upcomingInvoiceDue: nextDue ? {
+      _id:         nextDue._id,
+      invoiceNumber: nextDue.invoiceNumber,
+      totalAmount: nextDue.totalAmount,
+      dueDate:     nextDue.dueDate,
+      status:      nextDue.status,
+    } : null,
+    breakdown: {
+      totalInvoiced: invoices.reduce((s, i) => s + (i.totalAmount || 0), 0),
+      paid:     amountPaid,
+      pending:  pendingAmount,
+      overdue:  invoices.filter(i => i.status === 'overdue').reduce((s, i) => s + (i.totalAmount || 0), 0),
+      invoiceCount: invoices.length,
+    },
+  })
 })
 
 // ── Delivery Schedule ─────────────────────────────────────────────────────────

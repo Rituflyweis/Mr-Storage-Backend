@@ -448,12 +448,21 @@
       "name": "💳 Payments",
       "item": [
         {
+          "name": "Get Invoice Stats (Figma Cards)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/payments/invoice-stats", "host": ["{{baseUrl}}"], "path": ["customer", "payments", "invoice-stats"] },
+            "description": "Maps directly to the 4 Figma cards on the Invoices screen:\n\n  totalProjectValue   → Total Project Value card  (sum of lead.quoteValue)\n  pendingAmount       → Pending Amount card        (unpaid invoices total)\n  amountPaid          → Amount Paid card           (paid invoices total)\n  upcomingInvoiceDue  → Upcoming Invoice Due card  { _id, invoiceNumber, totalAmount, dueDate, status }\n\nAlso returns breakdown { totalInvoiced, paid, pending, overdue, invoiceCount }\n\nMock data:\n  totalProjectValue : 250,000\n  pendingAmount     : 9,250,000\n  amountPaid        : 275,000\n  upcomingInvoiceDue: INV-0010 (250,000 due 2026-06-13)"
+          }
+        },
+        {
           "name": "Get Payment Stats",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
             "url": { "raw": "{{baseUrl}}/customer/payments/stats", "host": ["{{baseUrl}}"], "path": ["customer", "payments", "stats"] },
-            "description": "Returns overall payment summary across all projects:\n  stats { totalInvoiced, totalPaid, totalPending, totalOverdue, balance, paidPercent }\n  counts { total, paid, upcoming, overdue }\n  nextDueInvoice { _id, totalAmount, dueDate } or null\n\nMock data:\n  totalInvoiced : ₹9,525,000\n  totalPaid     : ₹275,000  (3%)\n  totalPending  : ₹9,250,000\n  5 invoices (1 paid, 4 sent)"
+            "description": "Detailed payment stats:\n  stats { totalInvoiced, totalPaid, totalPending, totalOverdue, balance, paidPercent }\n  counts { total, paid, upcoming, overdue }\n  nextDueInvoice { _id, totalAmount, dueDate }\n\nMock data:\n  totalInvoiced : 9,525,000\n  totalPaid     : 275,000  (3%)\n  totalPending  : 9,250,000\n  5 invoices total"
           }
         },
         {
@@ -466,7 +475,7 @@
           }
         },
         {
-          "name": "Get Invoices",
+          "name": "Get Invoices (grouped by project)",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -475,7 +484,8 @@
               "host": ["{{baseUrl}}"],
               "path": ["customer", "payments", "invoices"],
               "query": [{ "key": "status", "value": "", "disabled": true, "description": "paid | sent | draft | overdue" }]
-            }
+            },
+            "description": "Returns invoices grouped by project, each group includes full lead details and per-project summary.\n\nlead now includes: _id, jobId, projectName, buildingType, location, lifecycleStatus, quoteValue\n\nsummary per project: projectTotal, projectPaid, projectPending, overdueAmount, paidPercent, invoiceCount\n\nEach invoice includes: dueDate (computed from date + daysToPay)\n\nMock data (PRO-001 warehouse - Texas):\n  5 invoices | total: 9,525,000 | paid: 275,000 (3%) | pending: 9,250,000"
           }
         },
         {
