@@ -356,7 +356,7 @@
       "name": "📄 Documents",
       "item": [
         {
-          "name": "Get All Documents",
+          "name": "Get All Documents (All Types)",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -364,9 +364,9 @@
               "raw": "{{baseUrl}}/customer/documents",
               "host": ["{{baseUrl}}"],
               "path": ["customer", "documents"],
-              "query": [{ "key": "type", "value": "", "disabled": true, "description": "drawing | approval | contract | invoice | document | general | photo | other" }]
+              "query": [{ "key": "type", "value": "", "disabled": true, "description": "drawing | approval | contract | general | photo | other" }]
             },
-            "description": "Returns all documents attached to all customer projects (lead.documents). Filterable by type."
+            "description": "Returns all documents across all customer projects grouped by project.\nIncludes both DrawingDocument collection records AND embedded lead.documents.\n\nResponse: projects[{ lead{jobId,projectName,...}, documents[], count }], totalDocuments\n\nMock data: 8 total drawings (5 for PRO-001, 3 for PRO-002)"
           }
         },
         {
@@ -379,7 +379,8 @@
               "host": ["{{baseUrl}}"],
               "path": ["customer", "documents"],
               "query": [{ "key": "type", "value": "drawing" }]
-            }
+            },
+            "description": "Filters to DrawingDocument records only.\nMock data: 8 drawings across 2 projects\n  PRO-001: Foundation Plan, Structural Steel, Roof Panel, Electrical Plan, Site Elevation\n  PRO-002: Office Floor Plan, Structural Frame, MEP Schematic"
           }
         },
         {
@@ -409,9 +410,9 @@
               "raw": "{{baseUrl}}/customer/deliveries?tab=upcoming",
               "host": ["{{baseUrl}}"],
               "path": ["customer", "deliveries"],
-              "query": [{ "key": "tab", "value": "upcoming", "description": "upcoming | past | rescheduled" }]
+              "query": [{ "key": "tab", "value": "upcoming" }]
             },
-            "description": "Returns: deliveries[], total, tabs{ upcoming, past, rescheduled counts }.\nEach delivery: deliveryId, deliveryNumber, status, description, deliveryDate, timings, siteContact, deliveryCompany, project"
+            "description": "tab values: upcoming | past | rescheduled\n\nReturns: deliveries[], total, tabs{upcoming, past, rescheduled counts}\nEach delivery: deliveryId, deliveryNumber, status, description, deliveryDate, loadWeight, siteContact{name,phone}, deliveryCompany{name,contact,phone}, project{jobId,projectName}\n\nMock data (upcoming): 3 deliveries\n  CUST-DEL-002  in_transit   Secondary panels - Roof and wall cladding (2026-07-30)\n  CUST-DEL-001  scheduled    Primary Steel Frame - columns & rafters    (2026-08-10)\n  CUST-DEL-004  confirmed    Full structural package - office frame      (2026-08-20)"
           }
         },
         {
@@ -424,7 +425,8 @@
               "host": ["{{baseUrl}}"],
               "path": ["customer", "deliveries"],
               "query": [{ "key": "tab", "value": "past" }]
-            }
+            },
+            "description": "Mock data (past): 1 delivery\n  CUST-DEL-003  delivered  Foundation anchor bolts and base plates (2026-06-15)\n  Carrier: Abc Carrier pvt ltd."
           }
         },
         {
@@ -445,6 +447,15 @@
     {
       "name": "💳 Payments",
       "item": [
+        {
+          "name": "Get Payment Stats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/payments/stats", "host": ["{{baseUrl}}"], "path": ["customer", "payments", "stats"] },
+            "description": "Returns overall payment summary across all projects:\n  stats { totalInvoiced, totalPaid, totalPending, totalOverdue, balance, paidPercent }\n  counts { total, paid, upcoming, overdue }\n  nextDueInvoice { _id, totalAmount, dueDate } or null\n\nMock data:\n  totalInvoiced : ₹9,525,000\n  totalPaid     : ₹275,000  (3%)\n  totalPending  : ₹9,250,000\n  5 invoices (1 paid, 4 sent)"
+          }
+        },
         {
           "name": "Get Payments (Upcoming + Overdue + History)",
           "request": {

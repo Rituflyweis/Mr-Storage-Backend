@@ -52,6 +52,7 @@ router.post('/projects',
 router.get('/documents', ctrl.getDocuments)
 
 // Payments
+router.get('/payments/stats',      ctrl.getPaymentStats)
 router.get('/payments',            ctrl.getPayments)
 router.get('/payments/invoices',   ctrl.getPaymentInvoices)
 router.get('/payments/tax-report', ctrl.getTaxReport)

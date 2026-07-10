@@ -316,27 +316,69 @@ exports.getDocuments = asyncHandler(async (req, res) => {
   const { type } = req.query
 
   const leads = await Lead.find({ customerId: req.customer._id })
-    .select('buildingType location lifecycleStatus documents')
+    .select('buildingType location lifecycleStatus projectName jobId documents')
     .lean()
+
+  if (!leads.length) return success(res, { projects: [], totalDocuments: 0 })
+
+  const leadIds = leads.map(l => l._id)
+
+  // Fetch DrawingDocuments from the separate collection
+  const drawingFilter = { leadId: { $in: leadIds } }
+  // Map drawing type query to DrawingDocument statuses/types vs lead.documents type
+  const drawingDocs = await DrawingDocument.find(drawingFilter)
+    .populate('uploadedBy', 'name')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const drawingsByLead = {}
+  for (const d of drawingDocs) {
+    const key = String(d.leadId)
+    if (!drawingsByLead[key]) drawingsByLead[key] = []
+    drawingsByLead[key].push({
+      _id:          d._id,
+      name:         d.name,
+      url:          d.fileUrl,
+      type:         'drawing',
+      documentType: d.documentType,
+      status:       d.status,
+      fileType:     d.fileType,
+      fileSize:     d.fileSize,
+      notes:        d.notes,
+      revisionNote: d.revisionNote,
+      uploadedBy:   d.uploadedBy,
+      uploadedAt:   d.createdAt,
+      source:       'drawing_document',
+    })
+  }
 
   let totalDocuments = 0
   const projects = []
 
   for (const lead of leads) {
-    let docs = lead.documents
-    if (type) docs = docs.filter(d => d.type === type)
-    if (docs.length === 0) continue
+    // Embedded lead.documents
+    let embeddedDocs = (lead.documents || []).map(d => ({ ...d, source: 'lead' }))
+    if (type) embeddedDocs = embeddedDocs.filter(d => d.type === type)
 
-    totalDocuments += docs.length
+    // DrawingDocument collection (only include if type=drawing or no type filter)
+    let drawings = drawingsByLead[String(lead._id)] || []
+    if (type && type !== 'drawing') drawings = []
+
+    const allDocs = [...drawings, ...embeddedDocs]
+    if (allDocs.length === 0) continue
+
+    totalDocuments += allDocs.length
     projects.push({
       lead: {
         _id:             lead._id,
+        jobId:           lead.jobId,
+        projectName:     lead.projectName,
         buildingType:    lead.buildingType,
         location:        lead.location,
         lifecycleStatus: lead.lifecycleStatus,
       },
-      documents: docs,
-      count:     docs.length,
+      documents: allDocs,
+      count:     allDocs.length,
     })
   }
 
@@ -379,6 +421,50 @@ exports.getPayments = asyncHandler(async (req, res) => {
   upcoming.sort((a, b) => (a.dueDate || 0) - (b.dueDate || 0))
 
   return success(res, { upcoming, overdue, paid })
+})
+
+// GET /payments/stats
+exports.getPaymentStats = asyncHandler(async (req, res) => {
+  const customerId = req.customer._id
+
+  const invoices = await Invoice.find({ customerId }).select('status totalAmount dueDate createdAt').lean()
+
+  const totalInvoiced  = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const totalPaid      = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const totalPending   = invoices.filter(i => ['sent', 'draft'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const totalOverdue   = invoices.filter(i => i.status === 'overdue').reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const now = new Date()
+
+  const overdueCount   = invoices.filter(i => i.status === 'overdue').length
+  const upcomingCount  = invoices.filter(i => i.status === 'sent' && i.dueDate && new Date(i.dueDate) >= now).length
+  const paidCount      = invoices.filter(i => i.status === 'paid').length
+
+  // Next upcoming invoice
+  const nextInvoice = invoices
+    .filter(i => i.status === 'sent' && i.dueDate && new Date(i.dueDate) >= now)
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0] || null
+
+  return success(res, {
+    stats: {
+      totalInvoiced,
+      totalPaid,
+      totalPending,
+      totalOverdue,
+      balance: totalInvoiced - totalPaid,
+      paidPercent: totalInvoiced > 0 ? Math.round((totalPaid / totalInvoiced) * 100) : 0,
+    },
+    counts: {
+      total:    invoices.length,
+      paid:     paidCount,
+      upcoming: upcomingCount,
+      overdue:  overdueCount,
+    },
+    nextDueInvoice: nextInvoice ? {
+      _id:         nextInvoice._id,
+      totalAmount: nextInvoice.totalAmount,
+      dueDate:     nextInvoice.dueDate,
+    } : null,
+  })
 })
 
 // ── Upload ────────────────────────────────────────────────────────────────────
