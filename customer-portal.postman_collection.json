@@ -11,7 +11,8 @@
     { "key": "customerToken", "value": "",                                                "type": "string" },
     { "key": "leadId",        "value": "69e6137ce2dc3d6e7468ca58",                       "type": "string", "description": "warehouse - Texas (PRO-001)" },
     { "key": "leadId2",       "value": "69e613ada26a02d9b65a0fbf",                       "type": "string", "description": "office - Bangalore (PRO-002)" },
-    { "key": "docId",         "value": "",                                                "type": "string", "description": "Auto-set by Get Drawings request" }
+    { "key": "docId",         "value": "",                                                "type": "string", "description": "Auto-set by Get Drawings request" },
+    { "key": "deliveryId",    "value": "",                                                "type": "string", "description": "Auto-set by Get Upcoming Deliveries request" }
   ],
   "item": [
     {
@@ -439,6 +440,17 @@
       "item": [
         {
           "name": "Get Upcoming Deliveries",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const r = pm.response.json();",
+              "const first = r.data?.deliveries?.[0];",
+              "if (first?.deliveryId) {",
+              "  pm.collectionVariables.set('deliveryId', first.deliveryId);",
+              "  console.log('deliveryId set to', first.deliveryId, '—', first.deliveryNumber);",
+              "}"
+            ]}
+          }],
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -448,7 +460,7 @@
               "path": ["customer", "deliveries"],
               "query": [{ "key": "tab", "value": "upcoming" }]
             },
-            "description": "tab values: upcoming | past | rescheduled\n\nReturns: deliveries[], total, tabs{upcoming, past, rescheduled counts}\nEach delivery: deliveryId, deliveryNumber, status, description, deliveryDate, loadWeight, siteContact{name,phone}, deliveryCompany{name,contact,phone}, project{jobId,projectName}\n\nMock data (upcoming): 3 deliveries\n  CUST-DEL-002  in_transit   Secondary panels - Roof and wall cladding (2026-07-30)\n  CUST-DEL-001  scheduled    Primary Steel Frame - columns & rafters    (2026-08-10)\n  CUST-DEL-004  confirmed    Full structural package - office frame      (2026-08-20)"
+            "description": "tab values: upcoming | past | rescheduled\n\nReturns: deliveries[], total, tabs{upcoming, past, rescheduled counts}\nEach delivery: deliveryId, deliveryNumber, status, description, deliveryDate, loadWeight, siteContact{name,phone}, deliveryCompany{name,contact,phone}, loadAndBundle{loadId, bundleCount, truckNumber, totalWeight}, project{jobId,projectName}\n\nTest script auto-saves first delivery's _id to {{deliveryId}}.\n\nMock data (upcoming): 3 deliveries\n  CUST-DEL-002  in_transit   Secondary panels - Roof and wall cladding (2026-07-30)\n  CUST-DEL-001  scheduled    Primary Steel Frame - columns & rafters    (2026-08-10)\n  CUST-DEL-004  confirmed    Full structural package - office frame      (2026-08-20)"
           }
         },
         {
@@ -476,6 +488,73 @@
               "path": ["customer", "deliveries"],
               "query": [{ "key": "tab", "value": "rescheduled" }]
             }
+          }
+        },
+        {
+          "name": "Get Delivery Detail",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}"] },
+            "description": "Single delivery detail (\"Next Delivery\" card). Same shape as a Get Deliveries list item, including loadAndBundle{loadId, bundleCount, truckNumber, totalWeight}.\n\nRun 'Get Upcoming Deliveries' first to populate {{deliveryId}}."
+          }
+        },
+        {
+          "name": "Contact Driver",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-driver", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "contact-driver"] },
+            "description": "Returns: { name, phone } for the driver on the carrier assigned to this delivery.\n\nReturns 404 if no carrier has been selected yet or no phone is on file."
+          }
+        },
+        {
+          "name": "Contact Delivery Company",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-company", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "contact-company"] },
+            "description": "Returns: { name, phone, email } for the delivery/carrier company assigned to this delivery.\n\nReturns 404 if no carrier has been selected yet."
+          }
+        },
+        {
+          "name": "Send Confirmation Email",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/confirmation-email", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "confirmation-email"] },
+            "description": "Sends a delivery confirmation email to the logged-in customer's own email address.\n\nReturns: { message, sentTo }"
+          }
+        },
+        {
+          "name": "Add to Calendar (.ics)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/calendar", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "calendar"] },
+            "description": "Downloads a .ics calendar file for this delivery (Content-Type: text/calendar).\n\nReturns 400 if the delivery has no deliveryDate set yet.\n\nIn Postman, use 'Send and Download' to save the file."
+          }
+        },
+        {
+          "name": "Request Call Back",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/request-callback", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "request-callback"] },
+            "body": { "mode": "raw", "raw": "{\n  \"note\": \"Please call regarding the crane requirement at the site\"\n}" },
+            "description": "note is optional. Emails the project's assigned salesperson (if any) with the customer's contact info and note.\n\nReturns: { message }"
+          }
+        },
+        {
+          "name": "Download Info (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/download", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "download"] },
+            "description": "Downloads a PDF summary of the delivery (Content-Type: application/pdf), covering delivery info, site contact, delivery company, and load & bundle summary.\n\nIn Postman, use 'Send and Download' to save the file."
           }
         }
       ]

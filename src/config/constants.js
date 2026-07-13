@@ -148,6 +148,8 @@ const AUDIT_ACTIONS = {
   DELIVERY_CREATED:          'delivery.created',
   DELIVERY_EDITED:           'delivery.edited',
   DELIVERY_RESCHEDULED:      'delivery.rescheduled',
+  DELIVERY_CALLBACK_REQUESTED: 'delivery.callback_requested',
+  DELIVERY_CONFIRMATION_SENT: 'delivery.confirmation_sent',
   FREIGHT_BIDS_SENT:         'freight_bids.sent',
   FREIGHT_BID_SUBMITTED:     'freight_bid.submitted',
   ALL_FREIGHT_BIDS_SUBMITTED: 'freight_bids.all_submitted',

@@ -14,8 +14,13 @@ const DrawingDocument = require('../models/DrawingDocument')
 const FollowUp = require('../models/FollowUp')
 const Meeting = require('../models/Meeting')
 const AuditLog = require('../models/AuditLog')
+const User = require('../models/User')
 const { success, created, notFound, forbidden, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
+const { loadFreightLoadDetailsByLeadId } = require('../services/plant/freightLoadDetails.service')
+const { generateDeliveryInfoPdf } = require('../utils/exportDelivery')
+const { generateDeliveryIcs } = require('../utils/generateIcs')
+const { sendDeliveryConfirmationEmail, sendDeliveryCallbackRequestEmail } = require('../services/email/mailer')
 const bcrypt = require('bcryptjs')
 const env = require('../config/env')
 const auditService = require('../services/audit.service')
@@ -604,6 +609,69 @@ exports.getInvoiceStats = asyncHandler(async (req, res) => {
 
 // ── Delivery Schedule ─────────────────────────────────────────────────────────
 
+const buildLoadAndBundleSummary = (delivery, loadDetails) => {
+  const { bundlePlan, packingLists } = loadDetails || {}
+  const truckNumber = (packingLists || [])
+    .map(pl => pl.truckLabel || pl.truckNo)
+    .filter(Boolean)
+    .join(', ') || null
+
+  return {
+    loadId: bundlePlan?.planNumber || delivery.deliveryNumber || '',
+    bundleCount: bundlePlan?.totalBundles ?? null,
+    truckNumber,
+    totalWeight: bundlePlan?.totalWeight ?? delivery.loadWeight ?? null,
+  }
+}
+
+const mapDeliveryRow = (d, lead, carrier, loadDetails) => ({
+  deliveryId: d._id,
+  deliveryNumber: d.deliveryNumber,
+  status: d.status,
+  description: d.loadDescription || d.description || '',
+  deliveryDate: d.deliveryDate,
+  timings: d.timings || '',
+  pickupDate: d.pickupDate,
+  estimatedWeight: d.loadWeight || null,
+  loadingEquipment: d.loadingEquipment || [],
+  siteInstructions: d.specialRequirements || '',
+  specialNotes: d.additionalNotes || '',
+  siteContact: {
+    name: d.receivingPoc || '',
+    phone: d.pickupContactPhone || '',
+  },
+  deliveryCompany: carrier ? {
+    name: carrier.carrierName || '',
+    driver: carrier.contactName || '',
+    phone: carrier.phone || '',
+    email: carrier.email || '',
+  } : null,
+  loadAndBundle: buildLoadAndBundleSummary(d, loadDetails),
+  project: {
+    leadId: lead._id || d.leadId,
+    projectId: lead.jobId || '',
+    projectName: lead.projectName || '',
+  },
+})
+
+// Resolves { deliveryId, lead, delivery } and asserts the lead belongs to this customer
+const assertDeliveryOwner = async (req) => {
+  const delivery = await Delivery.findById(req.params.deliveryId).lean()
+  if (!delivery) return null
+  const lead = await Lead.findById(delivery.leadId).select('customerId jobId projectName').lean()
+  if (!lead || String(lead.customerId) !== String(req.customer._id)) return null
+  return { delivery, lead }
+}
+
+const getDeliveryCarrier = async (delivery) => {
+  if (!delivery.selectedCarrierBidId) return null
+  const bid = await FreightBid.findById(delivery.selectedCarrierBidId)
+    .select('_id carrierId')
+    .populate('carrierId', 'carrierName contactName phone email')
+    .lean()
+  return bid?.carrierId || null
+}
+
 exports.getDeliverySchedule = asyncHandler(async (req, res) => {
   const customerId = req.customer._id
   const { tab = 'upcoming' } = req.query
@@ -646,39 +714,19 @@ exports.getDeliverySchedule = asyncHandler(async (req, res) => {
     : []
   const bidMap = new Map(selectedBids.map(b => [String(b._id), b]))
 
+  const uniqueLeadIds = [...new Set(deliveries.map(d => String(d.leadId)))]
+  const loadDetailsEntries = await Promise.all(
+    uniqueLeadIds.map(async id => [id, await loadFreightLoadDetailsByLeadId(id)])
+  )
+  const loadDetailsByLead = new Map(loadDetailsEntries)
+
   const result = deliveries.map(d => {
     const lead = leadMap.get(String(d.leadId)) || {}
     const bid = d.selectedCarrierBidId ? bidMap.get(String(d.selectedCarrierBidId)) : null
     const carrier = bid?.carrierId || null
+    const loadDetails = loadDetailsByLead.get(String(d.leadId))
 
-    return {
-      deliveryId: d._id,
-      deliveryNumber: d.deliveryNumber,
-      status: d.status,
-      description: d.loadDescription || d.description || '',
-      deliveryDate: d.deliveryDate,
-      timings: d.timings || '',
-      pickupDate: d.pickupDate,
-      estimatedWeight: d.loadWeight || null,
-      loadingEquipment: d.loadingEquipment || [],
-      siteInstructions: d.specialRequirements || '',
-      specialNotes: d.additionalNotes || '',
-      siteContact: {
-        name: d.receivingPoc || '',
-        phone: d.pickupContactPhone || '',
-      },
-      deliveryCompany: carrier ? {
-        name: carrier.carrierName || '',
-        driver: carrier.contactName || '',
-        phone: carrier.phone || '',
-        email: carrier.email || '',
-      } : null,
-      project: {
-        leadId: lead._id || d.leadId,
-        projectId: lead.jobId || '',
-        projectName: lead.projectName || '',
-      },
-    }
+    return mapDeliveryRow(d, lead, carrier, loadDetails)
   })
 
   const upcomingCount = await Delivery.countDocuments({ leadId: { $in: leadIds }, deliveryDate: { $gte: now }, status: { $nin: ['draft', 'cancelled', 'delivered'] } })
@@ -690,6 +738,154 @@ exports.getDeliverySchedule = asyncHandler(async (req, res) => {
     total: result.length,
     tabs: { upcoming: upcomingCount, past: pastCount, rescheduled: rescheduledCount },
   })
+})
+
+// GET /deliveries/:deliveryId
+exports.getDeliveryDetail = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery, lead } = owned
+
+  const [carrier, loadDetails] = await Promise.all([
+    getDeliveryCarrier(delivery),
+    loadFreightLoadDetailsByLeadId(delivery.leadId),
+  ])
+
+  return success(res, { delivery: mapDeliveryRow(delivery, lead, carrier, loadDetails) })
+})
+
+// POST /deliveries/:deliveryId/contact-driver
+exports.contactDeliveryDriver = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery } = owned
+
+  const carrier = await getDeliveryCarrier(delivery)
+  if (!carrier || !carrier.phone) return notFound(res, 'Driver contact not available yet')
+
+  return success(res, { name: carrier.contactName || '', phone: carrier.phone || '' })
+})
+
+// POST /deliveries/:deliveryId/contact-company
+exports.contactDeliveryCompany = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery } = owned
+
+  const carrier = await getDeliveryCarrier(delivery)
+  if (!carrier) return notFound(res, 'Delivery company not available yet')
+
+  return success(res, { name: carrier.carrierName || '', phone: carrier.phone || '', email: carrier.email || '' })
+})
+
+// POST /deliveries/:deliveryId/confirmation-email
+exports.sendDeliveryConfirmation = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery, lead } = owned
+  const customer = await Customer.findById(req.customer._id).select('firstName lastName email').lean()
+
+  await sendDeliveryConfirmationEmail({
+    toEmail: req.customer.email,
+    customerName: customer ? `${customer.firstName} ${customer.lastName || ''}`.trim() : '',
+    projectName: lead.projectName || '',
+    jobId: lead.jobId || '',
+    deliveryNumber: delivery.deliveryNumber,
+    deliveryDate: delivery.deliveryDate,
+    timings: delivery.timings || '',
+    deliveryLocation: delivery.deliveryLocation || '',
+  })
+
+  await auditService.log({
+    type: 'delivery',
+    action: AUDIT_ACTIONS.DELIVERY_CONFIRMATION_SENT,
+    leadId: lead._id,
+    customerId: req.customer._id,
+    performedBy: req.customer._id,
+    metadata: { deliveryId: delivery._id, deliveryNumber: delivery.deliveryNumber },
+  })
+
+  return success(res, { message: 'Confirmation email sent', sentTo: req.customer.email })
+})
+
+// GET /deliveries/:deliveryId/calendar — "Add to Calendar" (.ics download)
+exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery, lead } = owned
+  if (!delivery.deliveryDate) return badRequest(res, 'Delivery does not have a scheduled date yet')
+
+  const ics = generateDeliveryIcs({
+    uid: delivery._id,
+    deliveryNumber: delivery.deliveryNumber,
+    deliveryDate: delivery.deliveryDate,
+    timings: delivery.timings,
+    deliveryLocation: delivery.deliveryLocation,
+    projectName: lead.projectName,
+    description: delivery.loadDescription || delivery.description || '',
+  })
+
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="delivery-${delivery.deliveryNumber || delivery._id}.ics"`)
+  return res.send(ics)
+})
+
+// POST /deliveries/:deliveryId/request-callback
+exports.requestDeliveryCallback = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery, lead } = owned
+  const { note } = req.body
+
+  const [fullLead, customer] = await Promise.all([
+    Lead.findById(lead._id).select('assignedSales').populate('assignedSales', 'name email').lean(),
+    Customer.findById(req.customer._id).select('firstName lastName email phone').lean(),
+  ])
+  const salesRep = fullLead?.assignedSales
+
+  if (salesRep?.email) {
+    await sendDeliveryCallbackRequestEmail({
+      toEmail: salesRep.email,
+      salesRepName: salesRep.name || '',
+      customerName: customer ? `${customer.firstName} ${customer.lastName || ''}`.trim() : '',
+      customerEmail: req.customer.email,
+      customerPhone: customer?.phone || '',
+      projectName: lead.projectName || '',
+      jobId: lead.jobId || '',
+      deliveryNumber: delivery.deliveryNumber,
+      note: note || '',
+    })
+  }
+
+  await auditService.log({
+    type: 'delivery',
+    action: AUDIT_ACTIONS.DELIVERY_CALLBACK_REQUESTED,
+    leadId: lead._id,
+    customerId: req.customer._id,
+    performedBy: req.customer._id,
+    metadata: { deliveryId: delivery._id, deliveryNumber: delivery.deliveryNumber, note: note || '' },
+  })
+
+  return success(res, { message: 'Call back requested. Our team will reach out shortly.' })
+})
+
+// GET /deliveries/:deliveryId/download — "Download Info (PDF)"
+exports.downloadDeliveryInfo = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery, lead } = owned
+
+  const [carrier, loadDetails] = await Promise.all([
+    getDeliveryCarrier(delivery),
+    loadFreightLoadDetailsByLeadId(delivery.leadId),
+  ])
+
+  const mapped = mapDeliveryRow(delivery, lead, carrier, loadDetails)
+  const buffer = await generateDeliveryInfoPdf(mapped)
+
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="delivery-${delivery.deliveryNumber || delivery._id}.pdf"`)
+  return res.send(buffer)
 })
 
 // ── Tax Report ────────────────────────────────────────────────────────────────

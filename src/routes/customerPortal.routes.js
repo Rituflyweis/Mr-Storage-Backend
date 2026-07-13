@@ -63,6 +63,13 @@ router.get('/payments/invoices',       ctrl.getPaymentInvoices)
 router.get('/payments/tax-report',     ctrl.getTaxReport)
 
 // Delivery Schedule
-router.get('/deliveries', ctrl.getDeliverySchedule)
+router.get('/deliveries',                                ctrl.getDeliverySchedule)
+router.get('/deliveries/:deliveryId',                    ctrl.getDeliveryDetail)
+router.get('/deliveries/:deliveryId/calendar',            ctrl.getDeliveryCalendar)
+router.get('/deliveries/:deliveryId/download',            ctrl.downloadDeliveryInfo)
+router.post('/deliveries/:deliveryId/contact-driver',     ctrl.contactDeliveryDriver)
+router.post('/deliveries/:deliveryId/contact-company',    ctrl.contactDeliveryCompany)
+router.post('/deliveries/:deliveryId/confirmation-email', ctrl.sendDeliveryConfirmation)
+router.post('/deliveries/:deliveryId/request-callback',   ctrl.requestDeliveryCallback)
 
 module.exports = router
