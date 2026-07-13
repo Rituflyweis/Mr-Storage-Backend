@@ -255,12 +255,25 @@ exports.getProject = asyncHandler(async (req, res) => {
     ? { totalAmount: paymentSchedules[0].totalAmount, payments: paymentSchedules[0].payments }
     : null
 
+  // Sibling projects (same order as the project list) for the prev/next nav button
+  const siblings = await Lead.find({ customerId: req.customer._id })
+    .select('jobId projectName')
+    .sort({ createdAt: -1 })
+    .lean()
+  const idx = siblings.findIndex(l => String(l._id) === String(leadId))
+  const prev = idx > 0 ? siblings[idx - 1] : null
+  const next = idx !== -1 && idx < siblings.length - 1 ? siblings[idx + 1] : null
+
   return success(res, {
     lead: enrichLeadDocument(lead),
     quotation,
     quoteSummary,
     invoices: invoicesWithSchedule,
     paymentSchedule: firstSchedule,
+    navigation: {
+      previous: prev ? { _id: prev._id, jobId: prev.jobId, projectName: prev.projectName } : null,
+      next:     next ? { _id: next._id, jobId: next.jobId, projectName: next.projectName } : null,
+    },
   })
 })
 

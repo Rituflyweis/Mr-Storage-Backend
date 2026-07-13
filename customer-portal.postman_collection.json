@@ -166,7 +166,7 @@
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
             "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}"] },
-            "description": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule"
+            "description": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule, navigation\n\nnavigation { previous, next } — sibling project { _id, jobId, projectName } in the customer's project list (same order as Get All Projects), for the prev/next project switcher button. null at either end of the list."
           }
         },
         {
