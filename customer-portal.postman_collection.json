@@ -281,6 +281,42 @@
       ]
     },
     {
+      "name": "📝 Project Quotation",
+      "item": [
+        {
+          "name": "Get Project Quotation",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/quotation", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "quotation"] },
+            "description": "Returns the latest Quotation document for this project (quotation tab detail view).\n\nReturns 404 if no quotation has been created for this project yet.\n\nstatus: draft | sent | accepted | rejected"
+          }
+        },
+        {
+          "name": "Approve Project Quotation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/quotation/approve", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "quotation", "approve"] },
+            "description": "Customer approves the latest quotation.\n\nSets status → accepted. Returns 400 if already accepted.\nReturns: { _id, status }"
+          }
+        },
+        {
+          "name": "Reject Project Quotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/quotation/reject", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "quotation", "reject"] },
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Price is higher than expected, please revise\"\n}" },
+            "description": "Customer rejects the latest quotation.\n\nSets status → rejected, optionally saves reason to clientNotes. Returns 400 if already rejected.\nReturns: { _id, status }"
+          }
+        }
+      ]
+    },
+    {
       "name": "📋 Project Activity & Notes",
       "item": [
         {
@@ -495,6 +531,15 @@
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
             "url": { "raw": "{{baseUrl}}/customer/payments/tax-report", "host": ["{{baseUrl}}"], "path": ["customer", "payments", "tax-report"] },
             "description": "Returns:\n  rows[] { date, invoiceNumber, projectId, projectName, buildingType, location, contractAmount, taxRate(%), taxDue }\n  summary { totalContractAmount, totalTaxDue }"
+          }
+        },
+        {
+          "name": "Get Project Financial Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/projects/{{leadId}}/payments/summary", "host": ["{{baseUrl}}"], "path": ["customer", "projects", "{{leadId}}", "payments", "summary"] },
+            "description": "Financial Summary card on project detail → payments tab.\n\nReturns: { totalPayment, totalPaid, outstandingBalance }\n\ntotalPayment       — sum of all invoice totalAmount for this project\ntotalPaid          — sum of invoices with status 'paid'\noutstandingBalance — totalPayment - totalPaid"
           }
         }
       ]
