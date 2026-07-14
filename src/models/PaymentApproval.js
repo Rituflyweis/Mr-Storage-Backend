@@ -1,13 +1,15 @@
 const mongoose = require('mongoose')
 
-const APPROVAL_STATUSES = ['pending', 'approved', 'rejected']
+const APPROVAL_STATUSES = ['pending', 'under_review', 'approved', 'disputed', 'rejected']
 const PAYMENT_CATEGORIES = ['vendor_payment', 'shipper_payment', 'equipment', 'other_expenses']
+const PAYEE_TYPES = ['vendor', 'shipper', 'department', 'carrier', 'delivery_company']
+const LINKED_TYPES = ['delivery', 'freight_bid']
 
 const PaymentApprovalSchema = new mongoose.Schema(
   {
     paymentId:    { type: String, required: true, unique: true, trim: true },
     payee:        { type: String, required: true, trim: true },
-    payeeType:    { type: String, enum: ['vendor', 'shipper', 'department'], default: 'vendor' },
+    payeeType:    { type: String, enum: PAYEE_TYPES, default: 'vendor' },
     category:     { type: String, enum: PAYMENT_CATEGORIES, required: true },
     amount:       { type: Number, required: true },
     requestedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -18,6 +20,13 @@ const PaymentApprovalSchema = new mongoose.Schema(
     reviewedAt:   { type: Date, default: null },
     reviewNotes:  { type: String, default: '', trim: true },
     leadId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null },
+
+    // Invoice Management view (Vendor/Carrier/Delivery Company sub-tabs)
+    invoiceNumber: { type: String, default: '', trim: true },
+    dueDate:       { type: Date, default: null },
+    linkedType:    { type: String, enum: LINKED_TYPES, default: null },
+    linkedId:      { type: mongoose.Schema.Types.ObjectId, default: null },
+    paidAt:        { type: Date, default: null },
   },
   { timestamps: true }
 )
@@ -25,5 +34,8 @@ const PaymentApprovalSchema = new mongoose.Schema(
 PaymentApprovalSchema.index({ status: 1 })
 PaymentApprovalSchema.index({ requestedBy: 1 })
 PaymentApprovalSchema.index({ createdAt: -1 })
+PaymentApprovalSchema.index({ payeeType: 1 })
 
 module.exports = mongoose.model('PaymentApproval', PaymentApprovalSchema)
+module.exports.APPROVAL_STATUSES = APPROVAL_STATUSES
+module.exports.PAYEE_TYPES = PAYEE_TYPES

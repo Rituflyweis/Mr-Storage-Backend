@@ -438,6 +438,250 @@
           }
         }
       ]
+    },
+    {
+      "name": "Financial - Delivery & Freight",
+      "item": [
+        {
+          "name": "Get Delivery Finance (dashboard card)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/delivery-finance", "host": ["{{baseUrl}}"], "path": ["account", "financial", "delivery-finance"] }
+          },
+          "_postman_note": "Returns: freightSpend, pendingCarrierPayments, freightSavings"
+        },
+        {
+          "name": "Get Freight Costs Overview",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/freight-costs", "host": ["{{baseUrl}}"], "path": ["account", "financial", "freight-costs"] }
+          },
+          "_postman_note": "Returns: totalFreightCost, activeCarriers, avgCostPerDelivery, pendingInvoices, monthlyFreightCostTrend[], costDistributionByCarrier[], carrierCostAnalysis[], recentFreightCosts[]"
+        },
+        {
+          "name": "Get Logistics Costs",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/financial/logistics-costs",
+              "host": ["{{baseUrl}}"], "path": ["account", "financial", "logistics-costs"],
+              "query": [
+                { "key": "status", "value": "", "disabled": true, "description": "pending | under_review | approved | disputed | rejected" },
+                { "key": "project", "value": "", "disabled": true, "description": "leadId" }
+              ]
+            }
+          },
+          "_postman_note": "Returns: totalLogisticsCost, totalSavings, pendingInvoices, disputedItems, freightAndDeliveryCosts[] (carrier + delivery_company PaymentApproval records)"
+        },
+        {
+          "name": "Get Cost Variance Analysis",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/financial/cost-variance",
+              "host": ["{{baseUrl}}"], "path": ["account", "financial", "cost-variance"],
+              "query": [{ "key": "project", "value": "", "disabled": true, "description": "leadId" }, { "key": "status", "value": "", "disabled": true, "description": "over_budget | under_budget | on_budget" }]
+            }
+          },
+          "_postman_note": "Returns: stats{netVariance, overBudget, underBudget, onBudget}, highVarianceAlerts[], awardedVsActualTrend[], varianceDetails[]"
+        },
+        {
+          "name": "Get Awarded Freight Loads",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/awarded-loads", "host": ["{{baseUrl}}"], "path": ["account", "financial", "awarded-loads"] }
+          },
+          "_postman_note": "Sourced from FreightBid where status='selected'. Returns: stats{totalAwarded, totalLoads, activeLoads, totalSavings}, loads[] { project, carrier, schedule, bidDetails{originalBidAmount, awardedAmount, savings} }"
+        },
+        {
+          "name": "Get Project Financial Summary (list projects)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/project-summary", "host": ["{{baseUrl}}"], "path": ["account", "financial", "project-summary"] }
+          },
+          "_postman_note": "No leadId query param -> returns { projects[] } for the Select Project dropdown"
+        },
+        {
+          "name": "Get Project Financial Summary (by project)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/financial/project-summary?leadId={{leadId}}",
+              "host": ["{{baseUrl}}"], "path": ["account", "financial", "project-summary"],
+              "query": [{ "key": "leadId", "value": "{{leadId}}" }]
+            }
+          },
+          "_postman_note": "Returns: summary{totalFreightCost, totalVendorCost, totalDeliveryCost, totalLogisticsCost, savingsFromBidding, costOverrun}, costDistributionByType[], costTrendOverTime[], costBreakdown[], monthlyCostComparison[]"
+        }
+      ]
+    },
+    {
+      "name": "Financial - Payment Approvals & Status",
+      "item": [
+        {
+          "name": "Get Payment Approvals Queue",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/financial/payment-approvals",
+              "host": ["{{baseUrl}}"], "path": ["account", "financial", "payment-approvals"],
+              "query": [
+                { "key": "status", "value": "", "disabled": true, "description": "pending | under_review | approved | disputed | rejected" },
+                { "key": "payeeType", "value": "", "disabled": true, "description": "vendor | carrier | delivery_company | shipper | department" },
+                { "key": "search", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "_postman_note": "Returns: stats{pendingApproval, underReview, approved, disputed}, approvals[] { invoiceType, companyName, invoiceNumber, project, amount, dueDate, linkedType, status }"
+        },
+        {
+          "name": "Review Payment Approval (approve/reject/dispute)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/account/financial/payment-approvals/:approvalId/review", "host": ["{{baseUrl}}"], "path": ["account", "financial", "payment-approvals", ":approvalId", "review"], "variable": [{ "key": "approvalId", "value": "" }] },
+            "body": { "mode": "raw", "raw": "{\n  \"action\": \"approved\",\n  \"reviewNotes\": \"Verified against delivery confirmation\"\n}" }
+          },
+          "_postman_note": "action: under_review | approved | disputed | rejected"
+        },
+        {
+          "name": "Get Payment Status Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/financial/payment-status",
+              "host": ["{{baseUrl}}"], "path": ["account", "financial", "payment-status"],
+              "query": [{ "key": "type", "value": "", "disabled": true, "description": "vendor | carrier" }, { "key": "search", "value": "", "disabled": true }]
+            }
+          },
+          "_postman_note": "Returns: stats{totalOutstanding, totalPaid, vendorPayments, carrierPayments}, overduePayments[], dueSoon[], paymentHistory[]"
+        }
+      ]
+    },
+    {
+      "name": "Financial - Invoice Management",
+      "item": [
+        {
+          "name": "Get Vendor Invoices",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/invoices/vendor", "host": ["{{baseUrl}}"], "path": ["account", "financial", "invoices", "vendor"] }
+          },
+          "_postman_note": "Returns: stats{totalPayable, pendingAmount, paidAmount}, invoices[]"
+        },
+        {
+          "name": "Get Carrier Invoices",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/invoices/carrier", "host": ["{{baseUrl}}"], "path": ["account", "financial", "invoices", "carrier"] }
+          }
+        },
+        {
+          "name": "Get Delivery Company Invoices",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/invoices/delivery-company", "host": ["{{baseUrl}}"], "path": ["account", "financial", "invoices", "delivery-company"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Financial - Analytics Reporting",
+      "item": [
+        {
+          "name": "Get Analytics Reporting",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/account/financial/reporting",
+              "host": ["{{baseUrl}}"], "path": ["account", "financial", "reporting"],
+              "query": [{ "key": "startDate", "value": "", "disabled": true }, { "key": "endDate", "value": "", "disabled": true }]
+            }
+          },
+          "_postman_note": "Returns: stats{totalFreightSavings, avgSavingsPct, projectFreightCosts, deliverySpend, totalDeliveries}, freightSavingsReport[], projectFreightCostSummary[], monthlyCostTrendAnalysis[]"
+        }
+      ]
+    },
+    {
+      "name": "Master Data (read-only)",
+      "item": [
+        {
+          "name": "Get Vendors Directory",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/master-data/vendors", "host": ["{{baseUrl}}"], "path": ["account", "financial", "master-data", "vendors"] }
+          }
+        },
+        {
+          "name": "Get Carriers Directory",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/master-data/carriers", "host": ["{{baseUrl}}"], "path": ["account", "financial", "master-data", "carriers"] }
+          }
+        },
+        {
+          "name": "Get Delivery Companies Directory",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/financial/master-data/delivery-companies", "host": ["{{baseUrl}}"], "path": ["account", "financial", "master-data", "delivery-companies"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Communication (internal team chat)",
+      "item": [
+        {
+          "name": "Get Channels (departments + direct)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/communication/channels", "host": ["{{baseUrl}}"], "path": ["account", "communication", "channels"] }
+          },
+          "_postman_note": "Returns: departments[] { channelId (role key), name, unread, lastMessage }, direct[] { channelId (userId), name, role, unread, lastMessage }. Real-time via Socket.io /admin namespace: events join_team_channel, team_message, new_team_message, team_typing_start/stop."
+        },
+        {
+          "name": "Get Channel Messages",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/account/communication/channels/department/account/messages", "host": ["{{baseUrl}}"], "path": ["account", "communication", "channels", "department", "account", "messages"] }
+          },
+          "_postman_note": "channelType: department (channelId = role key: admin|sales|construction|plant|account) | direct (channelId = other user's _id)"
+        },
+        {
+          "name": "Send Channel Message (REST fallback)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/account/communication/channels/department/account/messages", "host": ["{{baseUrl}}"], "path": ["account", "communication", "channels", "department", "account", "messages"] },
+            "body": { "mode": "raw", "raw": "{\n  \"content\": \"Q3 freight invoices are ready for review.\"\n}" }
+          },
+          "_postman_note": "Primary send path is the socket event 'team_message'; this REST endpoint is a fallback that also broadcasts to the socket room."
+        }
+      ]
     }
   ]
 }

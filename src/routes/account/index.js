@@ -12,5 +12,7 @@ router.use('/tax',       ...guard, require('./tax.routes'))
 router.use('/analytics', ...guard, require('./analytics.routes'))
 router.use('/payments',  ...guard, require('./payments.routes'))
 router.use('/reports',   ...guard, require('./reports.routes'))
+router.use('/financial', ...guard, require('./financial.routes'))
+router.use('/communication', ...guard, require('./communication.routes'))
 
 module.exports = router
