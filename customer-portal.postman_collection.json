@@ -496,7 +496,7 @@
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
             "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}"] },
-            "description": "Single delivery detail (\"Next Delivery\" card). Same shape as a Get Deliveries list item, including loadAndBundle{loadId, bundleCount, truckNumber, totalWeight}.\n\nRun 'Get Upcoming Deliveries' first to populate {{deliveryId}}."
+            "description": "Single delivery detail (\"Next Delivery\" card / \"Full Delivery Instructions\" dialog). Same shape as a Get Deliveries list item, including:\n  loadAndBundle{loadId, bundleCount, truckNumber, totalWeight}\n  packingListSummary{totalParts, bundleTypes, material}\n  receivingPoc / siteContact {name, phone, email} (same underlying contact — the model only has one real site-contact field)\n  deliveryTeam / deliveryCompany {company/name, driver, phone, email}\n\nRun 'Get Upcoming Deliveries' first to populate {{deliveryId}}."
           }
         },
         {
@@ -505,7 +505,20 @@
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
             "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-driver", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "contact-driver"] },
-            "description": "Returns: { name, phone } for the driver on the carrier assigned to this delivery.\n\nReturns 404 if no carrier has been selected yet or no phone is on file."
+            "description": "Powers the \"Contact Driver\" dialog.\n\nReturns: { delivery{title,deliveryNumber,status}, driver{name,phone}, dispatcher{name,phone}, siteContact{name,phone} }\n\nNote: driver phone and dispatcher phone both come from the same FreightCarrier.phone field — there's no separate personal-cell-vs-office-line field in the data model today.\n\nReturns 404 if no carrier has been selected yet or no phone is on file."
+          }
+        },
+        {
+          "name": "Send SMS to Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-driver/sms", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "contact-driver", "sms"] },
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"\"\n}" },
+            "description": "\"Send SMS\" button in the Contact Driver dialog. message is optional — a sensible default is used if omitted.\n\nNOTE: No SMS provider (Twilio) is configured yet. This returns success and logs the message server-side (provider: 'stub') so the dialog works end-to-end; real delivery will start once Twilio credentials are added.\n\nReturns: { message, sms }"
           }
         },
         {
@@ -514,16 +527,42 @@
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
             "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-company", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "contact-company"] },
-            "description": "Returns: { name, phone, email } for the delivery/carrier company assigned to this delivery.\n\nReturns 404 if no carrier has been selected yet."
+            "description": "Powers the \"Contact Delivery Company\" dialog.\n\nReturns: { delivery{title,deliveryNumber,status}, managerName, managerPhone, companyName }\n\nReturns 404 if no carrier has been selected yet."
+          }
+        },
+        {
+          "name": "Send SMS to Delivery Company",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-company/sms", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "contact-company", "sms"] },
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"\"\n}" },
+            "description": "\"Send SMS\" button in the Contact Delivery Company dialog. Same stub-SMS behavior as Send SMS to Driver — see that request's note.\n\nReturns: { message, sms }"
           }
         },
         {
           "name": "Send Confirmation Email",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
             "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/confirmation-email", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "confirmation-email"] },
-            "description": "Sends a delivery confirmation email to the logged-in customer's own email address.\n\nReturns: { message, sentTo }"
+            "body": { "mode": "raw", "raw": "{\n  \"toEmail\": \"\"\n}" },
+            "description": "toEmail is optional — defaults to the logged-in customer's own email (matches the pre-filled, editable \"Send to\" field in the dialog).\n\nReturns: { message, sentTo }"
+          }
+        },
+        {
+          "name": "Get Calendar Event Details",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/calendar/details", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "calendar", "details"] },
+            "description": "Powers the \"Add to Calendar\" dialog's content (event card, Google/Outlook deep links, copy-to-clipboard text). This is JSON, not a file download — use 'Add to Calendar (.ics)' below for the actual downloadable file.\n\nReturns: { title, description, location, startDate, endDate, googleCalendarUrl, outlookCalendarUrl, icsDownloadUrl, plainText }\n\nReturns 400 if the delivery has no deliveryDate set yet."
           }
         },
         {
@@ -544,17 +583,35 @@
               { "key": "Content-Type",  "value": "application/json" }
             ],
             "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/request-callback", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "request-callback"] },
-            "body": { "mode": "raw", "raw": "{\n  \"note\": \"Please call regarding the crane requirement at the site\"\n}" },
-            "description": "note is optional. Emails the project's assigned salesperson (if any) with the customer's contact info and note.\n\nReturns: { message }"
+            "body": { "mode": "raw", "raw": "{\n  \"note\": \"Please call regarding the crane requirement at the site\",\n  \"priority\": \"high\",\n  \"reason\": \"reschedule request\"\n}" },
+            "description": "note, priority, reason are all optional. priority: low | medium | high | urgent (drives the returned eta message, matching the dialog's dynamic \"We will contact you within...\" text). Emails the project's assigned salesperson (if any) with the customer's contact info, reason, priority and note.\n\nReturns: { message, eta }"
           }
         },
         {
-          "name": "Download Info (PDF)",
+          "name": "Download Delivery Details (PDF)",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
             "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/download", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "download"] },
-            "description": "Downloads a PDF summary of the delivery (Content-Type: application/pdf), covering delivery info, site contact, delivery company, and load & bundle summary.\n\nIn Postman, use 'Send and Download' to save the file."
+            "description": "\"Delivery Details PDF\" in the Download Documents dialog (Content-Type: application/pdf) — delivery info, site contact, delivery company, load & bundle summary.\n\nIn Postman, use 'Send and Download' to save the file."
+          }
+        },
+        {
+          "name": "Download Packing List (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/download/packing-list", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "download", "packing-list"] },
+            "description": "\"Packing List\" PDF in the Download Documents dialog — packing list summary, trucks, and bundles.\n\nIn Postman, use 'Send and Download' to save the file."
+          }
+        },
+        {
+          "name": "Download Instructions (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/download/instructions", "host": ["{{baseUrl}}"], "path": ["customer", "deliveries", "{{deliveryId}}", "download", "instructions"] },
+            "description": "\"Instructions\" PDF in the Download Documents dialog — delivery details, site instructions, required equipment, special notes, and contacts.\n\nFrontend triggers all three download requests above for the dialog's \"Download All\" button (no separate combined/zip endpoint).\n\nIn Postman, use 'Send and Download' to save the file."
           }
         }
       ]

@@ -65,6 +65,7 @@ const DeliverySchema = new mongoose.Schema(
     timings: { type: String, default: '' },
     receivingPoc: { type: String, default: '' },
     pickupContactPhone: { type: String, default: '' },
+    receivingPocEmail: { type: String, default: '' },
     specialRequirements: { type: String, default: '' },
     additionalNotes: { type: String, default: '' },
     rescheduleHistory: {
