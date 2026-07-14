@@ -60,6 +60,7 @@ router.get('/payments/stats',          ctrl.getPaymentStats)
 router.get('/payments/invoice-stats',  ctrl.getInvoiceStats)
 router.get('/payments',                ctrl.getPayments)
 router.get('/payments/invoices',       ctrl.getPaymentInvoices)
+router.get('/payments/invoices/:invoiceId', ctrl.getPaymentInvoiceDetail)
 router.get('/payments/tax-report',     ctrl.getTaxReport)
 
 // Delivery Schedule

@@ -561,6 +561,26 @@ exports.getPaymentInvoices = asyncHandler(async (req, res) => {
   return success(res, { projects })
 })
 
+// GET /payments/invoices/:invoiceId — single invoice detail (customer-scoped equivalent of GET /api/invoices/:invoiceId)
+exports.getPaymentInvoiceDetail = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId)
+    .populate('createdBy', 'name')
+    .populate('paidBy', 'name')
+    .lean()
+  if (!invoice) return notFound(res, 'Invoice not found')
+  if (String(invoice.customerId) !== String(req.customer._id)) return forbidden(res, 'This invoice does not belong to your account')
+
+  const [lead, paymentSchedule] = await Promise.all([
+    Lead.findById(invoice.leadId).select('projectName jobId buildingType location').lean(),
+    PaymentSchedule.findOne({ leadId: invoice.leadId }).lean(),
+  ])
+
+  return success(res, {
+    invoice: { ...invoice, dueDate: computeDueDate(invoice), project: lead || null },
+    paymentSchedule,
+  })
+})
+
 // GET /payments/invoice-stats  — Figma cards: Total Project Value, Pending Amount, Amount Paid, Upcoming Invoice Due
 exports.getInvoiceStats = asyncHandler(async (req, res) => {
   const customerId = req.customer._id
