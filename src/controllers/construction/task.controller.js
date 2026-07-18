@@ -2,6 +2,7 @@ const Task = require('../../models/Task')
 const WorkLog = require('../../models/WorkLog')
 const Lead = require('../../models/Lead')
 const User = require('../../models/User')
+const Milestone = require('../../models/Milestone')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -142,4 +143,95 @@ exports.getWorkLogs = asyncHandler(async (req, res) => {
   ])
 
   return success(res, { logs, total })
+})
+
+// ── Progress Tracker (Tasks & Progress screen) ───────────────────────────────
+
+// GET /tasks/stats — top stat cards: Total Tasks, Completed, In Progress, Overdue
+exports.getTaskStats = asyncHandler(async (req, res) => {
+  const stats = {
+    total: await Task.countDocuments({}),
+    completed: await Task.countDocuments({ status: 'done' }),
+    inProgress: await Task.countDocuments({ status: 'in_progress' }),
+    overdue: await Task.countDocuments({ dueDate: { $lt: new Date() }, status: { $ne: 'done' } }),
+  }
+  return success(res, { stats })
+})
+
+// GET /projects/:leadId/progress — Progress Tracker tab for a single project
+exports.getProjectProgress = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId).select('projectName jobId endDate plannedStartDate').lean()
+  if (!lead) return notFound(res, 'Project not found')
+
+  const [tasks, milestones] = await Promise.all([
+    Task.find({ leadId: lead._id }).select('status').lean(),
+    Milestone.find({ leadId: lead._id }).sort({ order: 1, targetDate: 1 }).lean(),
+  ])
+
+  const completed = tasks.filter(t => t.status === 'done').length
+  const inProgress = tasks.filter(t => t.status === 'in_progress').length
+  const pending = tasks.filter(t => t.status === 'todo').length
+  const total = tasks.length
+
+  const now = new Date()
+  const plannedCompletion = lead.endDate || null
+  const currentEstimate = plannedCompletion // no separate "re-forecast" field on Lead today; mirrors planned until one exists
+  const timelineStatus = plannedCompletion && new Date(plannedCompletion) < now && completed < total ? 'Delayed' : 'On Track'
+
+  return success(res, {
+    project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId },
+    taskProgress: {
+      completed, inProgress, pending, total,
+      completedFraction: `${completed}/${total}`,
+      completedPct: total > 0 ? Math.round((completed / total) * 100) : 0,
+    },
+    timeline: {
+      plannedCompletion,
+      currentEstimate,
+      status: plannedCompletion ? timelineStatus : 'Unscheduled',
+    },
+    milestones: milestones.map(m => ({
+      milestoneId: m._id,
+      title: m.title,
+      status: m.status,
+      targetDate: m.targetDate,
+      completedAt: m.completedAt,
+    })),
+  })
+})
+
+// POST /projects/:leadId/milestones
+exports.createMilestone = asyncHandler(async (req, res) => {
+  const { title, targetDate, order } = req.body
+  if (!title) return badRequest(res, 'title is required')
+
+  const lead = await Lead.findById(req.params.leadId).select('_id').lean()
+  if (!lead) return notFound(res, 'Project not found')
+
+  const milestone = await Milestone.create({
+    leadId: req.params.leadId,
+    title,
+    targetDate: targetDate || null,
+    order: order ?? 0,
+    createdBy: req.user._id,
+  })
+
+  return success(res, { milestone }, 'Milestone created')
+})
+
+// PUT /milestones/:milestoneId
+exports.updateMilestone = asyncHandler(async (req, res) => {
+  const milestone = await Milestone.findById(req.params.milestoneId)
+  if (!milestone) return notFound(res, 'Milestone not found')
+
+  const { title, status, targetDate } = req.body
+  if (title !== undefined) milestone.title = title
+  if (targetDate !== undefined) milestone.targetDate = targetDate || null
+  if (status !== undefined) {
+    milestone.status = status
+    milestone.completedAt = status === 'completed' ? new Date() : null
+  }
+
+  await milestone.save()
+  return success(res, { milestone }, 'Milestone updated')
 })

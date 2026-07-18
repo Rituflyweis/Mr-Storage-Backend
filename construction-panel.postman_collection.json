@@ -10,7 +10,8 @@
     { "key": "token", "value": "", "type": "string" },
     { "key": "leadId", "value": "", "type": "string" },
     { "key": "taskId", "value": "", "type": "string" },
-    { "key": "deliveryId", "value": "", "type": "string" }
+    { "key": "deliveryId", "value": "", "type": "string" },
+    { "key": "milestoneId", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -160,6 +161,15 @@
       "name": "Tasks",
       "item": [
         {
+          "name": "Get Task Stats (top cards)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/construction/tasks/stats", "host": ["{{baseUrl}}"], "path": ["construction", "tasks", "stats"] }
+          },
+          "_postman_note": "\"Tasks & Progress\" screen top stat cards: Total Tasks, Completed, In Progress, Overdue.\n\nReturns: stats{total, completed, inProgress, overdue}"
+        },
+        {
           "name": "Get Tasks",
           "request": {
             "method": "GET",
@@ -228,6 +238,49 @@
               "host": ["{{baseUrl}}"],
               "path": ["construction", "tasks", "{{taskId}}"]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Progress Tracker",
+      "item": [
+        {
+          "name": "Get Project Progress",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["const r = pm.response.json();\nconst first = r.data?.milestones?.[0];\nif (first?.milestoneId) pm.collectionVariables.set('milestoneId', first.milestoneId);"] }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/construction/projects/{{leadId}}/progress", "host": ["{{baseUrl}}"], "path": ["construction", "projects", "{{leadId}}", "progress"] }
+          },
+          "_postman_note": "\"Progress Tracker\" tab for a single project.\n\nReturns:\n  project{leadId,projectName,jobId}\n  taskProgress{completed,inProgress,pending,total,completedFraction,completedPct}\n  timeline{plannedCompletion (Lead.endDate), currentEstimate, status: On Track|Delayed|Unscheduled}\n  milestones[]{milestoneId,title,status,targetDate,completedAt}\n\nTest script auto-saves the first milestone's id to {{milestoneId}}."
+        },
+        {
+          "name": "Create Milestone",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/construction/projects/{{leadId}}/milestones", "host": ["{{baseUrl}}"], "path": ["construction", "projects", "{{leadId}}", "milestones"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Final Inspection\",\n  \"targetDate\": \"2026-08-15\",\n  \"order\": 4\n}" }
+          }
+        },
+        {
+          "name": "Update Milestone",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/construction/milestones/{{milestoneId}}", "host": ["{{baseUrl}}"], "path": ["construction", "milestones", "{{milestoneId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"completed\"\n}" },
+            "description": "status: pending | in_progress | completed. Setting status to 'completed' auto-stamps completedAt."
           }
         }
       ]
