@@ -35,8 +35,11 @@ const DELIVERY_STATUS_TRANSITIONS = {
   carrier_selected: ['scheduled', 'confirmed', 'in_transit', 'delayed', 'cancelled'],
   scheduled: ['confirmed', 'in_transit', 'delayed', 'cancelled'],
   confirmed: ['in_transit', 'delayed', 'cancelled'],
-  in_transit: ['delivered', 'delayed', 'cancelled'],
+  in_transit: ['staged', 'delivered', 'delayed', 'cancelled'],
   delayed: ['scheduled', 'confirmed', 'in_transit', 'delivered', 'cancelled'],
+  staged: ['delivered', 'partial_received', 'received', 'cancelled'],
+  delivered: ['partial_received', 'received'],
+  partial_received: ['received'],
 }
 
 const DELIVERY_RESCHEDULE_BLOCKED_STATUSES = new Set(['cancelled', 'delivered'])

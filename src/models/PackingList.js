@@ -38,6 +38,13 @@ const PackingListSchema = new mongoose.Schema(
       index: true,
     },
     notes: { type: String, default: '' },
+
+    actualWeight: { type: Number, default: null },
+    weightVerified: { type: Boolean, default: false },
+    loadingVerified: { type: Boolean, default: false },
+    verifiedAt: { type: Date, default: null },
+    verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    dispatchedAt: { type: Date, default: null },
   },
   { timestamps: true }
 )

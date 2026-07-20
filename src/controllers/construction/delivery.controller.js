@@ -125,6 +125,25 @@ exports.markPartialReceived = asyncHandler(async (req, res) => {
   return success(res, { deliveryId: delivery._id, status: 'in_transit' }, 'Marked as partial received')
 })
 
+exports.updateSiteContact = asyncHandler(async (req, res) => {
+  const { contactName, contactTitle, phone, email, availableHours, notes } = req.body
+
+  const delivery = await Delivery.findById(req.params.deliveryId)
+  if (!delivery) return notFound(res, 'Delivery not found')
+
+  delivery.siteContact = {
+    contactName: contactName ?? delivery.siteContact?.contactName ?? '',
+    contactTitle: contactTitle ?? delivery.siteContact?.contactTitle ?? '',
+    phone: phone ?? delivery.siteContact?.phone ?? '',
+    email: email ?? delivery.siteContact?.email ?? '',
+    availableHours: availableHours ?? delivery.siteContact?.availableHours ?? '',
+    notes: notes ?? delivery.siteContact?.notes ?? '',
+  }
+  await delivery.save()
+
+  return success(res, { deliveryId: delivery._id, siteContact: delivery.siteContact }, 'Site contact updated')
+})
+
 exports.scanBundle = asyncHandler(async (req, res) => {
   const { bundleId } = req.body
   if (!bundleId) return badRequest(res, 'bundleId is required')

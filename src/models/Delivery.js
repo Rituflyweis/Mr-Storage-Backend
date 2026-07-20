@@ -90,6 +90,14 @@ const DeliverySchema = new mongoose.Schema(
       ref: 'FreightBid',
       default: null,
     },
+    siteContact: {
+      contactName: { type: String, default: '' },
+      contactTitle: { type: String, default: '' },
+      phone: { type: String, default: '' },
+      email: { type: String, default: '' },
+      availableHours: { type: String, default: '' },
+      notes: { type: String, default: '' },
+    },
   },
   { timestamps: true }
 )

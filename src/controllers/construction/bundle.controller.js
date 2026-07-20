@@ -1,7 +1,7 @@
 const Bundle = require('../../models/Bundle')
 const PackingList = require('../../models/PackingList')
 const Lead = require('../../models/Lead')
-const { success, notFound } = require('../../utils/apiResponse')
+const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
 exports.getBundleLabels = asyncHandler(async (req, res) => {
@@ -31,11 +31,11 @@ exports.getBundleLabels = asyncHandler(async (req, res) => {
 
   const stats = {
     totalBundles: await Bundle.countDocuments({}),
-    labelsPrinted: await Bundle.countDocuments({ status: { $in: ['assigned_to_truck', 'dispatched'] } }),
-    labelsPending: await Bundle.countDocuments({ status: { $in: ['pending', 'ready'] } }),
+    labelsPrinted: await Bundle.countDocuments({ labelPrinted: true }),
+    labelsPending: await Bundle.countDocuments({ labelPrinted: false }),
     labelsPrintedToday: await Bundle.countDocuments({
-      status: { $in: ['assigned_to_truck', 'dispatched'] },
-      updatedAt: { $gte: new Date(now.toDateString()) },
+      labelPrinted: true,
+      labelPrintedAt: { $gte: new Date(now.toDateString()) },
     }),
   }
 
@@ -48,6 +48,7 @@ exports.getBundleLabels = asyncHandler(async (req, res) => {
     totalWeight: b.totalWeight,
     maxLengthFeet: b.maxLengthFeet,
     status: b.status,
+    labelPrinted: b.labelPrinted || false,
     packingListId: b.packingListId,
     project: b.bundlePlanId?.leadId
       ? {
@@ -59,6 +60,21 @@ exports.getBundleLabels = asyncHandler(async (req, res) => {
   }))
 
   return success(res, { bundles: rows, total, stats })
+})
+
+exports.printBundleLabels = asyncHandler(async (req, res) => {
+  const { bundleIds } = req.body
+  if (!Array.isArray(bundleIds) || !bundleIds.length) {
+    return badRequest(res, 'bundleIds is required')
+  }
+
+  const now = new Date()
+  await Bundle.updateMany(
+    { _id: { $in: bundleIds } },
+    { $set: { labelPrinted: true, labelPrintedAt: now } }
+  )
+
+  return success(res, { bundleIds, labelPrinted: true, labelPrintedAt: now }, 'Labels printed')
 })
 
 exports.getBundleScanHistory = asyncHandler(async (req, res) => {
@@ -202,4 +218,207 @@ exports.getDispatchVerification = asyncHandler(async (req, res) => {
   }))
 
   return success(res, { loads: rows, total, stats })
+})
+
+exports.reprintBundleLabel = asyncHandler(async (req, res) => {
+  const bundle = await Bundle.findById(req.params.bundleId)
+  if (!bundle) return notFound(res, 'Bundle not found')
+
+  bundle.labelPrinted = true
+  bundle.labelPrintedAt = new Date()
+  await bundle.save()
+
+  return success(res, { bundleId: bundle._id, labelPrinted: true }, 'Label reprinted')
+})
+
+exports.getBundleDetail = asyncHandler(async (req, res) => {
+  const bundle = await Bundle.findById(req.params.bundleId)
+    .populate({
+      path: 'bundlePlanId',
+      select: 'leadId',
+      populate: { path: 'leadId', select: 'projectName jobId location' },
+    })
+    .populate('packingListId', 'packingListNo truckLabel truckType deliveryLocation')
+    .lean()
+
+  if (!bundle) return notFound(res, 'Bundle not found')
+
+  return success(res, {
+    bundle: {
+      bundleId: bundle._id,
+      bundleNo: bundle.bundleNo,
+      bundleType: bundle.bundleType,
+      title: bundle.title,
+      items: bundle.items || [],
+      totalQty: bundle.totalQty,
+      totalWeight: bundle.totalWeight,
+      maxLengthFeet: bundle.maxLengthFeet,
+      status: bundle.status,
+      labelPrinted: bundle.labelPrinted || false,
+      verified: bundle.verified || false,
+      mismatchNotes: bundle.mismatchNotes || '',
+      project: bundle.bundlePlanId?.leadId
+        ? {
+            leadId: bundle.bundlePlanId.leadId._id,
+            projectName: bundle.bundlePlanId.leadId.projectName,
+            jobId: bundle.bundlePlanId.leadId.jobId,
+          }
+        : null,
+      packingList: bundle.packingListId || null,
+    },
+  })
+})
+
+exports.verifyBundle = asyncHandler(async (req, res) => {
+  const bundle = await Bundle.findById(req.params.bundleId)
+  if (!bundle) return notFound(res, 'Bundle not found')
+
+  bundle.verified = true
+  bundle.verifiedAt = new Date()
+  await bundle.save()
+
+  return success(res, { bundleId: bundle._id, verified: true }, 'Bundle verified')
+})
+
+exports.markBundleStaged = asyncHandler(async (req, res) => {
+  const bundle = await Bundle.findById(req.params.bundleId)
+  if (!bundle) return notFound(res, 'Bundle not found')
+
+  bundle.status = 'staged'
+  await bundle.save()
+
+  return success(res, { bundleId: bundle._id, status: bundle.status }, 'Bundle marked staged')
+})
+
+exports.markBundleLoaded = asyncHandler(async (req, res) => {
+  const bundle = await Bundle.findById(req.params.bundleId)
+  if (!bundle) return notFound(res, 'Bundle not found')
+
+  bundle.status = 'loaded'
+  await bundle.save()
+
+  return success(res, { bundleId: bundle._id, status: bundle.status }, 'Bundle marked loaded')
+})
+
+exports.reportBundleMismatch = asyncHandler(async (req, res) => {
+  const { notes } = req.body
+  if (!notes) return badRequest(res, 'notes is required')
+
+  const bundle = await Bundle.findById(req.params.bundleId)
+  if (!bundle) return notFound(res, 'Bundle not found')
+
+  bundle.mismatchNotes = notes
+  bundle.mismatchReportedAt = new Date()
+  await bundle.save()
+
+  return success(res, { bundleId: bundle._id, mismatchNotes: bundle.mismatchNotes }, 'Mismatch reported')
+})
+
+exports.getPackingListDetail = asyncHandler(async (req, res) => {
+  const pl = await PackingList.findById(req.params.packingListId)
+    .populate({
+      path: 'packingListPlanId',
+      select: 'leadId',
+      populate: { path: 'leadId', select: 'projectName jobId location' },
+    })
+    .populate('bundleIds', 'bundleNo bundleType totalWeight status items')
+    .lean()
+
+  if (!pl) return notFound(res, 'Packing list not found')
+
+  return success(res, {
+    packingList: {
+      packingListId: pl._id,
+      packingListNo: pl.packingListNo,
+      truck: pl.truckLabel || pl.truckType,
+      totalBundles: pl.totalBundles,
+      totalWeight: pl.totalWeight,
+      maxLengthFeet: pl.maxLengthFeet,
+      destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
+      status: pl.status,
+      bundles: pl.bundleIds || [],
+      project: pl.packingListPlanId?.leadId
+        ? {
+            leadId: pl.packingListPlanId.leadId._id,
+            projectName: pl.packingListPlanId.leadId.projectName,
+            jobId: pl.packingListPlanId.leadId.jobId,
+          }
+        : null,
+    },
+  })
+})
+
+exports.getDispatchVerificationDetail = asyncHandler(async (req, res) => {
+  const pl = await PackingList.findById(req.params.loadId)
+    .populate({
+      path: 'packingListPlanId',
+      select: 'leadId',
+      populate: { path: 'leadId', select: 'projectName jobId location' },
+    })
+    .populate('bundleIds', 'bundleNo bundleType totalWeight status verified')
+    .lean()
+
+  if (!pl) return notFound(res, 'Load not found')
+
+  return success(res, {
+    load: {
+      loadId: pl._id,
+      packingListNo: pl.packingListNo,
+      truck: pl.truckLabel || pl.truckType,
+      destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
+      status: pl.status,
+      plannedWeight: pl.totalWeight,
+      actualWeight: pl.actualWeight,
+      weightVerified: pl.weightVerified || false,
+      loadingVerified: pl.loadingVerified || false,
+      bundles: (pl.bundleIds || []).map((b) => ({
+        bundleId: b._id,
+        bundleNo: b.bundleNo,
+        totalWeight: b.totalWeight,
+        status: b.status,
+        verified: b.verified || false,
+      })),
+      project: pl.packingListPlanId?.leadId
+        ? {
+            leadId: pl.packingListPlanId.leadId._id,
+            projectName: pl.packingListPlanId.leadId.projectName,
+            jobId: pl.packingListPlanId.leadId.jobId,
+          }
+        : null,
+    },
+  })
+})
+
+exports.verifyLoad = asyncHandler(async (req, res) => {
+  const { actualWeight } = req.body
+
+  const pl = await PackingList.findById(req.params.loadId)
+  if (!pl) return notFound(res, 'Load not found')
+
+  if (actualWeight !== undefined) pl.actualWeight = actualWeight
+  pl.weightVerified = true
+  pl.loadingVerified = true
+  pl.verifiedAt = new Date()
+  pl.verifiedBy = req.user._id
+  await pl.save()
+
+  return success(
+    res,
+    { loadId: pl._id, weightVerified: pl.weightVerified, loadingVerified: pl.loadingVerified },
+    'Load verified'
+  )
+})
+
+exports.confirmDispatch = asyncHandler(async (req, res) => {
+  const pl = await PackingList.findById(req.params.loadId)
+  if (!pl) return notFound(res, 'Load not found')
+  if (!pl.weightVerified || !pl.loadingVerified) {
+    return badRequest(res, 'Load must be verified before dispatch')
+  }
+
+  pl.status = 'dispatched'
+  pl.dispatchedAt = new Date()
+  await pl.save()
+
+  return success(res, { loadId: pl._id, status: pl.status }, 'Dispatch confirmed')
 })

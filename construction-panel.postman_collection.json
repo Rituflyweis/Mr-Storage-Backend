@@ -6,12 +6,56 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000/api", "type": "string" },
-    { "key": "token", "value": "", "type": "string" },
-    { "key": "leadId", "value": "", "type": "string" },
-    { "key": "taskId", "value": "", "type": "string" },
-    { "key": "deliveryId", "value": "", "type": "string" },
-    { "key": "milestoneId", "value": "", "type": "string" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "leadId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "taskId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "deliveryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "milestoneId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "requestId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "bundleId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "packingListId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "loadId",
+      "value": "",
+      "type": "string"
+    }
   ],
   "item": [
     {
@@ -21,17 +65,37 @@
           "name": "Login",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"construction@steelpro.com\",\n  \"password\": \"password123\"\n}"
             }
           },
-          "event": [{
-            "listen": "test",
-            "script": { "exec": ["const r = pm.response.json();\nif (r.data?.accessToken) pm.collectionVariables.set('token', r.data.accessToken);"] }
-          }]
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();\nif (r.data?.accessToken) pm.collectionVariables.set('token', r.data.accessToken);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -42,8 +106,22 @@
           "name": "Get Dashboard",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "url": { "raw": "{{baseUrl}}/construction/dashboard", "host": ["{{baseUrl}}"], "path": ["construction", "dashboard"] }
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "dashboard"
+              ]
+            }
           },
           "_postman_note": "Returns: projectStats (total/onTrack/delayed/completed/completionRate/upcomingDeadlines), deliveryOverview, taskOverview, upcomingDeadlines[], recentDeliveries[]"
         }
@@ -56,15 +134,36 @@
           "name": "Get All Projects",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/projects?page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "projects"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "projects"
+              ],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "status", "value": "", "disabled": true, "description": "lifecycleStatus filter" }
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "lifecycleStatus filter"
+                }
               ]
             }
           }
@@ -73,15 +172,37 @@
           "name": "Get Project Calendar",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/projects/calendar?month=1&year=2025",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "projects", "calendar"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "projects",
+                "calendar"
+              ],
               "query": [
-                { "key": "month", "value": "1" },
-                { "key": "year", "value": "2025" },
-                { "key": "leadId", "value": "", "disabled": true, "description": "Filter by specific project" }
+                {
+                  "key": "month",
+                  "value": "1"
+                },
+                {
+                  "key": "year",
+                  "value": "2025"
+                },
+                {
+                  "key": "leadId",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Filter by specific project"
+                }
               ]
             }
           },
@@ -91,11 +212,22 @@
           "name": "Get Project Detail",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/projects/{{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "projects", "{{leadId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "projects",
+                "{{leadId}}"
+              ]
             }
           }
         }
@@ -108,16 +240,42 @@
           "name": "Get All Drawings (All Projects)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/drawings?type=drawing",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "drawings"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "drawings"
+              ],
               "query": [
-                { "key": "type", "value": "drawing", "description": "drawing | approval | contract | photo | general | other" },
-                { "key": "leadId", "value": "", "disabled": true },
-                { "key": "page", "value": "1", "disabled": true },
-                { "key": "limit", "value": "20", "disabled": true }
+                {
+                  "key": "type",
+                  "value": "drawing",
+                  "description": "drawing | approval | contract | photo | general | other"
+                },
+                {
+                  "key": "leadId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                }
               ]
             }
           },
@@ -127,12 +285,29 @@
           "name": "Get Project Drawings",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/drawings/{{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "drawings", "{{leadId}}"],
-              "query": [{ "key": "type", "value": "", "disabled": true }]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "drawings",
+                "{{leadId}}"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
             }
           }
         },
@@ -141,13 +316,25 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/construction/drawings/{{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "drawings", "{{leadId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "drawings",
+                "{{leadId}}"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -164,8 +351,23 @@
           "name": "Get Task Stats (top cards)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "url": { "raw": "{{baseUrl}}/construction/tasks/stats", "host": ["{{baseUrl}}"], "path": ["construction", "tasks", "stats"] }
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/tasks/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "tasks",
+                "stats"
+              ]
+            }
           },
           "_postman_note": "\"Tasks & Progress\" screen top stat cards: Total Tasks, Completed, In Progress, Overdue.\n\nReturns: stats{total, completed, inProgress, overdue}"
         },
@@ -173,18 +375,54 @@
           "name": "Get Tasks",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/tasks",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "tasks"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "tasks"
+              ],
               "query": [
-                { "key": "leadId", "value": "", "disabled": true },
-                { "key": "status", "value": "", "disabled": true, "description": "todo | in_progress | done" },
-                { "key": "priority", "value": "", "disabled": true, "description": "low | medium | high" },
-                { "key": "assignedTo", "value": "", "disabled": true },
-                { "key": "page", "value": "1", "disabled": true },
-                { "key": "limit", "value": "50", "disabled": true }
+                {
+                  "key": "leadId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "todo | in_progress | done"
+                },
+                {
+                  "key": "priority",
+                  "value": "",
+                  "disabled": true,
+                  "description": "low | medium | high"
+                },
+                {
+                  "key": "assignedTo",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true
+                }
               ]
             }
           },
@@ -195,32 +433,65 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
             ],
-            "url": { "raw": "{{baseUrl}}/construction/tasks", "host": ["{{baseUrl}}"], "path": ["construction", "tasks"] },
+            "url": {
+              "raw": "{{baseUrl}}/construction/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "tasks"
+              ]
+            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"title\": \"Steel Frame Installation\",\n  \"description\": \"Install steel frame structure for floors 1-5\",\n  \"leadId\": \"{{leadId}}\",\n  \"assignedTo\": null,\n  \"priority\": \"high\",\n  \"status\": \"todo\",\n  \"dueDate\": \"2025-02-15\"\n}"
             }
           },
-          "event": [{
-            "listen": "test",
-            "script": { "exec": ["const r = pm.response.json();\nif (r.data?.task?._id) pm.collectionVariables.set('taskId', r.data.task._id);"] }
-          }]
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();\nif (r.data?.task?._id) pm.collectionVariables.set('taskId', r.data.task._id);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Update Task",
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/construction/tasks/{{taskId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "tasks", "{{taskId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "tasks",
+                "{{taskId}}"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -232,11 +503,22 @@
           "name": "Delete Task",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/tasks/{{taskId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "tasks", "{{taskId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "tasks",
+                "{{taskId}}"
+              ]
             }
           }
         }
@@ -247,14 +529,36 @@
       "item": [
         {
           "name": "Get Project Progress",
-          "event": [{
-            "listen": "test",
-            "script": { "exec": ["const r = pm.response.json();\nconst first = r.data?.milestones?.[0];\nif (first?.milestoneId) pm.collectionVariables.set('milestoneId', first.milestoneId);"] }
-          }],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();\nconst first = r.data?.milestones?.[0];\nif (first?.milestoneId) pm.collectionVariables.set('milestoneId', first.milestoneId);"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "url": { "raw": "{{baseUrl}}/construction/projects/{{leadId}}/progress", "host": ["{{baseUrl}}"], "path": ["construction", "projects", "{{leadId}}", "progress"] }
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/projects/{{leadId}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "projects",
+                "{{leadId}}",
+                "progress"
+              ]
+            }
           },
           "_postman_note": "\"Progress Tracker\" tab for a single project.\n\nReturns:\n  project{leadId,projectName,jobId}\n  taskProgress{completed,inProgress,pending,total,completedFraction,completedPct}\n  timeline{plannedCompletion (Lead.endDate), currentEstimate, status: On Track|Delayed|Unscheduled}\n  milestones[]{milestoneId,title,status,targetDate,completedAt}\n\nTest script auto-saves the first milestone's id to {{milestoneId}}."
         },
@@ -263,11 +567,31 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
             ],
-            "url": { "raw": "{{baseUrl}}/construction/projects/{{leadId}}/milestones", "host": ["{{baseUrl}}"], "path": ["construction", "projects", "{{leadId}}", "milestones"] },
-            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Final Inspection\",\n  \"targetDate\": \"2026-08-15\",\n  \"order\": 4\n}" }
+            "url": {
+              "raw": "{{baseUrl}}/construction/projects/{{leadId}}/milestones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "projects",
+                "{{leadId}}",
+                "milestones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Final Inspection\",\n  \"targetDate\": \"2026-08-15\",\n  \"order\": 4\n}"
+            }
           }
         },
         {
@@ -275,11 +599,30 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
             ],
-            "url": { "raw": "{{baseUrl}}/construction/milestones/{{milestoneId}}", "host": ["{{baseUrl}}"], "path": ["construction", "milestones", "{{milestoneId}}"] },
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"completed\"\n}" },
+            "url": {
+              "raw": "{{baseUrl}}/construction/milestones/{{milestoneId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "milestones",
+                "{{milestoneId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"completed\"\n}"
+            },
             "description": "status: pending | in_progress | completed. Setting status to 'completed' auto-stamps completedAt."
           }
         }
@@ -292,14 +635,31 @@
           "name": "Get Work Logs",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/work-logs?leadId={{leadId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "work-logs"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "work-logs"
+              ],
               "query": [
-                { "key": "leadId", "value": "{{leadId}}" },
-                { "key": "page", "value": "1", "disabled": true }
+                {
+                  "key": "leadId",
+                  "value": "{{leadId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -309,13 +669,184 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
             ],
-            "url": { "raw": "{{baseUrl}}/construction/work-logs", "host": ["{{baseUrl}}"], "path": ["construction", "work-logs"] },
+            "url": {
+              "raw": "{{baseUrl}}/construction/work-logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "work-logs"
+              ]
+            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"taskId\": null,\n  \"date\": \"2025-05-19\",\n  \"progress\": 63,\n  \"description\": \"Completed foundation excavation according to plan\",\n  \"photos\": [],\n  \"issues\": \"Minor delay due to rain\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Material Requests",
+      "item": [
+        {
+          "name": "Get Material Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/material-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "material-requests"
+              ],
+              "query": [
+                {
+                  "key": "leadId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "department",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "pending | approved | rejected | fulfilled"
+                },
+                {
+                  "key": "requestedBy",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "dateFrom",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "dateTo",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "_postman_note": "Returns: materialRequests[], total, stats{totalRequests/pending/approved/rejected}"
+        },
+        {
+          "name": "Get Material Request Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/material-requests/{{requestId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "material-requests",
+                "{{requestId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Material Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/material-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "material-requests"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"siteLocation\": \"Construction Site A\",\n  \"department\": \"Framing\",\n  \"requestedItems\": [\n    {\n      \"name\": \"Steel Studs\",\n      \"quantity\": 100,\n      \"unit\": \"pcs\",\n      \"notes\": \"\"\n    },\n    {\n      \"name\": \"Cement Bags\",\n      \"quantity\": 50,\n      \"unit\": \"bags\",\n      \"notes\": \"\"\n    }\n  ],\n  \"requiredBy\": \"2026-08-05\",\n  \"priority\": \"high\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Material Request Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/material-requests/{{requestId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "material-requests",
+                "{{requestId}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\",\n  \"reviewNotes\": \"Approved for procurement\"\n}"
             }
           }
         }
@@ -328,16 +859,43 @@
           "name": "Get All Deliveries",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/deliveries",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "deliveries"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "deliveries"
+              ],
               "query": [
-                { "key": "status", "value": "", "disabled": true, "description": "in_transit | confirmed | scheduled | delivered | delayed" },
-                { "key": "leadId", "value": "", "disabled": true },
-                { "key": "page", "value": "1", "disabled": true },
-                { "key": "limit", "value": "20", "disabled": true }
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "in_transit | confirmed | scheduled | delivered | delayed"
+                },
+                {
+                  "key": "leadId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                }
               ]
             }
           },
@@ -347,11 +905,22 @@
           "name": "Get Delivery Detail",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/deliveries/{{deliveryId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "deliveries", "{{deliveryId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "deliveries",
+                "{{deliveryId}}"
+              ]
             }
           }
         },
@@ -359,11 +928,23 @@
           "name": "Mark as Received",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/deliveries/{{deliveryId}}/mark-received",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "deliveries", "{{deliveryId}}", "mark-received"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "deliveries",
+                "{{deliveryId}}",
+                "mark-received"
+              ]
             }
           }
         },
@@ -372,15 +953,31 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/construction/deliveries/{{deliveryId}}/mark-partial",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "deliveries", "{{deliveryId}}", "mark-partial"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "deliveries",
+                "{{deliveryId}}",
+                "mark-partial"
+              ]
             },
-            "body": { "mode": "raw", "raw": "{\n  \"notes\": \"Only 3 out of 4 bundles received\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Only 3 out of 4 bundles received\"\n}"
+            }
           }
         },
         {
@@ -388,13 +985,64 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
             ],
-            "url": { "raw": "{{baseUrl}}/construction/deliveries/scan-bundle", "host": ["{{baseUrl}}"], "path": ["construction", "deliveries", "scan-bundle"] },
-            "body": { "mode": "raw", "raw": "{\n  \"bundleId\": \"BND-001\"\n}" }
+            "url": {
+              "raw": "{{baseUrl}}/construction/deliveries/scan-bundle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "deliveries",
+                "scan-bundle"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bundleId\": \"BND-001\"\n}"
+            }
           },
           "_postman_note": "bundleId can be MongoDB ObjectId or bundleNo (e.g. BND-001)"
+        },
+        {
+          "name": "Update Site Contact",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/deliveries/{{deliveryId}}/site-contact",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "deliveries",
+                "{{deliveryId}}",
+                "site-contact"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contactName\": \"John Miller\",\n  \"contactTitle\": \"Site Supervisor\",\n  \"phone\": \"(555) 123-4567\",\n  \"email\": \"contact@company.com\",\n  \"availableHours\": \"7:00 AM - 5:00 PM, Mon-Fri\",\n  \"notes\": \"Standard handling\"\n}"
+            }
+          }
         }
       ]
     },
@@ -405,19 +1053,73 @@
           "name": "Get Bundle Labels",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/labels",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "labels"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "labels"
+              ],
               "query": [
-                { "key": "status", "value": "", "disabled": true, "description": "pending | assigned_to_truck | dispatched" },
-                { "key": "page", "value": "1", "disabled": true },
-                { "key": "limit", "value": "20", "disabled": true }
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "pending | assigned_to_truck | dispatched"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                }
               ]
             }
           },
           "_postman_note": "Returns: bundles[] with bundleNo/parts/totalWeight/length/status, stats{totalBundles/labelsPrinted/labelsPending/labelsPrintedToday}"
+        },
+        {
+          "name": "Print Selected Bundle Labels",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/labels/print",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "labels",
+                "print"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bundleIds\": [\n    \"{{bundleId}}\"\n  ]\n}"
+            }
+          }
         }
       ]
     },
@@ -428,18 +1130,219 @@
           "name": "Get Bundle Scan History",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/bundle-scan",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "bundle-scan"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "bundle-scan"
+              ],
               "query": [
-                { "key": "page", "value": "1", "disabled": true },
-                { "key": "limit", "value": "20", "disabled": true }
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                }
               ]
             }
           },
           "_postman_note": "Returns: bundles[] with scan history, stats{bundlesScanned/bundlesRemaining/bundlesLoaded}"
+        },
+        {
+          "name": "Scan Bundle QR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/bundle-scan/scan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "bundle-scan",
+                "scan"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bundleId\": \"{{bundleId}}\"\n}"
+            }
+          },
+          "_postman_note": "Accepts either Mongo _id or bundleNo"
+        },
+        {
+          "name": "Get Bundle Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/bundles/{{bundleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "bundles",
+                "{{bundleId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Bundle",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/bundles/{{bundleId}}/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "bundles",
+                "{{bundleId}}",
+                "verify"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark Bundle Staged",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/bundles/{{bundleId}}/mark-staged",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "bundles",
+                "{{bundleId}}",
+                "mark-staged"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark Bundle Loaded",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/bundles/{{bundleId}}/mark-loaded",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "bundles",
+                "{{bundleId}}",
+                "mark-loaded"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Report Bundle Mismatch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/bundles/{{bundleId}}/report-mismatch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "bundles",
+                "{{bundleId}}",
+                "report-mismatch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Quantity received does not match packing list\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reprint Bundle Label",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/bundles/{{bundleId}}/reprint-label",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "bundles",
+                "{{bundleId}}",
+                "reprint-label"
+              ]
+            }
+          }
         }
       ]
     },
@@ -450,18 +1353,59 @@
           "name": "Get Packing Lists",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/packing-lists",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "packing-lists"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "packing-lists"
+              ],
               "query": [
-                { "key": "page", "value": "1", "disabled": true },
-                { "key": "limit", "value": "20", "disabled": true }
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                }
               ]
             }
           },
           "_postman_note": "Returns: packingLists[] with packingListNo/truck/totalBundles/totalWeight/destination/status, stats{totalPackingList/loadsReadyForDispatch/bundlesAssigned/loadsDispatchedToday}"
+        },
+        {
+          "name": "Get Packing List Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/packing-lists/{{packingListId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "packing-lists",
+                "{{packingListId}}"
+              ]
+            }
+          }
         }
       ]
     },
@@ -472,18 +1416,115 @@
           "name": "Get Dispatch Loads",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/construction/dispatch-verification",
-              "host": ["{{baseUrl}}"],
-              "path": ["construction", "dispatch-verification"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "dispatch-verification"
+              ],
               "query": [
-                { "key": "page", "value": "1", "disabled": true },
-                { "key": "limit", "value": "20", "disabled": true }
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                }
               ]
             }
           },
           "_postman_note": "Returns: loads[] with loadId/truck/totalBundles/totalWeight/destination/status, stats{loadsReadyForDispatch/bundlesVerified/bundlesMissing/leadsDispatchedToday}"
+        },
+        {
+          "name": "Get Dispatch Load Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/dispatch-verification/{{loadId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "dispatch-verification",
+                "{{loadId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Load",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/dispatch-verification/{{loadId}}/verify-load",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "dispatch-verification",
+                "{{loadId}}",
+                "verify-load"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actualWeight\": 35900\n}"
+            }
+          }
+        },
+        {
+          "name": "Confirm Dispatch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/dispatch-verification/{{loadId}}/confirm-dispatch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "dispatch-verification",
+                "{{loadId}}",
+                "confirm-dispatch"
+              ]
+            }
+          }
         }
       ]
     }
