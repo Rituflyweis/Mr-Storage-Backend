@@ -105,4 +105,75 @@ const generateInstructionsPdf = (delivery) => renderPdf((doc, { section, row, he
   row('Delivery Team', `${delivery.deliveryTeam?.company || '—'} — ${delivery.deliveryTeam?.driver || '—'} (${delivery.deliveryTeam?.phone || '—'})`)
 })
 
-module.exports = { generateDeliveryInfoPdf, generatePackingListPdf, generateInstructionsPdf }
+const generateBillOfLadingPdf = (delivery, bundles = [], packingLists = []) => renderPdf((doc, { section, row }) => {
+  doc.fontSize(16).font('Helvetica-Bold').fillColor('#111827').text('Bill of Lading', { align: 'left' })
+  doc.fontSize(10).font('Helvetica').fillColor('#6b7280')
+    .text(`Delivery ${delivery.deliveryNumber || ''} — ${delivery.project?.projectName || ''} (${delivery.project?.projectId || ''})`)
+
+  section('Shipper / Consignee')
+  row('Shipper', 'The Steel Plant')
+  row('Consignee', delivery.project?.projectName || '—')
+  row('Delivery Location', delivery.deliveryLocation || '—')
+  row('Ship Date', delivery.deliveryDate ? new Date(delivery.deliveryDate).toLocaleDateString() : '—')
+
+  section('Carrier')
+  row('Carrier', delivery.deliveryCompany?.name || '—')
+  row('Driver', delivery.deliveryCompany?.driver || '—')
+  row('Phone', delivery.deliveryCompany?.phone || '—')
+
+  section('Freight Description')
+  row('Total Weight', delivery.loadAndBundle?.totalWeight != null ? `${delivery.loadAndBundle.totalWeight} lbs` : '—')
+  row('Bundle Count', delivery.loadAndBundle?.bundleCount ?? bundles.length ?? '—')
+  row('Truck Number', delivery.loadAndBundle?.truckNumber || '—')
+
+  section('Packages')
+  if (!packingLists.length && !bundles.length) {
+    doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text('No package data available yet.')
+  }
+  for (const pl of packingLists) {
+    row(pl.packingListNo || 'Truck', `${pl.truckLabel || pl.truckNo || ''} — ${pl.totalBundles ?? 0} bundle(s), ${pl.totalWeight ?? '—'} lbs`)
+  }
+  for (const b of bundles) {
+    row(b.bundleNo || 'Bundle', `${b.bundleType || ''} — ${b.title || 'Untitled'}, qty ${b.totalQty ?? '—'}, ${b.totalWeight ?? '—'} lbs`)
+  }
+
+  section('Special Instructions')
+  doc.fontSize(10).font('Helvetica').fillColor('#111827').text(delivery.siteInstructions || delivery.specialNotes || '—')
+
+  doc.moveDown(2)
+  doc.fontSize(10).font('Helvetica').fillColor('#374151')
+    .text('Shipper Signature: ___________________________          Date: ___________', 40, doc.y)
+  doc.moveDown(1)
+  doc.text('Carrier Signature: ___________________________          Date: ___________', 40, doc.y)
+})
+
+const generatePackingListDetailPdf = (packingList, bundles = []) => renderPdf((doc, { section, row }) => {
+  doc.fontSize(16).font('Helvetica-Bold').fillColor('#111827')
+    .text(`Packing List ${packingList.packingListNo || ''}`, { align: 'left' })
+  doc.fontSize(10).font('Helvetica').fillColor('#6b7280')
+    .text(`${packingList.project?.projectName || ''} (${packingList.project?.jobId || ''})`)
+
+  section('Load Summary')
+  row('Truck', packingList.truck || '—')
+  row('Destination', packingList.destination || '—')
+  row('Total Bundles', packingList.totalBundles ?? '—')
+  row('Total Weight', packingList.totalWeight != null ? `${packingList.totalWeight} lbs` : '—')
+  row('Max Length', packingList.maxLengthFeet != null ? `${packingList.maxLengthFeet} ft` : '—')
+  row('Status', packingList.status || '—')
+
+  section('Bundles')
+  if (!bundles.length) {
+    doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text('No bundles assigned yet.')
+  }
+  for (const b of bundles) {
+    row(b.bundleNo || 'Bundle', `${b.bundleType || ''} — qty ${b.totalQty ?? '—'}, ${b.totalWeight ?? '—'} lbs, status ${b.status || '—'}`)
+  }
+})
+
+module.exports = {
+  generateDeliveryInfoPdf,
+  generatePackingListPdf,
+  generateInstructionsPdf,
+  generateBillOfLadingPdf,
+  generatePackingListDetailPdf,
+}

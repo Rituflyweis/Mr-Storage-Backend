@@ -1043,6 +1043,58 @@
               "raw": "{\n  \"contactName\": \"John Miller\",\n  \"contactTitle\": \"Site Supervisor\",\n  \"phone\": \"(555) 123-4567\",\n  \"email\": \"contact@company.com\",\n  \"availableHours\": \"7:00 AM - 5:00 PM, Mon-Fri\",\n  \"notes\": \"Standard handling\"\n}"
             }
           }
+        },
+        {
+          "name": "Download Packing List PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/deliveries/{{deliveryId}}/download/packing-list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "deliveries",
+                "{{deliveryId}}",
+                "download",
+                "packing-list"
+              ]
+            }
+          },
+          "_postman_note": "Returns application/pdf binary"
+        },
+        {
+          "name": "Download Bill of Lading PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/deliveries/{{deliveryId}}/download/bill-of-lading",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "deliveries",
+                "{{deliveryId}}",
+                "download",
+                "bill-of-lading"
+              ]
+            }
+          },
+          "_postman_note": "Returns application/pdf binary"
         }
       ]
     },
@@ -1403,6 +1455,134 @@
                 "construction",
                 "packing-lists",
                 "{{packingListId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Packing Lists (Excel)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/packing-lists/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "packing-lists",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "_postman_note": "Returns .xlsx binary"
+        },
+        {
+          "name": "Download Packing List PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/packing-lists/{{packingListId}}/download-pdf",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "packing-lists",
+                "{{packingListId}}",
+                "download-pdf"
+              ]
+            }
+          },
+          "_postman_note": "Returns application/pdf binary"
+        },
+        {
+          "name": "Mark Packing List Ready",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/packing-lists/{{packingListId}}/mark-ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "packing-lists",
+                "{{packingListId}}",
+                "mark-ready"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark Packing List Loading",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/packing-lists/{{packingListId}}/mark-loading",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "packing-lists",
+                "{{packingListId}}",
+                "mark-loading"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark Packing List Dispatch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/packing-lists/{{packingListId}}/mark-dispatch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "packing-lists",
+                "{{packingListId}}",
+                "mark-dispatch"
               ]
             }
           }

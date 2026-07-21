@@ -54,6 +54,8 @@ router.get('/deliveries/:deliveryId', deliveryCtrl.getDelivery)
 router.post('/deliveries/:deliveryId/mark-received', deliveryCtrl.markReceived)
 router.post('/deliveries/:deliveryId/mark-partial', deliveryCtrl.markPartialReceived)
 router.put('/deliveries/:deliveryId/site-contact', deliveryCtrl.updateSiteContact)
+router.get('/deliveries/:deliveryId/download/packing-list', deliveryCtrl.downloadDeliveryPackingList)
+router.get('/deliveries/:deliveryId/download/bill-of-lading', deliveryCtrl.downloadDeliveryBillOfLading)
 
 // Label Printing
 router.get('/labels', bundleCtrl.getBundleLabels)
@@ -71,9 +73,14 @@ router.post('/bundles/:bundleId/mark-loaded', bundleCtrl.markBundleLoaded)
 router.post('/bundles/:bundleId/report-mismatch', bundleCtrl.reportBundleMismatch)
 router.post('/bundles/:bundleId/reprint-label', bundleCtrl.reprintBundleLabel)
 
-// Packing Lists
+// Packing Lists (static routes before param routes)
 router.get('/packing-lists', bundleCtrl.getPackingLists)
+router.get('/packing-lists/export', bundleCtrl.exportPackingListsExcel)
 router.get('/packing-lists/:packingListId', bundleCtrl.getPackingListDetail)
+router.get('/packing-lists/:packingListId/download-pdf', bundleCtrl.downloadPackingListPdf)
+router.post('/packing-lists/:packingListId/mark-ready', bundleCtrl.markPackingListReady)
+router.post('/packing-lists/:packingListId/mark-loading', bundleCtrl.markPackingListLoading)
+router.post('/packing-lists/:packingListId/mark-dispatch', bundleCtrl.markPackingListDispatch)
 
 // Dispatch Verification
 router.get('/dispatch-verification', bundleCtrl.getDispatchVerification)

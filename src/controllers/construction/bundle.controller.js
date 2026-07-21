@@ -3,6 +3,8 @@ const PackingList = require('../../models/PackingList')
 const Lead = require('../../models/Lead')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const { generatePackingListDetailPdf } = require('../../utils/exportDelivery')
+const { generatePackingListExcel } = require('../../utils/exportPackingLists')
 
 exports.getBundleLabels = asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query
@@ -321,7 +323,10 @@ exports.getPackingListDetail = asyncHandler(async (req, res) => {
       select: 'leadId',
       populate: { path: 'leadId', select: 'projectName jobId location' },
     })
-    .populate('bundleIds', 'bundleNo bundleType totalWeight status items')
+    .populate(
+      'bundleIds',
+      'bundleNo bundleType title totalQty totalWeight maxLengthFeet status items labelPrinted verified mismatchNotes stacking'
+    )
     .lean()
 
   if (!pl) return notFound(res, 'Packing list not found')
@@ -331,11 +336,18 @@ exports.getPackingListDetail = asyncHandler(async (req, res) => {
       packingListId: pl._id,
       packingListNo: pl.packingListNo,
       truck: pl.truckLabel || pl.truckType,
+      truckNo: pl.truckNo,
       totalBundles: pl.totalBundles,
+      totalItems: pl.totalItems,
       totalWeight: pl.totalWeight,
       maxLengthFeet: pl.maxLengthFeet,
       destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
       status: pl.status,
+      loadLayout: pl.loadLayout || null,
+      warnings: pl.warnings || [],
+      actualWeight: pl.actualWeight,
+      weightVerified: pl.weightVerified || false,
+      loadingVerified: pl.loadingVerified || false,
       bundles: pl.bundleIds || [],
       project: pl.packingListPlanId?.leadId
         ? {
@@ -421,4 +433,99 @@ exports.confirmDispatch = asyncHandler(async (req, res) => {
   await pl.save()
 
   return success(res, { loadId: pl._id, status: pl.status }, 'Dispatch confirmed')
+})
+
+exports.downloadPackingListPdf = asyncHandler(async (req, res) => {
+  const pl = await PackingList.findById(req.params.packingListId)
+    .populate({
+      path: 'packingListPlanId',
+      select: 'leadId',
+      populate: { path: 'leadId', select: 'projectName jobId location' },
+    })
+    .populate('bundleIds', 'bundleNo bundleType totalQty totalWeight status')
+    .lean()
+
+  if (!pl) return notFound(res, 'Packing list not found')
+
+  const mapped = {
+    packingListNo: pl.packingListNo,
+    truck: pl.truckLabel || pl.truckType,
+    destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
+    totalBundles: pl.totalBundles,
+    totalWeight: pl.totalWeight,
+    maxLengthFeet: pl.maxLengthFeet,
+    status: pl.status,
+    project: pl.packingListPlanId?.leadId
+      ? { projectName: pl.packingListPlanId.leadId.projectName, jobId: pl.packingListPlanId.leadId.jobId }
+      : null,
+  }
+
+  const buffer = await generatePackingListDetailPdf(mapped, pl.bundleIds || [])
+
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="packing-list-${pl.packingListNo || pl._id}.pdf"`)
+  return res.send(buffer)
+})
+
+exports.exportPackingListsExcel = asyncHandler(async (req, res) => {
+  const { status } = req.query
+  const filter = {}
+  if (status) filter.status = status
+
+  const lists = await PackingList.find(filter)
+    .select('packingListNo truckType truckLabel totalBundles totalWeight status deliveryLocation packingListPlanId')
+    .populate({
+      path: 'packingListPlanId',
+      select: 'leadId',
+      populate: { path: 'leadId', select: 'projectName jobId location' },
+    })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const rows = lists.map((pl) => ({
+    packingListNo: pl.packingListNo,
+    truck: pl.truckLabel || pl.truckType,
+    totalBundles: pl.totalBundles,
+    totalWeight: pl.totalWeight,
+    destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
+    status: pl.status,
+    project: pl.packingListPlanId?.leadId ? { projectName: pl.packingListPlanId.leadId.projectName } : null,
+  }))
+
+  const buffer = await generatePackingListExcel(rows)
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="packing-lists.xlsx"')
+  return res.send(buffer)
+})
+
+exports.markPackingListReady = asyncHandler(async (req, res) => {
+  const pl = await PackingList.findById(req.params.packingListId)
+  if (!pl) return notFound(res, 'Packing list not found')
+
+  pl.status = 'ready'
+  await pl.save()
+
+  return success(res, { packingListId: pl._id, status: pl.status }, 'Packing list marked ready')
+})
+
+exports.markPackingListLoading = asyncHandler(async (req, res) => {
+  const pl = await PackingList.findById(req.params.packingListId)
+  if (!pl) return notFound(res, 'Packing list not found')
+
+  pl.status = 'loading'
+  await pl.save()
+
+  return success(res, { packingListId: pl._id, status: pl.status }, 'Packing list marked loading')
+})
+
+exports.markPackingListDispatch = asyncHandler(async (req, res) => {
+  const pl = await PackingList.findById(req.params.packingListId)
+  if (!pl) return notFound(res, 'Packing list not found')
+
+  pl.status = 'dispatched'
+  pl.dispatchedAt = new Date()
+  await pl.save()
+
+  return success(res, { packingListId: pl._id, status: pl.status }, 'Packing list marked dispatched')
 })

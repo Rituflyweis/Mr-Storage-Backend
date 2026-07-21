@@ -4,6 +4,8 @@ const FreightCarrier = require('../../models/FreightCarrier')
 const Bundle = require('../../models/Bundle')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
+const { generatePackingListPdf, generateBillOfLadingPdf } = require('../../utils/exportDelivery')
 
 const buildDeliveryCard = async (delivery) => {
   let carrier = null
@@ -45,6 +47,7 @@ const buildDeliveryCard = async (delivery) => {
     notes: delivery.specialRequirements || '',
     receivingPoc: delivery.receivingPoc,
     pickupContactPhone: delivery.pickupContactPhone,
+    siteContact: delivery.siteContact || null,
     carrier,
     project: {
       leadId: delivery.leadId?._id,
@@ -168,4 +171,68 @@ exports.scanBundle = asyncHandler(async (req, res) => {
     packingListId: bundle.packingListId,
     items: bundle.items || [],
   })
+})
+
+const buildPdfContext = async (delivery) => {
+  const card = await buildDeliveryCard(delivery)
+  const loadDetails = await loadFreightLoadDetailsByLeadId(delivery.leadId?._id || delivery.leadId)
+  const bundles = loadDetails?.bundles || []
+  const packingLists = loadDetails?.packingLists || []
+
+  const bundleTypes = new Set(bundles.map((b) => b.bundleType).filter(Boolean)).size
+  const materials = [...new Set(bundles.flatMap((b) => (b.items || []).map((i) => i.category).filter(Boolean)))]
+
+  const mapped = {
+    deliveryNumber: card.deliveryNumber,
+    deliveryDate: card.schedule?.deliveryDate,
+    timings: card.schedule?.timings,
+    deliveryLocation: card.deliveryLocation,
+    siteInstructions: card.notes,
+    specialNotes: card.stagingArea,
+    deliveryCompany: card.carrier
+      ? { name: card.carrier.name, driver: card.carrier.driverName, phone: card.carrier.phone, email: card.carrier.email }
+      : null,
+    loadAndBundle: {
+      loadId: packingLists[0]?.packingListNo || '—',
+      bundleCount: bundles.length,
+      truckNumber: packingLists[0]?.truckNo || packingLists[0]?.truckLabel || '—',
+      totalWeight: bundles.reduce((sum, b) => sum + Number(b.totalWeight || 0), 0) || card.loadWeight,
+    },
+    packingListSummary: {
+      totalParts: bundles.reduce((sum, b) => sum + ((b.items || []).length), 0),
+      bundleTypes,
+      material: materials.join(', ') || '—',
+    },
+    project: {
+      leadId: card.project?.leadId,
+      projectId: card.project?.jobId,
+      projectName: card.project?.projectName,
+    },
+  }
+
+  return { mapped, bundles, packingLists }
+}
+
+exports.downloadDeliveryPackingList = asyncHandler(async (req, res) => {
+  const delivery = await Delivery.findById(req.params.deliveryId).populate('leadId', 'projectName jobId location').lean()
+  if (!delivery) return notFound(res, 'Delivery not found')
+
+  const { mapped, bundles, packingLists } = await buildPdfContext(delivery)
+  const buffer = await generatePackingListPdf(mapped, bundles, packingLists)
+
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="delivery-${delivery.deliveryNumber || delivery._id}-packing-list.pdf"`)
+  return res.send(buffer)
+})
+
+exports.downloadDeliveryBillOfLading = asyncHandler(async (req, res) => {
+  const delivery = await Delivery.findById(req.params.deliveryId).populate('leadId', 'projectName jobId location').lean()
+  if (!delivery) return notFound(res, 'Delivery not found')
+
+  const { mapped, bundles, packingLists } = await buildPdfContext(delivery)
+  const buffer = await generateBillOfLadingPdf(mapped, bundles, packingLists)
+
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="delivery-${delivery.deliveryNumber || delivery._id}-bill-of-lading.pdf"`)
+  return res.send(buffer)
 })
