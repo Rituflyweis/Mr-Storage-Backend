@@ -9,6 +9,16 @@ const RequestedItemSchema = new mongoose.Schema(
     quantity: { type: Number, required: true, min: 0 },
     unit:     { type: String, default: '', trim: true },
     notes:    { type: String, default: '', trim: true },
+    lengthFeet: { type: Number, default: null },
+    color:      { type: String, default: '', trim: true },
+  },
+  { _id: false }
+)
+
+const AttachmentSchema = new mongoose.Schema(
+  {
+    name: { type: String, default: '', trim: true },
+    url:  { type: String, required: true, trim: true },
   },
   { _id: false }
 )
@@ -18,11 +28,17 @@ const MaterialRequestSchema = new mongoose.Schema(
     requestId:    { type: String, unique: true, trim: true },
     leadId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
     siteLocation: { type: String, default: '', trim: true },
+    buildingLabel: { type: String, default: '', trim: true },
     department:   { type: String, default: '', trim: true },
-    requestedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    source:       { type: String, enum: ['construction', 'customer'], default: 'construction' },
+    requestedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    requestedByCustomer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
     requestedItems: [RequestedItemSchema],
+    attachments:  [AttachmentSchema],
     requestDate:  { type: Date, default: Date.now },
     requiredBy:   { type: Date, default: null },
+    preferredDeliveryDate: { type: Date, default: null },
+    specialInstructions: { type: String, default: '', trim: true },
     priority:     { type: String, enum: MR_PRIORITIES, default: 'medium' },
     status:       { type: String, enum: MR_STATUSES, default: 'pending' },
     totalAmount:  { type: Number, default: 0 },

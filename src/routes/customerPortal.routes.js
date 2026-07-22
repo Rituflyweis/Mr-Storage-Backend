@@ -37,6 +37,9 @@ router.get('/projects/:leadId/activity',                           ctrl.getProje
 router.get('/projects/:leadId/notes',                              ctrl.getProjectNotes)
 router.get('/projects/:leadId/followups',                          ctrl.getProjectFollowUps)
 router.get('/projects/:leadId/meetings',                           ctrl.getProjectMeetings)
+router.get('/projects/:leadId/orders',                             ctrl.getProjectOrders)
+router.post('/projects/:leadId/orders',                            ctrl.createProjectOrder)
+router.get('/projects/:leadId/orders/:orderId',                    ctrl.getProjectOrderDetail)
 router.get('/projects/:leadId',                                    ctrl.getProject)
 router.post('/projects',
   [
@@ -77,5 +80,24 @@ router.post('/deliveries/:deliveryId/contact-company',          ctrl.contactDeli
 router.post('/deliveries/:deliveryId/contact-company/sms',      ctrl.sendDeliveryCompanySms)
 router.post('/deliveries/:deliveryId/confirmation-email',       ctrl.sendDeliveryConfirmation)
 router.post('/deliveries/:deliveryId/request-callback',         ctrl.requestDeliveryCallback)
+router.get('/deliveries/:deliveryId/documents',                 ctrl.getDeliveryDocuments)
+router.post('/deliveries/:deliveryId/confirm-site-ready',       ctrl.confirmDeliverySiteReady)
+router.post('/deliveries/:deliveryId/confirm-equipment',        ctrl.confirmDeliveryEquipment)
+
+// Material Orders
+router.get('/material-orders/summary', ctrl.getMaterialOrdersSummary)
+
+// Order Quotations
+router.get('/quotations/summary', ctrl.getQuotationsSummary)
+
+// Communication / Chat
+router.get('/chat/channels',                 ctrl.getChatChannels)
+router.get('/chat/:channel/messages',        ctrl.getChatMessages)
+router.post('/chat/:channel/messages',       ctrl.sendChatMessage)
+
+// Notifications
+router.get('/notifications',              ctrl.getCustomerNotifications)
+router.put('/notifications/read-all',     ctrl.markAllCustomerNotificationsRead)
+router.put('/notifications/:id/read',     ctrl.markCustomerNotificationRead)
 
 module.exports = router

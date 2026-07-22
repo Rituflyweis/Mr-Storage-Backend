@@ -98,6 +98,27 @@ const DeliverySchema = new mongoose.Schema(
       availableHours: { type: String, default: '' },
       notes: { type: String, default: '' },
     },
+    siteReadyConfirmation: {
+      confirmed: { type: Boolean, default: false },
+      confirmedAt: { type: Date, default: null },
+      confirmedBy: { type: String, default: '' },
+      checklist: {
+        siteCleared: { type: Boolean, default: false },
+        accessRouteAvailable: { type: Boolean, default: false },
+        safetyMeasuresInPlace: { type: Boolean, default: false },
+        personnelReady: { type: Boolean, default: false },
+      },
+    },
+    equipmentConfirmation: {
+      confirmed: { type: Boolean, default: false },
+      confirmedAt: { type: Date, default: null },
+      checklist: {
+        forkliftAvailable: { type: Boolean, default: false },
+        craneOrHeavyMachineryAvailable: { type: Boolean, default: false },
+        storageAreaReady: { type: Boolean, default: false },
+        toolsAndAccessoriesOnSite: { type: Boolean, default: false },
+      },
+    },
   },
   { timestamps: true }
 )

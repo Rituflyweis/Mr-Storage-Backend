@@ -15,6 +15,11 @@ const FollowUp = require('../models/FollowUp')
 const Meeting = require('../models/Meeting')
 const AuditLog = require('../models/AuditLog')
 const User = require('../models/User')
+const MaterialRequest = require('../models/MaterialRequest')
+const Message = require('../models/Message')
+const Notification = require('../models/Notification')
+const Milestone = require('../models/Milestone')
+const Bundle = require('../models/Bundle')
 const { success, created, notFound, forbidden, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
 const { loadFreightLoadDetailsByLeadId } = require('../services/plant/freightLoadDetails.service')
@@ -136,27 +141,45 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     .filter(d => d.deliveryDate && new Date(d.deliveryDate) >= nowTs && d.status !== 'delivered')
     .sort((a, b) => new Date(a.deliveryDate) - new Date(b.deliveryDate))[0] || null
 
+  const totalBundles = leadIds.length ? await Bundle.countDocuments({ leadId: { $in: leadIds } }) : 0
   const shipmentBreakdown = {
     totalLoads: deliveries.length,
-    totalBundles: null,
+    totalBundles,
   }
 
-  const projectTimeline = leads.reduce((min, l) => {
-    if (!min) return null
-    return min
-  }, null)
+  const nextMilestone = leadIds.length
+    ? await Milestone.findOne({ leadId: { $in: leadIds }, status: { $ne: 'completed' }, targetDate: { $gte: nowTs } })
+        .sort({ targetDate: 1 })
+        .lean()
+    : null
+  const projectTimeline = nextMilestone
+    ? Math.max(0, Math.ceil((new Date(nextMilestone.targetDate) - nowTs) / 86400000))
+    : null
+
+  const [ordersList, notificationsFeed, recentMessages] = await Promise.all([
+    leadIds.length
+      ? MaterialRequest.find({ leadId: { $in: leadIds } }).sort({ createdAt: -1 }).limit(5).lean()
+      : [],
+    Notification.find({ customerId }).sort({ createdAt: -1 }).limit(5).lean(),
+    leadIds.length
+      ? Message.find({ leadId: { $in: leadIds }, senderType: { $ne: 'customer' } }).sort({ createdAt: -1 }).limit(5).lean()
+      : [],
+  ])
 
   return success(res, {
     activeProjects,
     closedProjects,
     drawingsAndApprovals,
-    projectTimeline: null,
+    projectTimeline,
     totalProjectValue,
     totalPaid,
     totalPending,
     upcomingInvoice,
     deliveryTracking,
     shipmentBreakdown,
+    ordersList,
+    notificationsFeed,
+    recentMessages,
     nextDelivery: nextDelivery ? {
       deliveryId: nextDelivery._id,
       deliveryNumber: nextDelivery.deliveryNumber,
@@ -1510,4 +1533,321 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
   })
 
   return success(res, { message: 'Revision requested', drawing: { _id: doc._id, name: doc.name, status: doc.status, revisionNote: doc.revisionNote } })
+})
+
+// ── Material Orders ───────────────────────────────────────────────────────────
+
+const generateMaterialRequestId = async () => {
+  const count = await MaterialRequest.countDocuments({})
+  return `MR-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+}
+
+const orderCountsForLead = async (leadId) => {
+  const [newCount, pendingCount, completedCount] = await Promise.all([
+    MaterialRequest.countDocuments({ leadId, status: 'pending', createdAt: { $gte: new Date(Date.now() - 7 * 86400000) } }),
+    MaterialRequest.countDocuments({ leadId, status: 'pending' }),
+    MaterialRequest.countDocuments({ leadId, status: 'fulfilled' }),
+  ])
+  return { newOrders: newCount, pending: pendingCount, completed: completedCount }
+}
+
+// GET /material-orders/summary — per-project order counts for the "Material Orders" project list
+exports.getMaterialOrdersSummary = asyncHandler(async (req, res) => {
+  const leads = await Lead.find({ customerId: req.customer._id }).select('projectName jobId location buildingType numberOfBuildings').lean()
+
+  const rows = await Promise.all(leads.map(async (lead) => ({
+    leadId: lead._id,
+    projectName: lead.projectName,
+    jobId: lead.jobId,
+    location: lead.location,
+    ...(await orderCountsForLead(lead._id)),
+  })))
+
+  return success(res, { projects: rows })
+})
+
+// GET /projects/:leadId/orders
+exports.getProjectOrders = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const { status, page = 1, limit = 20 } = req.query
+  const filter = { leadId: req.params.leadId }
+  if (status) filter.status = status
+
+  const skip = (Number(page) - 1) * Number(limit)
+  const [orders, total] = await Promise.all([
+    MaterialRequest.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).lean(),
+    MaterialRequest.countDocuments(filter),
+  ])
+
+  return success(res, { orders, total, counts: await orderCountsForLead(req.params.leadId) })
+})
+
+// POST /projects/:leadId/orders — "Add New Order" (coil-type/length/quantity line items)
+exports.createProjectOrder = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const { buildingLabel, requiredBy, preferredDeliveryDate, priority, specialInstructions, attachments, items } = req.body
+  if (!Array.isArray(items) || !items.length) return badRequest(res, 'At least one order line item is required')
+
+  for (const item of items) {
+    if (!item.name || item.quantity == null) return badRequest(res, 'Each item needs a coil type (name) and quantity')
+  }
+
+  const order = await MaterialRequest.create({
+    requestId: await generateMaterialRequestId(),
+    leadId: req.params.leadId,
+    buildingLabel: buildingLabel || '',
+    source: 'customer',
+    requestedByCustomer: req.customer._id,
+    requestedItems: items.map((i) => ({
+      name: i.name,
+      quantity: i.quantity,
+      unit: i.unit || 'ft',
+      notes: i.notes || '',
+      lengthFeet: i.lengthFeet ?? null,
+      color: i.color || '',
+    })),
+    attachments: attachments || [],
+    requiredBy: requiredBy || null,
+    preferredDeliveryDate: preferredDeliveryDate || null,
+    specialInstructions: specialInstructions || '',
+    priority: priority || 'medium',
+  })
+
+  await auditService.log({
+    type: 'lead',
+    action: 'material_order.created',
+    leadId: lead._id,
+    customerId: req.customer._id,
+    performedBy: req.customer._id,
+    metadata: { requestId: order.requestId },
+  })
+
+  return created(res, { order }, 'Order request submitted')
+})
+
+// GET /projects/:leadId/orders/:orderId
+exports.getProjectOrderDetail = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const order = await MaterialRequest.findOne({ _id: req.params.orderId, leadId: req.params.leadId }).lean()
+  if (!order) return notFound(res, 'Order not found')
+
+  return success(res, { order })
+})
+
+// ── Order Quotations summary ────────────────────────────────────────────────────
+
+// GET /quotations/summary — per-project quotation counts for the "Order Quotations" project list
+exports.getQuotationsSummary = asyncHandler(async (req, res) => {
+  const leads = await Lead.find({ customerId: req.customer._id }).select('projectName jobId location').lean()
+  const leadIds = leads.map((l) => l._id)
+
+  const quotations = leadIds.length
+    ? await Quotation.find({ leadId: { $in: leadIds } }).select('leadId status createdAt').lean()
+    : []
+
+  const rows = leads.map((lead) => {
+    const forLead = quotations.filter((q) => String(q.leadId) === String(lead._id))
+    return {
+      leadId: lead._id,
+      projectName: lead.projectName,
+      jobId: lead.jobId,
+      location: lead.location,
+      newQuotation: forLead.filter((q) => q.status === 'sent' && new Date(q.createdAt) >= new Date(Date.now() - 7 * 86400000)).length,
+      pendingApproval: forLead.filter((q) => q.status === 'sent').length,
+      approved: forLead.filter((q) => q.status === 'approved').length,
+    }
+  })
+
+  return success(res, { projects: rows })
+})
+
+// ── Communication / Chat ────────────────────────────────────────────────────────
+
+const CHAT_CHANNELS = [
+  { key: 'project', label: 'Project Team' },
+  { key: 'finance', label: 'Finance Team' },
+  { key: 'construction', label: 'Construction Team' },
+]
+
+// GET /chat/channels — per-project channel list with unread counts
+exports.getChatChannels = asyncHandler(async (req, res) => {
+  const { leadId } = req.query
+  if (!leadId) return badRequest(res, 'leadId is required')
+
+  const lead = await Lead.findById(leadId).select('customerId').lean()
+  if (!lead || String(lead.customerId) !== String(req.customer._id)) return notFound(res, 'Project not found')
+
+  const channels = await Promise.all(CHAT_CHANNELS.map(async (c) => ({
+    ...c,
+    unreadCount: await Message.countDocuments({ leadId, channel: c.key, senderType: { $ne: 'customer' }, isRead: false }),
+  })))
+
+  return success(res, { channels })
+})
+
+// GET /chat/:channel/messages?leadId=
+exports.getChatMessages = asyncHandler(async (req, res) => {
+  const { leadId, page = 1, limit = 50 } = req.query
+  const { channel } = req.params
+  if (!leadId) return badRequest(res, 'leadId is required')
+  if (!CHAT_CHANNELS.some((c) => c.key === channel)) return badRequest(res, 'Invalid channel')
+
+  const lead = await Lead.findById(leadId).select('customerId').lean()
+  if (!lead || String(lead.customerId) !== String(req.customer._id)) return notFound(res, 'Project not found')
+
+  const skip = (Number(page) - 1) * Number(limit)
+  const [messages, total] = await Promise.all([
+    Message.find({ leadId, channel }).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).lean(),
+    Message.countDocuments({ leadId, channel }),
+  ])
+
+  await Message.updateMany({ leadId, channel, senderType: { $ne: 'customer' }, isRead: false }, { isRead: true })
+
+  return success(res, { messages: messages.reverse(), total })
+})
+
+// POST /chat/:channel/messages { leadId, content }
+exports.sendChatMessage = asyncHandler(async (req, res) => {
+  const { leadId, content } = req.body
+  const { channel } = req.params
+  if (!leadId || !content?.trim()) return badRequest(res, 'leadId and content are required')
+  if (!CHAT_CHANNELS.some((c) => c.key === channel)) return badRequest(res, 'Invalid channel')
+
+  const lead = await Lead.findById(leadId).select('customerId').lean()
+  if (!lead || String(lead.customerId) !== String(req.customer._id)) return notFound(res, 'Project not found')
+
+  const message = await Message.create({
+    leadId,
+    customerId: req.customer._id,
+    channel,
+    senderType: 'customer',
+    senderName: req.customer.firstName || 'Customer',
+    content: content.trim(),
+  })
+
+  return created(res, { message }, 'Message sent')
+})
+
+// ── Notifications ────────────────────────────────────────────────────────────────
+
+const NOTIFICATION_CATEGORY_MAP = {
+  drawings: ['drawing'],
+  finance: ['payment'],
+  meetings: ['meeting'],
+}
+
+// GET /notifications?filter=all|unread|drawings|finance|meetings
+exports.getCustomerNotifications = asyncHandler(async (req, res) => {
+  const customerId = req.customer._id
+  const { filter = 'all', page = 1, limit = 20 } = req.query
+
+  const baseFilter = { customerId }
+  if (filter === 'unread') baseFilter.isRead = false
+  else if (NOTIFICATION_CATEGORY_MAP[filter]) baseFilter.type = { $in: NOTIFICATION_CATEGORY_MAP[filter] }
+
+  const skip = (Number(page) - 1) * Number(limit)
+  const [notifications, total] = await Promise.all([
+    Notification.find(baseFilter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).lean(),
+    Notification.countDocuments(baseFilter),
+  ])
+
+  const now = new Date()
+  const stats = {
+    total: await Notification.countDocuments({ customerId }),
+    unread: await Notification.countDocuments({ customerId, isRead: false }),
+    highPriority: await Notification.countDocuments({ customerId, priority: 'high' }),
+    today: await Notification.countDocuments({ customerId, createdAt: { $gte: new Date(now.toDateString()) } }),
+  }
+
+  return success(res, { notifications, total, stats })
+})
+
+// PUT /notifications/:id/read
+exports.markCustomerNotificationRead = asyncHandler(async (req, res) => {
+  const notification = await Notification.findOne({ _id: req.params.id, customerId: req.customer._id })
+  if (!notification) return notFound(res, 'Notification not found')
+
+  notification.isRead = true
+  await notification.save()
+
+  return success(res, { notificationId: notification._id, isRead: true }, 'Notification marked read')
+})
+
+// PUT /notifications/read-all
+exports.markAllCustomerNotificationsRead = asyncHandler(async (req, res) => {
+  await Notification.updateMany({ customerId: req.customer._id, isRead: false }, { isRead: true })
+  return success(res, {}, 'All notifications marked read')
+})
+
+// ── Delivery: Site Ready / Equipment confirmation ─────────────────────────────────
+
+// POST /deliveries/:deliveryId/confirm-site-ready
+exports.confirmDeliverySiteReady = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery } = owned
+
+  const { siteCleared, accessRouteAvailable, safetyMeasuresInPlace, personnelReady, confirmedBy } = req.body
+
+  const full = await Delivery.findById(delivery._id)
+  full.siteReadyConfirmation = {
+    confirmed: true,
+    confirmedAt: new Date(),
+    confirmedBy: confirmedBy || req.customer.firstName || 'Customer',
+    checklist: {
+      siteCleared: !!siteCleared,
+      accessRouteAvailable: !!accessRouteAvailable,
+      safetyMeasuresInPlace: !!safetyMeasuresInPlace,
+      personnelReady: !!personnelReady,
+    },
+  }
+  await full.save()
+
+  return success(res, { deliveryId: full._id, siteReadyConfirmation: full.siteReadyConfirmation }, 'Site ready confirmed')
+})
+
+// POST /deliveries/:deliveryId/confirm-equipment
+exports.confirmDeliveryEquipment = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery } = owned
+
+  const { forkliftAvailable, craneOrHeavyMachineryAvailable, storageAreaReady, toolsAndAccessoriesOnSite } = req.body
+
+  const full = await Delivery.findById(delivery._id)
+  full.equipmentConfirmation = {
+    confirmed: true,
+    confirmedAt: new Date(),
+    checklist: {
+      forkliftAvailable: !!forkliftAvailable,
+      craneOrHeavyMachineryAvailable: !!craneOrHeavyMachineryAvailable,
+      storageAreaReady: !!storageAreaReady,
+      toolsAndAccessoriesOnSite: !!toolsAndAccessoriesOnSite,
+    },
+  }
+  await full.save()
+
+  return success(res, { deliveryId: full._id, equipmentConfirmation: full.equipmentConfirmation }, 'Equipment confirmed')
+})
+
+// GET /deliveries/:deliveryId/documents — combined "Delivery Documents" list (Details/Packing List/Instructions)
+exports.getDeliveryDocuments = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery } = owned
+
+  const base = `/api/customer/deliveries/${delivery._id}/download`
+  return success(res, {
+    documents: [
+      { name: 'Delivery Details PDF', type: 'pdf', url: `${base}` },
+      { name: 'Packing List', type: 'pdf', url: `${base}/packing-list` },
+      { name: 'Instructions', type: 'pdf', url: `${base}/instructions` },
+    ],
+  })
 })
