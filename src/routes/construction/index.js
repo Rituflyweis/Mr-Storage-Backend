@@ -46,6 +46,8 @@ router.get('/material-requests', materialRequestCtrl.getMaterialRequests)
 router.post('/material-requests', materialRequestCtrl.createMaterialRequest)
 router.get('/material-requests/:requestId', materialRequestCtrl.getMaterialRequest)
 router.put('/material-requests/:requestId/status', materialRequestCtrl.updateMaterialRequestStatus)
+router.post('/material-requests/:requestId/quotations', materialRequestCtrl.createOrderQuotation)
+router.post('/material-requests/:requestId/items/:itemId/deliver', materialRequestCtrl.markOrderItemDelivered)
 
 // Delivery Tracking (static routes before param routes)
 router.post('/deliveries/scan-bundle', deliveryCtrl.scanBundle)

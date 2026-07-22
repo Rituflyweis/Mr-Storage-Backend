@@ -54,6 +54,16 @@
       "key": "notificationId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "quotationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "bundleId",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -564,6 +574,29 @@
       "name": "🖼️ Project Drawings",
       "item": [
         {
+          "name": "Get All Project Drawings (landing page)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/drawings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "drawings"
+              ]
+            }
+          },
+          "_postman_note": "Cross-project list with numberOfBuildings/totalDrawings/lastUpdate per project"
+        },
+        {
           "name": "Get Project Drawings & Images",
           "event": [
             {
@@ -672,6 +705,57 @@
             },
             "description": "Customer requests a revision on a drawing.\n\nSets status → under_review, saves revisionNote + revisionRequestedAt.\nnote is required.\nReturns: { _id, name, status, revisionNote }"
           }
+        },
+        {
+          "name": "Get Project Buildings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/buildings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "buildings"
+              ]
+            }
+          },
+          "_postman_note": "Per-building drawing/document counts — 'Select a building' screen"
+        },
+        {
+          "name": "Get Building Drawings & Documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/buildings/Building A",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "buildings",
+                "Building A"
+              ]
+            }
+          },
+          "_postman_note": "Path segment is the building label (URL-encode spaces). Returns drawings[] (category=drawing|photo) + documents[] (category=document) separately"
         }
       ]
     },
@@ -1136,6 +1220,33 @@
               ]
             }
           }
+        },
+        {
+          "name": "Cancel Project Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/orders/{{orderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "orders",
+                "{{orderId}}",
+                "cancel"
+              ]
+            }
+          },
+          "_postman_note": "Blocked once order is fulfilled or already cancelled"
         }
       ]
     },
@@ -1165,6 +1276,134 @@
             }
           },
           "_postman_note": "Per-project new-quotation/pending-approval/approved counts — for the Order Quotations project list screen"
+        },
+        {
+          "name": "Get Project Order Quotations (per-building table)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/order-quotations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "order-quotations"
+              ],
+              "query": [
+                {
+                  "key": "buildingLabel",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "sent | approved | rejected"
+                },
+                {
+                  "key": "dateFrom",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "dateTo",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "_postman_note": "Powers 'ABC Logistic Warehouse - All Quotations' table: Order ID / Quotation ID / Building / Order Date / Quotation Received / Order Value / Status"
+        },
+        {
+          "name": "Get Order Quotation Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/order-quotations/{{quotationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "order-quotations",
+                "{{quotationId}}"
+              ]
+            }
+          },
+          "_postman_note": "Line items (coilType/length/qty/color/unitPrice/amount) + subtotal/tax/freight/totalValue + summary{totalCoilTypes,totalLength,totalQuantity}"
+        },
+        {
+          "name": "Approve Order Quotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/order-quotations/{{quotationId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "order-quotations",
+                "{{quotationId}}",
+                "approve"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reject Order Quotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/order-quotations/{{quotationId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "order-quotations",
+                "{{quotationId}}",
+                "reject"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Price too high, please revise\"\n}"
+            }
+          }
         }
       ]
     },
@@ -1366,6 +1605,179 @@
             }
           },
           "_postman_note": "Path param 'project' can be project | finance | construction"
+        }
+      ]
+    },
+    {
+      "name": "📱 Bundle Scan (QR)",
+      "item": [
+        {
+          "name": "Scan Bundle (QR / manual entry)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/scan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "scan"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bundleId\": \"{{bundleId}}\"\n}"
+            }
+          },
+          "_postman_note": "bundleId can be the Mongo _id OR the human bundleNo (e.g. B-001) — matches 'Enter Bundle ID' manual entry"
+        },
+        {
+          "name": "Get Bundle Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Report Bundle Issue",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}/report-issue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}",
+                "report-issue"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"issue\": \"Received quantity does not match label\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Contact Support (bundle)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}/contact-support",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}",
+                "contact-support"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Need help identifying this bundle\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Download Bundle Contents (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}/download",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}",
+                "download"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download Bundle Packing List (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}/download/packing-list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}",
+                "download",
+                "packing-list"
+              ]
+            }
+          }
         }
       ]
     },

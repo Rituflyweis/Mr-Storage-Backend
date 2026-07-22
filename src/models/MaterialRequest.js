@@ -1,6 +1,6 @@
 const mongoose = require('mongoose')
 
-const MR_STATUSES = ['pending', 'approved', 'rejected', 'fulfilled']
+const MR_STATUSES = ['pending', 'approved', 'rejected', 'fulfilled', 'cancelled']
 const MR_PRIORITIES = ['low', 'medium', 'high', 'critical']
 
 const RequestedItemSchema = new mongoose.Schema(
@@ -11,8 +11,11 @@ const RequestedItemSchema = new mongoose.Schema(
     notes:    { type: String, default: '', trim: true },
     lengthFeet: { type: Number, default: null },
     color:      { type: String, default: '', trim: true },
-  },
-  { _id: false }
+    deliveryStatus:    { type: String, enum: ['pending', 'delivered'], default: 'pending' },
+    deliveryId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Delivery', default: null },
+    deliveryReference: { type: String, default: '', trim: true },
+    deliveredAt:       { type: Date, default: null },
+  }
 )
 
 const AttachmentSchema = new mongoose.Schema(

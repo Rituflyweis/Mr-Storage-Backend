@@ -1,6 +1,13 @@
 const MaterialRequest = require('../../models/MaterialRequest')
+const OrderQuotation = require('../../models/OrderQuotation')
+const Delivery = require('../../models/Delivery')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+
+const generateQuotationNumber = async () => {
+  const count = await OrderQuotation.countDocuments({})
+  return `INV/${new Date().getFullYear()}/${String(count + 1).padStart(4, '0')}`
+}
 
 const generateRequestId = async () => {
   const count = await MaterialRequest.countDocuments({})
@@ -107,4 +114,74 @@ exports.updateMaterialRequestStatus = asyncHandler(async (req, res) => {
   await mr.save()
 
   return success(res, { requestId: mr._id, status: mr.status }, 'Material request updated')
+})
+
+// POST /material-requests/:requestId/quotations — staff sends a coil-order quotation back to the customer
+exports.createOrderQuotation = asyncHandler(async (req, res) => {
+  const mr = await MaterialRequest.findById(req.params.requestId).populate('leadId', 'customerId')
+  if (!mr) return notFound(res, 'Material request not found')
+  if (!mr.leadId?.customerId) return badRequest(res, 'Request has no linked customer')
+
+  const { lineItems, tax = 0, freight = 0, sellerName, sellerAddress, sellerEmail, paymentMethods } = req.body
+  if (!Array.isArray(lineItems) || !lineItems.length) return badRequest(res, 'lineItems is required')
+
+  const subtotal = lineItems.reduce((sum, i) => sum + (Number(i.unitPrice) || 0) * (Number(i.quantity) || 0), 0)
+  const items = lineItems.map((i) => ({
+    coilType: i.coilType,
+    lengthFeet: i.lengthFeet ?? null,
+    quantity: i.quantity,
+    color: i.color || '',
+    unitPrice: i.unitPrice || 0,
+    amount: (Number(i.unitPrice) || 0) * (Number(i.quantity) || 0),
+  }))
+
+  const quotation = await OrderQuotation.create({
+    quotationNumber: await generateQuotationNumber(),
+    orderId: mr._id,
+    leadId: mr.leadId._id,
+    customerId: mr.leadId.customerId,
+    buildingLabel: mr.buildingLabel || '',
+    sellerName: sellerName || '',
+    sellerAddress: sellerAddress || '',
+    sellerEmail: sellerEmail || '',
+    lineItems: items,
+    subtotal,
+    tax,
+    freight,
+    totalValue: subtotal + Number(tax) + Number(freight),
+    paymentMethods: paymentMethods || undefined,
+    createdBy: req.user._id,
+  })
+
+  return created(res, { quotation }, 'Quotation sent to customer')
+})
+
+// POST /material-requests/:requestId/items/:itemId/deliver — marks one coil line item delivered
+exports.markOrderItemDelivered = asyncHandler(async (req, res) => {
+  const { deliveryId, deliveryReference } = req.body
+
+  const mr = await MaterialRequest.findById(req.params.requestId)
+  if (!mr) return notFound(res, 'Material request not found')
+
+  const item = mr.requestedItems.id(req.params.itemId)
+  if (!item) return notFound(res, 'Order item not found')
+
+  let reference = deliveryReference || ''
+  if (deliveryId) {
+    const delivery = await Delivery.findById(deliveryId).select('deliveryNumber').lean()
+    if (!delivery) return badRequest(res, 'deliveryId does not match a known delivery')
+    reference = reference || delivery.deliveryNumber
+    item.deliveryId = deliveryId
+  }
+
+  item.deliveryStatus = 'delivered'
+  item.deliveryReference = reference
+  item.deliveredAt = new Date()
+
+  const allDelivered = mr.requestedItems.every((i) => i.deliveryStatus === 'delivered')
+  if (allDelivered) mr.status = 'fulfilled'
+
+  await mr.save()
+
+  return success(res, { requestId: mr._id, itemId: item._id, deliveryStatus: item.deliveryStatus, orderStatus: mr.status }, 'Item marked delivered')
 })

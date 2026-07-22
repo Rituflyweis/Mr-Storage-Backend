@@ -31,6 +31,8 @@ router.post('/projects/:leadId/quotation/reject',                  ctrl.rejectPr
 router.get('/projects/:leadId/payments/summary',                   ctrl.getProjectPaymentsSummary)
 router.post('/projects/:leadId/cancel',                            ctrl.cancelProject)
 router.get('/projects/:leadId/drawings',                           ctrl.getProjectDrawings)
+router.get('/projects/:leadId/buildings',                          ctrl.getProjectBuildings)
+router.get('/projects/:leadId/buildings/:buildingLabel',           ctrl.getBuildingDrawings)
 router.post('/projects/:leadId/drawings/:docId/approve',           ctrl.approveDrawing)
 router.post('/projects/:leadId/drawings/:docId/request-revision',  ctrl.requestDrawingRevision)
 router.get('/projects/:leadId/activity',                           ctrl.getProjectActivity)
@@ -40,6 +42,8 @@ router.get('/projects/:leadId/meetings',                           ctrl.getProje
 router.get('/projects/:leadId/orders',                             ctrl.getProjectOrders)
 router.post('/projects/:leadId/orders',                            ctrl.createProjectOrder)
 router.get('/projects/:leadId/orders/:orderId',                    ctrl.getProjectOrderDetail)
+router.post('/projects/:leadId/orders/:orderId/cancel',            ctrl.cancelProjectOrder)
+router.get('/projects/:leadId/order-quotations',                   ctrl.getProjectOrderQuotations)
 router.get('/projects/:leadId',                                    ctrl.getProject)
 router.post('/projects',
   [
@@ -54,6 +58,9 @@ router.post('/projects',
   validate,
   ctrl.createProject
 )
+
+// Drawings (cross-project landing page)
+router.get('/drawings', ctrl.getAllProjectDrawings)
 
 // Documents
 router.get('/documents', ctrl.getDocuments)
@@ -88,7 +95,18 @@ router.post('/deliveries/:deliveryId/confirm-equipment',        ctrl.confirmDeli
 router.get('/material-orders/summary', ctrl.getMaterialOrdersSummary)
 
 // Order Quotations
-router.get('/quotations/summary', ctrl.getQuotationsSummary)
+router.get('/quotations/summary',                     ctrl.getQuotationsSummary)
+router.get('/order-quotations/:quotationId',           ctrl.getOrderQuotationDetail)
+router.post('/order-quotations/:quotationId/approve',  ctrl.approveOrderQuotation)
+router.post('/order-quotations/:quotationId/reject',   ctrl.rejectOrderQuotation)
+
+// Bundle Scan (QR)
+router.post('/bundles/scan',                          ctrl.scanCustomerBundle)
+router.get('/bundles/:bundleId',                      ctrl.getCustomerBundleDetail)
+router.post('/bundles/:bundleId/report-issue',        ctrl.reportCustomerBundleIssue)
+router.post('/bundles/:bundleId/contact-support',     ctrl.contactSupportForBundle)
+router.get('/bundles/:bundleId/download',             ctrl.downloadBundleContents)
+router.get('/bundles/:bundleId/download/packing-list', ctrl.downloadBundlePackingList)
 
 // Communication / Chat
 router.get('/chat/channels',                 ctrl.getChatChannels)

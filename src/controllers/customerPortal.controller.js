@@ -16,6 +16,7 @@ const Meeting = require('../models/Meeting')
 const AuditLog = require('../models/AuditLog')
 const User = require('../models/User')
 const MaterialRequest = require('../models/MaterialRequest')
+const OrderQuotation = require('../models/OrderQuotation')
 const Message = require('../models/Message')
 const Notification = require('../models/Notification')
 const Milestone = require('../models/Milestone')
@@ -23,7 +24,7 @@ const Bundle = require('../models/Bundle')
 const { success, created, notFound, forbidden, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
 const { loadFreightLoadDetailsByLeadId } = require('../services/plant/freightLoadDetails.service')
-const { generateDeliveryInfoPdf, generatePackingListPdf, generateInstructionsPdf } = require('../utils/exportDelivery')
+const { generateDeliveryInfoPdf, generatePackingListPdf, generateInstructionsPdf, generatePackingListDetailPdf } = require('../utils/exportDelivery')
 const { generateDeliveryIcs, buildCalendarEventDetails } = require('../utils/generateIcs')
 const { sendSms } = require('../services/sms/sms.service')
 const { sendDeliveryConfirmationEmail, sendDeliveryCallbackRequestEmail } = require('../services/email/mailer')
@@ -1224,6 +1225,86 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
   return success(res, { drawings, embeddedDocuments: embeddedDocs, total: drawings.length + embeddedDocs.length })
 })
 
+// GET /drawings — cross-project landing page ("Project Drawings" — lists every project with its building/drawing counts)
+exports.getAllProjectDrawings = asyncHandler(async (req, res) => {
+  const leads = await Lead.find({ customerId: req.customer._id })
+    .select('projectName jobId location buildingType numberOfBuildings')
+    .lean()
+
+  const leadIds = leads.map((l) => l._id)
+  const docs = leadIds.length
+    ? await DrawingDocument.find({ leadId: { $in: leadIds } }).select('leadId category updatedAt').lean()
+    : []
+
+  const projects = leads.map((lead) => {
+    const forLead = docs.filter((d) => String(d.leadId) === String(lead._id))
+    const lastUpdate = forLead.reduce((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null)
+    return {
+      leadId: lead._id,
+      projectName: lead.projectName,
+      jobId: lead.jobId,
+      location: lead.location,
+      numberOfBuildings: lead.numberOfBuildings || 1,
+      totalDrawings: forLead.filter((d) => d.category !== 'document').length,
+      lastUpdate,
+    }
+  })
+
+  return success(res, { projects })
+})
+
+const buildingLabelsForLead = (lead) => {
+  const count = lead.numberOfBuildings || 1
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  return Array.from({ length: count }, (_, i) => `Building ${letters[i] || i + 1}`)
+}
+
+// GET /projects/:leadId/buildings — building breakdown ("Select a building" screen)
+exports.getProjectBuildings = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId).select('customerId projectName jobId location numberOfBuildings').lean()
+  if (!lead || String(lead.customerId) !== String(req.customer._id)) return notFound(res, 'Project not found')
+
+  const docs = await DrawingDocument.find({ leadId: req.params.leadId }).select('buildingLabel category updatedAt').lean()
+
+  const labelsWithDocs = [...new Set(docs.map((d) => d.buildingLabel || 'Building A'))]
+  const allLabels = [...new Set([...buildingLabelsForLead(lead), ...labelsWithDocs])]
+
+  const buildings = allLabels.map((label) => {
+    const forBuilding = docs.filter((d) => (d.buildingLabel || 'Building A') === label)
+    const lastUpdate = forBuilding.reduce((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null)
+    return {
+      buildingLabel: label,
+      totalDrawings: forBuilding.filter((d) => d.category !== 'document').length,
+      totalDocuments: forBuilding.filter((d) => d.category === 'document').length,
+      lastUpdate,
+    }
+  })
+
+  return success(res, {
+    project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location },
+    buildings,
+  })
+})
+
+// GET /projects/:leadId/buildings/:buildingLabel — drawings + documents for one building
+exports.getBuildingDrawings = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const buildingLabel = decodeURIComponent(req.params.buildingLabel)
+  const docs = await DrawingDocument.find({ leadId: req.params.leadId, buildingLabel })
+    .populate('uploadedBy', 'name')
+    .populate('approvedBy', 'name')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  return success(res, {
+    buildingLabel,
+    drawings: docs.filter((d) => d.category === 'drawing' || d.category === 'photo'),
+    documents: docs.filter((d) => d.category === 'document'),
+  })
+})
+
 // GET /projects/:leadId/activity
 exports.getProjectActivity = asyncHandler(async (req, res) => {
   const lead = await assertProjectOwner(req)
@@ -1542,13 +1623,41 @@ const generateMaterialRequestId = async () => {
   return `MR-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
 }
 
+// Order Details status stepper: new_order -> quotation_received -> quotation_approved -> order_confirmed -> completed
+const computeOrderStage = (order, quotation) => {
+  if (order.status === 'cancelled' || order.status === 'rejected') return order.status
+  if (order.status === 'fulfilled') return 'completed'
+  if (!quotation) return 'new_order'
+  if (quotation.status === 'sent') return 'quotation_received'
+  if (quotation.status === 'approved') return order.status === 'approved' ? 'order_confirmed' : 'quotation_approved'
+  return 'new_order'
+}
+
+// Per-project tile counts for the Material Orders project list, driven by the same
+// stage logic as the Order Details stepper (not raw MaterialRequest.status) so the
+// numbers stay consistent between the list screen and the detail screen.
 const orderCountsForLead = async (leadId) => {
-  const [newCount, pendingCount, completedCount] = await Promise.all([
-    MaterialRequest.countDocuments({ leadId, status: 'pending', createdAt: { $gte: new Date(Date.now() - 7 * 86400000) } }),
-    MaterialRequest.countDocuments({ leadId, status: 'pending' }),
-    MaterialRequest.countDocuments({ leadId, status: 'fulfilled' }),
-  ])
-  return { newOrders: newCount, pending: pendingCount, completed: completedCount }
+  const orders = await MaterialRequest.find({ leadId, status: { $nin: ['cancelled', 'rejected'] } }).select('status').lean()
+  if (!orders.length) return { newOrders: 0, pending: 0, completed: 0 }
+
+  const quotations = await OrderQuotation.find({ orderId: { $in: orders.map((o) => o._id) } })
+    .select('orderId status')
+    .sort({ createdAt: -1 })
+    .lean()
+  const latestQuotationByOrder = new Map()
+  for (const q of quotations) {
+    const key = String(q.orderId)
+    if (!latestQuotationByOrder.has(key)) latestQuotationByOrder.set(key, q)
+  }
+
+  const counts = { newOrders: 0, pending: 0, completed: 0 }
+  for (const order of orders) {
+    const stage = computeOrderStage(order, latestQuotationByOrder.get(String(order._id)))
+    if (stage === 'new_order') counts.newOrders += 1
+    else if (stage === 'completed') counts.completed += 1
+    else counts.pending += 1
+  }
+  return counts
 }
 
 // GET /material-orders/summary — per-project order counts for the "Material Orders" project list
@@ -1634,21 +1743,37 @@ exports.getProjectOrderDetail = asyncHandler(async (req, res) => {
   const lead = await assertProjectOwner(req)
   if (!lead) return notFound(res, 'Project not found')
 
-  const order = await MaterialRequest.findOne({ _id: req.params.orderId, leadId: req.params.leadId }).lean()
+  const order = await MaterialRequest.findOne({ _id: req.params.orderId, leadId: req.params.leadId })
+    .populate('requestedByCustomer', 'firstName lastName')
+    .populate('requestedBy', 'name')
+    .lean()
   if (!order) return notFound(res, 'Order not found')
 
-  return success(res, { order })
+  const quotation = await OrderQuotation.findOne({ orderId: order._id }).sort({ createdAt: -1 }).lean()
+
+  const createdByName = order.requestedByCustomer
+    ? `${order.requestedByCustomer.firstName || ''} ${order.requestedByCustomer.lastName || ''}`.trim()
+    : order.requestedBy?.name || ''
+
+  const deliveredItems = order.requestedItems.filter((i) => i.deliveryStatus === 'delivered')
+  const pendingItems = order.requestedItems.filter((i) => i.deliveryStatus !== 'delivered')
+
+  return success(res, {
+    order: { ...order, stage: computeOrderStage(order, quotation), createdByName, deliveredItems, pendingItems },
+    quotation: quotation || null,
+  })
 })
 
 // ── Order Quotations summary ────────────────────────────────────────────────────
 
 // GET /quotations/summary — per-project quotation counts for the "Order Quotations" project list
+// GET /quotations/summary — per-project ORDER quotation counts (coil-order quotes, not the whole-building RFQ Quotation)
 exports.getQuotationsSummary = asyncHandler(async (req, res) => {
   const leads = await Lead.find({ customerId: req.customer._id }).select('projectName jobId location').lean()
   const leadIds = leads.map((l) => l._id)
 
   const quotations = leadIds.length
-    ? await Quotation.find({ leadId: { $in: leadIds } }).select('leadId status createdAt').lean()
+    ? await OrderQuotation.find({ leadId: { $in: leadIds } }).select('leadId status sentAt').lean()
     : []
 
   const rows = leads.map((lead) => {
@@ -1658,13 +1783,127 @@ exports.getQuotationsSummary = asyncHandler(async (req, res) => {
       projectName: lead.projectName,
       jobId: lead.jobId,
       location: lead.location,
-      newQuotation: forLead.filter((q) => q.status === 'sent' && new Date(q.createdAt) >= new Date(Date.now() - 7 * 86400000)).length,
+      newQuotation: forLead.filter((q) => q.status === 'sent' && new Date(q.sentAt) >= new Date(Date.now() - 7 * 86400000)).length,
       pendingApproval: forLead.filter((q) => q.status === 'sent').length,
       approved: forLead.filter((q) => q.status === 'approved').length,
     }
   })
 
   return success(res, { projects: rows })
+})
+
+// GET /projects/:leadId/order-quotations — "ABC Logistic Warehouse - All Quotations" table
+exports.getProjectOrderQuotations = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const { buildingLabel, status, dateFrom, dateTo, page = 1, limit = 20 } = req.query
+  const filter = { leadId: req.params.leadId }
+  if (buildingLabel) filter.buildingLabel = buildingLabel
+  if (status) filter.status = status
+  if (dateFrom || dateTo) {
+    filter.sentAt = {}
+    if (dateFrom) filter.sentAt.$gte = new Date(dateFrom)
+    if (dateTo) filter.sentAt.$lte = new Date(dateTo)
+  }
+
+  const skip = (Number(page) - 1) * Number(limit)
+  const [quotations, total] = await Promise.all([
+    OrderQuotation.find(filter).populate('orderId', 'requestId requestDate').sort({ sentAt: -1 }).skip(skip).limit(Number(limit)).lean(),
+    OrderQuotation.countDocuments(filter),
+  ])
+
+  const rows = quotations.map((q) => ({
+    orderId: q.orderId?.requestId || '',
+    quotationId: q.quotationNumber,
+    quotationRecordId: q._id,
+    buildingLabel: q.buildingLabel,
+    orderDate: q.orderId?.requestDate || q.createdAt,
+    quotationReceived: q.sentAt,
+    orderValue: q.totalValue,
+    status: q.status,
+  }))
+
+  return success(res, { quotations: rows, total })
+})
+
+// GET /order-quotations/:quotationId — "Quotation Details" screen
+exports.getOrderQuotationDetail = asyncHandler(async (req, res) => {
+  const quotation = await OrderQuotation.findOne({ _id: req.params.quotationId, customerId: req.customer._id })
+    .populate('orderId', 'requestId requestDate')
+    .populate('leadId', 'projectName jobId location')
+    .lean()
+  if (!quotation) return notFound(res, 'Quotation not found')
+
+  const totalCoilTypes = quotation.lineItems.length
+  const totalLength = quotation.lineItems.reduce((s, i) => s + (i.lengthFeet || 0) * i.quantity, 0)
+  const totalQuantity = quotation.lineItems.reduce((s, i) => s + i.quantity, 0)
+
+  return success(res, {
+    quotation: {
+      ...quotation,
+      orderRequestId: quotation.orderId?.requestId || '',
+      summary: { totalCoilTypes, totalLength, totalQuantity },
+    },
+  })
+})
+
+// POST /order-quotations/:quotationId/approve
+exports.approveOrderQuotation = asyncHandler(async (req, res) => {
+  const quotation = await OrderQuotation.findOne({ _id: req.params.quotationId, customerId: req.customer._id })
+  if (!quotation) return notFound(res, 'Quotation not found')
+  if (quotation.status !== 'sent') return badRequest(res, `Quotation already ${quotation.status}`)
+
+  quotation.status = 'approved'
+  quotation.respondedAt = new Date()
+  await quotation.save()
+
+  await MaterialRequest.findByIdAndUpdate(quotation.orderId, { status: 'approved' })
+
+  await auditService.log({
+    type: 'lead', action: 'order_quotation.approved', leadId: quotation.leadId,
+    customerId: req.customer._id, performedBy: req.customer._id,
+    metadata: { quotationId: quotation._id, quotationNumber: quotation.quotationNumber },
+  })
+
+  return success(res, { message: 'Quotation Approved — Submitted Successfully', quotationId: quotation._id, status: quotation.status })
+})
+
+// POST /order-quotations/:quotationId/reject
+exports.rejectOrderQuotation = asyncHandler(async (req, res) => {
+  const quotation = await OrderQuotation.findOne({ _id: req.params.quotationId, customerId: req.customer._id })
+  if (!quotation) return notFound(res, 'Quotation not found')
+  if (quotation.status !== 'sent') return badRequest(res, `Quotation already ${quotation.status}`)
+
+  quotation.status = 'rejected'
+  quotation.respondedAt = new Date()
+  quotation.rejectionReason = req.body.reason || ''
+  await quotation.save()
+
+  await MaterialRequest.findByIdAndUpdate(quotation.orderId, { status: 'rejected' })
+
+  await auditService.log({
+    type: 'lead', action: 'order_quotation.rejected', leadId: quotation.leadId,
+    customerId: req.customer._id, performedBy: req.customer._id,
+    metadata: { quotationId: quotation._id, quotationNumber: quotation.quotationNumber, reason: req.body.reason || '' },
+  })
+
+  return success(res, { message: 'Quotation rejected', quotationId: quotation._id, status: quotation.status })
+})
+
+// POST /projects/:leadId/orders/:orderId/cancel
+exports.cancelProjectOrder = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const order = await MaterialRequest.findOne({ _id: req.params.orderId, leadId: req.params.leadId })
+  if (!order) return notFound(res, 'Order not found')
+  if (['fulfilled', 'cancelled'].includes(order.status)) return badRequest(res, `Order already ${order.status}`)
+
+  order.status = 'cancelled'
+  await order.save()
+
+  return success(res, { orderId: order._id, status: order.status }, 'Order cancelled')
 })
 
 // ── Communication / Chat ────────────────────────────────────────────────────────
@@ -1850,4 +2089,143 @@ exports.getDeliveryDocuments = asyncHandler(async (req, res) => {
       { name: 'Instructions', type: 'pdf', url: `${base}/instructions` },
     ],
   })
+})
+
+// ── Bundle Scan (QR) ────────────────────────────────────────────────────────────
+
+const assertBundleOwner = async (req, bundleId) => {
+  const bundle = await Bundle.findOne({ $or: [{ _id: bundleId.length === 24 ? bundleId : null }, { bundleNo: bundleId }] })
+    .populate('packingListId', 'packingListNo truckLabel truckType deliveryLocation')
+    .lean()
+  if (!bundle) return null
+  const lead = await Lead.findById(bundle.leadId).select('customerId projectName jobId location').lean()
+  if (!lead || String(lead.customerId) !== String(req.customer._id)) return null
+  return { bundle, lead }
+}
+
+const buildBundleScanCard = async ({ bundle, lead }) => {
+  const delivery = await Delivery.findOne({ leadId: lead._id, status: { $nin: ['draft', 'cancelled'] } })
+    .sort({ updatedAt: -1 })
+    .select('deliveryNumber status deliveryLocation')
+    .lean()
+
+  return {
+    bundleId: bundle._id,
+    bundleNo: bundle.bundleNo,
+    bundleType: bundle.bundleType,
+    title: bundle.title,
+    totalQty: bundle.totalQty,
+    totalWeight: bundle.totalWeight,
+    maxLengthFeet: bundle.maxLengthFeet,
+    status: bundle.status,
+    items: bundle.items || [],
+    project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId },
+    truck: bundle.packingListId ? { packingListNo: bundle.packingListId.packingListNo, truck: bundle.packingListId.truckLabel || bundle.packingListId.truckType } : null,
+    deliveryReference: delivery
+      ? { deliveryNumber: delivery.deliveryNumber, destination: delivery.deliveryLocation || lead.location, status: delivery.status }
+      : null,
+  }
+}
+
+// POST /bundles/scan { bundleId } — QR scan / manual bundle-ID entry
+exports.scanCustomerBundle = asyncHandler(async (req, res) => {
+  const { bundleId } = req.body
+  if (!bundleId) return badRequest(res, 'bundleId is required')
+
+  const owned = await assertBundleOwner(req, bundleId)
+  if (!owned) return notFound(res, 'Bundle not found')
+
+  return success(res, { bundle: await buildBundleScanCard(owned) })
+})
+
+// GET /bundles/:bundleId
+exports.getCustomerBundleDetail = asyncHandler(async (req, res) => {
+  const owned = await assertBundleOwner(req, req.params.bundleId)
+  if (!owned) return notFound(res, 'Bundle not found')
+
+  return success(res, { bundle: await buildBundleScanCard(owned) })
+})
+
+// POST /bundles/:bundleId/report-issue { issue }
+exports.reportCustomerBundleIssue = asyncHandler(async (req, res) => {
+  const { issue } = req.body
+  if (!issue?.trim()) return badRequest(res, 'issue is required')
+
+  const owned = await assertBundleOwner(req, req.params.bundleId)
+  if (!owned) return notFound(res, 'Bundle not found')
+
+  await Bundle.findByIdAndUpdate(owned.bundle._id, { mismatchNotes: issue.trim(), mismatchReportedAt: new Date() })
+
+  await auditService.log({
+    type: 'lead', action: 'bundle.issue_reported', leadId: owned.lead._id,
+    customerId: req.customer._id, performedBy: req.customer._id,
+    metadata: { bundleId: owned.bundle._id, bundleNo: owned.bundle.bundleNo, issue: issue.trim() },
+  })
+
+  return success(res, { bundleId: owned.bundle._id }, 'Issue reported — our team will follow up')
+})
+
+// POST /bundles/:bundleId/contact-support { message }
+exports.contactSupportForBundle = asyncHandler(async (req, res) => {
+  const owned = await assertBundleOwner(req, req.params.bundleId)
+  if (!owned) return notFound(res, 'Bundle not found')
+
+  const fullLead = await Lead.findById(owned.lead._id).select('assignedSales').populate('assignedSales', 'name email').lean()
+  if (fullLead?.assignedSales?.email) {
+    await sendDeliveryCallbackRequestEmail({
+      toEmail: fullLead.assignedSales.email,
+      salesRepName: fullLead.assignedSales.name || '',
+      customerName: `${req.customer.firstName || ''} ${req.customer.lastName || ''}`.trim(),
+      customerEmail: req.customer.email,
+      customerPhone: req.customer.phone?.number || '',
+      projectName: owned.lead.projectName || '',
+      jobId: owned.lead.jobId || '',
+      deliveryNumber: owned.bundle.bundleNo,
+      note: `Bundle support request (${owned.bundle.bundleNo}): ${req.body.message || 'Customer needs help with this bundle'}`,
+    })
+  }
+
+  return success(res, { bundleId: owned.bundle._id }, 'Support has been notified')
+})
+
+// GET /bundles/:bundleId/download — bundle contents PDF
+exports.downloadBundleContents = asyncHandler(async (req, res) => {
+  const owned = await assertBundleOwner(req, req.params.bundleId)
+  if (!owned) return notFound(res, 'Bundle not found')
+
+  const buffer = await generatePackingListDetailPdf(
+    { packingListNo: owned.bundle.bundleNo, truck: '', destination: owned.lead.location, totalBundles: 1, totalWeight: owned.bundle.totalWeight, status: owned.bundle.status, project: { projectName: owned.lead.projectName, jobId: owned.lead.jobId } },
+    [owned.bundle]
+  )
+
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="bundle-${owned.bundle.bundleNo}-contents.pdf"`)
+  return res.send(buffer)
+})
+
+// GET /bundles/:bundleId/download/packing-list — packing list PDF for the bundle's truck load
+exports.downloadBundlePackingList = asyncHandler(async (req, res) => {
+  const owned = await assertBundleOwner(req, req.params.bundleId)
+  if (!owned) return notFound(res, 'Bundle not found')
+
+  const siblingBundles = owned.bundle.packingListId
+    ? await Bundle.find({ packingListId: owned.bundle.packingListId._id }).select('bundleNo bundleType totalQty totalWeight status').lean()
+    : [owned.bundle]
+
+  const buffer = await generatePackingListDetailPdf(
+    {
+      packingListNo: owned.bundle.packingListId?.packingListNo || owned.bundle.bundleNo,
+      truck: owned.bundle.packingListId?.truckLabel || owned.bundle.packingListId?.truckType || '',
+      destination: owned.bundle.packingListId?.deliveryLocation || owned.lead.location,
+      totalBundles: siblingBundles.length,
+      totalWeight: siblingBundles.reduce((s, b) => s + (b.totalWeight || 0), 0),
+      status: owned.bundle.status,
+      project: { projectName: owned.lead.projectName, jobId: owned.lead.jobId },
+    },
+    siblingBundles
+  )
+
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="bundle-${owned.bundle.bundleNo}-packing-list.pdf"`)
+  return res.send(buffer)
 })

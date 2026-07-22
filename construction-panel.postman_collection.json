@@ -55,6 +55,11 @@
       "key": "loadId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "itemId",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -849,6 +854,74 @@
               "raw": "{\n  \"status\": \"approved\",\n  \"reviewNotes\": \"Approved for procurement\"\n}"
             }
           }
+        },
+        {
+          "name": "Send Order Quotation to Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/material-requests/{{requestId}}/quotations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "material-requests",
+                "{{requestId}}",
+                "quotations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sellerName\": \"STORAGE MATERIAL\",\n  \"sellerAddress\": \"San Francisco SA 65798, United States\",\n  \"sellerEmail\": \"info@company.com\",\n  \"lineItems\": [\n    {\n      \"coilType\": \"Black 26ga\",\n      \"lengthFeet\": 24,\n      \"quantity\": 30,\n      \"color\": \"Black\",\n      \"unitPrice\": 10\n    },\n    {\n      \"coilType\": \"Black 26ga\",\n      \"lengthFeet\": 16,\n      \"quantity\": 22,\n      \"color\": \"Black\",\n      \"unitPrice\": 10\n    }\n  ],\n  \"tax\": 168,\n  \"freight\": 27\n}"
+            }
+          },
+          "_postman_note": "Creates an OrderQuotation the customer sees under Customer Panel > Order Quotations; also flips nothing on the MaterialRequest itself (customer approve/reject does that)"
+        },
+        {
+          "name": "Mark Order Item Delivered",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/material-requests/{{requestId}}/items/{{itemId}}/deliver",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "material-requests",
+                "{{requestId}}",
+                "items",
+                "{{itemId}}",
+                "deliver"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deliveryId\": \"{{deliveryId}}\",\n  \"deliveryReference\": \"DEL-001\"\n}"
+            }
+          },
+          "_postman_note": "Marks one coil line item as delivered; auto-fulfills the whole order once every item is delivered"
         }
       ]
     },

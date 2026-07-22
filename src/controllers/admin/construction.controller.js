@@ -120,7 +120,7 @@ exports.getDrawings = asyncHandler(async (req, res) => {
 
 exports.uploadDrawing = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { name, fileUrl, fileType, fileSize, documentType, notes } = req.body
+  const { name, fileUrl, fileType, fileSize, documentType, notes, buildingLabel, category } = req.body
 
   const lead = await Lead.findById(leadId)
   if (!lead) return notFound(res, 'Project not found')
@@ -128,6 +128,8 @@ exports.uploadDrawing = asyncHandler(async (req, res) => {
   const doc = await DrawingDocument.create({
     leadId, name, fileUrl: fileUrl || '', fileType, fileSize: fileSize || 0,
     documentType: documentType || 'other', notes: notes || '', uploadedBy: req.user._id,
+    buildingLabel: buildingLabel || 'Building A',
+    category: category || 'drawing',
   })
 
   return created(res, { document: doc })
