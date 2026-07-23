@@ -567,6 +567,31 @@
             },
             "description": "Creates a new project enquiry (lead) for this customer. Sets lifecycleStatus: initial_contact."
           }
+        },
+        {
+          "name": "Get Project Tracking",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/tracking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "tracking"
+              ]
+            }
+          },
+          "_postman_note": "'Project Tracking' tab. projectSteps now includes per-step startedBy/startedAt/completedBy/completedAt/currentStage(sub-label)/completionPct/expectedCompletion/notes/attachments[] — sourced from ProjectStepDetail records the construction panel writes via PUT /construction/projects/:leadId/steps/:stepKey. Also includes taskProgress, timeline, milestones."
         }
       ]
     },
@@ -1827,6 +1852,61 @@
             },
             "description": "tab values: upcoming | past | rescheduled\n\nReturns: deliveries[], total, tabs{upcoming, past, rescheduled counts}\nEach delivery: deliveryId, deliveryNumber, status, description, deliveryDate, loadWeight, siteContact{name,phone}, deliveryCompany{name,contact,phone}, loadAndBundle{loadId, bundleCount, truckNumber, totalWeight}, project{jobId,projectName}\n\nTest script auto-saves first delivery's _id to {{deliveryId}}.\n\nMock data (upcoming): 3 deliveries\n  CUST-DEL-002  in_transit   Secondary panels - Roof and wall cladding (2026-07-30)\n  CUST-DEL-001  scheduled    Primary Steel Frame - columns & rafters    (2026-08-10)\n  CUST-DEL-004  confirmed    Full structural package - office frame      (2026-08-20)"
           }
+        },
+        {
+          "name": "Get Deliveries Summary (per-project)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "summary"
+              ]
+            }
+          },
+          "_postman_note": "NEW — per-project {upcoming,past,rescheduled} counts, same shape as material-orders/summary & quotations/summary"
+        },
+        {
+          "name": "Get Deliveries for a Project",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{leadId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{leadId}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "upcoming",
+                  "description": "upcoming | past | rescheduled"
+                }
+              ]
+            }
+          },
+          "_postman_note": "CHANGED — /deliveries/:id now smart-dispatches: pass a leadId here to get that project's schedule (adds a `project` object to the response). The exact same path also still accepts a deliveryId for the single-delivery-detail lookup (see 'Get Delivery Detail' below) — whichever the id resolves to is what you get back."
         },
         {
           "name": "Get Past Deliveries",

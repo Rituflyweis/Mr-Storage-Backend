@@ -3,6 +3,7 @@ const WorkLog = require('../../models/WorkLog')
 const Lead = require('../../models/Lead')
 const User = require('../../models/User')
 const Milestone = require('../../models/Milestone')
+const ProjectStepDetail = require('../../models/ProjectStepDetail')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -234,4 +235,55 @@ exports.updateMilestone = asyncHandler(async (req, res) => {
 
   await milestone.save()
   return success(res, { milestone }, 'Milestone updated')
+})
+
+const STEP_KEYS = ['design', 'fabrication', 'dispatch', 'install', 'complete']
+
+// PUT /projects/:leadId/steps/:stepKey — "Current Step Details" panel on the customer's Project Tracking tab
+exports.updateProjectStep = asyncHandler(async (req, res) => {
+  const { leadId, stepKey } = req.params
+  if (!STEP_KEYS.includes(stepKey)) return badRequest(res, `stepKey must be one of ${STEP_KEYS.join(', ')}`)
+
+  const lead = await Lead.findById(leadId).select('_id').lean()
+  if (!lead) return notFound(res, 'Project not found')
+
+  const { startedBy, startedAt, completedBy, completedAt, currentStage, completionPct, expectedCompletion, notes } = req.body
+
+  const update = { updatedBy: req.user._id }
+  if (startedBy !== undefined) update.startedBy = startedBy
+  if (startedAt !== undefined) update.startedAt = startedAt
+  if (completedBy !== undefined) update.completedBy = completedBy
+  if (completedAt !== undefined) update.completedAt = completedAt
+  if (currentStage !== undefined) update.currentStage = currentStage
+  if (completionPct !== undefined) update.completionPct = completionPct
+  if (expectedCompletion !== undefined) update.expectedCompletion = expectedCompletion
+  if (notes !== undefined) update.notes = notes
+
+  const detail = await ProjectStepDetail.findOneAndUpdate(
+    { leadId, stepKey },
+    { $set: update },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  )
+
+  return success(res, { stepDetail: detail }, 'Project step updated')
+})
+
+// POST /projects/:leadId/steps/:stepKey/attachments — add a file to a step's "Attachments & Documents"
+exports.addProjectStepAttachment = asyncHandler(async (req, res) => {
+  const { leadId, stepKey } = req.params
+  if (!STEP_KEYS.includes(stepKey)) return badRequest(res, `stepKey must be one of ${STEP_KEYS.join(', ')}`)
+
+  const { name, url } = req.body
+  if (!url) return badRequest(res, 'url is required')
+
+  const lead = await Lead.findById(leadId).select('_id').lean()
+  if (!lead) return notFound(res, 'Project not found')
+
+  const detail = await ProjectStepDetail.findOneAndUpdate(
+    { leadId, stepKey },
+    { $push: { attachments: { name: name || '', url } }, $set: { updatedBy: req.user._id } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  )
+
+  return success(res, { stepDetail: detail }, 'Attachment added')
 })

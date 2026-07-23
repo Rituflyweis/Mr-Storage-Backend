@@ -634,6 +634,79 @@
       ]
     },
     {
+      "name": "Project Steps (Customer Tracking)",
+      "item": [
+        {
+          "name": "Update Project Step Detail",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/projects/{{leadId}}/steps/install",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "projects",
+                "{{leadId}}",
+                "steps",
+                "install"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startedBy\": \"Installation Team\",\n  \"startedAt\": \"2025-05-28T10:30:00.000Z\",\n  \"currentStage\": \"Wall Panel Installation\",\n  \"completionPct\": 80,\n  \"expectedCompletion\": \"2025-06-08\",\n  \"notes\": \"Installation is proceeding as per schedule.\"\n}"
+            }
+          },
+          "_postman_note": "stepKey path segment: design | fabrication | dispatch | install | complete. Upserts — creates the record if it doesn't exist yet. Only overlays descriptive fields; step status (completed/in_progress/pending) is always computed from Lead.lifecycleStatus, not set here."
+        },
+        {
+          "name": "Add Project Step Attachment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/construction/projects/{{leadId}}/steps/install/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "construction",
+                "projects",
+                "{{leadId}}",
+                "steps",
+                "install",
+                "attachments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Installation.pdf\",\n  \"url\": \"https://example-bucket.s3.amazonaws.com/installation.pdf\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Daily Work Log",
       "item": [
         {

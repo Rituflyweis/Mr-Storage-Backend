@@ -20,6 +20,8 @@ const OrderQuotation = require('../models/OrderQuotation')
 const Message = require('../models/Message')
 const Notification = require('../models/Notification')
 const Milestone = require('../models/Milestone')
+const Task = require('../models/Task')
+const ProjectStepDetail = require('../models/ProjectStepDetail')
 const Bundle = require('../models/Bundle')
 const { success, created, notFound, forbidden, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
@@ -44,6 +46,82 @@ const s3 = new S3Client({
 })
 
 const CLOSED_STAGES = ['payment_done', 'delivered']
+
+// "Project Steps" stepper (Design -> Fabrication -> Dispatch -> Install -> Complete) shown on
+// the Project Details / Dashboard screens. Maps the 21 granular sales+plant lifecycle stages
+// down to these 5 customer-facing buckets. NOTE: nothing in the data model marks a project
+// "Complete" beyond delivery — there is no separate installation/closure stage or flag today —
+// so the Install bucket becomes "in_progress" once delivered and Complete stays "pending"
+// until that gap is closed with a real signal.
+const PROJECT_STEP_DEFS = [
+  {
+    key: 'design', label: 'Design',
+    stages: [
+      'initial_contact', 'requirements_gathered', 'proposal_sent', 'negotiation', 'deal_closed',
+      'payment_done', 'converted_to_po', 'sent_to_admin',
+      'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
+    ],
+  },
+  { key: 'fabrication', label: 'Fabrication', stages: ['material_check', 'production_planning', 'fabrication_started', 'quality_inspection'] },
+  { key: 'dispatch', label: 'Dispatch', stages: ['packing_bundling', 'shipper_prepared', 'ready_for_delivery', 'dispatched'] },
+  { key: 'install', label: 'Install', stages: ['delivered'] },
+  { key: 'complete', label: 'Complete', stages: [] },
+]
+
+// stepDetails: ProjectStepDetail[] for this lead — optional descriptive overlay
+// (startedBy/completedBy/currentStage sub-label/completionPct/expectedCompletion/notes/attachments).
+// Status/date always come from Lead.lifecycleStatus/lifecycleHistory — the overlay never overrides that.
+const computeProjectSteps = (lead, stepDetails = []) => {
+  const currentStage = lead.lifecycleStatus
+  const history = lead.lifecycleHistory || []
+  const foundIdx = PROJECT_STEP_DEFS.findIndex((b) => b.stages.includes(currentStage))
+  const currentIdx = foundIdx === -1 ? 0 : foundIdx
+  const detailByKey = new Map(stepDetails.map((d) => [d.stepKey, d]))
+
+  const steps = PROJECT_STEP_DEFS.map((bucket, idx) => {
+    const entries = history.filter((h) => bucket.stages.includes(h.stage)).sort((a, b) => new Date(a.changedAt) - new Date(b.changedAt))
+    const detail = detailByKey.get(bucket.key) || null
+
+    let status, date
+    if (idx < currentIdx) {
+      status = 'completed'
+      date = entries.length ? entries[entries.length - 1].changedAt : null
+    } else if (idx === currentIdx) {
+      status = 'in_progress'
+      date = entries.length ? entries[0].changedAt : null
+    } else {
+      status = 'pending'
+      date = null
+    }
+
+    return {
+      key: bucket.key,
+      label: bucket.label,
+      status,
+      date,
+      startedBy: detail?.startedBy || '',
+      startedAt: detail?.startedAt || (status !== 'pending' ? date : null),
+      completedBy: detail?.completedBy || '',
+      completedAt: detail?.completedAt || (status === 'completed' ? date : null),
+      currentStage: detail?.currentStage || '',
+      completionPct: detail?.completionPct ?? (status === 'completed' ? 100 : status === 'pending' ? 0 : null),
+      expectedCompletion: detail?.expectedCompletion || null,
+      notes: detail?.notes || '',
+      attachments: detail?.attachments || [],
+    }
+  })
+
+  const currentStepNumber = currentIdx + 1
+  const totalSteps = PROJECT_STEP_DEFS.length
+
+  return {
+    steps,
+    currentStepNumber,
+    totalSteps,
+    currentStepLabel: PROJECT_STEP_DEFS[currentIdx].label,
+    overallProgressPct: Math.round((currentStepNumber / totalSteps) * 100),
+  }
+}
 
 const { computeInvoiceDueDate } = require('../utils/invoiceDueDate')
 
@@ -246,7 +324,7 @@ exports.getProject = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
   const lead = await Lead.findById(leadId)
-    .select('customerId buildingType location lifecycleStatus quoteValue documents assignedSales')
+    .select('customerId buildingType location lifecycleStatus lifecycleHistory quoteValue documents assignedSales')
     .populate('assignedSales', 'name email')
     .lean()
 
@@ -255,10 +333,13 @@ exports.getProject = asyncHandler(async (req, res) => {
     return forbidden(res, 'This project does not belong to your account')
   }
 
-  const [quotation, invoices, paymentSchedules] = await Promise.all([
+  const [quotation, invoices, paymentSchedules, recentOrders, orderCounts, stepDetails] = await Promise.all([
     Quotation.findOne({ leadId }).sort({ createdAt: -1 }).lean(),
     Invoice.find({ leadId }).select('-paidBy -createdBy -__v').sort({ createdAt: -1 }).lean(),
     PaymentSchedule.find({ leadId }).lean(),
+    MaterialRequest.find({ leadId }).sort({ createdAt: -1 }).limit(5).lean(),
+    orderCountsForLead(leadId),
+    ProjectStepDetail.find({ leadId }).lean(),
   ])
 
   let quoteSummary = null
@@ -296,6 +377,8 @@ exports.getProject = asyncHandler(async (req, res) => {
 
   return success(res, {
     lead: enrichLeadDocument(lead),
+    projectSteps: computeProjectSteps(lead, stepDetails),
+    orders: { recent: recentOrders, counts: orderCounts },
     quotation,
     quoteSummary,
     invoices: invoicesWithSchedule,
@@ -742,13 +825,8 @@ const getDeliveryCarrier = async (delivery) => {
   return bid?.carrierId || null
 }
 
-exports.getDeliverySchedule = asyncHandler(async (req, res) => {
-  const customerId = req.customer._id
-  const { tab = 'upcoming' } = req.query
-
-  const leads = await Lead.find({ customerId }).select('_id jobId projectName').lean()
-  if (!leads.length) return success(res, { deliveries: [], total: 0 })
-
+// Shared by the unscoped /deliveries list and the project-scoped /deliveries/:leadId list
+const buildDeliveryScheduleResponse = async (leads, tab) => {
   const leadIds = leads.map(l => l._id)
   const leadMap = new Map(leads.map(l => [String(l._id), l]))
   const now = new Date()
@@ -803,11 +881,64 @@ exports.getDeliverySchedule = asyncHandler(async (req, res) => {
   const pastCount = await Delivery.countDocuments({ leadId: { $in: leadIds }, $or: [{ status: 'delivered' }, { deliveryDate: { $lt: now }, status: { $nin: ['draft', 'cancelled'] } }] })
   const rescheduledCount = await Delivery.countDocuments({ leadId: { $in: leadIds }, status: 'rescheduled' })
 
-  return success(res, {
+  return {
     deliveries: result,
     total: result.length,
     tabs: { upcoming: upcomingCount, past: pastCount, rescheduled: rescheduledCount },
-  })
+  }
+}
+
+// GET /deliveries — unscoped, every project (kept for back-compat / dashboard-style usage)
+exports.getDeliverySchedule = asyncHandler(async (req, res) => {
+  const { tab = 'upcoming' } = req.query
+
+  const leads = await Lead.find({ customerId: req.customer._id }).select('_id jobId projectName').lean()
+  if (!leads.length) return success(res, { deliveries: [], total: 0, tabs: { upcoming: 0, past: 0, rescheduled: 0 } })
+
+  return success(res, await buildDeliveryScheduleResponse(leads, tab))
+})
+
+// GET /deliveries/summary — per-project delivery counts, same shape as material-orders/summary & quotations/summary
+exports.getDeliveriesSummary = asyncHandler(async (req, res) => {
+  const leads = await Lead.find({ customerId: req.customer._id }).select('projectName jobId location').lean()
+  const now = new Date()
+
+  const rows = await Promise.all(leads.map(async (lead) => {
+    const [upcoming, past, rescheduled] = await Promise.all([
+      Delivery.countDocuments({ leadId: lead._id, deliveryDate: { $gte: now }, status: { $nin: ['draft', 'cancelled', 'delivered'] } }),
+      Delivery.countDocuments({ leadId: lead._id, $or: [{ status: 'delivered' }, { deliveryDate: { $lt: now }, status: { $nin: ['draft', 'cancelled'] } }] }),
+      Delivery.countDocuments({ leadId: lead._id, status: 'rescheduled' }),
+    ])
+    return { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location, upcoming, past, rescheduled }
+  }))
+
+  return success(res, { projects: rows })
+})
+
+// GET /deliveries/:id — smart dispatch: id is either a leadId (project-scoped schedule)
+// or a deliveryId (single delivery detail), so the same path shape works for both the
+// "My Delivery Schedule" project view and the existing delivery-detail deep link.
+exports.getDeliveryScheduleOrDetail = asyncHandler(async (req, res, next) => {
+  const { id } = req.params
+  const { tab = 'upcoming' } = req.query
+
+  let lead = null
+  try {
+    lead = await Lead.findOne({ _id: id, customerId: req.customer._id }).select('_id jobId projectName location').lean()
+  } catch (_) {
+    lead = null
+  }
+
+  if (lead) {
+    const data = await buildDeliveryScheduleResponse([lead], tab)
+    return success(res, {
+      project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location },
+      ...data,
+    })
+  }
+
+  req.params.deliveryId = id
+  return exports.getDeliveryDetail(req, res, next)
 })
 
 // GET /deliveries/:deliveryId
@@ -1145,7 +1276,7 @@ exports.getTaxReport = asyncHandler(async (req, res) => {
 // ── Project sub-routes ────────────────────────────────────────────────────────
 
 const assertProjectOwner = async (req) => {
-  const lead = await Lead.findById(req.params.leadId).select('customerId').lean()
+  const lead = await Lead.findById(req.params.leadId).select('customerId projectName jobId location').lean()
   if (!lead) return null
   if (String(lead.customerId) !== String(req.customer._id)) return null
   return lead
@@ -1158,13 +1289,15 @@ exports.getProjectStats = asyncHandler(async (req, res) => {
 
   const leadId = req.params.leadId
 
-  const [totalDeliveries, deliveredCount, inTransitCount, invoices, followUps, meetings] = await Promise.all([
+  const [totalDeliveries, deliveredCount, inTransitCount, invoices, followUps, meetings, fullLead, stepDetails] = await Promise.all([
     Delivery.countDocuments({ leadId }),
     Delivery.countDocuments({ leadId, status: 'delivered' }),
     Delivery.countDocuments({ leadId, status: 'in_transit' }),
     Invoice.find({ leadId }).select('status totalAmount').lean(),
     FollowUp.countDocuments({ leadId }),
     Meeting.countDocuments({ leadId }),
+    Lead.findById(leadId).select('lifecycleStatus lifecycleHistory').lean(),
+    ProjectStepDetail.find({ leadId }).lean(),
   ])
 
   const totalInvoiced = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0)
@@ -1172,10 +1305,55 @@ exports.getProjectStats = asyncHandler(async (req, res) => {
   const pendingInvoices = invoices.filter(i => ['draft', 'sent', 'overdue'].includes(i.status)).length
 
   return success(res, {
+    projectSteps: computeProjectSteps(fullLead, stepDetails),
     deliveries: { total: totalDeliveries, delivered: deliveredCount, inTransit: inTransitCount },
     payments:   { totalInvoiced, totalPaid, pending: totalInvoiced - totalPaid, pendingInvoices },
     followUps,
     meetings,
+  })
+})
+
+// GET /projects/:leadId/tracking — "Project Tracking" tab: task progress, timeline, milestones
+exports.getProjectTracking = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const leadId = req.params.leadId
+  const [fullLead, tasks, milestones, stepDetails] = await Promise.all([
+    Lead.findById(leadId).select('projectName jobId endDate lifecycleStatus lifecycleHistory').lean(),
+    Task.find({ leadId }).select('status').lean(),
+    Milestone.find({ leadId }).sort({ order: 1, targetDate: 1 }).lean(),
+    ProjectStepDetail.find({ leadId }).lean(),
+  ])
+
+  const completed = tasks.filter(t => t.status === 'done').length
+  const inProgress = tasks.filter(t => t.status === 'in_progress').length
+  const pending = tasks.filter(t => t.status === 'todo').length
+  const total = tasks.length
+
+  const now = new Date()
+  const plannedCompletion = fullLead.endDate || null
+  const timelineStatus = plannedCompletion && new Date(plannedCompletion) < now && completed < total ? 'Delayed' : 'On Track'
+
+  return success(res, {
+    project: { leadId: fullLead._id, projectName: fullLead.projectName, jobId: fullLead.jobId },
+    projectSteps: computeProjectSteps(fullLead, stepDetails),
+    taskProgress: {
+      completed, inProgress, pending, total,
+      completedFraction: `${completed}/${total}`,
+      completedPct: total > 0 ? Math.round((completed / total) * 100) : 0,
+    },
+    timeline: {
+      plannedCompletion,
+      status: plannedCompletion ? timelineStatus : 'Unscheduled',
+    },
+    milestones: milestones.map(m => ({
+      milestoneId: m._id,
+      title: m.title,
+      status: m.status,
+      targetDate: m.targetDate,
+      completedAt: m.completedAt,
+    })),
   })
 })
 
@@ -1299,6 +1477,7 @@ exports.getBuildingDrawings = asyncHandler(async (req, res) => {
     .lean()
 
   return success(res, {
+    project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location },
     buildingLabel,
     drawings: docs.filter((d) => d.category === 'drawing' || d.category === 'photo'),
     documents: docs.filter((d) => d.category === 'document'),
@@ -1690,7 +1869,12 @@ exports.getProjectOrders = asyncHandler(async (req, res) => {
     MaterialRequest.countDocuments(filter),
   ])
 
-  return success(res, { orders, total, counts: await orderCountsForLead(req.params.leadId) })
+  return success(res, {
+    project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location },
+    orders,
+    total,
+    counts: await orderCountsForLead(req.params.leadId),
+  })
 })
 
 // POST /projects/:leadId/orders — "Add New Order" (coil-type/length/quantity line items)
@@ -1824,7 +2008,11 @@ exports.getProjectOrderQuotations = asyncHandler(async (req, res) => {
     status: q.status,
   }))
 
-  return success(res, { quotations: rows, total })
+  return success(res, {
+    project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location },
+    quotations: rows,
+    total,
+  })
 })
 
 // GET /order-quotations/:quotationId — "Quotation Details" screen

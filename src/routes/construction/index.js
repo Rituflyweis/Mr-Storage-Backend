@@ -37,6 +37,10 @@ router.delete('/tasks/:taskId', taskCtrl.deleteTask)
 // Milestones
 router.put('/milestones/:milestoneId', taskCtrl.updateMilestone)
 
+// Project Steps (customer-facing Project Tracking tab detail)
+router.put('/projects/:leadId/steps/:stepKey', taskCtrl.updateProjectStep)
+router.post('/projects/:leadId/steps/:stepKey/attachments', taskCtrl.addProjectStepAttachment)
+
 // Work Log
 router.get('/work-logs', taskCtrl.getWorkLogs)
 router.post('/work-logs', taskCtrl.createWorkLog)
