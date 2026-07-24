@@ -4,8 +4,19 @@ const DOC_TYPES = ['architectural', 'structural', 'fabrication', 'erection', 'sp
 const DOC_STATUSES = ['pending', 'approved', 'rejected', 'under_review']
 const DOC_CATEGORIES = ['drawing', 'photo', 'document']
 
+const CommentSchema = new mongoose.Schema(
+  {
+    text:        { type: String, required: true, trim: true },
+    commentedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    commentedByCustomer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
+    authorName:  { type: String, default: '' },
+  },
+  { timestamps: true }
+)
+
 const DrawingDocumentSchema = new mongoose.Schema(
   {
+    comments: { type: [CommentSchema], default: [] },
     leadId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
     buildingLabel: { type: String, default: '', trim: true, index: true },
     category:     { type: String, enum: DOC_CATEGORIES, default: 'drawing' },
