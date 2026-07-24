@@ -22,6 +22,7 @@ const Milestone = require('../src/models/Milestone')
 const User = require('../src/models/User')
 const Bundle = require('../src/models/Bundle')
 const ProjectStepDetail = require('../src/models/ProjectStepDetail')
+const Delivery = require('../src/models/Delivery')
 const Notification = require('../src/models/Notification')
 const Message = require('../src/models/Message')
 
@@ -136,20 +137,18 @@ async function seedTracking(lead, staffUser) {
 // realistic lifecycleHistory, then seeds ProjectStepDetail overlays matching the Figma
 // "Track Project lifecycle" screen exactly: Design/Fabrication/Dispatch completed with
 // named approvers, Install in progress at 80% ("Wall Panel Installation"), Complete pending.
-async function seedProjectSteps(lead) {
-  if (lead.jobId !== 'PRO-001') return
+const may12 = new Date('2025-05-12T10:00:00.000Z')
+const may28 = new Date('2025-05-28T10:30:00.000Z')
+const jun08 = new Date('2025-06-08T00:00:00.000Z')
+const jul01 = new Date('2026-07-01T09:00:00.000Z')
+const jul10 = new Date('2026-07-10T09:00:00.000Z')
+const jul28 = new Date('2026-07-28T00:00:00.000Z')
 
-  const existing = await ProjectStepDetail.countDocuments({ leadId: lead._id })
-  if (existing >= 4) {
-    console.log(`  [steps] skip ${lead.jobId} — already has ${existing} step details`)
-    return
-  }
-
-  const may12 = new Date('2025-05-12T10:00:00.000Z')
-  const may28 = new Date('2025-05-28T10:30:00.000Z')
-  const jun08 = new Date('2025-06-08T00:00:00.000Z')
-
-  await Lead.findByIdAndUpdate(lead._id, {
+// Different projects land on different steps so the frontend has variety to test against —
+// not every project should look like the fully-progressed Figma demo.
+const PROJECT_STEP_PLANS = {
+  // PRO-001: pushed all the way to Install in progress @ 80% — matches the Figma screen exactly.
+  'PRO-001': {
     lifecycleStatus: 'delivered',
     lifecycleHistory: [
       { stage: 'initial_contact', changedAt: new Date('2025-04-20T09:00:00.000Z') },
@@ -158,30 +157,131 @@ async function seedProjectSteps(lead) {
       { stage: 'dispatched', changedAt: may12 },
       { stage: 'delivered', changedAt: may28 },
     ],
-  })
+    details: [
+      { stepKey: 'design', completedBy: 'Sarah Lee', completedAt: may12 },
+      { stepKey: 'fabrication', completedBy: 'Michael Smith', completedAt: may12 },
+      { stepKey: 'dispatch', completedBy: 'David Brown', completedAt: may12 },
+      {
+        stepKey: 'install',
+        startedBy: 'Installation Team', startedAt: may28,
+        currentStage: 'Wall Panel Installation', completionPct: 80,
+        expectedCompletion: jun08,
+        notes: 'Installation is proceeding as per schedule.',
+        attachments: [
+          { name: 'Installation.pdf', url: 'https://example-bucket.s3.amazonaws.com/installation.pdf' },
+          { name: 'Safety.pdf', url: 'https://example-bucket.s3.amazonaws.com/safety.pdf' },
+        ],
+      },
+    ],
+  },
+  // PRO-002: mid-way — Design done, Fabrication in progress. Doesn't touch lifecycleStatus
+  // (already 'quality_inspection', which is already in the Fabrication bucket) or history
+  // beyond adding a design-stage entry so the "Completed on" date isn't null.
+  'PRO-002': {
+    lifecycleHistoryAppend: [{ stage: 'bom_review', changedAt: jul01 }],
+    details: [
+      { stepKey: 'design', completedBy: 'Priya Nair', completedAt: jul01 },
+      {
+        stepKey: 'fabrication',
+        startedBy: 'Fabrication Team', startedAt: jul10,
+        currentStage: 'Frame Assembly', completionPct: 45,
+        expectedCompletion: jul28,
+        notes: 'Frame assembly underway, on track for planned completion.',
+        attachments: [{ name: 'Fabrication Plan.pdf', url: 'https://example-bucket.s3.amazonaws.com/fabrication-plan.pdf' }],
+      },
+    ],
+  },
+  // PRO-011: just started — Design in progress, nothing else touched yet.
+  'PRO-011': {
+    lead: { projectName: 'warehouse - Austin', location: 'Austin' },
+    lifecycleHistoryAppend: [{ stage: 'initial_contact', changedAt: jul10 }],
+    details: [
+      {
+        stepKey: 'design',
+        startedBy: 'Design Team', startedAt: jul10,
+        currentStage: 'Concept Drawings', completionPct: 20,
+        expectedCompletion: jul28,
+        notes: 'Initial concept drawings shared with customer for review.',
+      },
+    ],
+  },
+}
 
-  const details = [
-    { stepKey: 'design', completedBy: 'Sarah Lee', completedAt: may12 },
-    { stepKey: 'fabrication', completedBy: 'Michael Smith', completedAt: may12 },
-    { stepKey: 'dispatch', completedBy: 'David Brown', completedAt: may12 },
-    {
-      stepKey: 'install',
-      startedBy: 'Installation Team', startedAt: may28,
-      currentStage: 'Wall Panel Installation', completionPct: 80,
-      expectedCompletion: jun08,
-      notes: 'Installation is proceeding as per schedule.',
-      attachments: [
-        { name: 'Installation.pdf', url: 'https://example-bucket.s3.amazonaws.com/installation.pdf' },
-        { name: 'Safety.pdf', url: 'https://example-bucket.s3.amazonaws.com/safety.pdf' },
-      ],
-    },
-  ]
+async function seedProjectSteps(lead) {
+  const plan = PROJECT_STEP_PLANS[lead.jobId]
+  if (!plan) return
 
-  for (const d of details) {
+  const existing = await ProjectStepDetail.countDocuments({ leadId: lead._id })
+  if (existing >= plan.details.length) {
+    console.log(`  [steps] skip ${lead.jobId} — already has ${existing} step details`)
+    return
+  }
+
+  const leadUpdate = { ...(plan.lead || {}) }
+  if (plan.lifecycleStatus) leadUpdate.lifecycleStatus = plan.lifecycleStatus
+  if (plan.lifecycleHistory) leadUpdate.lifecycleHistory = plan.lifecycleHistory
+  if (plan.lifecycleHistoryAppend) {
+    const current = await Lead.findById(lead._id).select('lifecycleHistory').lean()
+    leadUpdate.lifecycleHistory = [...(current.lifecycleHistory || []), ...plan.lifecycleHistoryAppend]
+  }
+  if (Object.keys(leadUpdate).length) await Lead.findByIdAndUpdate(lead._id, leadUpdate)
+
+  for (const d of plan.details) {
     await ProjectStepDetail.findOneAndUpdate({ leadId: lead._id, stepKey: d.stepKey }, { $set: d }, { upsert: true })
   }
 
-  console.log(`  [steps] seeded Project Steps detail for ${lead.jobId} (lifecycleStatus -> delivered, Install in progress @ 80%)`)
+  console.log(`  [steps] seeded Project Steps detail for ${lead.jobId} (${plan.details.length} step records)`)
+}
+
+// Delivery Schedule extras: one unacknowledged reschedule (matches the "Delivery Rescheduled /
+// Acknowledge" banner), one confirmation-email-sent delivery, one site+equipment-ready delivery.
+async function seedDeliveryExtras(lead) {
+  const deliveries = await Delivery.find({ leadId: lead._id }).select('_id deliveryNumber deliveryDate rescheduleHistory confirmationEmailSent status').lean()
+  if (!deliveries.length) {
+    console.log(`  [delivery-extras] skip ${lead.jobId} — no deliveries`)
+    return
+  }
+
+  const alreadyRescheduled = deliveries.find((d) => d.rescheduleHistory?.length)
+  if (alreadyRescheduled) {
+    console.log(`  [delivery-extras] skip ${lead.jobId} — already has a rescheduled delivery`)
+    return
+  }
+
+  const [rescheduleTarget, emailTarget, readinessTarget] = deliveries
+
+  const previousDate = rescheduleTarget.deliveryDate || new Date()
+  const newDate = new Date(new Date(previousDate).getTime() + 86400000)
+  await Delivery.findByIdAndUpdate(rescheduleTarget._id, {
+    status: 'rescheduled',
+    deliveryDate: newDate,
+    $push: {
+      rescheduleHistory: {
+        previousDate,
+        date: newDate,
+        timeWindowStart: '08:00',
+        timeWindowEnd: '12:00',
+        reason: 'Weather',
+        acknowledged: false,
+      },
+    },
+  })
+
+  if (emailTarget && String(emailTarget._id) !== String(rescheduleTarget._id)) {
+    await Delivery.findByIdAndUpdate(emailTarget._id, { confirmationEmailSent: true, confirmationEmailSentAt: new Date() })
+  }
+
+  if (readinessTarget && String(readinessTarget._id) !== String(rescheduleTarget._id)) {
+    await Delivery.findByIdAndUpdate(readinessTarget._id, {
+      'siteReadyConfirmation.confirmed': true,
+      'siteReadyConfirmation.confirmedAt': new Date(),
+      'siteReadyConfirmation.confirmedBy': 'Customer',
+      'equipmentConfirmation.confirmed': true,
+      'equipmentConfirmation.confirmedAt': new Date(),
+    })
+  }
+
+  console.log(`  [delivery-extras] seeded reschedule (${rescheduleTarget.deliveryNumber}, unacknowledged)${emailTarget ? `, email-sent (${emailTarget.deliveryNumber})` : ''}${readinessTarget ? `, readiness-confirmed (${readinessTarget.deliveryNumber})` : ''} for ${lead.jobId}`)
 }
 
 async function main() {
@@ -202,6 +302,7 @@ async function main() {
     await seedChat(lead, customer._id, staffUser)
     await seedTracking(lead, staffUser)
     await seedProjectSteps(lead)
+    await seedDeliveryExtras(lead)
   }
 
   console.log('Done.')

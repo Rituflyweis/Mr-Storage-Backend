@@ -89,6 +89,7 @@ router.post('/deliveries/:deliveryId/contact-company',          ctrl.contactDeli
 router.post('/deliveries/:deliveryId/contact-company/sms',      ctrl.sendDeliveryCompanySms)
 router.post('/deliveries/:deliveryId/confirmation-email',       ctrl.sendDeliveryConfirmation)
 router.post('/deliveries/:deliveryId/request-callback',         ctrl.requestDeliveryCallback)
+router.post('/deliveries/:deliveryId/acknowledge-reschedule',   ctrl.acknowledgeDeliveryReschedule)
 router.get('/deliveries/:deliveryId/documents',                 ctrl.getDeliveryDocuments)
 router.post('/deliveries/:deliveryId/confirm-site-ready',       ctrl.confirmDeliverySiteReady)
 router.post('/deliveries/:deliveryId/confirm-equipment',        ctrl.confirmDeliveryEquipment)

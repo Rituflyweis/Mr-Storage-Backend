@@ -198,7 +198,7 @@ const TRUCK_TYPES = ['SEMI_53', 'HOTSHOT_40']
 const DELIVERY_STATUSES = [
   'draft', 'bidding_sent', 'carrier_selected', 'scheduled',
   'confirmed', 'in_transit', 'delayed', 'staged', 'delivered',
-  'partial_received', 'received', 'cancelled',
+  'partial_received', 'received', 'cancelled', 'rescheduled',
 ]
 
 const SMDT_COST_UNITS = ['FT', 'LB', 'EA']

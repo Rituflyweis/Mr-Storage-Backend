@@ -780,6 +780,9 @@ const mapDeliveryRow = (d, lead, carrier, loadDetails) => {
     email: carrier.email || '',
   } : null
 
+  const rescheduleHistory = d.rescheduleHistory || []
+  const latest = rescheduleHistory.length ? rescheduleHistory[rescheduleHistory.length - 1] : null
+
   return {
     deliveryId: d._id,
     deliveryNumber: d.deliveryNumber,
@@ -799,6 +802,22 @@ const mapDeliveryRow = (d, lead, carrier, loadDetails) => {
     deliveryTeam: deliveryCompany ? { company: deliveryCompany.name, driver: deliveryCompany.driver, phone: deliveryCompany.phone, email: deliveryCompany.email } : null,
     loadAndBundle: buildLoadAndBundleSummary(d, loadDetails),
     packingListSummary: buildPackingListSummary(d, loadDetails),
+    siteReadiness: {
+      siteReady: !!d.siteReadyConfirmation?.confirmed,
+      equipmentReady: !!d.equipmentConfirmation?.confirmed,
+    },
+    confirmationEmailSent: !!d.confirmationEmailSent,
+    confirmationEmailSentAt: d.confirmationEmailSentAt || null,
+    reschedule: latest
+      ? {
+          _id: latest._id,
+          previousDate: latest.previousDate,
+          date: latest.date,
+          reason: latest.reason,
+          acknowledged: !!latest.acknowledged,
+          acknowledgedAt: latest.acknowledgedAt || null,
+        }
+      : null,
     project: {
       leadId: lead._id || d.leadId,
       projectId: lead.jobId || '',
@@ -1060,6 +1079,8 @@ exports.sendDeliveryConfirmation = asyncHandler(async (req, res) => {
     deliveryLocation: delivery.deliveryLocation || '',
   })
 
+  await Delivery.findByIdAndUpdate(delivery._id, { confirmationEmailSent: true, confirmationEmailSentAt: new Date() })
+
   await auditService.log({
     type: 'delivery',
     action: AUDIT_ACTIONS.DELIVERY_CONFIRMATION_SENT,
@@ -1069,7 +1090,38 @@ exports.sendDeliveryConfirmation = asyncHandler(async (req, res) => {
     metadata: { deliveryId: delivery._id, deliveryNumber: delivery.deliveryNumber, sentTo: recipient },
   })
 
-  return success(res, { message: 'Confirmation email sent', sentTo: recipient })
+  return success(res, { message: 'Confirmation email sent', sentTo: recipient, confirmationEmailSent: true })
+})
+
+// POST /deliveries/:deliveryId/acknowledge-reschedule — "Acknowledge" button on the Delivery Rescheduled banner
+exports.acknowledgeDeliveryReschedule = asyncHandler(async (req, res) => {
+  const owned = await assertDeliveryOwner(req)
+  if (!owned) return notFound(res, 'Delivery not found')
+  const { delivery, lead } = owned
+
+  if (!delivery.rescheduleHistory?.length) return badRequest(res, 'This delivery has no reschedule to acknowledge')
+
+  const full = await Delivery.findById(delivery._id)
+  const latest = full.rescheduleHistory[full.rescheduleHistory.length - 1]
+  if (latest.acknowledged) return badRequest(res, 'Already acknowledged')
+
+  latest.acknowledged = true
+  latest.acknowledgedAt = new Date()
+  await full.save()
+
+  await auditService.log({
+    type: 'delivery',
+    action: 'delivery.reschedule_acknowledged',
+    leadId: lead._id,
+    customerId: req.customer._id,
+    performedBy: req.customer._id,
+    metadata: { deliveryId: delivery._id, deliveryNumber: delivery.deliveryNumber, rescheduleId: latest._id },
+  })
+
+  return success(res, {
+    deliveryId: delivery._id,
+    reschedule: { _id: latest._id, previousDate: latest.previousDate, date: latest.date, reason: latest.reason, acknowledged: true, acknowledgedAt: latest.acknowledgedAt },
+  }, 'Reschedule acknowledged')
 })
 
 // GET /deliveries/:deliveryId/calendar/details — "Add to Calendar" dialog content (Google/Outlook links, copy-to-clipboard text)

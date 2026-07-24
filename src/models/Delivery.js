@@ -72,6 +72,7 @@ const DeliverySchema = new mongoose.Schema(
       type: [
         new mongoose.Schema(
           {
+            previousDate: { type: Date, default: null },
             date: { type: Date, default: null },
             timeWindowStart: { type: String, default: '' },
             timeWindowEnd: { type: String, default: '' },
@@ -79,12 +80,16 @@ const DeliverySchema = new mongoose.Schema(
             additionalNotes: { type: String, default: '' },
             rescheduledAt: { type: Date, default: Date.now },
             rescheduledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+            acknowledged: { type: Boolean, default: false },
+            acknowledgedAt: { type: Date, default: null },
           },
           { _id: true }
         ),
       ],
       default: [],
     },
+    confirmationEmailSent:   { type: Boolean, default: false },
+    confirmationEmailSentAt: { type: Date, default: null },
     selectedCarrierBidId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'FreightBid',

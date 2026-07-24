@@ -1677,6 +1677,8 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
     ? String(additionalNotes).trim()
     : delivery.additionalNotes
 
+  const previousDate = delivery.deliveryDate
+
   delivery.deliveryDate = newDate
   delivery.deliveryTime = start
   delivery.timeWindowStart = start
@@ -1684,6 +1686,7 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
   delivery.timings = formatDeliveryTimeWindow(start, end)
   delivery.additionalNotes = notes
   delivery.rescheduleHistory.push({
+    previousDate,
     date: newDate,
     timeWindowStart: start,
     timeWindowEnd: end,
@@ -1726,6 +1729,7 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
     reschedule: latestReschedule
       ? {
           _id: latestReschedule._id,
+          previousDate: latestReschedule.previousDate,
           date: latestReschedule.date,
           timeWindowStart: latestReschedule.timeWindowStart,
           timeWindowEnd: latestReschedule.timeWindowEnd,
@@ -1733,6 +1737,7 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
           additionalNotes: latestReschedule.additionalNotes,
           rescheduledAt: latestReschedule.rescheduledAt,
           rescheduledBy: latestReschedule.rescheduledBy,
+          acknowledged: latestReschedule.acknowledged,
         }
       : null,
     rescheduleHistory: delivery.rescheduleHistory,

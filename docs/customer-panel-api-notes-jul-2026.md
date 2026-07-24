@@ -56,7 +56,10 @@ Backed by a new `ProjectStepDetail` model (one record per project per step-key).
 
 Tested live end-to-end: staff `PUT`s a new `completionPct`/`notes` and `POST`s an attachment → customer's `/tracking` response reflects both immediately.
 
-**Mock data:** `scripts/seedCustomerMiscMock.js` now also seeds PRO-001 to match this Figma screen exactly — pushes its `lifecycleStatus` to `delivered` (so Install is the active step) with a backdated `lifecycleHistory`, and creates the 4 step-detail records (Design/Fabrication/Dispatch completed by Sarah Lee/Michael Smith/David Brown, Install in progress at 80% with the Installation.pdf/Safety.pdf attachments). Other projects (PRO-002, PRO-011) were left at their natural stage for variety.
+**Mock data:** `scripts/seedCustomerMiscMock.js` seeds all 3 projects, each at a different realistic stage (not just PRO-001 — PRO-002 and PRO-011 were caught still returning empty/null step-detail fields and fixed):
+- **PRO-001** — matches the Figma screen exactly: pushed to `delivered` (Install active), Design/Fabrication/Dispatch completed by Sarah Lee/Michael Smith/David Brown, Install in progress at 80% with the Installation.pdf/Safety.pdf attachments.
+- **PRO-002** — mid-way: Design completed (Priya Nair), Fabrication in progress at 45% ("Frame Assembly").
+- **PRO-011** — just started: Design in progress at 20% ("Concept Drawings"). Also fixed this project's blank `projectName`/`location` (were empty strings from the original base seed) — now `"warehouse - Austin"` / `"Austin"`.
 
 ## 2. Drawings & Images (rebuilt with building-level grouping)
 Three-level hierarchy now, matching the Figma flow (Project Drawings landing → pick a project → pick a building → drawings/documents for that building):
@@ -94,7 +97,26 @@ Channels are fixed: `project | finance | construction`.
 - `PUT /notifications/read-all`
 - Nothing else in the system writes into this collection automatically yet for customers — feed will be empty until that's wired up.
 
-## 6. My Delivery Schedule — third pass: fixed to match `/projects/:leadId/buildings` & `/orders` pattern
+## 6. My Delivery Schedule — additions for the "Delivery Rescheduled" banner + list-row status
+
+Every delivery row (list *and* detail — `mapDeliveryRow` is shared) now also includes:
+```json
+{
+  "siteReadiness": { "siteReady": true, "equipmentReady": false },
+  "confirmationEmailSent": true, "confirmationEmailSentAt": "2026-07-22T10:43:18.590Z",
+  "reschedule": {
+    "_id": "...", "previousDate": "2026-08-10T00:00:00.000Z", "date": "2026-08-11T00:00:00.000Z",
+    "reason": "Weather", "acknowledged": false, "acknowledgedAt": null
+  }
+}
+```
+`siteReadiness` mirrors the existing `confirm-site-ready`/`confirm-equipment` flags (now surfaced in the list, not just after opening detail). `reschedule` is the most recent `rescheduleHistory` entry, or `null` if the delivery was never rescheduled — powers the "Delivery Rescheduled: Previous Date X, New Date Y, Reason Z" banner.
+
+- `POST /deliveries/:deliveryId/acknowledge-reschedule` — **new.** Acknowledges the latest reschedule. Blocked (400) if already acknowledged or if there's no reschedule history at all.
+
+**Real bug fixed along the way:** `DELIVERY_STATUSES` (the enum backing `Delivery.status`) never actually included `'rescheduled'`, even though the dashboard's `rescheduledDeliveries` counter, the tab filters, and the plant-panel reschedule flow all already referenced that status string. It silently "worked" only because those existing writes used `updateOne`/`findByIdAndUpdate` (which skip schema validation by default) — the moment my acknowledge endpoint did a full `.save()` on the same document, it threw a validation error. Added `'rescheduled'` to the enum in `src/config/constants.js`.
+
+Also added `previousDate` to `rescheduleHistory` entries (the plant-panel `PATCH /plant/deliveries/:deliveryId/reschedule` endpoint didn't persist what the date *was* before the change — only the new one — so there was no way to show "Previous Date: March 28" at all before this). — third pass: fixed to match `/projects/:leadId/buildings` & `/orders` pattern
 **This was the reported mismatch — fixed:**
 - `GET /deliveries?tab=upcoming` — unscoped, **all** projects. Kept as-is for back-compat.
 - `GET /deliveries/summary` — **NEW.** Per-project `{ leadId, projectName, jobId, location, upcoming, past, rescheduled }[]` — same shape/pattern as `material-orders/summary` and `quotations/summary`.

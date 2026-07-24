@@ -2389,6 +2389,31 @@
               "raw": "{\n  \"forkliftAvailable\": true,\n  \"craneOrHeavyMachineryAvailable\": true,\n  \"storageAreaReady\": true,\n  \"toolsAndAccessoriesOnSite\": true\n}"
             }
           }
+        },
+        {
+          "name": "Acknowledge Reschedule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/acknowledge-reschedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "acknowledge-reschedule"
+              ]
+            }
+          },
+          "_postman_note": "Acknowledges the LATEST reschedule entry on the delivery. Blocked if already acknowledged or if the delivery has no reschedule history. Delivery list/detail rows now also include siteReadiness{siteReady,equipmentReady}, confirmationEmailSent/-At, and reschedule{previousDate,date,reason,acknowledged,acknowledgedAt}."
         }
       ]
     },
