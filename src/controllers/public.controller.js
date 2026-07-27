@@ -87,7 +87,7 @@ exports.chatInit = asyncHandler(async (req, res) => {
     })
     isNewCustomer = true
 
-    if (mailer.isEmailConfigured()) {
+    if (mailer.isEnquiryNotificationConfigured()) {
       try {
         await mailer.sendNewCustomerEnquiryNotification({
           toEmail: 'info@steelbuildingdepot.com',

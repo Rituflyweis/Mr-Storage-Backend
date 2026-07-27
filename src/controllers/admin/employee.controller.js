@@ -115,20 +115,18 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
 })
 
 exports.createEmployee = asyncHandler(async (req, res) => {
-  const { name, email, phone, role } = req.body
+  const { name, email, phone, role, password } = req.body
 
   const exists = await User.findOne({ email: email.toLowerCase().trim() })
   if (exists) return badRequest(res, 'Email already in use')
 
-  const tempPassword = Math.random().toString(36).slice(-6) +
-    Math.random().toString(36).slice(-4).toUpperCase()
-  const hashed = await bcrypt.hash(tempPassword, 12)
+  const hashed = await bcrypt.hash(password, 12)
   const user = await User.create({ name, email: email.toLowerCase().trim(), password: hashed, phone, role })
 
   if (role === 'sales') await roundRobinService.rebuildTracker()
 
   await mailer.sendEmployeeCredentials({
-    toEmail: user.email, name: user.name, role: user.role, tempPassword,
+    toEmail: user.email, name: user.name, role: user.role, tempPassword: password,
   })
 
   await auditService.log({

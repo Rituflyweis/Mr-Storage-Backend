@@ -1,5 +1,15 @@
 const sgMail = require('@sendgrid/mail')
-const { SENDGRID_API_KEY, SENDGRID_FROM, MAIL_FROM } = require('../../config/env')
+const nodemailer = require('nodemailer')
+const {
+  SENDGRID_API_KEY,
+  SENDGRID_FROM,
+  MAIL_FROM,
+  SMTP_HOST,
+  SMTP_PORT,
+  SMTP_USER,
+  SMTP_PASS,
+  SMTP_MAIL_FROM,
+} = require('../../config/env')
 const { getInvoiceCompany } = require('../../config/invoiceCompany')
 const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
 const path = require('path')
@@ -23,6 +33,19 @@ const resolvedMailFrom = SENDGRID_FROM || MAIL_FROM
 
 const isEmailConfigured = () => Boolean(SENDGRID_API_KEY && resolvedMailFrom)
 const isSmtpConfigured = isEmailConfigured
+const isEnquiryNotificationConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && SMTP_MAIL_FROM)
+
+const enquiryTransporter = isEnquiryNotificationConfigured()
+  ? nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+  })
+  : null
 
 const normalizeAttachmentsForSendGrid = (attachments = []) =>
   attachments.map((attachment) => {
@@ -532,8 +555,12 @@ const sendNewCustomerEnquiryNotification = async ({
     </div>
   `
 
-  await transporter.sendMail({
-    from: resolvedMailFrom,
+  if (!enquiryTransporter) {
+    throw new Error('Enquiry email is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS.')
+  }
+
+  await enquiryTransporter.sendMail({
+    from: SMTP_MAIL_FROM,
     to: toEmail,
     subject: 'New customer enquiry',
     html,
@@ -864,6 +891,7 @@ const sendFreightBidResubmitRequestEmail = async ({
 module.exports = {
   isEmailConfigured,
   isSmtpConfigured,
+  isEnquiryNotificationConfigured,
   buildCustomerBillToAddressHtml,
   sendQuotation,
   sendInvoice,
