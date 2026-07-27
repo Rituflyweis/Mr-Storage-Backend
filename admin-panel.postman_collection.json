@@ -2163,6 +2163,19 @@
           }
         },
         {
+          "name": "Material Request Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/{{requestId}}"
+          }
+        },
+        {
           "name": "Review Material Request",
           "request": {
             "method": "PUT",

@@ -585,6 +585,18 @@ exports.getMaterialRequests = asyncHandler(async (req, res) => {
   })
 })
 
+// GET /material-requests/:requestId — material request detail
+exports.getMaterialRequestDetail = asyncHandler(async (req, res) => {
+  const request = await MaterialRequest.findById(req.params.requestId)
+    .populate({ path: 'leadId', select: 'projectName jobId location' })
+    .populate({ path: 'requestedBy', select: 'name role' })
+    .populate({ path: 'reviewedBy', select: 'name role' })
+    .lean()
+  if (!request) return notFound(res, 'Request not found')
+
+  return success(res, { request })
+})
+
 exports.createMaterialRequest = asyncHandler(async (req, res) => {
   const { leadId, siteLocation, department, requestedItems, requiredBy, priority, totalAmount } = req.body
 
