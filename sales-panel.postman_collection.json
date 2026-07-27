@@ -42,7 +42,7 @@
         },
         {
           "name": "Performance Trend",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/dashboard/performance-trend?period=customers&range=7d", "query": [{"key":"period","value":"customers"},{"key":"range","value":"7d"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/dashboard/performance-trend?period=customers&range=7d", "host": ["{{baseUrl}}"], "path": ["sales", "dashboard", "performance-trend"], "query": [{"key":"period","value":"customers"},{"key":"range","value":"7d"}] } }
         },
         {
           "name": "Today Tasks",
@@ -67,11 +67,11 @@
       "item": [
         {
           "name": "Get Leads",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/leads?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/leads?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["sales", "leads"], "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
         },
         {
           "name": "Get Leads by Score",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/leads/by-score?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/leads/by-score?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["sales", "leads", "by-score"], "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
         },
         {
           "name": "Lead Scoring Table",
@@ -131,7 +131,7 @@
         },
         {
           "name": "Follow-up Trend",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/trend?range=7d", "query": [{"key":"range","value":"7d"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/trend?range=7d", "host": ["{{baseUrl}}"], "path": ["sales", "followups", "trend"], "query": [{"key":"range","value":"7d"}] } }
         },
         {
           "name": "Response Rate",
@@ -169,11 +169,11 @@
       "item": [
         {
           "name": "Get Timeline",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/communication-timeline?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/communication-timeline?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["sales", "followups", "communication-timeline"], "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
         },
         {
           "name": "Get Timeline by Lead",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/communication-timeline?leadId={{leadId}}", "query": [{"key":"leadId","value":"{{leadId}}"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/communication-timeline?leadId={{leadId}}", "host": ["{{baseUrl}}"], "path": ["sales", "followups", "communication-timeline"], "query": [{"key":"leadId","value":"{{leadId}}"}] } }
         }
       ]
     },
@@ -200,11 +200,11 @@
       "item": [
         {
           "name": "Get Payment Follow-Ups",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/payment-followup?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/payment-followup?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["sales", "followups", "payment-followup"], "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
         },
         {
           "name": "Get Payment Follow-Ups by Status",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/payment-followup?status=pending", "query": [{"key":"status","value":"pending"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/sales/followups/payment-followup?status=pending", "host": ["{{baseUrl}}"], "path": ["sales", "followups", "payment-followup"], "query": [{"key":"status","value":"pending"}] } }
         },
         {
           "name": "Create Payment Follow-Up",
@@ -231,19 +231,19 @@
       "item": [
         {
           "name": "Get All Notifications",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?page=1&limit=20", "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["notifications"], "query": [{"key":"page","value":"1"},{"key":"limit","value":"20"}] } }
         },
         {
           "name": "Get Unread Notifications",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?read=false", "query": [{"key":"read","value":"false"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?read=false", "host": ["{{baseUrl}}"], "path": ["notifications"], "query": [{"key":"read","value":"false"}] } }
         },
         {
           "name": "Get High Priority Notifications",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?priority=high", "query": [{"key":"priority","value":"high"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?priority=high", "host": ["{{baseUrl}}"], "path": ["notifications"], "query": [{"key":"priority","value":"high"}] } }
         },
         {
           "name": "Filter by Type (lead/task/meeting/escalation/payment)",
-          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?type=lead", "query": [{"key":"type","value":"lead"}] } }
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": { "raw": "{{baseUrl}}/notifications?type=lead", "host": ["{{baseUrl}}"], "path": ["notifications"], "query": [{"key":"type","value":"lead"}] } }
         },
         {
           "name": "Mark Notification as Read",

@@ -394,6 +394,35 @@ exports.getConstructionDeliveries = asyncHandler(async (req, res) => {
   })
 })
 
+// GET /deliveries/:deliveryId — delivery detail
+exports.getConstructionDeliveryDetail = asyncHandler(async (req, res) => {
+  const delivery = await Delivery.findById(req.params.deliveryId)
+    .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
+    .populate({ path: 'selectedCarrierBidId', select: 'carrierId', populate: { path: 'carrierId', select: 'carrierName contactName phone' } })
+    .lean()
+  if (!delivery) return notFound(res, 'Delivery not found')
+
+  return success(res, {
+    delivery: {
+      deliveryId: delivery._id,
+      deliveryNumber: delivery.deliveryNumber,
+      project: delivery.leadId ? { leadId: delivery.leadId._id, projectName: delivery.leadId.projectName, jobId: delivery.leadId.jobId } : null,
+      material: delivery.materialType || delivery.loadDescription || '',
+      description: delivery.description || '',
+      deliveryDate: delivery.deliveryDate,
+      timings: delivery.timings || '',
+      transporter: delivery.selectedCarrierBidId?.carrierId?.carrierName || '',
+      driver: delivery.selectedCarrierBidId?.carrierId?.contactName || '',
+      driverPhone: delivery.selectedCarrierBidId?.carrierId?.phone || '',
+      siteContact: delivery.receivingPoc || '',
+      deliveryLocation: delivery.deliveryLocation || '',
+      additionalNotes: delivery.additionalNotes || '',
+      status: delivery.status,
+      statusHistory: delivery.statusHistory || [],
+    },
+  })
+})
+
 // GET /deliveries/export — "Export" button on the All Deliveries screen
 exports.exportConstructionDeliveries = asyncHandler(async (req, res) => {
   const { projectId, siteDestination, deliveryStatus, transporter, driver, startDate, endDate } = req.query

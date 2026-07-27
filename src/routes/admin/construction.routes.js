@@ -15,6 +15,7 @@ router.post('/drawings/:docId/comments', [param('docId').isMongoId(), body('text
 
 router.get('/deliveries',            ctrl.getConstructionDeliveries)
 router.get('/deliveries/export',     ctrl.exportConstructionDeliveries)
+router.get('/deliveries/:deliveryId', [param('deliveryId').isMongoId()], validate, ctrl.getConstructionDeliveryDetail)
 
 router.get('/tasks',                 ctrl.getTasks)
 router.post('/tasks',                [body('title').notEmpty(), body('leadId').isMongoId()], validate, ctrl.createTask)

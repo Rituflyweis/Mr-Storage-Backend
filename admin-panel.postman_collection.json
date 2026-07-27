@@ -55,6 +55,10 @@
       "value": ""
     },
     {
+      "key": "deliveryId",
+      "value": ""
+    },
+    {
       "key": "expenseId",
       "value": ""
     },
@@ -131,6 +135,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/dashboard/performance-trend?range=7d",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard", "performance-trend"],
               "query": [
                 {
                   "key": "range",
@@ -183,6 +189,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/customers?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "customers"],
               "query": [
                 {
                   "key": "page",
@@ -208,6 +216,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/customers?scope=active",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "customers"],
               "query": [
                 {
                   "key": "scope",
@@ -354,6 +364,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/leads?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "leads"],
               "query": [
                 {
                   "key": "page",
@@ -577,6 +589,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/followups/activity-log?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "followups", "activity-log"],
               "query": [
                 {
                   "key": "page",
@@ -633,6 +647,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/employees?page=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "employees"],
               "query": [
                 {
                   "key": "page",
@@ -654,6 +670,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/employees?role=sales",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "employees"],
               "query": [
                 {
                   "key": "role",
@@ -675,6 +693,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/employees?role=plant",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "employees"],
               "query": [
                 {
                   "key": "role",
@@ -834,6 +854,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/products?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "products"],
               "query": [
                 {
                   "key": "page",
@@ -859,6 +881,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/products?category=Structure",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "products"],
               "query": [
                 {
                   "key": "category",
@@ -880,6 +904,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/products?pricingType=per_lb",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "products"],
               "query": [
                 {
                   "key": "pricingType",
@@ -901,6 +927,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/products?search=Main+Frame",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "products"],
               "query": [
                 {
                   "key": "search",
@@ -998,6 +1026,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/admin/financials/payments-dashboard?startDate=2025-03-24&endDate=2025-03-31",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payments-dashboard"],
                   "query": [
                     {
                       "key": "startDate",
@@ -1028,6 +1058,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/admin/financials/tax-filing?page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "tax-filing"],
                   "query": [
                     {
                       "key": "page",
@@ -1053,6 +1085,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/admin/financials/tax-filing?state=Texas",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "tax-filing"],
                   "query": [
                     {
                       "key": "state",
@@ -1136,6 +1170,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/admin/financials/project-wise-tax?page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "project-wise-tax"],
                   "query": [
                     {
                       "key": "page",
@@ -1166,6 +1202,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/admin/financials/payment-approvals?page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payment-approvals"],
                   "query": [
                     {
                       "key": "page",
@@ -1191,6 +1229,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/admin/financials/payment-approvals?status=pending",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payment-approvals"],
                   "query": [
                     {
                       "key": "status",
@@ -1280,6 +1320,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/admin/financials/payment-status?page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payment-status"],
                   "query": [
                     {
                       "key": "page",
@@ -1305,6 +1347,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/admin/financials/payment-status?status=overdue",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payment-status"],
                   "query": [
                     {
                       "key": "status",
@@ -1377,6 +1421,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/meetings?page=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "meetings"],
               "query": [
                 {
                   "key": "page",
@@ -1424,6 +1470,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/notifications?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications"],
               "query": [
                 {
                   "key": "page",
@@ -1592,6 +1640,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/invoices/report?status=All&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "invoices", "report"],
               "query": [
                 {
                   "key": "status",
@@ -1621,6 +1671,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/invoices/vendor?status=All",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "invoices", "vendor"],
               "query": [
                 {
                   "key": "status",
@@ -1642,6 +1694,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/invoices/freight-carrier?status=All",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "invoices", "freight-carrier"],
               "query": [
                 {
                   "key": "status",
@@ -1715,6 +1769,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/financials/expenses?category=All",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "expenses"],
               "query": [
                 {
                   "key": "category",
@@ -1843,6 +1899,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/financials/budget-vs-actual?leadId={{leadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "budget-vs-actual"],
               "query": [
                 {
                   "key": "leadId",
@@ -1882,6 +1940,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/construction/projects-calendar?month=5&year=2025",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "projects-calendar"],
               "query": [
                 {
                   "key": "month",
@@ -1962,6 +2022,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/construction/deliveries?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "deliveries"],
               "query": [
                 {
                   "key": "page",
@@ -1973,6 +2035,19 @@
                 }
               ]
             }
+          }
+        },
+        {
+          "name": "Delivery Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/deliveries/{{deliveryId}}"
           }
         },
         {
@@ -2055,6 +2130,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/construction/material-requests?status=All Status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "material-requests"],
               "query": [
                 {
                   "key": "status",
@@ -2297,6 +2374,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/chat/departments/{{channelKey}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "chat", "departments", ":channelKey", "messages"],
               "variable": [
                 {
                   "key": "channelKey",
@@ -2322,6 +2401,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/chat/departments/{{channelKey}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "chat", "departments", ":channelKey", "messages"],
               "variable": [
                 {
                   "key": "channelKey",
@@ -2360,6 +2441,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/chat/direct/{{userId}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "chat", "direct", ":userId", "messages"],
               "variable": [
                 {
                   "key": "userId",
@@ -2385,6 +2468,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/chat/direct/{{userId}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "chat", "direct", ":userId", "messages"],
               "variable": [
                 {
                   "key": "userId",
@@ -2428,6 +2513,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/plant/freight-loads?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "plant", "freight-loads"],
               "query": [
                 {
                   "key": "page",
@@ -2466,6 +2553,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/plant/deliveries-calendar?month=5&year=2025&view=month",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "plant", "deliveries-calendar"],
               "query": [
                 {
                   "key": "month",
@@ -2495,6 +2584,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/plant/all-deliveries?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "plant", "all-deliveries"],
               "query": [
                 {
                   "key": "page",
@@ -2533,6 +2624,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/plant/costing?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "plant", "costing"],
               "query": [
                 {
                   "key": "page",
