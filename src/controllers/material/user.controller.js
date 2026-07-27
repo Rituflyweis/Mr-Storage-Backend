@@ -1,6 +1,6 @@
 const asyncHandler = require('../../utils/asyncHandler')
 const bcrypt = require('bcryptjs')
-const { NewsLetter, Quotes, Inquire } = require('../../models/material')
+const { NewsLetter, Quotes, Inquire, BuildingType } = require('../../models/material')
 const Customer = require('../../models/Customer')
 const Lead = require('../../models/Lead')
 const auditService = require('../../services/audit.service')
@@ -9,6 +9,14 @@ const { syncLeadBuildings } = require('../../services/leadBuilding.service')
 const mailer = require('../../services/email/mailer')
 const generateCustomerId = require('../../utils/generateCustomerId')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
+
+const resolveBuildingTypeName = async (buildingTypeId) => {
+  const id = String(buildingTypeId || '').trim()
+  if (!id) return ''
+
+  const doc = await BuildingType.findById(id).select('title').lean()
+  return String(doc?.title || '').trim()
+}
 
 exports.sendNewsLetterRequest = asyncHandler(async(req, res) => {
   const { email } = req.body
@@ -82,6 +90,7 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
           customerEmail: email,
           customerPhone: phone,
           countryCode,
+          source: 'form',
         })
       } catch (err) {
         console.warn('[sendQuotesRequest] Failed to send new customer enquiry notification:', err.message)
@@ -95,6 +104,7 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
   }).sort({ createdAt: -1 })
 
   const quoteNotes = String(req.body.notes || '').trim()
+  const buildingTypeName = await resolveBuildingTypeName(req.body.buildingTypeId)
 
   if (!lead) {
     lead = await Lead.create({
@@ -104,7 +114,7 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
       lifecycleHistory: [
         { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
       ],
-      buildingType: String(req.body.buildingTypeId || ''),
+      buildingType: buildingTypeName,
       width: req.body.width ? Number(req.body.width) : null,
       length: req.body.length ? Number(req.body.length) : null,
       height: req.body.height ? Number(req.body.height) : null,
@@ -130,7 +140,7 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
     if (req.body.width) lead.width = Number(req.body.width)
     if (req.body.length) lead.length = Number(req.body.length)
     if (req.body.height) lead.height = Number(req.body.height)
-    if (req.body.buildingTypeId) lead.buildingType = String(req.body.buildingTypeId)
+    if (req.body.buildingTypeId) lead.buildingType = buildingTypeName
 
     const mergedLocation = [req.body.siteAddress, req.body.city, req.body.state, req.body.country, req.body.zip || req.body.zipCode]
       .filter(Boolean)
@@ -173,7 +183,7 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
   const inquiryMessageParts = [
     req.body.notes ? `Notes: ${String(req.body.notes).trim()}` : '',
     req.body.intendedUse ? `Intended Use: ${String(req.body.intendedUse).trim()}` : '',
-    req.body.buildingTypeId ? `Building Type Id: ${String(req.body.buildingTypeId).trim()}` : '',
+    buildingTypeName ? `Building Type: ${buildingTypeName}` : '',
     req.body.width ? `Width: ${String(req.body.width).trim()}` : '',
     req.body.length ? `Length: ${String(req.body.length).trim()}` : '',
     req.body.height ? `Height: ${String(req.body.height).trim()}` : '',
@@ -242,6 +252,7 @@ exports.sendInquire = asyncHandler(async(req, res) => {
           customerEmail: email,
           customerPhone: phone,
           countryCode,
+          source: 'form',
         })
       } catch (err) {
         console.warn('[sendInquire] Failed to send new customer enquiry notification:', err.message)

@@ -537,16 +537,25 @@ const sendNewCustomerEnquiryNotification = async ({
   customerEmail,
   customerPhone,
   countryCode,
+  source = 'ai_chat',
 }) => {
   const safeName = escapeHtml(customerName || 'N/A')
   const safeEmail = escapeHtml(customerEmail || 'N/A')
   const safePhone = escapeHtml(customerPhone || 'N/A')
   const safeCountryCode = escapeHtml(countryCode || '')
 
+  const isAiChat = source === 'ai_chat'
+  const introText = isAiChat
+    ? 'A new customer enquiry was created from AI chat init.'
+    : 'A new customer enquiry was submitted via form fill.'
+  const subject = isAiChat
+    ? 'New customer enquiry - AI chat'
+    : 'New customer enquiry - Form filled'
+
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
       <h2 style="margin:0 0 12px">New Customer Enquiry</h2>
-      <p>A new customer enquiry was created from AI chat init.</p>
+      <p>${introText}</p>
       <ul>
         <li><strong>Name:</strong> ${safeName}</li>
         <li><strong>Email:</strong> ${safeEmail}</li>
@@ -559,19 +568,23 @@ const sendNewCustomerEnquiryNotification = async ({
     throw new Error('Enquiry email is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS.')
   }
 
-  await enquiryTransporter.sendMail({
+  const info = await enquiryTransporter.sendMail({
     from: SMTP_MAIL_FROM,
     to: toEmail,
-    subject: 'New customer enquiry',
+    subject,
     html,
     text: [
-      'New customer enquiry created from AI chat init.',
+      introText,
       '',
       `Name: ${customerName || 'N/A'}`,
       `Email: ${customerEmail || 'N/A'}`,
       `Phone: ${(countryCode || '').trim()} ${customerPhone || 'N/A'}`.trim(),
     ].join('\n'),
   })
+
+  console.log(
+    `[Nodemailer] Email sent successfully | to=${toEmail} | subject=${subject} | source=${source} | messageId=${info.messageId || '-'} | response=${info.response || '-'} | customer=${customerName || 'N/A'} <${customerEmail || 'N/A'}>`
+  )
 }
 
 const sendConsolidatedBOMToVendor = async ({
