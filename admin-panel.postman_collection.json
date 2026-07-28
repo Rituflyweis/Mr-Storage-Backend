@@ -2176,6 +2176,19 @@
           }
         },
         {
+          "name": "Download Material Request Attachment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/{{requestId}}/attachments/0/download"
+          }
+        },
+        {
           "name": "Review Material Request",
           "request": {
             "method": "PUT",

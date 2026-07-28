@@ -597,6 +597,19 @@ exports.getMaterialRequestDetail = asyncHandler(async (req, res) => {
   return success(res, { request })
 })
 
+// GET /material-requests/:requestId/attachments/:index/download — redirect to stored S3 file
+exports.downloadMaterialRequestAttachment = asyncHandler(async (req, res) => {
+  const { requestId, index } = req.params
+
+  const request = await MaterialRequest.findById(requestId).select('attachments').lean()
+  if (!request) return notFound(res, 'Request not found')
+
+  const attachment = request.attachments?.[Number(index)]
+  if (!attachment) return notFound(res, 'Attachment not found')
+
+  return res.redirect(attachment.url)
+})
+
 exports.createMaterialRequest = asyncHandler(async (req, res) => {
   const { leadId, siteLocation, department, requestedItems, requiredBy, priority, totalAmount } = req.body
 

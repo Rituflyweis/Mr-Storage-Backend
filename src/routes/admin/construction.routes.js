@@ -29,6 +29,7 @@ router.get('/material-requests',     ctrl.getMaterialRequests)
 router.get('/material-requests/export', ctrl.exportMaterialRequests)
 router.post('/material-requests',    [body('leadId').isMongoId(), body('requestedItems').isArray()], validate, ctrl.createMaterialRequest)
 router.get('/material-requests/:requestId', [param('requestId').isMongoId()], validate, ctrl.getMaterialRequestDetail)
+router.get('/material-requests/:requestId/attachments/:index/download', [param('requestId').isMongoId()], validate, ctrl.downloadMaterialRequestAttachment)
 router.put('/material-requests/:requestId/review', [param('requestId').isMongoId(), body('action').isIn(['approved','rejected'])], validate, ctrl.reviewMaterialRequest)
 
 router.get('/reports',               ctrl.getConstructionReports)
