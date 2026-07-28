@@ -2051,6 +2051,48 @@
           }
         },
         {
+          "name": "All Deliveries — Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/deliveries/filters"
+          },
+          "_postman_note": "Dropdown options for Projects/Site-Destination/Delivery-Status/Transporter/Driver filters. QR Scan Status is NOT included — no backing field exists yet."
+        },
+        {
+          "name": "All Deliveries (Construction) — Filtered Example",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/construction/deliveries?projectId={{leadId}}&deliveryStatus=scheduled&siteDestination=Austin&transporter=Swift&driver=Mike&startDate=2026-01-01&endDate=2026-12-31&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "deliveries"],
+              "query": [
+                { "key": "projectId", "value": "{{leadId}}" },
+                { "key": "deliveryStatus", "value": "scheduled" },
+                { "key": "siteDestination", "value": "Austin" },
+                { "key": "transporter", "value": "Swift" },
+                { "key": "driver", "value": "Mike" },
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-12-31" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
           "name": "Tasks Board",
           "request": {
             "method": "GET",
@@ -2137,6 +2179,45 @@
                   "key": "status",
                   "value": "All Status"
                 }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Material Requests — Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/filters"
+          },
+          "_postman_note": "Dropdown options for Projects/Departments/Status/Requested-By filters. 'Projects' should be sourced from the existing Leads list endpoint, not this one."
+        },
+        {
+          "name": "Material Requests — Filtered Example",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/construction/material-requests?projectId={{leadId}}&department=Framing&status=pending&requestedBy={{userId}}&startDate=2026-01-01&endDate=2026-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "material-requests"],
+              "query": [
+                { "key": "projectId", "value": "{{leadId}}" },
+                { "key": "department", "value": "Framing" },
+                { "key": "status", "value": "pending" },
+                { "key": "requestedBy", "value": "{{userId}}" },
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-12-31" }
               ]
             }
           }

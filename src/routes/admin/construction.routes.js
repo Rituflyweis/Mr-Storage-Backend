@@ -15,6 +15,7 @@ router.post('/drawings/:docId/comments', [param('docId').isMongoId(), body('text
 
 router.get('/deliveries',            ctrl.getConstructionDeliveries)
 router.get('/deliveries/export',     ctrl.exportConstructionDeliveries)
+router.get('/deliveries/filters',    ctrl.getConstructionDeliveryFilters)
 router.get('/deliveries/:deliveryId', [param('deliveryId').isMongoId()], validate, ctrl.getConstructionDeliveryDetail)
 
 router.get('/tasks',                 ctrl.getTasks)
@@ -27,6 +28,7 @@ router.post('/work-logs',            [body('leadId').isMongoId(), body('date').n
 
 router.get('/material-requests',     ctrl.getMaterialRequests)
 router.get('/material-requests/export', ctrl.exportMaterialRequests)
+router.get('/material-requests/filters', ctrl.getMaterialRequestFilters)
 router.post('/material-requests',    [body('leadId').isMongoId(), body('requestedItems').isArray()], validate, ctrl.createMaterialRequest)
 router.get('/material-requests/:requestId', [param('requestId').isMongoId()], validate, ctrl.getMaterialRequestDetail)
 router.post('/material-requests/:requestId/attachments', [param('requestId').isMongoId(), body('url').notEmpty()], validate, ctrl.addMaterialRequestAttachment)

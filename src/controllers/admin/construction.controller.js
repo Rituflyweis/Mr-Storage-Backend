@@ -1,4 +1,5 @@
 const Lead = require('../../models/Lead')
+const User = require('../../models/User')
 const Task = require('../../models/Task')
 const Delivery = require('../../models/Delivery')
 const DrawingDocument = require('../../models/DrawingDocument')
@@ -10,6 +11,7 @@ const { success, created, notFound, badRequest } = require('../../utils/apiRespo
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { generateDeliveriesExcel, generateReportExcel, generateMaterialRequestsExcel } = require('../../utils/exportConstructionAdmin')
+const { DELIVERY_STATUSES } = require('../../config/constants')
 
 // The 5-phase "Project Timeline" bucket shown in Figma (Planning/Design/Procurement/
 // Execution/Handover) mapped onto the real Lead.lifecycleStatus enum (sales + plant stages).
@@ -326,6 +328,22 @@ const resolveCarrierBidIds = async ({ transporter, driver }) => {
   return bids.map(b => b._id)
 }
 
+// GET /deliveries/filters — dropdown options for the All Deliveries filter bar
+exports.getConstructionDeliveryFilters = asyncHandler(async (req, res) => {
+  const [siteDestinations, carriers] = await Promise.all([
+    Delivery.distinct('deliveryLocation', { deliveryLocation: { $ne: '' } }),
+    FreightCarrier.find().select('carrierName contactName').lean(),
+  ])
+
+  return success(res, {
+    deliveryStatuses: DELIVERY_STATUSES,
+    siteDestinations,
+    transporters: [...new Set(carriers.map(c => c.carrierName).filter(Boolean))],
+    drivers: [...new Set(carriers.map(c => c.contactName).filter(Boolean))],
+    note: 'No QR-scan tracking field exists on the Delivery model yet — "QR Scan Status" filter cannot be backed until that field/feature is added.',
+  })
+})
+
 exports.getConstructionDeliveries = asyncHandler(async (req, res) => {
   const { projectId, siteDestination, deliveryStatus, transporter, driver, startDate, endDate, search, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter({ startDate, endDate }, 'deliveryDate')
@@ -541,6 +559,23 @@ exports.deleteTask = asyncHandler(async (req, res) => {
   if (!task) return notFound(res, 'Task not found')
   await Task.deleteOne({ _id: task._id })
   return success(res, {}, 'Task deleted')
+})
+
+// GET /material-requests/filters — dropdown options for the All Materials filter bar
+exports.getMaterialRequestFilters = asyncHandler(async (req, res) => {
+  const [departments, requesterIds] = await Promise.all([
+    MaterialRequest.distinct('department', { department: { $ne: '' } }),
+    MaterialRequest.distinct('requestedBy', { requestedBy: { $ne: null } }),
+  ])
+
+  const requesters = await User.find({ _id: { $in: requesterIds } }).select('name role').lean()
+
+  return success(res, {
+    statuses: MaterialRequest.MR_STATUSES,
+    priorities: MaterialRequest.MR_PRIORITIES,
+    departments,
+    requestedBy: requesters.map(u => ({ _id: u._id, name: u.name, role: u.role })),
+  })
 })
 
 exports.getMaterialRequests = asyncHandler(async (req, res) => {
