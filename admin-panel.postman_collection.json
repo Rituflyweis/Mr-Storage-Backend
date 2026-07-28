@@ -2176,6 +2176,28 @@
           }
         },
         {
+          "name": "Upload Material Request Photo/Attachment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/{{requestId}}/attachments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"site-photo.jpg\",\"url\":\"https://mr-storage-project.s3.ap-south-1.amazonaws.com/documents/site-photo.jpg\"}"
+            }
+          },
+          "_postman_note": "First get an S3 upload URL via POST /upload/presigned-url, PUT the file to it, then send the resulting fileUrl here to attach it to the request."
+        },
+        {
           "name": "Download Material Request Attachment",
           "request": {
             "method": "GET",

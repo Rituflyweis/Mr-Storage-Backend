@@ -597,6 +597,23 @@ exports.getMaterialRequestDetail = asyncHandler(async (req, res) => {
   return success(res, { request })
 })
 
+// POST /material-requests/:requestId/attachments — "Send Photo" / "Upload Photo" modal
+// Client uploads the file to S3 via the presigned-URL flow (POST /upload/presigned-url) first,
+// then calls this with the resulting { name, url } to attach it to the request.
+exports.addMaterialRequestAttachment = asyncHandler(async (req, res) => {
+  const { requestId } = req.params
+  const { name, url } = req.body
+  if (!url) return badRequest(res, 'url is required')
+
+  const request = await MaterialRequest.findById(requestId)
+  if (!request) return notFound(res, 'Request not found')
+
+  request.attachments.push({ name: name || '', url })
+  await request.save()
+
+  return created(res, { attachments: request.attachments })
+})
+
 // GET /material-requests/:requestId/attachments/:index/download — redirect to stored S3 file
 exports.downloadMaterialRequestAttachment = asyncHandler(async (req, res) => {
   const { requestId, index } = req.params
