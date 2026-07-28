@@ -111,6 +111,7 @@ const AUDIT_ACTIONS = {
   QUOTATION_CREATED:        'quotation.created',
   QUOTATION_SENT:           'quotation.sent',
   QUOTATION_ACCEPTED:       'quotation.accepted',
+  QUOTATION_REJECTED:       'quotation.rejected',
   QUOTATION_EDITED:         'quotation.edited',
   INVOICE_CREATED:          'invoice.created',
   INVOICE_SENT:             'invoice.sent',
@@ -147,6 +148,8 @@ const AUDIT_ACTIONS = {
   DELIVERY_CREATED:          'delivery.created',
   DELIVERY_EDITED:           'delivery.edited',
   DELIVERY_RESCHEDULED:      'delivery.rescheduled',
+  DELIVERY_CALLBACK_REQUESTED: 'delivery.callback_requested',
+  DELIVERY_CONFIRMATION_SENT: 'delivery.confirmation_sent',
   FREIGHT_BIDS_SENT:         'freight_bids.sent',
   FREIGHT_BID_SUBMITTED:     'freight_bid.submitted',
   ALL_FREIGHT_BIDS_SUBMITTED: 'freight_bids.all_submitted',
@@ -188,13 +191,14 @@ const CARRIER_STATUSES = ['active', 'inactive']
 const FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested', 'selected', 'rejected', 'expired']
 const ACTIVE_FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested']
 const BUNDLE_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
-const BUNDLE_STATUSES = ['draft', 'confirmed', 'assigned_to_truck', 'loaded']
+const BUNDLE_STATUSES = ['draft', 'confirmed', 'assigned_to_truck', 'staged', 'loaded']
 const PACKING_LIST_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
-const PACKING_LIST_STATUSES = ['draft', 'confirmed', 'delivery_created', 'dispatched', 'delivered', 'cancelled']
+const PACKING_LIST_STATUSES = ['draft', 'confirmed', 'ready', 'loading', 'delivery_created', 'dispatched', 'delivered', 'cancelled']
 const TRUCK_TYPES = ['SEMI_53', 'HOTSHOT_40']
 const DELIVERY_STATUSES = [
   'draft', 'bidding_sent', 'carrier_selected', 'scheduled',
-  'confirmed', 'in_transit', 'delayed', 'delivered', 'cancelled',
+  'confirmed', 'in_transit', 'delayed', 'staged', 'delivered',
+  'partial_received', 'received', 'cancelled', 'rescheduled',
 ]
 
 const SMDT_COST_UNITS = ['FT', 'LB', 'EA']

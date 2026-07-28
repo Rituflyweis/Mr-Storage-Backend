@@ -49,6 +49,8 @@ const formatAuditActivityMessage = (log, context = {}) => {
       return `Quotation sent${ctx}`
     case AUDIT_ACTIONS.QUOTATION_ACCEPTED:
       return `Quotation accepted${ctx}`
+    case AUDIT_ACTIONS.QUOTATION_REJECTED:
+      return `Quotation rejected${ctx}`
     case AUDIT_ACTIONS.QUOTATION_EDITED:
       return `Quotation updated${ctx}`
 
