@@ -6,6 +6,8 @@ const MessageSchema = new mongoose.Schema(
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
     senderType: { type: String, enum: ['customer', 'ai', 'sales', 'admin'], required: true },
     senderId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    channel:    { type: String, enum: ['project', 'finance', 'construction'], default: 'project' },
+    senderName: { type: String, default: '' },
     content:    { type: String, required: true },
     isRead:     { type: Boolean, default: false },
   },

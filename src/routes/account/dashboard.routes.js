@@ -9,5 +9,7 @@ router.get('/upcoming-payments',    ctrl.getUpcomingPayments)
 router.get('/payment-distribution', ctrl.getPaymentDistribution)
 router.get('/revenue-trend',        ctrl.getRevenueTrend)
 router.get('/expense-trend',        ctrl.getExpenseTrend)
+router.get('/cost-breakdown',       ctrl.getCostBreakdown)
+router.get('/wip-projects',         ctrl.getWipProjects)
 
 module.exports = router

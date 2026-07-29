@@ -120,13 +120,16 @@ exports.createEmployee = asyncHandler(async (req, res) => {
   const exists = await User.findOne({ email: email.toLowerCase().trim() })
   if (exists) return badRequest(res, 'Email already in use')
 
-  const hashed = await bcrypt.hash(password, 12)
-  const user = await User.create({ name, email: email.toLowerCase().trim(), password: hashed, phone, role })
+  const tempPassword = Math.random().toString(36).slice(-6) +
+    Math.random().toString(36).slice(-4).toUpperCase()
+  const hashed = await bcrypt.hash(tempPassword, 12)
+  const { department, permissions } = req.body
+  const user = await User.create({ name, email: email.toLowerCase().trim(), password: hashed, phone, role, department, permissions })
 
   if (role === 'sales') await roundRobinService.rebuildTracker()
 
   await mailer.sendEmployeeCredentials({
-    toEmail: user.email, name: user.name, role: user.role, tempPassword: password,
+    toEmail: user.email, name: user.name, role: user.role, tempPassword,
   })
 
   await auditService.log({
@@ -214,7 +217,7 @@ exports.getEmployeeDetail = asyncHandler(async (req, res) => {
 
 exports.updateEmployee = asyncHandler(async (req, res) => {
   const { userId } = req.params
-  const { name, phone, role, isActive } = req.body
+  const { name, phone, role, isActive, department, permissions } = req.body
 
   const employee = await User.findById(userId)
   if (!employee) return notFound(res, 'Employee not found')
@@ -222,10 +225,12 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   const prevRole = employee.role
   const prevActive = employee.isActive
 
-  if (name !== undefined) employee.name = name
-  if (phone !== undefined) employee.phone = phone
-  if (role !== undefined) employee.role = role
-  if (isActive !== undefined) employee.isActive = isActive
+  if (name !== undefined)       employee.name       = name
+  if (phone !== undefined)      employee.phone      = phone
+  if (role !== undefined)       employee.role       = role
+  if (isActive !== undefined)   employee.isActive   = isActive
+  if (department !== undefined) employee.department = department
+  if (permissions !== undefined) employee.permissions = permissions
 
   await employee.save()
 

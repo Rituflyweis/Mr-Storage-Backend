@@ -305,3 +305,31 @@ exports.getCustomerStats = asyncHandler(async (req, res) => {
 
   return success(res, { total, active, newThisMonth })
 })
+
+exports.getAISupportSummary = asyncHandler(async (req, res) => {
+  const salesId = req.user._id
+  const now = new Date()
+  const monthStart = startOfMonth(now)
+  const monthEnd   = endOfMonth(now)
+
+  const [totalThisMonth, resolved, pending] = await Promise.all([
+    Escalation.countDocuments({ raisedBy: salesId, createdAt: { $gte: monthStart, $lte: monthEnd } }),
+    Escalation.countDocuments({ raisedBy: salesId, status: 'resolved', createdAt: { $gte: monthStart, $lte: monthEnd } }),
+    Escalation.countDocuments({ raisedBy: salesId, status: 'pending' }),
+  ])
+
+  const resolvedDocs = await Escalation.find({
+    raisedBy: salesId,
+    status: 'resolved',
+    resolvedAt: { $ne: null },
+    createdAt: { $gte: monthStart, $lte: monthEnd },
+  }).select('createdAt resolvedAt').lean()
+
+  let avgResolutionHours = 0
+  if (resolvedDocs.length) {
+    const totalMs = resolvedDocs.reduce((s, e) => s + (new Date(e.resolvedAt) - new Date(e.createdAt)), 0)
+    avgResolutionHours = Math.round((totalMs / resolvedDocs.length / 3600000) * 10) / 10
+  }
+
+  return success(res, { totalThisMonth, resolved, pending, avgResolutionHours })
+})
