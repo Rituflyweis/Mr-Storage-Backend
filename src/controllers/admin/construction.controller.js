@@ -637,13 +637,13 @@ exports.getMaterialRequestDetail = asyncHandler(async (req, res) => {
 // then calls this with the resulting { name, url } to attach it to the request.
 exports.addMaterialRequestAttachment = asyncHandler(async (req, res) => {
   const { requestId } = req.params
-  const { name, url } = req.body
+  const { name, url, fileSize } = req.body
   if (!url) return badRequest(res, 'url is required')
 
   const request = await MaterialRequest.findById(requestId)
   if (!request) return notFound(res, 'Request not found')
 
-  request.attachments.push({ name: name || '', url })
+  request.attachments.push({ name: name || '', url, fileSize: fileSize || 0 })
   await request.save()
 
   return created(res, { attachments: request.attachments })

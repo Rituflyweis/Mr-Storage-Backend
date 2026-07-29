@@ -20,8 +20,9 @@ const RequestedItemSchema = new mongoose.Schema(
 
 const AttachmentSchema = new mongoose.Schema(
   {
-    name: { type: String, default: '', trim: true },
-    url:  { type: String, required: true, trim: true },
+    name:     { type: String, default: '', trim: true },
+    url:      { type: String, required: true, trim: true },
+    fileSize: { type: Number, default: 0 },
   },
   { _id: false }
 )

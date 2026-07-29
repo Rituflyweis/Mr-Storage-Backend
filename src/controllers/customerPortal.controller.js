@@ -1987,9 +1987,32 @@ exports.getProjectOrders = asyncHandler(async (req, res) => {
     MaterialRequest.countDocuments(filter),
   ])
 
+  // Item 7: "Quantity" / "Total Length" columns on the orders table, plus the same computed
+  // `stage` the detail stepper uses so the list's status badge (New Order/Quotation Received/
+  // Pending/Delivered) is driven by the same logic instead of the raw MaterialRequest.status.
+  const quotations = orders.length
+    ? await OrderQuotation.find({ orderId: { $in: orders.map(o => o._id) } }).sort({ createdAt: -1 }).lean()
+    : []
+  const latestQuotationByOrder = new Map()
+  for (const q of quotations) {
+    const key = String(q.orderId)
+    if (!latestQuotationByOrder.has(key)) latestQuotationByOrder.set(key, q)
+  }
+
+  const ordersWithTotals = orders.map(order => {
+    const totalQuantity = order.requestedItems.reduce((sum, i) => sum + (i.quantity || 0), 0)
+    const totalLength = order.requestedItems.reduce((sum, i) => sum + (i.quantity || 0) * (i.lengthFeet || 0), 0)
+    return {
+      ...order,
+      totalQuantity,
+      totalLength,
+      stage: computeOrderStage(order, latestQuotationByOrder.get(String(order._id))),
+    }
+  })
+
   return success(res, {
     project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location },
-    orders,
+    orders: ordersWithTotals,
     total,
     counts: await orderCountsForLead(req.params.leadId),
   })
@@ -2059,9 +2082,20 @@ exports.getProjectOrderDetail = asyncHandler(async (req, res) => {
 
   const deliveredItems = order.requestedItems.filter((i) => i.deliveryStatus === 'delivered')
   const pendingItems = order.requestedItems.filter((i) => i.deliveryStatus !== 'delivered')
+  const totalQuantity = order.requestedItems.reduce((sum, i) => sum + (i.quantity || 0), 0)
+  const totalLength = order.requestedItems.reduce((sum, i) => sum + (i.quantity || 0) * (i.lengthFeet || 0), 0)
 
   return success(res, {
-    order: { ...order, stage: computeOrderStage(order, quotation), createdByName, deliveredItems, pendingItems },
+    project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location },
+    order: {
+      ...order,
+      stage: computeOrderStage(order, quotation),
+      createdByName,
+      deliveredItems,
+      pendingItems,
+      totalQuantity,
+      totalLength,
+    },
     quotation: quotation || null,
   })
 })
