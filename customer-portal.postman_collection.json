@@ -335,7 +335,7 @@
                 "dashboard"
               ]
             },
-            "description": "Returns: activeProjects, closedProjects, drawingsAndApprovals, deliveryTracking { inTransit, staged, ready, totalToday, upcomingDeliveries, deliveriesThisWeek, delayedDeliveries, rescheduledDeliveries }, shipmentBreakdown, nextDelivery, totalProjectValue, totalPaid, totalPending, upcomingInvoice"
+            "description": "Returns: activeProjects, closedProjects, drawingsAndApprovals (legacy flat count), drawingsApprovalsBreakdown { pendingReview, pendingReviewSubtitle, approved, revisionReceived, itemsNeedingClarification (always 0 — no RFI model exists yet) }, activeProjectOverview { leadId, projectName, projectCode, siteLocation, image (always null), progressPct, currentStage, nextMilestone, projectManager (falls back to assigned sales rep) }, deliveryTracking { inTransit, staged, ready, totalToday, upcomingDeliveries, deliveriesThisWeek, delayedDeliveries, rescheduledDeliveries }, shipmentBreakdown, nextDelivery (now full delivery-detail shape, same as GET /deliveries/:deliveryId), totalProjectValue, totalPaid, totalPending, upcomingInvoice"
           }
         }
       ]

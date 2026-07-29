@@ -160,7 +160,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const customerId = req.customer._id
 
   const [leads, invoices] = await Promise.all([
-    Lead.find({ customerId }).select('lifecycleStatus quoteValue documents jobId projectName').lean(),
+    Lead.find({ customerId }).select('lifecycleStatus quoteValue documents jobId projectName location buildingType assignedSales updatedAt').lean(),
     Invoice.find({ customerId }).select('status totalAmount date daysToPay leadId').lean(),
   ])
 
@@ -216,9 +216,22 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     rescheduledDeliveries: deliveries.filter(d => d.status === 'rescheduled').length,
   }
 
-  const nextDelivery = deliveries
+  const nextDeliveryRaw = deliveries
     .filter(d => d.deliveryDate && new Date(d.deliveryDate) >= nowTs && d.status !== 'delivered')
     .sort((a, b) => new Date(a.deliveryDate) - new Date(b.deliveryDate))[0] || null
+
+  // Item 1: give the dashboard's nextDelivery the exact same shape as GET /deliveries/:deliveryId,
+  // instead of the 5-field summary it had before.
+  let nextDelivery = null
+  if (nextDeliveryRaw) {
+    const fullDelivery = await Delivery.findById(nextDeliveryRaw._id).lean()
+    const nextDeliveryLead = leads.find(l => String(l._id) === String(fullDelivery.leadId))
+    const [carrier, loadDetails] = await Promise.all([
+      getDeliveryCarrier(fullDelivery),
+      loadFreightLoadDetailsByLeadId(fullDelivery.leadId),
+    ])
+    nextDelivery = mapDeliveryRow(fullDelivery, nextDeliveryLead || { _id: fullDelivery.leadId }, carrier, loadDetails)
+  }
 
   const totalBundles = leadIds.length ? await Bundle.countDocuments({ leadId: { $in: leadIds } }) : 0
   const shipmentBreakdown = {
@@ -235,6 +248,60 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     ? Math.max(0, Math.ceil((new Date(nextMilestone.targetDate) - nowTs) / 86400000))
     : null
 
+  // Item 2: "Active Project Overview" card — picks the most recently active non-closed project.
+  const activeLead = leads
+    .filter(l => !CLOSED_STAGES.includes(l.lifecycleStatus))
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0] || null
+
+  let activeProjectOverview = null
+  if (activeLead) {
+    const [currentStep, leadNextMilestone, projectManager] = await Promise.all([
+      ProjectStepDetail.findOne({ leadId: activeLead._id }).sort({ updatedAt: -1 }).lean(),
+      Milestone.findOne({ leadId: activeLead._id, status: { $ne: 'completed' } }).sort({ targetDate: 1 }).lean(),
+      activeLead.assignedSales ? User.findById(activeLead.assignedSales).select('name phone').lean() : null,
+    ])
+
+    activeProjectOverview = {
+      leadId: activeLead._id,
+      projectName: activeLead.projectName || '',
+      projectCode: activeLead.jobId || '',
+      siteLocation: activeLead.location || '',
+      image: null,
+      progressPct: currentStep?.completionPct ?? null,
+      currentStage: currentStep?.currentStage || '',
+      nextMilestone: leadNextMilestone ? { title: leadNextMilestone.title, targetDate: leadNextMilestone.targetDate } : null,
+      projectManager: projectManager ? { name: projectManager.name, phone: projectManager.phone || '' } : null,
+      note: 'image and a dedicated project-manager assignment do not exist in the data model yet — projectManager falls back to the lead\'s assigned sales rep, and image is always null.',
+    }
+  }
+
+  // Item 3: "Drawings & Approvals" breakdown — replaces the flat count with real per-status data.
+  const drawingStatusAgg = leadIds.length
+    ? await DrawingDocument.aggregate([
+        { $match: { leadId: { $in: leadIds } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ])
+    : []
+  const drawingStatusMap = Object.fromEntries(drawingStatusAgg.map(s => [s._id, s.count]))
+  const revisionReceivedCount = leadIds.length
+    ? await DrawingDocument.countDocuments({ leadId: { $in: leadIds }, revisionRequestedAt: { $ne: null } })
+    : 0
+  const latestPendingDrawing = leadIds.length
+    ? await DrawingDocument.findOne({ leadId: { $in: leadIds }, status: { $in: ['pending', 'under_review'] } })
+        .sort({ createdAt: -1 })
+        .select('documentType buildingLabel')
+        .lean()
+    : null
+
+  const drawingsApprovalsBreakdown = {
+    pendingReview: (drawingStatusMap.pending || 0) + (drawingStatusMap.under_review || 0),
+    pendingReviewSubtitle: latestPendingDrawing?.buildingLabel || latestPendingDrawing?.documentType || '',
+    approved: drawingStatusMap.approved || 0,
+    revisionReceived: revisionReceivedCount,
+    itemsNeedingClarification: 0,
+    note: 'There is no RFI / clarification-request data model in the backend yet, so itemsNeedingClarification is always 0 until that feature exists. revisionReceived is a best-effort proxy (count of drawings with a non-null revisionRequestedAt) — confirm this matches the intended definition.',
+  }
+
   const [ordersList, notificationsFeed, recentMessages] = await Promise.all([
     leadIds.length
       ? MaterialRequest.find({ leadId: { $in: leadIds } }).sort({ createdAt: -1 }).limit(5).lean()
@@ -249,6 +316,8 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     activeProjects,
     closedProjects,
     drawingsAndApprovals,
+    drawingsApprovalsBreakdown,
+    activeProjectOverview,
     projectTimeline,
     totalProjectValue,
     totalPaid,
@@ -259,14 +328,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     ordersList,
     notificationsFeed,
     recentMessages,
-    nextDelivery: nextDelivery ? {
-      deliveryId: nextDelivery._id,
-      deliveryNumber: nextDelivery.deliveryNumber,
-      description: nextDelivery.loadDescription || nextDelivery.description || '',
-      status: nextDelivery.status,
-      deliveryDate: nextDelivery.deliveryDate,
-      estimatedWeight: nextDelivery.loadWeight || null,
-    } : null,
+    nextDelivery,
   })
 })
 
