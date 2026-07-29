@@ -1724,6 +1724,41 @@
           }
         },
         {
+          "name": "Financial Overview Dashboard — Filtered",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/financial-overview?projectId={{leadId}}&startDate=2026-01-01&endDate=2026-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "financial-overview"],
+              "query": [
+                { "key": "projectId", "value": "{{leadId}}" },
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Financial Overview — Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/financial-overview/export"
+          }
+        },
+        {
           "name": "WIP Profits List",
           "request": {
             "method": "GET",
@@ -1734,6 +1769,40 @@
               }
             ],
             "url": "{{baseUrl}}/admin/financials/wip-profits"
+          }
+        },
+        {
+          "name": "WIP Profits List — Filter by Client",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/wip-profits?clientId={{leadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "wip-profits"],
+              "query": [
+                { "key": "clientId", "value": "{{leadId}}" }
+              ]
+            }
+          },
+          "_postman_note": "clientId filters by leadId — was already supported, just wasn't documented."
+        },
+        {
+          "name": "WIP Profits — Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/wip-profits/export"
           }
         },
         {
@@ -1755,7 +1824,30 @@
               "mode": "raw",
               "raw": "{\"leadId\":\"{{leadId}}\",\"orderValue\":450000,\"currentCost\":381000,\"depositPaid\":135000,\"progressPaid\":135000,\"finalPaid\":0,\"status\":\"in_progress\"}"
             }
-          }
+          },
+          "_postman_note": "Initializes/overwrites the full WIP snapshot for a project. Use 'Add Payment Entry' below for the 'Add payment entry' UI modal instead — this one is for initial setup only."
+        },
+        {
+          "name": "Add Payment Entry (WIP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/wip-profits/{{leadId}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"payerName\":\"Test10010\",\"paymentType\":\"final\",\"amount\":5000,\"paymentDate\":\"2026-01-15\",\"transactionId\":\"UPI98234XYZ\",\"remarks\":\"January membership payment\"}"
+            }
+          },
+          "_postman_note": "Matches the 'Add payment entry' modal exactly: Payer Name, Payment Type (deposit/progress/final), Amount, Payment Date, Transaction ID, Remarks. A WIP entry must already exist for this leadId (create one via 'Create WIP Entry' first)."
         },
         {
           "name": "Expenses List",

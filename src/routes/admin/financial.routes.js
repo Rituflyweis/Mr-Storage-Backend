@@ -41,8 +41,15 @@ router.get('/payment-status', ctrl.getPaymentStatus)
 
 // Financial Overview sub-pages
 router.get('/financial-overview', ctrl.getFinancialOverview)
+router.get('/financial-overview/export', ctrl.exportFinancialOverview)
 router.get('/wip-profits',        ctrl.getWIPProfits)
+router.get('/wip-profits/export', ctrl.exportWIPProfits)
 router.post('/wip-profits',       ctrl.createWIPEntry)
+router.post('/wip-profits/:leadId/payments',
+  [body('paymentType').isIn(['deposit', 'progress', 'final']), body('amount').isNumeric(), body('paymentDate').notEmpty()],
+  validate,
+  ctrl.addWIPPayment
+)
 router.get('/expenses',           ctrl.getExpenses)
 router.post('/expenses',          [require('express-validator').body('category').notEmpty(), require('express-validator').body('amount').isNumeric()], require('../../middleware/validate'), ctrl.createExpense)
 router.put('/expenses/:expenseId',    ctrl.updateExpense)

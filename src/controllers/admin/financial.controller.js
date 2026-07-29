@@ -7,6 +7,7 @@ const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { withProjectIdFields } = require('../../utils/leadProjectId')
+const { generateFinancialOverviewExcel, generateWIPProfitsExcel } = require('../../utils/exportFinancialAdmin')
 
 exports.getOverview = asyncHandler(async (req, res) => {
   const base = buildDateFilter(req.query)
@@ -457,31 +458,33 @@ const FreightBid = require('../../models/FreightBid')
 const WIPProfit = require('../../models/WIPProfit')
 
 exports.getFinancialOverview = asyncHandler(async (req, res) => {
+  const { projectId } = req.query
   const dateFilter = buildDateFilter(req.query, 'date')
+  const projectFilter = projectId ? { leadId: projectId } : {}
   const now = new Date()
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
   const [revenueAgg, grossProfitAgg, expenseAgg, revenueTrend, topCustomers] = await Promise.all([
-    Invoice.aggregate([{ $match: { ...dateFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    Invoice.aggregate([{ $match: { ...dateFilter, ...projectFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
     Invoice.aggregate([
-      { $match: { ...dateFilter, status: 'paid' } },
+      { $match: { ...dateFilter, ...projectFilter, status: 'paid' } },
       { $lookup: { from: 'leads', localField: 'leadId', foreignField: '_id', as: 'lead' } },
       { $unwind: '$lead' },
       { $group: { _id: null, revenue: { $sum: '$totalAmount' }, cost: { $sum: '$lead.quoteValue' } } },
     ]),
-    Expense.aggregate([{ $match: dateFilter }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    Expense.aggregate([{ $match: { ...dateFilter, ...projectFilter } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
     Invoice.aggregate([
-      { $match: { status: 'paid', date: { $gte: sixMonthsAgo } } },
+      { $match: { ...projectFilter, status: 'paid', date: { $gte: sixMonthsAgo } } },
       { $group: { _id: { year: { $year: '$date' }, month: { $month: '$date' } }, revenue: { $sum: '$totalAmount' } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
     Invoice.aggregate([
-      { $match: { ...dateFilter, status: 'paid' } },
+      { $match: { ...dateFilter, ...projectFilter, status: 'paid' } },
       { $group: { _id: '$customerId', revenue: { $sum: '$totalAmount' } } },
       { $sort: { revenue: -1 } },
       { $limit: 5 },
       { $lookup: { from: 'customers', localField: '_id', foreignField: '_id', as: 'customer' } },
-      { $unwind: { path: '$customer', preserveNullAndEmpty: true } },
+      { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
       { $project: { customer: { firstName: 1, lastName: 1 }, revenue: 1 } },
     ]),
   ])
@@ -503,6 +506,40 @@ exports.getFinancialOverview = asyncHandler(async (req, res) => {
     totalExpenses,
     topCustomers,
   })
+})
+
+// GET /financial-overview/export — "Export" button on Financial Overview screen
+exports.exportFinancialOverview = asyncHandler(async (req, res) => {
+  const { projectId } = req.query
+  const dateFilter = buildDateFilter(req.query, 'date')
+  const projectFilter = projectId ? { leadId: projectId } : {}
+
+  const [revenueAgg, expenseAgg, invoices] = await Promise.all([
+    Invoice.aggregate([{ $match: { ...dateFilter, ...projectFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    Expense.aggregate([{ $match: { ...dateFilter, ...projectFilter } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    Invoice.find({ ...dateFilter, ...projectFilter, status: 'paid' })
+      .populate('leadId', 'projectName jobId')
+      .populate('customerId', 'firstName lastName')
+      .sort({ date: -1 })
+      .lean(),
+  ])
+
+  const totalRevenue = revenueAgg[0]?.total || 0
+  const totalExpenses = expenseAgg[0]?.total || 0
+
+  const rows = invoices.map((inv) => ({
+    invoiceNumber: inv.invoiceNumber,
+    projectName: inv.leadId?.projectName || '',
+    jobId: inv.leadId?.jobId || '',
+    customerName: `${inv.customerId?.firstName || ''} ${inv.customerId?.lastName || ''}`.trim(),
+    amount: inv.totalAmount,
+    date: inv.date,
+  }))
+
+  const buffer = await generateFinancialOverviewExcel(rows, { totalRevenue, totalExpenses, grossProfit: totalRevenue - totalExpenses })
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="financial-overview.xlsx"')
+  return res.send(buffer)
 })
 
 exports.getWIPProfits = asyncHandler(async (req, res) => {
@@ -561,6 +598,61 @@ exports.createWIPEntry = asyncHandler(async (req, res) => {
   })
 
   return success(res, { wip })
+})
+
+// POST /wip-profits/:leadId/payments — "Add payment entry" modal (Payer Name / Payment Type /
+// Amount / Payment Date / Transaction ID / Remarks). Logs one payment and rolls it into the
+// matching deposit/progress/final total on the project's WIP record.
+exports.addWIPPayment = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const { payerName, paymentType, amount, paymentDate, transactionId, remarks } = req.body
+
+  const wip = await WIPProfit.findOne({ leadId })
+  if (!wip) return notFound(res, 'No WIP entry exists for this project yet — create one first via POST /wip-profits')
+
+  wip.payments.push({ payerName, paymentType, amount, paymentDate, transactionId, remarks, recordedBy: req.user._id })
+
+  if (paymentType === 'deposit') wip.depositPaid += amount
+  else if (paymentType === 'progress') wip.progressPaid += amount
+  else if (paymentType === 'final') wip.finalPaid += amount
+
+  const totalPaid = wip.depositPaid + wip.progressPaid + wip.finalPaid
+  wip.outstanding = wip.orderValue - totalPaid
+  wip.wipProfit = totalPaid - wip.currentCost
+  wip.marginPct = wip.orderValue > 0 ? Math.round((wip.wipProfit / wip.orderValue) * 100) : 0
+
+  await wip.save()
+  return success(res, { wip })
+})
+
+// GET /wip-profits/export — "Export" button on WIP & Project Profitability screen
+exports.exportWIPProfits = asyncHandler(async (req, res) => {
+  const { clientId } = req.query
+  const filter = {}
+  if (clientId) filter.leadId = clientId
+
+  const wips = await WIPProfit.find(filter)
+    .populate({ path: 'leadId', select: 'projectName jobId location customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const rows = wips.map((w) => ({
+    projectName: w.leadId?.projectName || '',
+    jobId: w.leadId?.jobId || '',
+    customerName: `${w.leadId?.customerId?.firstName || ''} ${w.leadId?.customerId?.lastName || ''}`.trim(),
+    orderValue: w.orderValue,
+    currentCost: w.currentCost,
+    totalReceived: w.depositPaid + w.progressPaid + w.finalPaid,
+    outstanding: w.outstanding,
+    wipProfit: w.wipProfit,
+    marginPct: w.marginPct,
+    status: w.status,
+  }))
+
+  const buffer = await generateWIPProfitsExcel(rows)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="wip-profits.xlsx"')
+  return res.send(buffer)
 })
 
 exports.getExpenses = asyncHandler(async (req, res) => {
@@ -715,7 +807,7 @@ exports.getFreightCostTracking = asyncHandler(async (req, res) => {
       { $sort: { total: -1 } },
       { $limit: 5 },
       { $lookup: { from: 'freightcarriers', localField: '_id', foreignField: '_id', as: 'carrier' } },
-      { $unwind: { path: '$carrier', preserveNullAndEmpty: true } },
+      { $unwind: { path: '$carrier', preserveNullAndEmptyArrays: true } },
       { $project: { carrierName: '$carrier.carrierName', total: 1 } },
     ]),
   ])
@@ -761,7 +853,7 @@ exports.getMarginAnalysis = asyncHandler(async (req, res) => {
       { $sort: { revenue: -1 } },
       { $limit: 10 },
       { $lookup: { from: 'leads', localField: '_id', foreignField: '_id', as: 'lead' } },
-      { $unwind: { path: '$lead', preserveNullAndEmpty: true } },
+      { $unwind: { path: '$lead', preserveNullAndEmptyArrays: true } },
       { $project: { projectName: '$lead.projectName', category: '$lead.lifecycleStatus', revenue: 1 } },
     ]),
   ])
