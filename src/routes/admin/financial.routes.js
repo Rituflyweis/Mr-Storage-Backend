@@ -51,6 +51,12 @@ router.post('/wip-profits/:leadId/payments',
   ctrl.addWIPPayment
 )
 router.get('/expenses',           ctrl.getExpenses)
+router.get('/expenses/filters',   ctrl.getExpenseFilters)
+router.get('/expenses/categories', ctrl.getExpenseCategories)
+router.post('/expenses/categories', [body('name').notEmpty()], validate, ctrl.createExpenseCategory)
+router.get('/expenses/summary/monthly', ctrl.getExpenseMonthlySummary)
+router.get('/expenses/by-category', ctrl.getExpensesByCategory)
+router.get('/expenses/budget-vs-actual-trend', ctrl.getExpenseBudgetVsActualTrend)
 router.post('/expenses',          [require('express-validator').body('category').notEmpty(), require('express-validator').body('amount').isNumeric()], require('../../middleware/validate'), ctrl.createExpense)
 router.put('/expenses/:expenseId',    ctrl.updateExpense)
 router.delete('/expenses/:expenseId', ctrl.deleteExpense)

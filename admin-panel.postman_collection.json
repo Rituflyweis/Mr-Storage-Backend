@@ -1873,6 +1873,118 @@
           }
         },
         {
+          "name": "Expenses List — Filtered",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/expenses?projectId={{leadId}}&buildingLabel=Building A&status=paid&category=Vendor/Freight&startDate=2026-01-01&endDate=2026-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "expenses"],
+              "query": [
+                { "key": "projectId", "value": "{{leadId}}" },
+                { "key": "buildingLabel", "value": "Building A" },
+                { "key": "status", "value": "paid" },
+                { "key": "category", "value": "Vendor/Freight" },
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Expenses — Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/filters"
+          }
+        },
+        {
+          "name": "Expense Categories — List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/categories"
+          }
+        },
+        {
+          "name": "Expense Categories — Add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/categories",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Marketing\"}"
+            }
+          }
+        },
+        {
+          "name": "Expenses — Monthly Summary (chart)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/summary/monthly"
+          }
+        },
+        {
+          "name": "Expenses — By Category (chart)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/by-category"
+          }
+        },
+        {
+          "name": "Expenses — Budget vs Actual Trend (chart)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/budget-vs-actual-trend"
+          },
+          "_postman_note": "Monthly bar chart. See response 'note' field for the budget-definition assumption used — confirm it matches product intent."
+        },
+        {
           "name": "Add Expense",
           "request": {
             "method": "POST",
@@ -1889,7 +2001,7 @@
             "url": "{{baseUrl}}/admin/financials/expenses",
             "body": {
               "mode": "raw",
-              "raw": "{\"category\":\"transport\",\"date\":\"2025-02-22\",\"amount\":10000,\"description\":\"Freight charges\",\"leadId\":\"{{leadId}}\"}"
+              "raw": "{\"category\":\"Vendor/Freight\",\"subcategory\":\"Steel Delivery\",\"date\":\"2026-07-15\",\"amount\":10000,\"description\":\"Freight charges\",\"leadId\":\"{{leadId}}\",\"buildingLabel\":\"Building A\",\"paymentMethod\":\"bank_transfer\",\"status\":\"paid\",\"receiptFile\":\"https://mr-storage-project.s3.ap-south-1.amazonaws.com/documents/receipt.pdf\"}"
             }
           }
         },
