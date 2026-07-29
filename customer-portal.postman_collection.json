@@ -394,7 +394,7 @@
                 }
               ]
             },
-            "description": "Returns projects list + stats cards (matches Figma):\n\nstats:\n  total         → Total Projects card\n  active        → Active Projects card  (plant stages: released_to_plant → dispatched)\n  workInProgress → Work in Progress card (sales stages: initial_contact → sent_to_admin)\n  cancelled     → Canceled card          (isTerminated: true)\n\nEach project: _id, projectName, jobId, lifecycleStatus, location, buildingType, quoteValue\n\nTest data:\n  PRO-001 warehouse - Texas    (fabrication_started)  ← leadId default\n  PRO-002 office - Bangalore   (quality_inspection)\n  PRO-011 (initial_contact)    [cancelled]"
+            "description": "Returns projects list + stats cards (matches Figma):\n\nstats:\n  total         → Total Projects card\n  active        → Active Projects card  (plant stages: released_to_plant → dispatched)\n  workInProgress → Work in Progress card (sales stages: initial_contact → sent_to_admin)\n  cancelled     → Canceled card          (isTerminated: true)\n\nEach project: _id, projectName, jobId, lifecycleStatus, location, buildingType, quoteValue, plannedStartDate (start date), endDate, assignedSales (populated {_id,name,email} — the project manager)\n\nTest data:\n  PRO-001 warehouse - Texas    (fabrication_started)  ← leadId default\n  PRO-002 office - Bangalore   (quality_inspection)\n  PRO-011 (initial_contact)    [cancelled]"
           }
         },
         {
@@ -418,7 +418,7 @@
                 "{{leadId}}"
               ]
             },
-            "description": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule, navigation\n\nnavigation { previous, next } — sibling project { _id, jobId, projectName } in the customer's project list (same order as Get All Projects), for the prev/next project switcher button. null at either end of the list."
+            "description": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule, navigation\n\nlead now also includes: buildingsCount (count of Building docs for this project), createdAt, plannedStartDate, endDate\n\nnavigation { previous, next } — sibling project { _id, jobId, projectName } in the customer's project list (same order as Get All Projects), for the prev/next project switcher button. null at either end of the list."
           }
         },
         {
@@ -1906,7 +1906,7 @@
               ]
             }
           },
-          "_postman_note": "CHANGED — /deliveries/:id now smart-dispatches: pass a leadId here to get that project's schedule (adds a `project` object to the response). The exact same path also still accepts a deliveryId for the single-delivery-detail lookup (see 'Get Delivery Detail' below) — whichever the id resolves to is what you get back."
+          "_postman_note": "CHANGED — /deliveries/:id now smart-dispatches: pass a leadId here to get that project's schedule (adds a `project` object to the response). The exact same path also still accepts a deliveryId for the single-delivery-detail lookup (see 'Get Delivery Detail' below) — whichever the id resolves to is what you get back. Each delivery row now also has a top-level `truckNumber` field (sourced from the packing list's truck label; null if no packing list data exists for that delivery yet)."
         },
         {
           "name": "Get Past Deliveries",

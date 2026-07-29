@@ -22,6 +22,7 @@ const Notification = require('../models/Notification')
 const Milestone = require('../models/Milestone')
 const Task = require('../models/Task')
 const ProjectStepDetail = require('../models/ProjectStepDetail')
+const Building = require('../models/Building')
 const Bundle = require('../models/Bundle')
 const { success, created, notFound, forbidden, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
@@ -354,7 +355,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
 
   const [projects, total, activeCount, wipCount, cancelledCount] = await Promise.all([
     Lead.find(filter)
-      .select('jobId projectName buildingType location lifecycleStatus quoteValue isQuoteReady source documents assignedSales')
+      .select('jobId projectName buildingType location lifecycleStatus quoteValue isQuoteReady source documents assignedSales plannedStartDate endDate')
       .populate('assignedSales', 'name email')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -386,7 +387,7 @@ exports.getProject = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
   const lead = await Lead.findById(leadId)
-    .select('customerId buildingType location lifecycleStatus lifecycleHistory quoteValue documents assignedSales')
+    .select('customerId buildingType location lifecycleStatus lifecycleHistory quoteValue documents assignedSales createdAt plannedStartDate endDate')
     .populate('assignedSales', 'name email')
     .lean()
 
@@ -395,13 +396,14 @@ exports.getProject = asyncHandler(async (req, res) => {
     return forbidden(res, 'This project does not belong to your account')
   }
 
-  const [quotation, invoices, paymentSchedules, recentOrders, orderCounts, stepDetails] = await Promise.all([
+  const [quotation, invoices, paymentSchedules, recentOrders, orderCounts, stepDetails, buildingsCount] = await Promise.all([
     Quotation.findOne({ leadId }).sort({ createdAt: -1 }).lean(),
     Invoice.find({ leadId }).select('-paidBy -createdBy -__v').sort({ createdAt: -1 }).lean(),
     PaymentSchedule.find({ leadId }).lean(),
     MaterialRequest.find({ leadId }).sort({ createdAt: -1 }).limit(5).lean(),
     orderCountsForLead(leadId),
     ProjectStepDetail.find({ leadId }).lean(),
+    Building.countDocuments({ leadId }),
   ])
 
   let quoteSummary = null
@@ -438,7 +440,7 @@ exports.getProject = asyncHandler(async (req, res) => {
   const next = idx !== -1 && idx < siblings.length - 1 ? siblings[idx + 1] : null
 
   return success(res, {
-    lead: enrichLeadDocument(lead),
+    lead: { ...enrichLeadDocument(lead), buildingsCount },
     projectSteps: computeProjectSteps(lead, stepDetails),
     orders: { recent: recentOrders, counts: orderCounts },
     quotation,
@@ -844,12 +846,14 @@ const mapDeliveryRow = (d, lead, carrier, loadDetails) => {
 
   const rescheduleHistory = d.rescheduleHistory || []
   const latest = rescheduleHistory.length ? rescheduleHistory[rescheduleHistory.length - 1] : null
+  const loadAndBundle = buildLoadAndBundleSummary(d, loadDetails)
 
   return {
     deliveryId: d._id,
     deliveryNumber: d.deliveryNumber,
     status: d.status,
     description: d.loadDescription || d.description || '',
+    truckNumber: loadAndBundle.truckNumber,
     deliveryDate: d.deliveryDate,
     timings: d.timings || '',
     pickupDate: d.pickupDate,
@@ -862,7 +866,7 @@ const mapDeliveryRow = (d, lead, carrier, loadDetails) => {
     receivingPoc: siteContact,
     deliveryCompany,
     deliveryTeam: deliveryCompany ? { company: deliveryCompany.name, driver: deliveryCompany.driver, phone: deliveryCompany.phone, email: deliveryCompany.email } : null,
-    loadAndBundle: buildLoadAndBundleSummary(d, loadDetails),
+    loadAndBundle,
     packingListSummary: buildPackingListSummary(d, loadDetails),
     siteReadiness: {
       siteReady: !!d.siteReadyConfirmation?.confirmed,
