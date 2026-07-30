@@ -513,14 +513,24 @@ const sendOtp = async ({ toEmail, name, otp, expiresInMinutes = 10 }) => {
   })
 }
 
+const EMPLOYEE_LOGIN_URLS = {
+  admin: 'https://admin.storagematerials.org/sign-in/',
+  sales: 'https://sales.storagematerials.org/sign-in/',
+  plant: 'https://plant.storagematerials.org/login',
+}
+
 const sendEmployeeCredentials = async ({ toEmail, name, role, tempPassword }) => {
+  const normalizedRole = String(role || '').toLowerCase()
+  const loginUrl =
+    EMPLOYEE_LOGIN_URLS[normalizedRole] || EMPLOYEE_LOGIN_URLS.admin
+
   const template = loadTemplate('employee-credentials')
   const html = fillTemplate(template, {
     EMPLOYEE_NAME: name,
-    ROLE: role.charAt(0).toUpperCase() + role.slice(1),
+    ROLE: normalizedRole.charAt(0).toUpperCase() + normalizedRole.slice(1),
     EMAIL: toEmail,
     TEMP_PASSWORD: tempPassword,
-    LOGIN_URL: (process.env.APP_URL || '') + '/login',
+    LOGIN_URL: loginUrl,
   })
 
   await transporter.sendMail({
