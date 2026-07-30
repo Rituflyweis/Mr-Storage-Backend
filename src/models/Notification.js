@@ -1,6 +1,6 @@
 const mongoose = require('mongoose')
 
-const NOTIFICATION_TYPES = ['lead', 'task', 'meeting', 'escalation', 'payment', 'system', 'drawing', 'delivery']
+const NOTIFICATION_TYPES = ['lead', 'task', 'meeting', 'escalation', 'payment', 'system', 'drawing', 'delivery', 'followup']
 const NOTIFICATION_PRIORITIES = ['high', 'medium', 'low']
 
 const NotificationSchema = new mongoose.Schema(
