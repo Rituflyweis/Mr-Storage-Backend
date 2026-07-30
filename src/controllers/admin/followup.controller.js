@@ -7,6 +7,7 @@ const { success, created, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const { scheduleFollowUpReminder } = require('../../utils/scheduler/followUpScheduler')
 
 const isOverdue = (f) => f.status === 'pending' && new Date(f.followUpDate) < new Date()
 
@@ -85,6 +86,8 @@ exports.createFollowUp = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { followUpDate, priority, assignedTo },
   })
+
+  scheduleFollowUpReminder(followUp)
 
   return created(res, { followUp })
 })
