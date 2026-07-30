@@ -1,6 +1,7 @@
 const PaymentSchedule = require('../../models/PaymentSchedule')
 const Lead = require('../../models/Lead')
 const auditService = require('../../services/audit.service')
+const { AUDIT_ACTIONS } = require('../../config/constants')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -135,7 +136,7 @@ exports.updateScheduleByLead = asyncHandler(async (req, res) => {
 
   await auditService.log({
     type: 'payment',
-    action: 'payment.schedule_updated',
+    action: AUDIT_ACTIONS.PAYMENT_SCHEDULE_UPDATED,
     leadId,
     customerId: lead.customerId,
     performedBy: req.user._id,

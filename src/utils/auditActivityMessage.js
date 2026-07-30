@@ -71,6 +71,8 @@ const formatAuditActivityMessage = (log, context = {}) => {
     case AUDIT_ACTIONS.PAYMENT_STAGE_PAID:
     case AUDIT_ACTIONS.PAYMENT_MARKED_PAID:
       return `Payment stage marked paid${forProject}`
+    case AUDIT_ACTIONS.PAYMENT_SCHEDULE_UPDATED:
+      return `Payment schedule updated${forProject}`
 
     case AUDIT_ACTIONS.LEAD_CREATED:
       return `Lead created${ctx}`

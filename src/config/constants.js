@@ -71,7 +71,7 @@ const ASSIGN_METHODS = ['auto', 'manual']
 const AUDIT_TYPES = [
   'lead', 'invoice', 'quotation', 'meeting',
   'followup', 'user', 'escalation', 'po', 'chat', 'activity',
-  'plant', 'smdt',
+  'plant', 'smdt', 'payment',
 ]
 
 const AUDIT_ACTIONS = {
@@ -118,6 +118,7 @@ const AUDIT_ACTIONS = {
   INVOICE_EDITED:           'invoice.edited',
   PAYMENT_STAGE_INVOICED:   'payment.stage_invoiced',
   PAYMENT_STAGE_PAID:       'payment.stage_paid',
+  PAYMENT_SCHEDULE_UPDATED: 'payment.schedule_updated',
   MEETING_CREATED:          'meeting.created',
   MEETING_EDITED:           'meeting.edited',
   MEETING_COMPLETED:        'meeting.completed',
