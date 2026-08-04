@@ -336,6 +336,31 @@ exports.toggleStatus = asyncHandler(async (req, res) => {
   return success(res, { employee }, `Employee marked ${employee.isActive ? 'active' : 'inactive'}`)
 })
 
+exports.deleteEmployee = asyncHandler(async (req, res) => {
+  const { userId } = req.params
+
+  const employee = await User.findById(userId)
+  if (!employee) return notFound(res, 'Employee not found')
+
+  const activeLeadCount = await Lead.countDocuments({ assignedSales: userId, isTerminated: { $ne: true } })
+  if (activeLeadCount > 0) {
+    return badRequest(res, `Cannot delete — this employee has ${activeLeadCount} active assigned lead(s). Reassign them first.`)
+  }
+
+  await User.findByIdAndDelete(userId)
+
+  if (employee.role === 'sales') await roundRobinService.rebuildTracker()
+
+  await auditService.log({
+    type: 'user',
+    action: AUDIT_ACTIONS.USER_DELETED,
+    performedBy: req.user._id,
+    metadata: { userId, name: employee.name, email: employee.email, role: employee.role },
+  })
+
+  return success(res, {}, 'Employee deleted')
+})
+
 exports.resetPassword = asyncHandler(async (req, res) => {
   const employee = await User.findById(req.params.userId)
   if (!employee) return notFound(res, 'Employee not found')

@@ -128,6 +128,7 @@ const AUDIT_ACTIONS = {
   ESCALATION_RESOLVED:      'escalation.resolved',
   USER_CREATED:             'user.created',
   USER_UPDATED:             'user.updated',
+  USER_DELETED:             'user.deleted',
   DOCUMENT_ADDED:           'lead.document_added',
   DOCUMENT_REMOVED:         'lead.document_removed',
   BUDGET_SET:               'lead.budget_set',
