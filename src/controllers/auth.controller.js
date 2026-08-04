@@ -87,6 +87,8 @@ exports.verifyOtp = asyncHandler(async (req, res) => {
   if (!user || !user.resetOtp || !user.resetOtpExpiry)
     return badRequest(res, 'Invalid or expired OTP')
 
+  if (!user.isActive) return unauthorized(res, 'Account is deactivated')
+
   if (new Date() > user.resetOtpExpiry)
     return badRequest(res, 'OTP has expired. Please request a new one')
 
@@ -124,6 +126,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 
   const user = await User.findById(decoded._id).select('+password')
   if (!user || !user.resetOtpVerified) return badRequest(res, 'OTP not verified. Please start over')
+  if (!user.isActive) return unauthorized(res, 'Account is deactivated')
 
   user.password = await bcrypt.hash(newPassword, 12)
   user.passwordChangedAt = new Date()
@@ -140,6 +143,7 @@ exports.changePassword = asyncHandler(async (req, res) => {
 
   const user = await User.findById(req.user._id).select('+password')
   if (!user) return unauthorized(res)
+  if (!user.isActive) return unauthorized(res, 'Account is deactivated')
 
   const match = await bcrypt.compare(currentPassword, user.password)
   if (!match) return badRequest(res, 'Current password is incorrect')

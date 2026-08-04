@@ -17,7 +17,7 @@ const buildAdminLeadFilter = async (query = {}) => {
   } = query
   const dateFilter = buildDateFilter(query)
 
-  const filter = { ...dateFilter }
+  const filter = { isDeleted: { $ne: true }, ...dateFilter }
   if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
   if (assignedSales) filter.assignedSales = assignedSales
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
@@ -45,7 +45,7 @@ const buildSalesLeadFilter = async (query = {}, salesId) => {
   const { search, buildingType, lifecycleStatus, isQuoteReady } = query
   const dateFilter = buildDateFilter(query)
 
-  const filter = { assignedSales: salesId, ...dateFilter }
+  const filter = { assignedSales: salesId, isDeleted: { $ne: true }, ...dateFilter }
   if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
   if (isQuoteReady !== undefined) filter.isQuoteReady = isQuoteReady === 'true'
@@ -70,7 +70,7 @@ const buildSalesLeadFilter = async (query = {}, salesId) => {
  * Query `status` is accepted as an alias for `temperature` (hot | warm | cold).
  */
 const buildLeadsByScoreFilter = async (query = {}, { assignedSales } = {}) => {
-  const filter = buildDateFilter(query, 'updatedAt')
+  const filter = { isDeleted: { $ne: true }, ...buildDateFilter(query, 'updatedAt') }
   if (assignedSales) filter.assignedSales = assignedSales
 
   const temperature = query.temperature || query.status

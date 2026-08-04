@@ -6,10 +6,11 @@ const { mapLeadByScoreRow } = require('../utils/leadQueryFilter')
 
 const getIo = () => global.io?.of('/admin')
 
-const getLeadForAdminList = async (leadId) => {
+const getLeadForAdminList = async (leadId, { includeDeleted = false } = {}) => {
   const lead = await Lead.findById(leadId)
     .populate('customerId')
     .populate('assignedSales')
+    .setOptions({ includeDeleted })
     .lean()
   if (!lead) return null
 
@@ -28,10 +29,11 @@ const getLeadForAdminList = async (leadId) => {
   })
 }
 
-const getLeadForSalesList = async (leadId) => {
+const getLeadForSalesList = async (leadId, { includeDeleted = false } = {}) => {
   const lead = await Lead.findById(leadId)
-    .select('_id jobId projectName customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO assignedSales isOnline onlineAt lastSeenAt')
+    .select('_id jobId projectName customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO assignedSales isOnline onlineAt lastSeenAt isDeleted')
     .populate({ path: 'customerId', select: 'firstName email isOnline onlineAt lastSeenAt' })
+    .setOptions({ includeDeleted })
     .lean()
   if (!lead) return null
 
@@ -152,19 +154,21 @@ const emitLeadListUpdated = async (leadId, options = {}) => {
     notifySales = true,
   } = options
 
-  const adminLead = await getLeadForAdminList(leadId)
+  // Soft-deleted leads are hidden by default; include them so clients can remove the row
+  const includeDeleted = trigger === 'deleted'
+  const adminLead = await getLeadForAdminList(leadId, { includeDeleted })
   if (!adminLead) return
 
   const payload = {
     leadId,
     lead: adminLead,
     meta: {
-      action: 'updated',
+      action: includeDeleted ? 'deleted' : 'updated',
       trigger,
     },
   }
 
-  if (includeScoreRow) {
+  if (includeScoreRow && !includeDeleted) {
     payload.scoreRow = await getScoreRow(leadId)
   }
 
@@ -173,7 +177,7 @@ const emitLeadListUpdated = async (leadId, options = {}) => {
 
   // Notify assigned sales only when required
   if (notifySales && adminLead.assignedSales?._id) {
-    const salesLead = await getLeadForSalesList(leadId)
+    const salesLead = await getLeadForSalesList(leadId, { includeDeleted })
 
     if (salesLead) {
       io.to(`user:${adminLead.assignedSales._id}`).emit(
@@ -183,7 +187,7 @@ const emitLeadListUpdated = async (leadId, options = {}) => {
           lead: salesLead,
           scoreRow: payload.scoreRow || null,
           meta: {
-            action: 'updated',
+            action: includeDeleted ? 'deleted' : 'updated',
             trigger,
           },
         }

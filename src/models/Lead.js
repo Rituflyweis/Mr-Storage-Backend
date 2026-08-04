@@ -82,6 +82,9 @@ const LeadSchema = new mongoose.Schema(
     isTerminated:    { type: Boolean, default: false },
     terminationReason: { type: String, default: '' },
     terminatedAt:    { type: Date, default: null },
+    isDeleted:       { type: Boolean, default: false },
+    deletedAt:       { type: Date, default: null },
+    deletedBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 
     assignedSales:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     assigningHistory: { type: [AssigningHistorySchema], default: [] },
@@ -132,6 +135,7 @@ LeadSchema.index({ customerId: 1 })
 LeadSchema.index({ assignedSales: 1 })
 LeadSchema.index({ lifecycleStatus: 1 })
 LeadSchema.index({ isTerminated: 1 })
+LeadSchema.index({ isDeleted: 1 })
 LeadSchema.index({ 'leadScoring.lastScoredAt': -1 })
 LeadSchema.index({ isQuoteReady: 1 })
 LeadSchema.index({ createdAt: -1 })
@@ -143,13 +147,47 @@ const syncLeadScoringTemperature = (leadScoring) => {
   leadScoring.temperature = resolveLeadTemperatureFromScore(leadScoring.score)
 }
 
+/** Soft-delete: exclude deleted leads from reads unless opted in. */
+const shouldIncludeDeleted = (queryOrAggregate) => {
+  const options = typeof queryOrAggregate.getOptions === 'function'
+    ? queryOrAggregate.getOptions()
+    : queryOrAggregate.options || {}
+  return options.includeDeleted === true
+}
+
+const applySoftDeleteFindFilter = function (next) {
+  if (shouldIncludeDeleted(this)) return next()
+  const q = this.getQuery()
+  // Respect explicit isDeleted filters (e.g. admin deleted-leads lists)
+  if (Object.prototype.hasOwnProperty.call(q, 'isDeleted')) return next()
+  this.where({ isDeleted: { $ne: true } })
+  next()
+}
+
+LeadSchema.pre(/^find/, applySoftDeleteFindFilter)
+LeadSchema.pre('countDocuments', applySoftDeleteFindFilter)
+
+LeadSchema.pre('aggregate', function (next) {
+  if (shouldIncludeDeleted(this)) return next()
+  const pipeline = this.pipeline()
+  const hasExplicitDeletedFilter = pipeline.some(
+    (stage) => stage.$match && Object.prototype.hasOwnProperty.call(stage.$match, 'isDeleted')
+  )
+  if (!hasExplicitDeletedFilter) {
+    pipeline.unshift({ $match: { isDeleted: { $ne: true } } })
+  }
+  next()
+})
+
 LeadSchema.pre('save', async function (next) {
   syncLeadScoringTemperature(this.leadScoring)
 
   if (this.isNew && !this.jobId) {
+    // Include soft-deleted leads so jobId sequence never collides
     const last = await this.constructor
       .findOne({ jobId: { $exists: true, $ne: null } }, { jobId: 1 })
       .sort({ createdAt: -1 })
+      .setOptions({ includeDeleted: true })
       .lean()
     const num = last?.jobId ? parseInt(last.jobId.split('-')[1], 10) + 1 : 1
     this.jobId = `PRO-${String(num).padStart(3, '0')}`

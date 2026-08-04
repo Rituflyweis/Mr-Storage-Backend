@@ -3,20 +3,23 @@ const { PO_PROJECT_MATCH } = require('./customerPoFilter')
 const CUSTOMER_SCOPES = ['total', 'active']
 const PROJECT_SCOPES = ['total', 'active', 'completed', 'not-assigned']
 
-/** PO-raised projects that are still active (not terminated, not delivered). */
+/** PO-raised projects that are still active (not terminated, not delivered, not deleted). */
 const ACTIVE_PROJECT_MATCH = {
   ...PO_PROJECT_MATCH,
+  isDeleted: { $ne: true },
   isTerminated: false,
   lifecycleStatus: { $ne: 'delivered' },
 }
 
 const COMPLETED_PROJECT_MATCH = {
   ...PO_PROJECT_MATCH,
+  isDeleted: { $ne: true },
   lifecycleStatus: 'delivered',
 }
 
 const NOT_ASSIGNED_PROJECT_MATCH = {
   ...PO_PROJECT_MATCH,
+  isDeleted: { $ne: true },
   assignedSales: null,
   isTerminated: false,
 }

@@ -36,7 +36,10 @@ const getLatestAuditByEmployee = async () => {
 
   const [leads, customers] = await Promise.all([
     leadIds.length
-      ? Lead.find({ _id: { $in: leadIds } }).select('projectName').lean()
+      ? Lead.find({ _id: { $in: leadIds } })
+          .select('projectName')
+          .setOptions({ includeDeleted: true })
+          .lean()
       : [],
     customerIds.length
       ? Customer.find({ _id: { $in: customerIds } }).select('firstName email').lean()

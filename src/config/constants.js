@@ -89,6 +89,7 @@ const AUDIT_ACTIONS = {
   LEAD_EDITED:              'lead.edited',
   LEAD_TEMPERATURE_UPDATED: 'lead.temperature_updated',
   LEAD_TERMINATED:          'lead.terminated',
+  LEAD_DELETED:             'lead.deleted',
   LEAD_NOTE_ADDED:          'lead.note_added',
   BUILDINGS_CREATED:        'lead.buildings_created',
   BUILDINGS_SYNCED:         'lead.buildings_synced',

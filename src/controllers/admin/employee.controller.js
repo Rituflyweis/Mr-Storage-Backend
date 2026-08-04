@@ -334,6 +334,7 @@ exports.toggleStatus = asyncHandler(async (req, res) => {
 exports.resetPassword = asyncHandler(async (req, res) => {
   const employee = await User.findById(req.params.userId)
   if (!employee) return notFound(res, 'Employee not found')
+  if (!employee.isActive) return badRequest(res, 'Cannot reset password for inactive employee')
 
   const tempPassword = Math.random().toString(36).slice(-6) +
     Math.random().toString(36).slice(-4).toUpperCase()
