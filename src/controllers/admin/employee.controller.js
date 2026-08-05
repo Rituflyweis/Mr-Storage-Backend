@@ -121,7 +121,18 @@ exports.createEmployee = asyncHandler(async (req, res) => {
   if (exists) return badRequest(res, 'Email already in use')
 
   const hashed = await bcrypt.hash(password, 12)
-  const user = await User.create({ name, email: email.toLowerCase().trim(), password: hashed, phone, role, department, permissions })
+
+  const userPayload = {
+    name,
+    email: email.toLowerCase().trim(),
+    password: hashed,
+    phone,
+    role,
+  }
+  if (department !== undefined) userPayload.department = department
+  if (permissions !== undefined) userPayload.permissions = permissions
+
+  const user = await User.create(userPayload)
 
   if (role === 'sales') await roundRobinService.rebuildTracker()
 
