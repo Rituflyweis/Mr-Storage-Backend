@@ -51,14 +51,16 @@ exports.listTaxes = asyncHandler(async (req, res) => {
 })
 
 exports.createTax = asyncHandler(async (req, res) => {
-  const { state, dueDate, amount, websiteLink } = req.body
+  const { state, dueDate, amount, websiteLink, filingFrequency, threshold } = req.body
 
   const tax = await Tax.create({
     state,
     dueDate,
     amount,
-    websiteLink: websiteLink || null,
-    createdBy:   req.user._id,
+    websiteLink:     websiteLink || null,
+    filingFrequency: filingFrequency || 'monthly',
+    threshold:       threshold || '',
+    createdBy:       req.user._id,
   })
 
   return created(res, { tax })

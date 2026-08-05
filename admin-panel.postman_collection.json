@@ -1,0 +1,3020 @@
+{
+  "info": {
+    "name": "SM-3 Admin Panel",
+    "_postman_id": "admin-panel-v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "All Admin Panel endpoints"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "customerId",
+      "value": ""
+    },
+    {
+      "key": "leadId",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "productId",
+      "value": ""
+    },
+    {
+      "key": "taxId",
+      "value": ""
+    },
+    {
+      "key": "approvalId",
+      "value": ""
+    },
+    {
+      "key": "roleId",
+      "value": ""
+    },
+    {
+      "key": "taskId",
+      "value": ""
+    },
+    {
+      "key": "requestId",
+      "value": ""
+    },
+    {
+      "key": "docId",
+      "value": ""
+    },
+    {
+      "key": "deliveryId",
+      "value": ""
+    },
+    {
+      "key": "expenseId",
+      "value": ""
+    },
+    {
+      "key": "channelKey",
+      "value": "project_team"
+    },
+    {
+      "key": "itemId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"admin@example.com\",\"password\":\"password123\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/dashboard/stats"
+          }
+        },
+        {
+          "name": "Conversion Funnel",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/dashboard/conversion-funnel"
+          }
+        },
+        {
+          "name": "Performance Trend",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard/performance-trend?range=7d",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard", "performance-trend"],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "7d"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Today Tasks",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/dashboard/today-tasks"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer Management",
+      "item": [
+        {
+          "name": "Customer Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/customers/stats"
+          }
+        },
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/customers?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "customers"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Active Customers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/customers?scope=active",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "customers"],
+              "query": [
+                {
+                  "key": "scope",
+                  "value": "active"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Project List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/customers/projects"
+          }
+        },
+        {
+          "name": "Add New Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/customers",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"email\":\"john@example.com\",\"phone\":\"+15551234567\",\"leadSource\":\"website\",\"projectName\":\"ABC Warehouse\",\"buildingType\":\"Warehouse\",\"location\":\"Texas\",\"quoteValue\":12500,\"assignedSales\":\"{{userId}}\"}"
+            }
+          }
+        },
+        {
+          "name": "Get Customer Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/customers/{{customerId}}"
+          }
+        },
+        {
+          "name": "Update Customer",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/customers/{{customerId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"firstName\":\"Jane\"}"
+            }
+          }
+        },
+        {
+          "name": "Deactivate Customer",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/customers/{{customerId}}/deactivate"
+          }
+        },
+        {
+          "name": "Get Customer Projects",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/customers/{{customerId}}/projects"
+          }
+        },
+        {
+          "name": "Get Customer Invoices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/customers/{{customerId}}/invoices"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Leads",
+      "item": [
+        {
+          "name": "Lead Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/stats"
+          }
+        },
+        {
+          "name": "Get All Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/leads?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "leads"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Leads by Score",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/by-score"
+          }
+        },
+        {
+          "name": "Lead Scoring Today",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/scoring/today"
+          }
+        },
+        {
+          "name": "Signed Contracts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/signed-contracts"
+          }
+        },
+        {
+          "name": "Terminated Projects",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/terminated"
+          }
+        },
+        {
+          "name": "Import Leads (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/import"
+          }
+        },
+        {
+          "name": "Export Leads (Excel)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/export/excel"
+          }
+        },
+        {
+          "name": "Create Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{customerId}}\",\"projectName\":\"Workshop Texas\",\"buildingType\":\"Workshop\",\"location\":\"Texas\",\"quoteValue\":12500}"
+            }
+          }
+        },
+        {
+          "name": "Get Lead Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/{{leadId}}/detail"
+          }
+        },
+        {
+          "name": "Assign Lead",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/{{leadId}}/assign",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"salesUserId\":\"{{userId}}\"}"
+            }
+          }
+        },
+        {
+          "name": "Update Lead Temperature",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/{{leadId}}/temperature",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"temperature\":\"hot\"}"
+            }
+          }
+        },
+        {
+          "name": "Get Lead Timeline",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/{{leadId}}/timeline"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Follow-up & Task Management",
+      "item": [
+        {
+          "name": "Follow-up Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/followups/stats"
+          }
+        },
+        {
+          "name": "Upcoming Follow-ups",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/followups/upcoming"
+          }
+        },
+        {
+          "name": "Activity Log",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/followups/activity-log?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "followups", "activity-log"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Lead Scoring List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/by-score"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Employee Management",
+      "item": [
+        {
+          "name": "Employee Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/employees/stats"
+          }
+        },
+        {
+          "name": "Get All Employees",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/employees?page=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "employees"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filter by Role (Sales)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/employees?role=sales",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "employees"],
+              "query": [
+                {
+                  "key": "role",
+                  "value": "sales"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filter by Role (Plant)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/employees?role=plant",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "employees"],
+              "query": [
+                {
+                  "key": "role",
+                  "value": "plant"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sales Employee Performance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/employees/performance"
+          }
+        },
+        {
+          "name": "Audit Log",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/employees/audit-log"
+          }
+        },
+        {
+          "name": "Add New Employee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/employees",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Sarah Johnson\",\"email\":\"sarah@example.com\",\"phone\":\"+15551234567\",\"role\":\"sales\",\"department\":\"Sales\",\"permissions\":{\"leadAccess\":{\"view\":true,\"edit\":true,\"delete\":false},\"followupsAccess\":{\"view\":true,\"edit\":true,\"delete\":false},\"scheduleMeeting\":{\"view\":true,\"edit\":true,\"delete\":false},\"addNewLead\":{\"view\":true,\"edit\":true,\"delete\":false}}}"
+            }
+          }
+        },
+        {
+          "name": "Get Employee Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/employees/{{userId}}"
+          }
+        },
+        {
+          "name": "Update Employee",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/employees/{{userId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"department\":\"Sales\",\"permissions\":{\"leadAccess\":{\"view\":true,\"edit\":false,\"delete\":false}}}"
+            }
+          }
+        },
+        {
+          "name": "Toggle Employee Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/employees/{{userId}}/toggle-status"
+          }
+        },
+        {
+          "name": "Employee Assigned Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/employees/{{userId}}/assigned-leads"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Product Library [NEW]",
+      "item": [
+        {
+          "name": "Get Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/products/categories"
+          }
+        },
+        {
+          "name": "Export Products (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/products/export"
+          }
+        },
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "products"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filter by Category",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products?category=Structure",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "products"],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "Structure"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filter by Pricing Type",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products?pricingType=per_lb",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "products"],
+              "query": [
+                {
+                  "key": "pricingType",
+                  "value": "per_lb"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products?search=Main+Frame",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "products"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Main Frame"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add New Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/products",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Main Frame (steel)\",\"description\":\"Primary structural steel frame\",\"category\":\"Structure\",\"subcategory\":\"Primary Frame\",\"skuPartCode\":\"ST-MF-001\",\"vendorShipper\":\"Vendor A\",\"pricingType\":\"per_lb\",\"unit\":\"lb\",\"baseCost\":2.40,\"defaultMargin\":30,\"sellingPrice\":3.12,\"minMargin\":20,\"maxMargin\":40,\"taxable\":true,\"usageMapping\":[\"quotation\",\"bom_takeoff\"],\"smdtLinkedCode\":\"MF-001\",\"status\":\"active\",\"priceLock\":false}"
+            }
+          }
+        },
+        {
+          "name": "Get Product Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/products/{{productId}}"
+          }
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/products/{{productId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"baseCost\":2.60,\"defaultMargin\":32,\"priceLock\":true}"
+            }
+          }
+        },
+        {
+          "name": "Deactivate Product",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/products/{{productId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Payments Dashboard [NEW]",
+          "item": [
+            {
+              "name": "Payments Overview",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/financials/payments-dashboard?startDate=2025-03-24&endDate=2025-03-31",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payments-dashboard"],
+                  "query": [
+                    {
+                      "key": "startDate",
+                      "value": "2025-03-24"
+                    },
+                    {
+                      "key": "endDate",
+                      "value": "2025-03-31"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tax & Filling [NEW]",
+          "item": [
+            {
+              "name": "Get Tax Filing (Pending + History)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/financials/tax-filing?page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "tax-filing"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Filter by State",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/financials/tax-filing?state=Texas",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "tax-filing"],
+                  "query": [
+                    {
+                      "key": "state",
+                      "value": "Texas"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Prepare Filing (Review Details)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/tax-filing/{{taxId}}/prepare"
+              }
+            },
+            {
+              "name": "Complete Filing (Mark Filed)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/tax-filing/{{taxId}}/file"
+              }
+            }
+          ]
+        },
+        {
+          "name": "State Wise Tax [NEW]",
+          "item": [
+            {
+              "name": "Get State Wise Tax Overview",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/state-wise-tax"
+              }
+            },
+            {
+              "name": "Sync Now",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/state-wise-tax/sync"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Project Wise Tax [NEW]",
+          "item": [
+            {
+              "name": "Get Project Wise Tax",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/financials/project-wise-tax?page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "project-wise-tax"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payment Approval [NEW]",
+          "item": [
+            {
+              "name": "Get All Payment Approvals",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/financials/payment-approvals?page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payment-approvals"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Filter Pending Approvals",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/financials/payment-approvals?status=pending",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payment-approvals"],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "pending"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Create Payment Request",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/payment-approvals",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"payee\":\"ABC Builders Inc.\",\"payeeType\":\"vendor\",\"category\":\"vendor_payment\",\"amount\":48750,\"department\":\"Riverside Plant\",\"notes\":\"Material purchase for Q2\"}"
+                }
+              }
+            },
+            {
+              "name": "Approve Payment",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/payment-approvals/{{approvalId}}/review",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"action\":\"approved\",\"reviewNotes\":\"Approved after budget review\"}"
+                }
+              }
+            },
+            {
+              "name": "Reject Payment",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/payment-approvals/{{approvalId}}/review",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"action\":\"rejected\",\"reviewNotes\":\"Exceeds budget allocation\"}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payment Status [NEW]",
+          "item": [
+            {
+              "name": "Get Payment Status Dashboard",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/financials/payment-status?page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payment-status"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Filter Overdue Payments",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/financials/payment-status?status=overdue",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "financials", "payment-status"],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "overdue"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Existing Financials",
+          "item": [
+            {
+              "name": "Financial Overview",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/overview"
+              }
+            },
+            {
+              "name": "Per Project",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/per-project"
+              }
+            },
+            {
+              "name": "Invoice Aging",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/financials/invoice-aging"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Meetings",
+      "item": [
+        {
+          "name": "Get All Meetings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/meetings?page=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "meetings"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Schedule Meeting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/meetings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{customerId}}\",\"title\":\"Project Review\",\"meetingDate\":\"2025-05-15\",\"meetingTime\":\"10:00\",\"duration\":30,\"mode\":\"online\",\"meetingLink\":\"https://zoom.us/j/123456\",\"notes\":\"Discuss material specs\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Get All Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark All as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/notifications/read-all"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Permissions & Access Control [NEW]",
+      "item": [
+        {
+          "name": "Get Permission Modules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/roles/modules"
+          }
+        },
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/roles"
+          }
+        },
+        {
+          "name": "Create Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/roles",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Operations Manager\",\"description\":\"Manage deliveries, freight, and view reports\",\"color\":\"blue\",\"permissions\":{\"deliveries\":{\"view\":true,\"create\":true,\"edit\":true,\"delete\":false}}}"
+            }
+          }
+        },
+        {
+          "name": "Get Role",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/roles/{{roleId}}"
+          }
+        },
+        {
+          "name": "Update Role",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/roles/{{roleId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"permissions\":{\"deliveries\":{\"view\":true,\"create\":true,\"edit\":true,\"delete\":true}}}"
+            }
+          }
+        },
+        {
+          "name": "Delete Role",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/roles/{{roleId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invoice Management [NEW]",
+      "item": [
+        {
+          "name": "Get Management Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/invoices/management-stats"
+          }
+        },
+        {
+          "name": "Get Projects Dropdown",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/invoices/projects"
+          }
+        },
+        {
+          "name": "Invoice Report (Stats + List)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/invoices/report?status=All&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "invoices", "report"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "All"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Vendor Invoices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/invoices/vendor?status=All",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "invoices", "vendor"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Freight Carrier Invoices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/invoices/freight-carrier?status=All",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "invoices", "freight-carrier"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Financial Overview [NEW]",
+      "item": [
+        {
+          "name": "Financial Overview Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/financial-overview"
+          }
+        },
+        {
+          "name": "Financial Overview Dashboard — Filtered",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/financial-overview?projectId={{leadId}}&startDate=2026-01-01&endDate=2026-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "financial-overview"],
+              "query": [
+                { "key": "projectId", "value": "{{leadId}}" },
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Financial Overview — Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/financial-overview/export"
+          }
+        },
+        {
+          "name": "WIP Profits List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/wip-profits"
+          }
+        },
+        {
+          "name": "WIP Profits List — Filter by Client",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/wip-profits?clientId={{leadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "wip-profits"],
+              "query": [
+                { "key": "clientId", "value": "{{leadId}}" }
+              ]
+            }
+          },
+          "_postman_note": "clientId filters by leadId — was already supported, just wasn't documented."
+        },
+        {
+          "name": "WIP Profits — Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/wip-profits/export"
+          }
+        },
+        {
+          "name": "Create WIP Entry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/wip-profits",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"leadId\":\"{{leadId}}\",\"orderValue\":450000,\"currentCost\":381000,\"depositPaid\":135000,\"progressPaid\":135000,\"finalPaid\":0,\"status\":\"in_progress\"}"
+            }
+          },
+          "_postman_note": "Initializes/overwrites the full WIP snapshot for a project. Use 'Add Payment Entry' below for the 'Add payment entry' UI modal instead — this one is for initial setup only."
+        },
+        {
+          "name": "Add Payment Entry (WIP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/wip-profits/{{leadId}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"payerName\":\"Test10010\",\"paymentType\":\"final\",\"amount\":5000,\"paymentDate\":\"2026-01-15\",\"transactionId\":\"UPI98234XYZ\",\"remarks\":\"January membership payment\"}"
+            }
+          },
+          "_postman_note": "Matches the 'Add payment entry' modal exactly: Payer Name, Payment Type (deposit/progress/final), Amount, Payment Date, Transaction ID, Remarks. A WIP entry must already exist for this leadId (create one via 'Create WIP Entry' first)."
+        },
+        {
+          "name": "Expenses List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/expenses?category=All",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "expenses"],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Expenses List — Filtered",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/expenses?projectId={{leadId}}&buildingLabel=Building A&status=paid&category=Vendor/Freight&startDate=2026-01-01&endDate=2026-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "expenses"],
+              "query": [
+                { "key": "projectId", "value": "{{leadId}}" },
+                { "key": "buildingLabel", "value": "Building A" },
+                { "key": "status", "value": "paid" },
+                { "key": "category", "value": "Vendor/Freight" },
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Expenses — Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/filters"
+          }
+        },
+        {
+          "name": "Expense Categories — List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/categories"
+          }
+        },
+        {
+          "name": "Expense Categories — Add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/categories",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Marketing\"}"
+            }
+          }
+        },
+        {
+          "name": "Expenses — Monthly Summary (chart)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/summary/monthly"
+          }
+        },
+        {
+          "name": "Expenses — By Category (chart)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/by-category"
+          }
+        },
+        {
+          "name": "Expenses — Budget vs Actual Trend (chart)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/budget-vs-actual-trend"
+          },
+          "_postman_note": "Monthly bar chart. See response 'note' field for the budget-definition assumption used — confirm it matches product intent."
+        },
+        {
+          "name": "Add Expense",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"category\":\"Vendor/Freight\",\"subcategory\":\"Steel Delivery\",\"date\":\"2026-07-15\",\"amount\":10000,\"description\":\"Freight charges\",\"leadId\":\"{{leadId}}\",\"buildingLabel\":\"Building A\",\"paymentMethod\":\"bank_transfer\",\"status\":\"paid\",\"receiptFile\":\"https://mr-storage-project.s3.ap-south-1.amazonaws.com/documents/receipt.pdf\"}"
+            }
+          }
+        },
+        {
+          "name": "Update Expense",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/{{expenseId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":12000}"
+            }
+          }
+        },
+        {
+          "name": "Delete Expense",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/{{expenseId}}"
+          }
+        },
+        {
+          "name": "Profit & Loss Statement",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/profit-loss"
+          }
+        },
+        {
+          "name": "Freight Cost Tracking",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/freight-cost-tracking"
+          }
+        },
+        {
+          "name": "Margin Analysis",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/margin-analysis"
+          }
+        },
+        {
+          "name": "Budget vs Actual (Projects)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/budget-vs-actual"
+          }
+        },
+        {
+          "name": "Budget vs Actual (By Project)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/budget-vs-actual?leadId={{leadId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "budget-vs-actual"],
+              "query": [
+                {
+                  "key": "leadId",
+                  "value": "{{leadId}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Construction Overview [NEW]",
+      "item": [
+        {
+          "name": "Construction Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/overview"
+          }
+        },
+        {
+          "name": "Projects & Calendar",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/construction/projects-calendar?month=5&year=2025",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "projects-calendar"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "5"
+                },
+                {
+                  "key": "year",
+                  "value": "2025"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Drawings & Documents (List)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/drawings"
+          }
+        },
+        {
+          "name": "Upload Drawing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/drawings/{{leadId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Architectural Plans.pdf\",\"fileUrl\":\"https://cdn.example.com/files/arch.pdf\",\"documentType\":\"architectural\"}"
+            }
+          }
+        },
+        {
+          "name": "Approve Drawing",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/drawings/{{docId}}/review",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"approved\"}"
+            }
+          }
+        },
+        {
+          "name": "All Deliveries (Construction)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/construction/deliveries?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "deliveries"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delivery Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/deliveries/{{deliveryId}}"
+          }
+        },
+        {
+          "name": "All Deliveries — Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/deliveries/filters"
+          },
+          "_postman_note": "Dropdown options for Projects/Site-Destination/Delivery-Status/Transporter/Driver filters. QR Scan Status is NOT included — no backing field exists yet."
+        },
+        {
+          "name": "All Deliveries (Construction) — Filtered Example",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/construction/deliveries?projectId={{leadId}}&deliveryStatus=scheduled&siteDestination=Austin&transporter=Swift&driver=Mike&startDate=2026-01-01&endDate=2026-12-31&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "deliveries"],
+              "query": [
+                { "key": "projectId", "value": "{{leadId}}" },
+                { "key": "deliveryStatus", "value": "scheduled" },
+                { "key": "siteDestination", "value": "Austin" },
+                { "key": "transporter", "value": "Swift" },
+                { "key": "driver", "value": "Mike" },
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-12-31" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Tasks Board",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/tasks"
+          }
+        },
+        {
+          "name": "Create Task",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/tasks",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"title\":\"Steel Frame Installation\",\"leadId\":\"{{leadId}}\",\"priority\":\"high\",\"dueDate\":\"2024-02-15\",\"description\":\"Install steel frame floors 1-5\"}"
+            }
+          }
+        },
+        {
+          "name": "Update Task Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/tasks/{{taskId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"in_progress\"}"
+            }
+          }
+        },
+        {
+          "name": "Delete Task",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/tasks/{{taskId}}"
+          }
+        },
+        {
+          "name": "Material Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/construction/material-requests?status=All Status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "material-requests"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "All Status"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Material Requests — Filter Options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/filters"
+          },
+          "_postman_note": "Dropdown options for Projects/Departments/Status/Requested-By filters. 'Projects' should be sourced from the existing Leads list endpoint, not this one."
+        },
+        {
+          "name": "Material Requests — Filtered Example",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/construction/material-requests?projectId={{leadId}}&department=Framing&status=pending&requestedBy={{userId}}&startDate=2026-01-01&endDate=2026-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "construction", "material-requests"],
+              "query": [
+                { "key": "projectId", "value": "{{leadId}}" },
+                { "key": "department", "value": "Framing" },
+                { "key": "status", "value": "pending" },
+                { "key": "requestedBy", "value": "{{userId}}" },
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Material Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"leadId\":\"{{leadId}}\",\"siteLocation\":\"Construction Site A\",\"department\":\"Engineering\",\"requestedItems\":[{\"name\":\"Steel\",\"quantity\":100,\"unit\":\"tons\"}],\"priority\":\"high\",\"requiredBy\":\"2025-05-23\"}"
+            }
+          }
+        },
+        {
+          "name": "Material Request Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/{{requestId}}"
+          }
+        },
+        {
+          "name": "Upload Material Request Photo/Attachment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/{{requestId}}/attachments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"site-photo.jpg\",\"url\":\"https://mr-storage-project.s3.ap-south-1.amazonaws.com/documents/site-photo.jpg\"}"
+            }
+          },
+          "_postman_note": "First get an S3 upload URL via POST /upload/presigned-url, PUT the file to it, then send the resulting fileUrl here to attach it to the request."
+        },
+        {
+          "name": "Download Material Request Attachment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/{{requestId}}/attachments/0/download"
+          }
+        },
+        {
+          "name": "Review Material Request",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/{{requestId}}/review",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"action\":\"approved\",\"reviewNotes\":\"Approved for Q2\"}"
+            }
+          }
+        },
+        {
+          "name": "KPIs & Reports",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/reports"
+          }
+        },
+        {
+          "name": "Add Delivery (Calendar)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/projects-calendar/deliveries",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Facade Panels - Level 1 to 5\",\n  \"leadId\": \"{{leadId}}\",\n  \"sectionLocation\": \"Building A - Front Elevation\",\n  \"deliveryDate\": \"2026-08-15\",\n  \"description\": \"\",\n  \"notes\": \"Handle with care\"\n}"
+            }
+          },
+          "_postman_note": "'Add Delivery' modal on Projects & Calendar screen"
+        },
+        {
+          "name": "Get Drawing Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/drawings/{{docId}}"
+          },
+          "_postman_note": "Preview modal — includes comment thread"
+        },
+        {
+          "name": "Add Drawing Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/drawings/{{docId}}/comments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Looks good, please proceed to fabrication\"\n}"
+            }
+          },
+          "_postman_note": "'Send Comment' in the drawing preview modal"
+        },
+        {
+          "name": "Export Deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/deliveries/export"
+          },
+          "_postman_note": "Returns .xlsx binary. Same filters as the list endpoint (projectId/siteDestination/deliveryStatus/transporter/driver/startDate/endDate)"
+        },
+        {
+          "name": "Get Work Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/work-logs?projectId={{leadId}}"
+          }
+        },
+        {
+          "name": "Create Daily Work Log",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/work-logs",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"taskId\": \"{{taskId}}\",\n  \"date\": \"2026-07-24\",\n  \"progress\": 45,\n  \"description\": \"Foundation excavation completed\",\n  \"photos\": [],\n  \"issues\": \"None\"\n}"
+            }
+          },
+          "_postman_note": "'Daily Work Log' modal on Tasks & Progress screen"
+        },
+        {
+          "name": "Export Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/reports/export?period=this_month"
+          },
+          "_postman_note": "Returns .xlsx binary — 'Export Report' button"
+        },
+        {
+          "name": "Export Material Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/construction/material-requests/export"
+          },
+          "_postman_note": "Returns .xlsx binary — 'Export' button on Material Requests screen"
+        }
+      ]
+    },
+    {
+      "name": "Communication [NEW]",
+      "item": [
+        {
+          "name": "Get Users for DM",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/chat/users"
+          }
+        },
+        {
+          "name": "Get Department Channels",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/chat/departments"
+          }
+        },
+        {
+          "name": "Get Channel Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/chat/departments/{{channelKey}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "chat", "departments", ":channelKey", "messages"],
+              "variable": [
+                {
+                  "key": "channelKey",
+                  "value": "{{channelKey}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Send Channel Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/chat/departments/{{channelKey}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "chat", "departments", ":channelKey", "messages"],
+              "variable": [
+                {
+                  "key": "channelKey",
+                  "value": "{{channelKey}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"content\":\"Hello team!\"}"
+            }
+          }
+        },
+        {
+          "name": "Get Direct Conversations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/chat/direct"
+          }
+        },
+        {
+          "name": "Get Direct Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/chat/direct/{{userId}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "chat", "direct", ":userId", "messages"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Send Direct Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/chat/direct/{{userId}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "chat", "direct", ":userId", "messages"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"content\":\"Hi there!\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Plant - Extra Endpoints [NEW]",
+      "item": [
+        {
+          "name": "Savings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/savings"
+          }
+        },
+        {
+          "name": "Freight Loads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/plant/freight-loads?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "plant", "freight-loads"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Awarded Loads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/awarded-loads"
+          }
+        },
+        {
+          "name": "Deliveries Calendar",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/plant/deliveries-calendar?month=5&year=2025&view=month",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "plant", "deliveries-calendar"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "5"
+                },
+                {
+                  "key": "year",
+                  "value": "2025"
+                },
+                {
+                  "key": "view",
+                  "value": "month"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "All Deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/plant/all-deliveries?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "plant", "all-deliveries"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "QR Labels",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/qr-labels"
+          }
+        },
+        {
+          "name": "Item Cost List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/plant/costing?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "plant", "costing"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add Item Cost",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/costing",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"partName\":\"30_VRR48'\",\"costUnit\":\"FT\",\"mbsCost\":2.6,\"description\":\"VRR+ Insul R10'\"}"
+            }
+          }
+        },
+        {
+          "name": "Update Item Cost",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/costing/{{itemId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mbsCost\":2.9}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

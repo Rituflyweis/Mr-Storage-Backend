@@ -115,13 +115,13 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
 })
 
 exports.createEmployee = asyncHandler(async (req, res) => {
-  const { name, email, phone, role, password } = req.body
+  const { name, email, phone, role, password, department, permissions } = req.body
 
   const exists = await User.findOne({ email: email.toLowerCase().trim() })
   if (exists) return badRequest(res, 'Email already in use')
 
   const hashed = await bcrypt.hash(password, 12)
-  const user = await User.create({ name, email: email.toLowerCase().trim(), password: hashed, phone, role })
+  const user = await User.create({ name, email: email.toLowerCase().trim(), password: hashed, phone, role, department, permissions })
 
   if (role === 'sales') await roundRobinService.rebuildTracker()
 
@@ -214,7 +214,7 @@ exports.getEmployeeDetail = asyncHandler(async (req, res) => {
 
 exports.updateEmployee = asyncHandler(async (req, res) => {
   const { userId } = req.params
-  const { name, phone, role, isActive } = req.body
+  const { name, phone, role, isActive, department, permissions } = req.body
 
   const employee = await User.findById(userId)
   if (!employee) return notFound(res, 'Employee not found')
@@ -222,10 +222,12 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   const prevRole = employee.role
   const prevActive = employee.isActive
 
-  if (name !== undefined) employee.name = name
-  if (phone !== undefined) employee.phone = phone
-  if (role !== undefined) employee.role = role
-  if (isActive !== undefined) employee.isActive = isActive
+  if (name !== undefined)       employee.name       = name
+  if (phone !== undefined)      employee.phone      = phone
+  if (role !== undefined)       employee.role       = role
+  if (isActive !== undefined)   employee.isActive   = isActive
+  if (department !== undefined) employee.department = department
+  if (permissions !== undefined) employee.permissions = permissions
 
   await employee.save()
 
@@ -329,6 +331,31 @@ exports.toggleStatus = asyncHandler(async (req, res) => {
   if (employee.role === 'sales') await roundRobinService.rebuildTracker()
 
   return success(res, { employee }, `Employee marked ${employee.isActive ? 'active' : 'inactive'}`)
+})
+
+exports.deleteEmployee = asyncHandler(async (req, res) => {
+  const { userId } = req.params
+
+  const employee = await User.findById(userId)
+  if (!employee) return notFound(res, 'Employee not found')
+
+  const activeLeadCount = await Lead.countDocuments({ assignedSales: userId, isTerminated: { $ne: true } })
+  if (activeLeadCount > 0) {
+    return badRequest(res, `Cannot delete — this employee has ${activeLeadCount} active assigned lead(s). Reassign them first.`)
+  }
+
+  await User.findByIdAndDelete(userId)
+
+  if (employee.role === 'sales') await roundRobinService.rebuildTracker()
+
+  await auditService.log({
+    type: 'user',
+    action: AUDIT_ACTIONS.USER_DELETED,
+    performedBy: req.user._id,
+    metadata: { userId, name: employee.name, email: employee.email, role: employee.role },
+  })
+
+  return success(res, {}, 'Employee deleted')
 })
 
 exports.resetPassword = asyncHandler(async (req, res) => {

@@ -35,5 +35,6 @@ router.patch('/:userId/toggle-status', ctrl.toggleStatus)
 router.post('/:userId/reset-password', ctrl.resetPassword)
 router.get('/:userId', ctrl.getEmployeeDetail)
 router.put('/:userId', ctrl.updateEmployee)
+router.delete('/:userId', ctrl.deleteEmployee)
 
 module.exports = router

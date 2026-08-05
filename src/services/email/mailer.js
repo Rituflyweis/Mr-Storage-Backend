@@ -911,6 +911,78 @@ const sendFreightBidResubmitRequestEmail = async ({
   })
 }
 
+const sendDeliveryConfirmationEmail = async ({
+  toEmail,
+  customerName,
+  projectName,
+  jobId,
+  deliveryNumber,
+  deliveryDate,
+  timings,
+  deliveryLocation,
+}) => {
+  const safeDeliveryDate = deliveryDate ? formatInvoiceDate(deliveryDate) : '—'
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Delivery Confirmation</h2>
+      <p>Hi ${escapeHtml(customerName || 'there')},</p>
+      <p>This confirms the scheduled delivery for your project:</p>
+      <ul>
+        <li><strong>Project:</strong> ${escapeHtml(projectName || '')}</li>
+        <li><strong>Job ID:</strong> ${escapeHtml(jobId || '')}</li>
+        <li><strong>Delivery #:</strong> ${escapeHtml(deliveryNumber || '')}</li>
+        <li><strong>Delivery Date:</strong> ${safeDeliveryDate}</li>
+        <li><strong>Time Window:</strong> ${escapeHtml(timings || '—')}</li>
+        <li><strong>Delivery Location:</strong> ${escapeHtml(deliveryLocation || '—')}</li>
+      </ul>
+      <p>You'll be notified of any changes to this schedule.</p>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Delivery Confirmed: ${projectName || 'Project'}${deliveryNumber ? ` (${deliveryNumber})` : ''}`,
+    html,
+  })
+}
+
+const sendDeliveryCallbackRequestEmail = async ({
+  toEmail,
+  salesRepName,
+  customerName,
+  customerEmail,
+  customerPhone,
+  projectName,
+  jobId,
+  deliveryNumber,
+  note,
+}) => {
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Customer Call Back Request</h2>
+      <p>Hi ${escapeHtml(salesRepName || 'there')},</p>
+      <p>A customer has requested a call back regarding a delivery:</p>
+      <ul>
+        <li><strong>Customer:</strong> ${escapeHtml(customerName || '')} (${escapeHtml(customerEmail || '')}${customerPhone ? `, ${escapeHtml(customerPhone)}` : ''})</li>
+        <li><strong>Project:</strong> ${escapeHtml(projectName || '')}</li>
+        <li><strong>Job ID:</strong> ${escapeHtml(jobId || '')}</li>
+        <li><strong>Delivery #:</strong> ${escapeHtml(deliveryNumber || '')}</li>
+        ${note ? `<li><strong>Note:</strong> ${escapeHtml(note)}</li>` : ''}
+      </ul>
+      <p>Please reach out to the customer at your earliest convenience.</p>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Call Back Requested: ${projectName || 'Project'}${deliveryNumber ? ` (${deliveryNumber})` : ''}`,
+    html,
+  })
+}
+
 module.exports = {
   isEmailConfigured,
   isSmtpConfigured,
@@ -929,4 +1001,6 @@ module.exports = {
   sendFreightBidResubmitRequestEmail,
   sendFreightBidAwardedEmail,
   sendFreightBidRejectedEmail,
+  sendDeliveryConfirmationEmail,
+  sendDeliveryCallbackRequestEmail,
 }

@@ -27,6 +27,16 @@ router.get('/projects/:leadId/consolidated-url',
   ctrl.getConsolidatedBOMUrl
 )
 
+router.get('/consolidated',
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('status').optional().isString(),
+  ],
+  validate,
+  ctrl.getConsolidatedBOMList
+)
+
 router.get('/job/:jobId/status',
   [param('jobId').isMongoId()],
   validate,
