@@ -9,6 +9,7 @@ const guard = [verifyToken, roleGuard(['admin', 'sales'])]
 const lookupGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant'])]
 const uploadGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant'])]
 const smdtGuard = [verifyToken, roleGuard(['admin', 'plant'])]
+const notifGuard = [verifyToken, roleGuard(['admin', 'sales', 'account', 'plant', 'construction'])]
 
 const lookupValidators = [
   query('search').optional().isString(),
@@ -42,5 +43,6 @@ router.use('/upload', uploadGuard, require('./upload.routes'))
 router.use('/uploads', uploadGuard, require('./upload.routes'))
 router.use('/smdt', smdtGuard, require('./smdt.routes'))
 router.use('/activity', require('./pageActivity.routes'))
+router.use('/notifications', ...notifGuard, require('./notification.routes'))
 
 module.exports = router
