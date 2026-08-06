@@ -3,14 +3,14 @@ const { Server } = require('socket.io')
 const app = require('./app')
 const connectDB = require('./src/config/db')
 const initSocket = require('./src/services/socket/socket.server')
-const { PORT, CLIENT_URL, NODE_ENV } = require('./src/config/env')
+const { PORT, NODE_ENV } = require('./src/config/env')
 const { initFollowUpScheduler } = require('./src/utils/scheduler/followUpScheduler')
 
 const server = http.createServer(app)
 
 const io = new Server(server, {
   cors: {
-    origin: NODE_ENV === 'production' ? CLIENT_URL : '*',
+    origin: true, // allow all origins (reflects request Origin header)
     credentials: true,
   },
 })
