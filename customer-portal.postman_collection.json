@@ -1,0 +1,2616 @@
+{
+  "info": {
+    "name": "Customer Portal - Mr Storage",
+    "_postman_id": "customer-portal-steelpro",
+    "description": "All Customer Portal APIs — Mr Storage Backend\n\nBase URL: https://mr-storage-backend-1.onrender.com/api\nLocal URL: http://localhost:5001/api\n\nTest credentials:\n  email: customer1@example.com\n  password: Test@1234\n\nFlow: Run Login first → token auto-saved → all requests work.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://mr-storage-backend-1.onrender.com/api",
+      "type": "string"
+    },
+    {
+      "key": "localUrl",
+      "value": "http://localhost:5001/api",
+      "type": "string"
+    },
+    {
+      "key": "customerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "leadId",
+      "value": "69e6137ce2dc3d6e7468ca58",
+      "type": "string",
+      "description": "warehouse - Texas (PRO-001)"
+    },
+    {
+      "key": "leadId2",
+      "value": "69e613ada26a02d9b65a0fbf",
+      "type": "string",
+      "description": "office - Bangalore (PRO-002)"
+    },
+    {
+      "key": "docId",
+      "value": "",
+      "type": "string",
+      "description": "Auto-set by Get Drawings request"
+    },
+    {
+      "key": "deliveryId",
+      "value": "",
+      "type": "string",
+      "description": "Auto-set by Get Upcoming Deliveries request"
+    },
+    {
+      "key": "orderId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "quotationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "bundleId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "const token = r.data?.accessToken || r.data?.token;",
+                  "if (token) {",
+                  "  pm.collectionVariables.set('customerToken', token);",
+                  "  console.log('✅ Token saved');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer1@example.com\",\n  \"password\": \"Test@1234\"\n}"
+            },
+            "description": "Returns accessToken + refreshToken. Test script auto-saves token to {{customerToken}}."
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "auth",
+                "refresh"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"<paste_refresh_token_here>\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer1@example.com\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/auth/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer1@example.com\",\n  \"otp\": \"123456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "auth",
+                "reset-password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resetToken\": \"<token_from_email>\",\n  \"newPassword\": \"Test@1234\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "auth",
+                "change-password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Test@1234\",\n  \"newPassword\": \"NewPass@1234\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "👤 Profile",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "profile"
+              ]
+            },
+            "description": "Returns: firstName, lastName, email, phone, photo, customerId, createdAt"
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "profile"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Test Customer\",\n  \"lastName\": \"Smith\",\n  \"phone\": \"+1-555-0100\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "dashboard"
+              ]
+            },
+            "description": "Returns: activeProjects, closedProjects, drawingsAndApprovals, deliveryTracking { inTransit, staged, ready, totalToday, upcomingDeliveries, deliveriesThisWeek, delayedDeliveries, rescheduledDeliveries }, shipmentBreakdown, nextDelivery, totalProjectValue, totalPaid, totalPending, upcomingInvoice"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏗️ Projects",
+      "item": [
+        {
+          "name": "Get All Projects (with stats)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "const first = r.data?.projects?.[0];",
+                  "if (first?._id) {",
+                  "  pm.collectionVariables.set('leadId', first._id);",
+                  "  console.log('leadId set to', first._id, '—', first.projectName);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "lifecycleStatus",
+                  "value": "",
+                  "disabled": true,
+                  "description": "fabrication_started | quality_inspection | delivered | initial_contact ..."
+                }
+              ]
+            },
+            "description": "Returns projects list + stats cards (matches Figma):\n\nstats:\n  total         → Total Projects card\n  active        → Active Projects card  (plant stages: released_to_plant → dispatched)\n  workInProgress → Work in Progress card (sales stages: initial_contact → sent_to_admin)\n  cancelled     → Canceled card          (isTerminated: true)\n\nEach project: _id, projectName, jobId, lifecycleStatus, location, buildingType, quoteValue\n\nTest data:\n  PRO-001 warehouse - Texas    (fabrication_started)  ← leadId default\n  PRO-002 office - Bangalore   (quality_inspection)\n  PRO-011 (initial_contact)    [cancelled]"
+          }
+        },
+        {
+          "name": "Get Project Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}"
+              ]
+            },
+            "description": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule, navigation\n\nnavigation { previous, next } — sibling project { _id, jobId, projectName } in the customer's project list (same order as Get All Projects), for the prev/next project switcher button. null at either end of the list."
+          }
+        },
+        {
+          "name": "Get Project Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "stats"
+              ]
+            },
+            "description": "Returns stats for a single project:\n  deliveries { total, delivered, inTransit }\n  payments   { totalInvoiced, totalPaid, pending, pendingInvoices }\n  followUps  (count)\n  meetings   (count)"
+          }
+        },
+        {
+          "name": "Get Project RFQ",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/rfq",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "rfq"
+              ]
+            },
+            "description": "Returns the RFQ (Request for Quotation) details:\n  rfq { jobId, projectName, buildingType, roofStyle, sqft, width, length, location, description, quoteValue, isQuoteReady, lifecycleStatus, aiSummary, aiQuoteData }\n  quotation (latest Quotation doc or null)\n\nMock data (PRO-001):\n  buildingType: warehouse\n  roofStyle: gable\n  sqft: 6000\n  width: 60, length: 120\n  quoteValue: 250000\n  isQuoteReady: true"
+          }
+        },
+        {
+          "name": "Update Project RFQ",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/rfq",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "rfq"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"buildingType\": \"warehouse\",\n  \"roofStyle\": \"gable\",\n  \"sqft\": \"6000\",\n  \"width\": 60,\n  \"length\": 120,\n  \"location\": \"Dallas, TX\",\n  \"description\": \"Steel warehouse with clear-span design, 20ft eave height, sliding doors on south wall\"\n}"
+            },
+            "description": "Update building specs before quote is locked.\n\nAllowed fields: buildingType, roofStyle, sqft, width, length, location, description\n\nLocked (returns 400) if lifecycleStatus is:\n  deal_closed | payment_done | converted_to_po | sent_to_admin | released_to_plant"
+          }
+        },
+        {
+          "name": "Cancel Project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Customer decided to postpone the project due to budget constraints\"\n}"
+            },
+            "description": "Cancels a project (sets isTerminated: true).\n\nRules:\n  - reason is required\n  - Cannot cancel if already cancelled\n  - Cannot cancel if lifecycleStatus is 'delivered'\n\nReflected in GET /projects → stats.cancelled count."
+          }
+        },
+        {
+          "name": "Create Project (Enquiry)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"buildingType\": \"warehouse\",\n  \"location\": \"Pune, Maharashtra\",\n  \"roofStyle\": \"gable\",\n  \"sqft\": \"5000\",\n  \"width\": 50,\n  \"length\": 100,\n  \"description\": \"Steel warehouse — clear span, 18ft eave height\"\n}"
+            },
+            "description": "Creates a new project enquiry (lead) for this customer. Sets lifecycleStatus: initial_contact."
+          }
+        },
+        {
+          "name": "Get Project Tracking",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/tracking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "tracking"
+              ]
+            }
+          },
+          "_postman_note": "'Project Tracking' tab. projectSteps now includes per-step startedBy/startedAt/completedBy/completedAt/currentStage(sub-label)/completionPct/expectedCompletion/notes/attachments[] — sourced from ProjectStepDetail records the construction panel writes via PUT /construction/projects/:leadId/steps/:stepKey. Also includes taskProgress, timeline, milestones."
+        }
+      ]
+    },
+    {
+      "name": "🖼️ Project Drawings",
+      "item": [
+        {
+          "name": "Get All Project Drawings (landing page)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/drawings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "drawings"
+              ]
+            }
+          },
+          "_postman_note": "Cross-project list with numberOfBuildings/totalDrawings/lastUpdate per project"
+        },
+        {
+          "name": "Get Project Drawings & Images",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "const first = r.data?.drawings?.[0];",
+                  "if (first?._id) {",
+                  "  pm.collectionVariables.set('docId', first._id);",
+                  "  console.log('docId set to', first._id, '—', first.name);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "drawings"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "",
+                  "disabled": true,
+                  "description": "architectural | structural | fabrication | erection | specification | other"
+                }
+              ]
+            },
+            "description": "Returns:\n  drawings[]        — DrawingDocument records (with status, revisionNote, fileUrl)\n  embeddedDocuments[] — from lead.documents array\n  total\n\nTest script auto-saves first drawing _id to {{docId}}.\n\nMock data (PRO-001):\n  Foundation Plan Rev A   (architectural, approved)\n  Structural Steel Layout (structural,   approved)\n  Roof Panel Layout       (architectural, approved)\n  Electrical Plan         (other,         under_review)\n  Site Elevation          (other,         approved)\n\nStatuses: pending | approved | rejected | under_review"
+          }
+        },
+        {
+          "name": "Approve Drawing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "drawings",
+                "{{docId}}",
+                "approve"
+              ]
+            },
+            "description": "Customer approves a drawing.\n\nSets status → approved, approvedAt → now.\nReturns: { _id, name, status }\n\nRun 'Get Project Drawings' first to populate {{docId}}."
+          }
+        },
+        {
+          "name": "Request Drawing Revision",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/request-revision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "drawings",
+                "{{docId}}",
+                "request-revision"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Please adjust the roof pitch from 3:12 to 4:12 and increase eave height to 22ft\"\n}"
+            },
+            "description": "Customer requests a revision on a drawing.\n\nSets status → under_review, saves revisionNote + revisionRequestedAt.\nnote is required.\nReturns: { _id, name, status, revisionNote }"
+          }
+        },
+        {
+          "name": "Get Project Buildings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/buildings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "buildings"
+              ]
+            }
+          },
+          "_postman_note": "Per-building drawing/document counts — 'Select a building' screen"
+        },
+        {
+          "name": "Get Building Drawings & Documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/buildings/Building A",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "buildings",
+                "Building A"
+              ]
+            }
+          },
+          "_postman_note": "Path segment is the building label (URL-encode spaces). Returns drawings[] (category=drawing|photo) + documents[] (category=document) separately"
+        }
+      ]
+    },
+    {
+      "name": "📝 Project Quotation",
+      "item": [
+        {
+          "name": "Get Project Quotation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/quotation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "quotation"
+              ]
+            },
+            "description": "Returns the latest Quotation document for this project (quotation tab detail view).\n\nReturns 404 if no quotation has been created for this project yet.\n\nstatus: draft | sent | accepted | rejected"
+          }
+        },
+        {
+          "name": "Approve Project Quotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/quotation/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "quotation",
+                "approve"
+              ]
+            },
+            "description": "Customer approves the latest quotation.\n\nSets status → accepted. Returns 400 if already accepted.\nReturns: { _id, status }"
+          }
+        },
+        {
+          "name": "Reject Project Quotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/quotation/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "quotation",
+                "reject"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Price is higher than expected, please revise\"\n}"
+            },
+            "description": "Customer rejects the latest quotation.\n\nSets status → rejected, optionally saves reason to clientNotes. Returns 400 if already rejected.\nReturns: { _id, status }"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📋 Project Activity & Notes",
+      "item": [
+        {
+          "name": "Get Project Recent Activity",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/activity?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "activity"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Returns paginated AuditLog records for this project.\n  activity[] { type, action, performedBy{name,role}, metadata, createdAt }\n  total, page, limit\n\nMock data (PRO-001): 28 audit log entries\n  lead.released_to_plant, invoice.created, drawing.approved, etc."
+          }
+        },
+        {
+          "name": "Get Project Notes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/notes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "notes"
+              ]
+            },
+            "description": "Returns:\n  notes[]      — lead.leadNotes array { note, addedAt, addedBy }\n  generalNotes — lead.notes string\n  total\n\nMock data (PRO-001):\n  'Customer confirmed site ready for foundation work'\n  'Structural drawings approved by client on call'\n  'Color selection: Galvalume Silver exterior panels'"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📞 Project Follow Ups & Meetings",
+      "item": [
+        {
+          "name": "Get Project Follow Ups",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/followups?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "followups"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "pending | completed | cancelled"
+                }
+              ]
+            },
+            "description": "Returns:\n  followUps[] { followUpDate, modeOfContact, notes, status, assignedTo{name,email} }\n  total, page, limit\n  stats { total, pending, completed }\n\nmodeOfContact values: phone | email | video_call | in_person\n\nMock data (PRO-001): 3 follow-ups\n  ✅ Call back after quote review              (completed)\n  ✅ Engineering review — BOM approval        (completed, email)\n  ⏳ Delivery timeline confirmation            (pending, phone)"
+          }
+        },
+        {
+          "name": "Get Project Meetings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/meetings?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "meetings"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "scheduled | completed | cancelled"
+                }
+              ]
+            },
+            "description": "Returns:\n  meetings[] { title, meetingTime, mode, meetingLink, status, createdBy{name,email} }\n  total, page, limit\n  stats { total, scheduled, completed, cancelled }\n\nmode values: online | offline\n\nMock data (PRO-001): 4 meetings\n  ✅ Kickoff Meeting              (online,   completed)\n  ✅ Site survey                  (online,   completed)\n  ✅ Midpoint Progress Review     (offline,  completed)\n  📅 Pre-Delivery Inspection Call (online,   scheduled — 2026-07-25)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📄 Documents",
+      "item": [
+        {
+          "name": "Get All Documents (All Types)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "documents"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "",
+                  "disabled": true,
+                  "description": "drawing | approval | contract | general | photo | other"
+                }
+              ]
+            },
+            "description": "Returns all documents across all customer projects grouped by project.\nIncludes both DrawingDocument collection records AND embedded lead.documents.\n\nResponse: projects[{ lead{jobId,projectName,...}, documents[], count }], totalDocuments\n\nMock data: 8 total drawings (5 for PRO-001, 3 for PRO-002)"
+          }
+        },
+        {
+          "name": "Get Drawings Only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/documents?type=drawing",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "documents"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "drawing"
+                }
+              ]
+            },
+            "description": "Filters to DrawingDocument records only.\nMock data: 8 drawings across 2 projects\n  PRO-001: Foundation Plan, Structural Steel, Roof Panel, Electrical Plan, Site Elevation\n  PRO-002: Office Floor Plan, Structural Frame, MEP Schematic"
+          }
+        },
+        {
+          "name": "Get Contract Documents Only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/documents?type=contract",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "documents"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "contract"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📦 Material Orders",
+      "item": [
+        {
+          "name": "Get Material Orders Summary (all projects)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/material-orders/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "material-orders",
+                "summary"
+              ]
+            }
+          },
+          "_postman_note": "Per-project new/pending/completed order counts — for the Material Orders project list screen"
+        },
+        {
+          "name": "Get Project Orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "pending | approved | rejected | fulfilled"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Project Order (Add New Order)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "orders"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"buildingLabel\": \"Building A\",\n  \"requiredBy\": \"2026-08-15\",\n  \"preferredDeliveryDate\": \"2026-08-10\",\n  \"priority\": \"high\",\n  \"specialInstructions\": \"Please ensure coils are packed with edge protectors and waterproof wrapping; label each coil with heat number and project code.\",\n  \"attachments\": [\n    {\n      \"name\": \"Purchase Order.pdf\",\n      \"url\": \"https://example-bucket.s3.amazonaws.com/po.pdf\"\n    }\n  ],\n  \"items\": [\n    {\n      \"name\": \"Black 26ga\",\n      \"quantity\": 30,\n      \"unit\": \"ft\",\n      \"lengthFeet\": 24,\n      \"color\": \"Black\"\n    },\n    {\n      \"name\": \"Black 26ga\",\n      \"quantity\": 22,\n      \"unit\": \"ft\",\n      \"lengthFeet\": 16,\n      \"color\": \"Black\"\n    }\n  ]\n}"
+            }
+          },
+          "_postman_note": "items[] map 1:1 to the Coil Type/Length/Quantity line items in the 'Order List (Summary)' UI"
+        },
+        {
+          "name": "Get Project Order Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "orders",
+                "{{orderId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel Project Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/orders/{{orderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "orders",
+                "{{orderId}}",
+                "cancel"
+              ]
+            }
+          },
+          "_postman_note": "Blocked once order is fulfilled or already cancelled"
+        }
+      ]
+    },
+    {
+      "name": "🧾 Order Quotations",
+      "item": [
+        {
+          "name": "Get Quotations Summary (all projects)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/quotations/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "quotations",
+                "summary"
+              ]
+            }
+          },
+          "_postman_note": "Per-project new-quotation/pending-approval/approved counts — for the Order Quotations project list screen"
+        },
+        {
+          "name": "Get Project Order Quotations (per-building table)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/order-quotations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "order-quotations"
+              ],
+              "query": [
+                {
+                  "key": "buildingLabel",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "sent | approved | rejected"
+                },
+                {
+                  "key": "dateFrom",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "dateTo",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "_postman_note": "Powers 'ABC Logistic Warehouse - All Quotations' table: Order ID / Quotation ID / Building / Order Date / Quotation Received / Order Value / Status"
+        },
+        {
+          "name": "Get Order Quotation Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/order-quotations/{{quotationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "order-quotations",
+                "{{quotationId}}"
+              ]
+            }
+          },
+          "_postman_note": "Line items (coilType/length/qty/color/unitPrice/amount) + subtotal/tax/freight/totalValue + summary{totalCoilTypes,totalLength,totalQuantity}"
+        },
+        {
+          "name": "Approve Order Quotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/order-quotations/{{quotationId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "order-quotations",
+                "{{quotationId}}",
+                "approve"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reject Order Quotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/order-quotations/{{quotationId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "order-quotations",
+                "{{quotationId}}",
+                "reject"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Price too high, please revise\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔔 Notifications",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "filter",
+                  "value": "all",
+                  "description": "all | unread | drawings | finance | meetings"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "_postman_note": "Returns stats{total,unread,highPriority,today} + notifications[]"
+        },
+        {
+          "name": "Mark Notification Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark All Notifications Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "notifications",
+                "read-all"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "💬 Communication",
+      "item": [
+        {
+          "name": "Get Chat Channels",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/chat/channels",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "chat",
+                "channels"
+              ],
+              "query": [
+                {
+                  "key": "leadId",
+                  "value": "{{leadId}}"
+                }
+              ]
+            }
+          },
+          "_postman_note": "Returns Project Team / Finance Team / Construction Team channels with unread counts"
+        },
+        {
+          "name": "Get Chat Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/chat/project/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "chat",
+                "project",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "leadId",
+                  "value": "{{leadId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "_postman_note": "Path param 'project' can be project | finance | construction. Marks incoming (non-customer) messages as read."
+        },
+        {
+          "name": "Send Chat Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/chat/project/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "chat",
+                "project",
+                "messages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"content\": \"Hello team, checking on drawing status\"\n}"
+            }
+          },
+          "_postman_note": "Path param 'project' can be project | finance | construction"
+        }
+      ]
+    },
+    {
+      "name": "📱 Bundle Scan (QR)",
+      "item": [
+        {
+          "name": "Scan Bundle (QR / manual entry)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/scan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "scan"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bundleId\": \"{{bundleId}}\"\n}"
+            }
+          },
+          "_postman_note": "bundleId can be the Mongo _id OR the human bundleNo (e.g. B-001) — matches 'Enter Bundle ID' manual entry"
+        },
+        {
+          "name": "Get Bundle Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Report Bundle Issue",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}/report-issue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}",
+                "report-issue"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"issue\": \"Received quantity does not match label\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Contact Support (bundle)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}/contact-support",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}",
+                "contact-support"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Need help identifying this bundle\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Download Bundle Contents (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}/download",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}",
+                "download"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download Bundle Packing List (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/bundles/{{bundleId}}/download/packing-list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "bundles",
+                "{{bundleId}}",
+                "download",
+                "packing-list"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🚚 Delivery Schedule",
+      "item": [
+        {
+          "name": "Get Upcoming Deliveries",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "const first = r.data?.deliveries?.[0];",
+                  "if (first?.deliveryId) {",
+                  "  pm.collectionVariables.set('deliveryId', first.deliveryId);",
+                  "  console.log('deliveryId set to', first.deliveryId, '—', first.deliveryNumber);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries?tab=upcoming",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "upcoming"
+                }
+              ]
+            },
+            "description": "tab values: upcoming | past | rescheduled\n\nReturns: deliveries[], total, tabs{upcoming, past, rescheduled counts}\nEach delivery: deliveryId, deliveryNumber, status, description, deliveryDate, loadWeight, siteContact{name,phone}, deliveryCompany{name,contact,phone}, loadAndBundle{loadId, bundleCount, truckNumber, totalWeight}, project{jobId,projectName}\n\nTest script auto-saves first delivery's _id to {{deliveryId}}.\n\nMock data (upcoming): 3 deliveries\n  CUST-DEL-002  in_transit   Secondary panels - Roof and wall cladding (2026-07-30)\n  CUST-DEL-001  scheduled    Primary Steel Frame - columns & rafters    (2026-08-10)\n  CUST-DEL-004  confirmed    Full structural package - office frame      (2026-08-20)"
+          }
+        },
+        {
+          "name": "Get Deliveries Summary (per-project)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "summary"
+              ]
+            }
+          },
+          "_postman_note": "NEW — per-project {upcoming,past,rescheduled} counts, same shape as material-orders/summary & quotations/summary"
+        },
+        {
+          "name": "Get Deliveries for a Project",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{leadId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{leadId}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "upcoming",
+                  "description": "upcoming | past | rescheduled"
+                }
+              ]
+            }
+          },
+          "_postman_note": "CHANGED — /deliveries/:id now smart-dispatches: pass a leadId here to get that project's schedule (adds a `project` object to the response). The exact same path also still accepts a deliveryId for the single-delivery-detail lookup (see 'Get Delivery Detail' below) — whichever the id resolves to is what you get back."
+        },
+        {
+          "name": "Get Past Deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries?tab=past",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "past"
+                }
+              ]
+            },
+            "description": "Mock data (past): 1 delivery\n  CUST-DEL-003  delivered  Foundation anchor bolts and base plates (2026-06-15)\n  Carrier: Abc Carrier pvt ltd."
+          }
+        },
+        {
+          "name": "Get Rescheduled Deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries?tab=rescheduled",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "rescheduled"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Delivery Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}"
+              ]
+            },
+            "description": "Single delivery detail (\"Next Delivery\" card / \"Full Delivery Instructions\" dialog). Same shape as a Get Deliveries list item, including:\n  loadAndBundle{loadId, bundleCount, truckNumber, totalWeight}\n  packingListSummary{totalParts, bundleTypes, material}\n  receivingPoc / siteContact {name, phone, email} (same underlying contact — the model only has one real site-contact field)\n  deliveryTeam / deliveryCompany {company/name, driver, phone, email}\n\nRun 'Get Upcoming Deliveries' first to populate {{deliveryId}}."
+          }
+        },
+        {
+          "name": "Contact Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-driver",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "contact-driver"
+              ]
+            },
+            "description": "Powers the \"Contact Driver\" dialog.\n\nReturns: { delivery{title,deliveryNumber,status}, driver{name,phone}, dispatcher{name,phone}, siteContact{name,phone} }\n\nNote: driver phone and dispatcher phone both come from the same FreightCarrier.phone field — there's no separate personal-cell-vs-office-line field in the data model today.\n\nReturns 404 if no carrier has been selected yet or no phone is on file."
+          }
+        },
+        {
+          "name": "Send SMS to Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-driver/sms",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "contact-driver",
+                "sms"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"\"\n}"
+            },
+            "description": "\"Send SMS\" button in the Contact Driver dialog. message is optional — a sensible default is used if omitted.\n\nNOTE: No SMS provider (Twilio) is configured yet. This returns success and logs the message server-side (provider: 'stub') so the dialog works end-to-end; real delivery will start once Twilio credentials are added.\n\nReturns: { message, sms }"
+          }
+        },
+        {
+          "name": "Contact Delivery Company",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-company",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "contact-company"
+              ]
+            },
+            "description": "Powers the \"Contact Delivery Company\" dialog.\n\nReturns: { delivery{title,deliveryNumber,status}, managerName, managerPhone, companyName }\n\nReturns 404 if no carrier has been selected yet."
+          }
+        },
+        {
+          "name": "Send SMS to Delivery Company",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/contact-company/sms",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "contact-company",
+                "sms"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"\"\n}"
+            },
+            "description": "\"Send SMS\" button in the Contact Delivery Company dialog. Same stub-SMS behavior as Send SMS to Driver — see that request's note.\n\nReturns: { message, sms }"
+          }
+        },
+        {
+          "name": "Send Confirmation Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/confirmation-email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "confirmation-email"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toEmail\": \"\"\n}"
+            },
+            "description": "toEmail is optional — defaults to the logged-in customer's own email (matches the pre-filled, editable \"Send to\" field in the dialog).\n\nReturns: { message, sentTo }"
+          }
+        },
+        {
+          "name": "Get Calendar Event Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/calendar/details",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "calendar",
+                "details"
+              ]
+            },
+            "description": "Powers the \"Add to Calendar\" dialog's content (event card, Google/Outlook deep links, copy-to-clipboard text). This is JSON, not a file download — use 'Add to Calendar (.ics)' below for the actual downloadable file.\n\nReturns: { title, description, location, startDate, endDate, googleCalendarUrl, outlookCalendarUrl, icsDownloadUrl, plainText }\n\nReturns 400 if the delivery has no deliveryDate set yet."
+          }
+        },
+        {
+          "name": "Add to Calendar (.ics)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/calendar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "calendar"
+              ]
+            },
+            "description": "Downloads a .ics calendar file for this delivery (Content-Type: text/calendar).\n\nReturns 400 if the delivery has no deliveryDate set yet.\n\nIn Postman, use 'Send and Download' to save the file."
+          }
+        },
+        {
+          "name": "Request Call Back",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/request-callback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "request-callback"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Please call regarding the crane requirement at the site\",\n  \"priority\": \"high\",\n  \"reason\": \"reschedule request\"\n}"
+            },
+            "description": "note, priority, reason are all optional. priority: low | medium | high | urgent (drives the returned eta message, matching the dialog's dynamic \"We will contact you within...\" text). Emails the project's assigned salesperson (if any) with the customer's contact info, reason, priority and note.\n\nReturns: { message, eta }"
+          }
+        },
+        {
+          "name": "Download Delivery Details (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/download",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "download"
+              ]
+            },
+            "description": "\"Delivery Details PDF\" in the Download Documents dialog (Content-Type: application/pdf) — delivery info, site contact, delivery company, load & bundle summary.\n\nIn Postman, use 'Send and Download' to save the file."
+          }
+        },
+        {
+          "name": "Download Packing List (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/download/packing-list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "download",
+                "packing-list"
+              ]
+            },
+            "description": "\"Packing List\" PDF in the Download Documents dialog — packing list summary, trucks, and bundles.\n\nIn Postman, use 'Send and Download' to save the file."
+          }
+        },
+        {
+          "name": "Download Instructions (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/download/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "download",
+                "instructions"
+              ]
+            },
+            "description": "\"Instructions\" PDF in the Download Documents dialog — delivery details, site instructions, required equipment, special notes, and contacts.\n\nFrontend triggers all three download requests above for the dialog's \"Download All\" button (no separate combined/zip endpoint).\n\nIn Postman, use 'Send and Download' to save the file."
+          }
+        },
+        {
+          "name": "Get Delivery Documents (bundle)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "documents"
+              ]
+            }
+          },
+          "_postman_note": "Returns links to Details/Packing List/Instructions PDFs for the 'Delivery Documents > Download All' dialog"
+        },
+        {
+          "name": "Confirm Site Ready",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/confirm-site-ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "confirm-site-ready"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"siteCleared\": true,\n  \"accessRouteAvailable\": true,\n  \"safetyMeasuresInPlace\": true,\n  \"personnelReady\": true,\n  \"confirmedBy\": \"Customer Name\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Confirm Equipment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/confirm-equipment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "confirm-equipment"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"forkliftAvailable\": true,\n  \"craneOrHeavyMachineryAvailable\": true,\n  \"storageAreaReady\": true,\n  \"toolsAndAccessoriesOnSite\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Acknowledge Reschedule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/deliveries/{{deliveryId}}/acknowledge-reschedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "deliveries",
+                "{{deliveryId}}",
+                "acknowledge-reschedule"
+              ]
+            }
+          },
+          "_postman_note": "Acknowledges the LATEST reschedule entry on the delivery. Blocked if already acknowledged or if the delivery has no reschedule history. Delivery list/detail rows now also include siteReadiness{siteReady,equipmentReady}, confirmationEmailSent/-At, and reschedule{previousDate,date,reason,acknowledged,acknowledgedAt}."
+        }
+      ]
+    },
+    {
+      "name": "💳 Payments",
+      "item": [
+        {
+          "name": "Get Invoice Stats (Figma Cards)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/payments/invoice-stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "payments",
+                "invoice-stats"
+              ]
+            },
+            "description": "Maps directly to the 4 Figma cards on the Invoices screen:\n\n  totalProjectValue   → Total Project Value card  (sum of lead.quoteValue)\n  pendingAmount       → Pending Amount card        (unpaid invoices total)\n  amountPaid          → Amount Paid card           (paid invoices total)\n  upcomingInvoiceDue  → Upcoming Invoice Due card  { _id, invoiceNumber, totalAmount, dueDate, status }\n\nAlso returns breakdown { totalInvoiced, paid, pending, overdue, invoiceCount }\n\nMock data:\n  totalProjectValue : 250,000\n  pendingAmount     : 9,250,000\n  amountPaid        : 275,000\n  upcomingInvoiceDue: INV-0010 (250,000 due 2026-06-13)"
+          }
+        },
+        {
+          "name": "Get Payment Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/payments/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "payments",
+                "stats"
+              ]
+            },
+            "description": "Detailed payment stats:\n  stats { totalInvoiced, totalPaid, totalPending, totalOverdue, balance, paidPercent }\n  counts { total, paid, upcoming, overdue }\n  nextDueInvoice { _id, totalAmount, dueDate }\n\nMock data:\n  totalInvoiced : 9,525,000\n  totalPaid     : 275,000  (3%)\n  totalPending  : 9,250,000\n  5 invoices total"
+          }
+        },
+        {
+          "name": "Get Payments (Upcoming + Overdue + History)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "payments"
+              ]
+            },
+            "description": "Returns: upcoming[], overdue[], paid[] — each has invoice details + dueDate + lead info"
+          }
+        },
+        {
+          "name": "Get Invoices (grouped by project)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/payments/invoices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "payments",
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "paid | sent | draft | overdue"
+                }
+              ]
+            },
+            "description": "Returns invoices grouped by project, each group includes full lead details and per-project summary.\n\nlead now includes: _id, jobId, projectName, buildingType, location, lifecycleStatus, quoteValue\n\nsummary per project: projectTotal, projectPaid, projectPending, overdueAmount, paidPercent, invoiceCount\n\nEach invoice includes: dueDate (computed from date + daysToPay)\n\nMock data (PRO-001 warehouse - Texas):\n  5 invoices | total: 9,525,000 | paid: 275,000 (3%) | pending: 9,250,000"
+          }
+        },
+        {
+          "name": "Get Tax Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/payments/tax-report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "payments",
+                "tax-report"
+              ]
+            },
+            "description": "Returns:\n  rows[] { date, invoiceNumber, projectId, projectName, buildingType, location, contractAmount, taxRate(%), taxDue }\n  summary { totalContractAmount, totalTaxDue }"
+          }
+        },
+        {
+          "name": "Get Project Financial Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/projects/{{leadId}}/payments/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "projects",
+                "{{leadId}}",
+                "payments",
+                "summary"
+              ]
+            },
+            "description": "Financial Summary card on project detail → payments tab.\n\nReturns: { totalPayment, totalPaid, outstandingBalance }\n\ntotalPayment       — sum of all invoice totalAmount for this project\ntotalPaid          — sum of invoices with status 'paid'\noutstandingBalance — totalPayment - totalPaid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "☁️ Upload",
+      "item": [
+        {
+          "name": "Get Presigned URL (S3 Upload)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/upload/presigned-url",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer",
+                "upload",
+                "presigned-url"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"my-document.pdf\",\n  \"fileType\": \"application/pdf\",\n  \"folder\": \"customer-uploads\"\n}"
+            },
+            "description": "Returns a pre-signed S3 URL for direct browser upload. PUT the file to the returned URL."
+          }
+        }
+      ]
+    }
+  ]
+}
