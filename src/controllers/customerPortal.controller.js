@@ -131,29 +131,52 @@ const computeDueDate = (invoice) => {
   return computeInvoiceDueDate(invoice.date, invoice.daysToPay)
 }
 
-/** Map PaymentSchedule.stages → API `payments` shape (frontend/docs expect `payments`, not `stages`). */
+/** DB PaymentSchedule uses `stages`; customer FE contract expects `payments`. */
 const formatCustomerPaymentSchedule = (schedule) => {
   if (!schedule) return null
-  const stages = Array.isArray(schedule.stages) ? schedule.stages : []
-  const payments = stages.map((stage) => ({
+  const payments = (schedule.stages || []).map((stage) => ({
     _id: stage._id,
     name: stage.stageName,
     amount: stage.amount,
     amountType: stage.amountType,
-    status: stage.status,
     dueDate: stage.dueDate,
-    paidAt: stage.paidAt,
+    status: stage.status,
     invoiceId: stage.invoiceId,
+    paidAt: stage.paidAt,
   }))
   return {
-    _id: schedule._id,
     totalAmount: schedule.totalAmount,
     payments,
+    stages: schedule.stages || [],
   }
 }
 
-const PROJECT_DETAIL_LEAD_FIELDS =
-  'customerId jobId projectName buildingType location lifecycleStatus lifecycleHistory quoteValue isQuoteReady source documents assignedSales createdAt plannedStartDate endDate numberOfBuildings roofStyle sqft width length notes'
+const paymentScheduleForInvoice = (schedule, invoice) => {
+  if (!schedule) return null
+  const formatted = formatCustomerPaymentSchedule(schedule)
+  if (invoice.paymentScheduleStageId) {
+    const payment = formatted.payments.find(
+      (p) => String(p._id) === String(invoice.paymentScheduleStageId)
+    )
+    if (payment) {
+      return { totalAmount: schedule.totalAmount, payments: [payment] }
+    }
+  }
+  const linked = formatted.payments.filter(
+    (p) => p.invoiceId && String(p.invoiceId) === String(invoice._id)
+  )
+  if (linked.length) {
+    return { totalAmount: schedule.totalAmount, payments: linked }
+  }
+  return null
+}
+
+const PROJECT_DETAIL_LEAD_FIELDS = [
+  'customerId', 'jobId', 'projectName', 'buildingType', 'location', 'roofStyle', 'sqft',
+  'width', 'length', 'notes', 'numberOfBuildings', 'lifecycleStatus', 'lifecycleHistory',
+  'quoteValue', 'documents', 'assignedSales', 'createdAt', 'plannedStartDate', 'endDate',
+  'isRaisedToPO', 'poNumber', 'source', 'isQuoteReady',
+].join(' ')
 
 // ── Profile ───────────────────────────────────────────────────────────────────
 
@@ -430,8 +453,6 @@ exports.getProject = asyncHandler(async (req, res) => {
     Building.countDocuments({ leadId }),
   ])
 
-  const paymentSchedule = formatCustomerPaymentSchedule(paymentScheduleDoc)
-
   let quoteSummary = null
   if (quotation) {
     quoteSummary = await QuoteSummary.findOne({ quotationId: quotation._id })
@@ -441,11 +462,13 @@ exports.getProject = asyncHandler(async (req, res) => {
   // Strip internalNotes from quotation
   if (quotation) delete quotation.internalNotes
 
-  // Attach lead payment schedule to each invoice (schedule is per-lead, stages link via stage.invoiceId)
-  const invoicesWithSchedule = invoices.map(inv => ({
+  const formattedPaymentSchedule = formatCustomerPaymentSchedule(paymentScheduleDoc)
+
+  // Attach paymentSchedule to each invoice when a stage is linked to that invoice
+  const invoicesWithSchedule = invoices.map((inv) => ({
     ...inv,
     dueDate: computeDueDate(inv),
-    paymentSchedule,
+    paymentSchedule: paymentScheduleForInvoice(paymentScheduleDoc, inv),
   }))
 
   // Sibling projects (same order as the project list) for the prev/next nav button
@@ -464,7 +487,7 @@ exports.getProject = asyncHandler(async (req, res) => {
     quotation,
     quoteSummary,
     invoices: invoicesWithSchedule,
-    paymentSchedule,
+    paymentSchedule: formattedPaymentSchedule,
     navigation: {
       previous: prev ? { _id: prev._id, jobId: prev.jobId, projectName: prev.projectName } : null,
       next:     next ? { _id: next._id, jobId: next.jobId, projectName: next.projectName } : null,
