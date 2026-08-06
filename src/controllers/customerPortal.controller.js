@@ -1582,6 +1582,15 @@ const fetchPlantBuildingDrawings = async (leadId, { buildingLabel } = {}) => {
   return populateDrawingUploaders(rows)
 }
 
+const findPlantBuildingDrawing = async (leadId, docId) => {
+  const buildings = await Building.find({ leadId }).select('buildingNumber drawings')
+  for (const building of buildings) {
+    const drawing = (building.drawings || []).find((d) => String(d._id) === String(docId))
+    if (drawing) return { building, drawing }
+  }
+  return null
+}
+
 const plantDrawingsMatchTypeFilter = (type) => !type || type === 'other'
 
 const sortDrawingsNewestFirst = (rows) =>
@@ -2010,13 +2019,36 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
   if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
 
   const doc = await DrawingDocument.findOne({ _id: req.params.docId, leadId: req.params.leadId })
-  if (!doc) return notFound(res, 'Drawing not found')
-  if (doc.status === 'approved') return badRequest(res, 'Drawing is already approved')
+  if (doc) {
+    if (doc.status === 'approved') return badRequest(res, 'Drawing is already approved')
 
-  doc.status = 'approved'
-  doc.approvedAt = new Date()
-  doc.revisionNote = ''
-  await doc.save()
+    doc.status = 'approved'
+    doc.approvedAt = new Date()
+    doc.revisionNote = ''
+    await doc.save()
+
+    await auditService.log({
+      type: 'drawing',
+      action: 'drawing.approved',
+      leadId: lead._id,
+      customerId: req.customer._id,
+      performedBy: req.customer._id,
+      metadata: { docId: doc._id, name: doc.name, source: 'drawing_document' },
+    })
+
+    return success(res, { message: 'Drawing approved', drawing: { _id: doc._id, name: doc.name, status: doc.status } })
+  }
+
+  const plantMatch = await findPlantBuildingDrawing(req.params.leadId, req.params.docId)
+  if (!plantMatch) return notFound(res, 'Drawing not found')
+
+  const { building, drawing } = plantMatch
+  if (drawing.status === 'approved') return badRequest(res, 'Drawing is already approved')
+
+  drawing.status = 'approved'
+  drawing.reviewedAt = new Date()
+  drawing.rejectionReason = ''
+  await building.save()
 
   await auditService.log({
     type: 'drawing',
@@ -2024,10 +2056,18 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: req.customer._id,
     performedBy: req.customer._id,
-    metadata: { docId: doc._id, name: doc.name },
+    metadata: {
+      docId: drawing._id,
+      name: drawing.fileName,
+      source: 'plant_building',
+      buildingNumber: building.buildingNumber,
+    },
   })
 
-  return success(res, { message: 'Drawing approved', drawing: { _id: doc._id, name: doc.name, status: doc.status } })
+  return success(res, {
+    message: 'Drawing approved',
+    drawing: { _id: drawing._id, name: drawing.fileName, status: 'approved' },
+  })
 })
 
 // POST /projects/:leadId/drawings/:docId/request-revision
@@ -2036,16 +2076,39 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
   if (!lead) return notFound(res, 'Project not found')
   if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
 
-  const doc = await DrawingDocument.findOne({ _id: req.params.docId, leadId: req.params.leadId })
-  if (!doc) return notFound(res, 'Drawing not found')
-
   const { note } = req.body
   if (!note || !note.trim()) return badRequest(res, 'Revision note is required')
 
-  doc.status = 'under_review'
-  doc.revisionNote = note.trim()
-  doc.revisionRequestedAt = new Date()
-  await doc.save()
+  const doc = await DrawingDocument.findOne({ _id: req.params.docId, leadId: req.params.leadId })
+  if (doc) {
+    doc.status = 'under_review'
+    doc.revisionNote = note.trim()
+    doc.revisionRequestedAt = new Date()
+    await doc.save()
+
+    await auditService.log({
+      type: 'drawing',
+      action: 'drawing.revision_requested',
+      leadId: lead._id,
+      customerId: req.customer._id,
+      performedBy: req.customer._id,
+      metadata: { docId: doc._id, name: doc.name, note: note.trim(), source: 'drawing_document' },
+    })
+
+    return success(res, {
+      message: 'Revision requested',
+      drawing: { _id: doc._id, name: doc.name, status: doc.status, revisionNote: doc.revisionNote },
+    })
+  }
+
+  const plantMatch = await findPlantBuildingDrawing(req.params.leadId, req.params.docId)
+  if (!plantMatch) return notFound(res, 'Drawing not found')
+
+  const { building, drawing } = plantMatch
+  drawing.status = 'rejected'
+  drawing.rejectionReason = note.trim()
+  drawing.reviewedAt = new Date()
+  await building.save()
 
   await auditService.log({
     type: 'drawing',
@@ -2053,10 +2116,24 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: req.customer._id,
     performedBy: req.customer._id,
-    metadata: { docId: doc._id, name: doc.name, note: note.trim() },
+    metadata: {
+      docId: drawing._id,
+      name: drawing.fileName,
+      note: note.trim(),
+      source: 'plant_building',
+      buildingNumber: building.buildingNumber,
+    },
   })
 
-  return success(res, { message: 'Revision requested', drawing: { _id: doc._id, name: doc.name, status: doc.status, revisionNote: doc.revisionNote } })
+  return success(res, {
+    message: 'Revision requested',
+    drawing: {
+      _id: drawing._id,
+      name: drawing.fileName,
+      status: 'under_review',
+      revisionNote: drawing.rejectionReason,
+    },
+  })
 })
 
 // ── Material Orders ───────────────────────────────────────────────────────────
