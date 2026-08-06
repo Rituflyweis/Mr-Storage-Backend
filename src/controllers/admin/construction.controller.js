@@ -12,6 +12,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { generateDeliveriesExcel, generateReportExcel, generateMaterialRequestsExcel } = require('../../utils/exportConstructionAdmin')
 const { DELIVERY_STATUSES } = require('../../config/constants')
+const { notifyCustomerDrawingUploadedForLabel } = require('../../services/customerNotification.service')
 
 // The 5-phase "Project Timeline" bucket shown in Figma (Planning/Design/Procurement/
 // Execution/Handover) mapped onto the real Lead.lifecycleStatus enum (sales + plant stages).
@@ -297,6 +298,17 @@ exports.uploadDrawing = asyncHandler(async (req, res) => {
     buildingLabel: buildingLabel || 'Building A',
     category: category || 'drawing',
   })
+
+  if ((category || 'drawing') !== 'document') {
+    await notifyCustomerDrawingUploadedForLabel({
+      customerId: lead.customerId,
+      leadId: lead._id,
+      lead,
+      fileName: name,
+      buildingLabel: buildingLabel || 'Building A',
+      refId: doc._id,
+    })
+  }
 
   return created(res, { document: doc })
 })
