@@ -515,11 +515,13 @@ exports.getDocuments = asyncHandler(async (req, res) => {
 
   // Fetch DrawingDocuments from the separate collection
   const drawingFilter = { leadId: { $in: leadIds } }
-  // Map drawing type query to DrawingDocument statuses/types vs lead.documents type
-  const drawingDocs = await DrawingDocument.find(drawingFilter)
-    .populate('uploadedBy', 'name')
-    .sort({ createdAt: -1 })
-    .lean()
+  const [drawingDocs, plantBuildings] = await Promise.all([
+    DrawingDocument.find(drawingFilter)
+      .populate('uploadedBy', 'name')
+      .sort({ createdAt: -1 })
+      .lean(),
+    Building.find({ leadId: { $in: leadIds } }).select('leadId buildingNumber drawings uploadedBy').lean(),
+  ])
 
   const drawingsByLead = {}
   for (const d of drawingDocs) {
@@ -540,6 +542,23 @@ exports.getDocuments = asyncHandler(async (req, res) => {
       uploadedAt:   d.createdAt,
       source:       'drawing_document',
     })
+  }
+
+  for (const building of plantBuildings) {
+    const key = String(building.leadId)
+    if (!drawingsByLead[key]) drawingsByLead[key] = []
+    for (const drawing of building.drawings || []) {
+      drawingsByLead[key].push({
+        _id: drawing._id,
+        name: drawing.fileName,
+        url: drawing.fileUrl,
+        type: 'drawing',
+        documentType: 'other',
+        status: mapPlantDrawingStatus(drawing.status),
+        uploadedAt: drawing.uploadedAt,
+        source: 'plant_building',
+      })
+    }
   }
 
   let totalDocuments = 0
@@ -1492,6 +1511,87 @@ exports.getProjectPaymentsSummary = asyncHandler(async (req, res) => {
   })
 })
 
+const BUILDING_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+const buildingLabelFromNumber = (buildingNumber) => {
+  const index = Math.max(0, (buildingNumber || 1) - 1)
+  return `Building ${BUILDING_LETTERS[index] || buildingNumber}`
+}
+
+const buildingNumberFromLabel = (label) => {
+  const normalized = String(label || '').trim()
+  const letterMatch = /^Building\s+([A-Z])$/i.exec(normalized)
+  if (letterMatch) return letterMatch[1].toUpperCase().charCodeAt(0) - 64
+  const numMatch = /^Building\s+(\d+)$/i.exec(normalized)
+  if (numMatch) return parseInt(numMatch[1], 10)
+  return null
+}
+
+const mapPlantDrawingStatus = (status) => {
+  if (status === 'approved') return 'approved'
+  if (status === 'rejected') return 'rejected'
+  if (status === 'pending_review') return 'under_review'
+  return 'pending'
+}
+
+const mapBuildingDrawingToCustomer = (drawing, building, leadId) => ({
+  _id: drawing._id,
+  leadId,
+  buildingLabel: buildingLabelFromNumber(building.buildingNumber),
+  buildingNumber: building.buildingNumber,
+  category: 'drawing',
+  name: drawing.fileName,
+  fileUrl: drawing.fileUrl,
+  fileType: '',
+  fileSize: 0,
+  documentType: 'other',
+  status: mapPlantDrawingStatus(drawing.status),
+  uploadedBy: drawing.uploadedBy,
+  approvedBy: null,
+  approvedAt: drawing.reviewedAt,
+  notes: drawing.rejectionReason || '',
+  revisionNote: '',
+  revisionRequestedAt: null,
+  createdAt: drawing.uploadedAt,
+  updatedAt: drawing.uploadedAt || drawing.reviewedAt,
+  source: 'plant_building',
+  versionNumber: drawing.versionNumber,
+})
+
+const populateDrawingUploaders = async (drawings) => {
+  const ids = [...new Set(drawings.map((d) => d.uploadedBy).filter(Boolean).map(String))]
+  if (!ids.length) return drawings
+  const users = await User.find({ _id: { $in: ids } }).select('name').lean()
+  const byId = Object.fromEntries(users.map((u) => [String(u._id), u]))
+  return drawings.map((d) => ({
+    ...d,
+    uploadedBy: byId[String(d.uploadedBy)] || d.uploadedBy,
+  }))
+}
+
+const fetchPlantBuildingDrawings = async (leadId, { buildingLabel } = {}) => {
+  const targetNumber = buildingLabel ? buildingNumberFromLabel(buildingLabel) : null
+  const buildings = await Building.find({ leadId }).select('buildingNumber drawings').sort({ buildingNumber: 1 }).lean()
+  const rows = []
+  for (const building of buildings) {
+    if (targetNumber != null && building.buildingNumber !== targetNumber) continue
+    for (const drawing of building.drawings || []) {
+      rows.push(mapBuildingDrawingToCustomer(drawing, building, leadId))
+    }
+  }
+  return populateDrawingUploaders(rows)
+}
+
+const plantDrawingsMatchTypeFilter = (type) => !type || type === 'other'
+
+const sortDrawingsNewestFirst = (rows) =>
+  [...rows].sort((a, b) => new Date(b.createdAt || b.updatedAt || 0) - new Date(a.createdAt || a.updatedAt || 0))
+
+const buildingLabelsForLead = (lead) => {
+  const count = lead.numberOfBuildings || 1
+  return Array.from({ length: count }, (_, i) => `Building ${BUILDING_LETTERS[i] || i + 1}`)
+}
+
 // GET /projects/:leadId/drawings
 exports.getProjectDrawings = asyncHandler(async (req, res) => {
   const lead = await assertProjectOwner(req)
@@ -1501,14 +1601,19 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
   const filter = { leadId: req.params.leadId }
   if (type) filter.documentType = type
 
-  const drawings = await DrawingDocument.find(filter)
-    .populate('uploadedBy', 'name')
-    .populate('approvedBy', 'name')
-    .sort({ createdAt: -1 })
-    .lean()
+  const [drawings, plantDrawings, fullLead] = await Promise.all([
+    DrawingDocument.find(filter)
+      .populate('uploadedBy', 'name')
+      .populate('approvedBy', 'name')
+      .sort({ createdAt: -1 })
+      .lean(),
+    plantDrawingsMatchTypeFilter(type)
+      ? fetchPlantBuildingDrawings(req.params.leadId)
+      : Promise.resolve([]),
+    Lead.findById(req.params.leadId).select('documents').lean(),
+  ])
 
-  // Also include documents embedded in Lead
-  const fullLead = await Lead.findById(req.params.leadId).select('documents').lean()
+  const mergedDrawings = sortDrawingsNewestFirst([...drawings, ...plantDrawings])
   const embeddedDocs = (fullLead?.documents || []).map(d => ({
     _id: d._id,
     name: d.name,
@@ -1518,7 +1623,11 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
     uploadedAt: d.uploadedAt,
   }))
 
-  return success(res, { drawings, embeddedDocuments: embeddedDocs, total: drawings.length + embeddedDocs.length })
+  return success(res, {
+    drawings: mergedDrawings,
+    embeddedDocuments: embeddedDocs,
+    total: mergedDrawings.length + embeddedDocs.length,
+  })
 })
 
 // GET /drawings — cross-project landing page ("Project Drawings" — lists every project with its building/drawing counts)
@@ -1528,20 +1637,36 @@ exports.getAllProjectDrawings = asyncHandler(async (req, res) => {
     .lean()
 
   const leadIds = leads.map((l) => l._id)
-  const docs = leadIds.length
-    ? await DrawingDocument.find({ leadId: { $in: leadIds } }).select('leadId category updatedAt').lean()
-    : []
+  const [docs, plantBuildings] = await Promise.all([
+    leadIds.length
+      ? DrawingDocument.find({ leadId: { $in: leadIds } }).select('leadId category updatedAt').lean()
+      : Promise.resolve([]),
+    leadIds.length
+      ? Building.find({ leadId: { $in: leadIds } }).select('leadId buildingNumber drawings').lean()
+      : Promise.resolve([]),
+  ])
 
   const projects = leads.map((lead) => {
     const forLead = docs.filter((d) => String(d.leadId) === String(lead._id))
-    const lastUpdate = forLead.reduce((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null)
+    const plantRows = plantBuildings.filter((b) => String(b.leadId) === String(lead._id))
+    const plantDrawingCount = plantRows.reduce((sum, b) => sum + (b.drawings || []).length, 0)
+    const plantLastUpdate = plantRows.reduce((max, b) => {
+      for (const drawing of b.drawings || []) {
+        const ts = drawing.uploadedAt || drawing.reviewedAt
+        if (ts && (!max || ts > max)) max = ts
+      }
+      return max
+    }, null)
+    const docLastUpdate = forLead.reduce((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null)
+    const lastUpdate = [docLastUpdate, plantLastUpdate].filter(Boolean).sort((a, b) => b - a)[0] || null
+
     return {
       leadId: lead._id,
       projectName: lead.projectName,
       jobId: lead.jobId,
       location: lead.location,
-      numberOfBuildings: lead.numberOfBuildings || 1,
-      totalDrawings: forLead.filter((d) => d.category !== 'document').length,
+      numberOfBuildings: Math.max(lead.numberOfBuildings || 1, plantRows.length),
+      totalDrawings: forLead.filter((d) => d.category !== 'document').length + plantDrawingCount,
       lastUpdate,
     }
   })
@@ -1549,29 +1674,44 @@ exports.getAllProjectDrawings = asyncHandler(async (req, res) => {
   return success(res, { projects })
 })
 
-const buildingLabelsForLead = (lead) => {
-  const count = lead.numberOfBuildings || 1
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-  return Array.from({ length: count }, (_, i) => `Building ${letters[i] || i + 1}`)
-}
-
 // GET /projects/:leadId/buildings — building breakdown ("Select a building" screen)
 exports.getProjectBuildings = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(req.params.leadId).select('customerId projectName jobId location numberOfBuildings').lean()
   if (!lead || String(lead.customerId) !== String(req.customer._id)) return notFound(res, 'Project not found')
 
-  const docs = await DrawingDocument.find({ leadId: req.params.leadId }).select('buildingLabel category updatedAt').lean()
+  const [docs, plantBuildings] = await Promise.all([
+    DrawingDocument.find({ leadId: req.params.leadId }).select('buildingLabel category updatedAt').lean(),
+    Building.find({ leadId: req.params.leadId }).select('buildingNumber drawings').lean(),
+  ])
+
+  const plantByLabel = {}
+  for (const building of plantBuildings) {
+    const label = buildingLabelFromNumber(building.buildingNumber)
+    if (!plantByLabel[label]) plantByLabel[label] = []
+    for (const drawing of building.drawings || []) {
+      plantByLabel[label].push({
+        category: 'drawing',
+        updatedAt: drawing.uploadedAt || drawing.reviewedAt,
+      })
+    }
+  }
 
   const labelsWithDocs = [...new Set(docs.map((d) => d.buildingLabel || 'Building A'))]
-  const allLabels = [...new Set([...buildingLabelsForLead(lead), ...labelsWithDocs])]
+  const plantLabels = plantBuildings.map((b) => buildingLabelFromNumber(b.buildingNumber))
+  const allLabels = [...new Set([...buildingLabelsForLead(lead), ...labelsWithDocs, ...plantLabels])]
 
   const buildings = allLabels.map((label) => {
     const forBuilding = docs.filter((d) => (d.buildingLabel || 'Building A') === label)
-    const lastUpdate = forBuilding.reduce((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null)
+    const plantRows = plantByLabel[label] || []
+    const combined = [...forBuilding, ...plantRows]
+    const lastUpdate = combined.reduce((max, d) => {
+      const ts = d.updatedAt
+      return ts && (!max || ts > max) ? ts : max
+    }, null)
     return {
       buildingLabel: label,
-      totalDrawings: forBuilding.filter((d) => d.category !== 'document').length,
-      totalDocuments: forBuilding.filter((d) => d.category === 'document').length,
+      totalDrawings: combined.filter((d) => d.category !== 'document').length,
+      totalDocuments: combined.filter((d) => d.category === 'document').length,
       lastUpdate,
     }
   })
@@ -1588,16 +1728,22 @@ exports.getBuildingDrawings = asyncHandler(async (req, res) => {
   if (!lead) return notFound(res, 'Project not found')
 
   const buildingLabel = decodeURIComponent(req.params.buildingLabel)
-  const docs = await DrawingDocument.find({ leadId: req.params.leadId, buildingLabel })
-    .populate('uploadedBy', 'name')
-    .populate('approvedBy', 'name')
-    .sort({ createdAt: -1 })
-    .lean()
+  const [docs, plantDrawings] = await Promise.all([
+    DrawingDocument.find({ leadId: req.params.leadId, buildingLabel })
+      .populate('uploadedBy', 'name')
+      .populate('approvedBy', 'name')
+      .sort({ createdAt: -1 })
+      .lean(),
+    fetchPlantBuildingDrawings(req.params.leadId, { buildingLabel }),
+  ])
 
   return success(res, {
     project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location },
     buildingLabel,
-    drawings: docs.filter((d) => d.category === 'drawing' || d.category === 'photo'),
+    drawings: sortDrawingsNewestFirst([
+      ...docs.filter((d) => d.category === 'drawing' || d.category === 'photo'),
+      ...plantDrawings,
+    ]),
     documents: docs.filter((d) => d.category === 'document'),
   })
 })
