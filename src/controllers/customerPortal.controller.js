@@ -131,6 +131,30 @@ const computeDueDate = (invoice) => {
   return computeInvoiceDueDate(invoice.date, invoice.daysToPay)
 }
 
+/** Map PaymentSchedule.stages → API `payments` shape (frontend/docs expect `payments`, not `stages`). */
+const formatCustomerPaymentSchedule = (schedule) => {
+  if (!schedule) return null
+  const stages = Array.isArray(schedule.stages) ? schedule.stages : []
+  const payments = stages.map((stage) => ({
+    _id: stage._id,
+    name: stage.stageName,
+    amount: stage.amount,
+    amountType: stage.amountType,
+    status: stage.status,
+    dueDate: stage.dueDate,
+    paidAt: stage.paidAt,
+    invoiceId: stage.invoiceId,
+  }))
+  return {
+    _id: schedule._id,
+    totalAmount: schedule.totalAmount,
+    payments,
+  }
+}
+
+const PROJECT_DETAIL_LEAD_FIELDS =
+  'customerId jobId projectName buildingType location lifecycleStatus lifecycleHistory quoteValue isQuoteReady source documents assignedSales createdAt plannedStartDate endDate numberOfBuildings roofStyle sqft width length notes'
+
 // ── Profile ───────────────────────────────────────────────────────────────────
 
 exports.getProfile = asyncHandler(async (req, res) => {
@@ -387,7 +411,7 @@ exports.getProject = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
   const lead = await Lead.findById(leadId)
-    .select('customerId buildingType location lifecycleStatus lifecycleHistory quoteValue documents assignedSales createdAt plannedStartDate endDate')
+    .select(PROJECT_DETAIL_LEAD_FIELDS)
     .populate('assignedSales', 'name email')
     .lean()
 
@@ -396,15 +420,17 @@ exports.getProject = asyncHandler(async (req, res) => {
     return forbidden(res, 'This project does not belong to your account')
   }
 
-  const [quotation, invoices, paymentSchedules, recentOrders, orderCounts, stepDetails, buildingsCount] = await Promise.all([
+  const [quotation, invoices, paymentScheduleDoc, recentOrders, orderCounts, stepDetails, buildingsCount] = await Promise.all([
     Quotation.findOne({ leadId }).sort({ createdAt: -1 }).lean(),
     Invoice.find({ leadId }).select('-paidBy -createdBy -__v').sort({ createdAt: -1 }).lean(),
-    PaymentSchedule.find({ leadId }).lean(),
+    PaymentSchedule.findOne({ leadId }).lean(),
     MaterialRequest.find({ leadId }).sort({ createdAt: -1 }).limit(5).lean(),
     orderCountsForLead(leadId),
     ProjectStepDetail.find({ leadId }).lean(),
     Building.countDocuments({ leadId }),
   ])
+
+  const paymentSchedule = formatCustomerPaymentSchedule(paymentScheduleDoc)
 
   let quoteSummary = null
   if (quotation) {
@@ -415,20 +441,12 @@ exports.getProject = asyncHandler(async (req, res) => {
   // Strip internalNotes from quotation
   if (quotation) delete quotation.internalNotes
 
-  // Attach paymentSchedule to each invoice, inject dueDate
-  const invoicesWithSchedule = invoices.map(inv => {
-    const schedule = paymentSchedules.find(ps => String(ps.invoiceId) === String(inv._id))
-    return {
-      ...inv,
-      dueDate:         computeDueDate(inv),
-      paymentSchedule: schedule ? { totalAmount: schedule.totalAmount, payments: schedule.payments } : null,
-    }
-  })
-
-  // Expose only first payment schedule at top level (spec shows single paymentSchedule)
-  const firstSchedule = paymentSchedules[0]
-    ? { totalAmount: paymentSchedules[0].totalAmount, payments: paymentSchedules[0].payments }
-    : null
+  // Attach lead payment schedule to each invoice (schedule is per-lead, stages link via stage.invoiceId)
+  const invoicesWithSchedule = invoices.map(inv => ({
+    ...inv,
+    dueDate: computeDueDate(inv),
+    paymentSchedule,
+  }))
 
   // Sibling projects (same order as the project list) for the prev/next nav button
   const siblings = await Lead.find({ customerId: req.customer._id })
@@ -446,7 +464,7 @@ exports.getProject = asyncHandler(async (req, res) => {
     quotation,
     quoteSummary,
     invoices: invoicesWithSchedule,
-    paymentSchedule: firstSchedule,
+    paymentSchedule,
     navigation: {
       previous: prev ? { _id: prev._id, jobId: prev.jobId, projectName: prev.projectName } : null,
       next:     next ? { _id: next._id, jobId: next.jobId, projectName: next.projectName } : null,
