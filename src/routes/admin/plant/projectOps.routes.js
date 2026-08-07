@@ -12,6 +12,17 @@ router.get('/:leadId/drawings',
   validate,
   ctrl.getProjectDrawings
 )
+router.post('/:leadId/drawings',
+  [
+    param('leadId').isMongoId(),
+    body('drawings').isArray({ min: 1 }),
+    body('drawings.*.buildingId').isMongoId(),
+    body('drawings.*.fileUrl').notEmpty().trim(),
+    body('drawings.*.fileName').notEmpty().trim(),
+  ],
+  validate,
+  ctrl.uploadProjectDrawings
+)
 router.get('/:leadId/bom-files', ctrl.getProjectBomFiles)
 router.post('/:leadId/bom',
   [
