@@ -114,6 +114,7 @@ const AUDIT_ACTIONS = {
   QUOTATION_ACCEPTED:       'quotation.accepted',
   QUOTATION_REJECTED:       'quotation.rejected',
   QUOTATION_EDITED:         'quotation.edited',
+  QUOTATION_DELETED:        'quotation.deleted',
   INVOICE_CREATED:          'invoice.created',
   INVOICE_SENT:             'invoice.sent',
   INVOICE_PAID:             'invoice.paid',

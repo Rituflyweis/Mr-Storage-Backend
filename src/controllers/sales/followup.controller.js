@@ -421,15 +421,26 @@ exports.updatePaymentFollowUpStatus = asyncHandler(async (req, res) => {
   return success(res, { followUp: record }, 'Status updated')
 })
 
+// Figma "Quotation" screen shows status labels Approved/Pending Approval/Rejected/Quote Sent —
+// best-effort mapping onto the model's draft/sent/accepted/rejected enum.
+const QUOTATION_STATUS_LABELS = { draft: 'Draft', sent: 'Pending Approval', accepted: 'Approved', rejected: 'Rejected' }
+
 exports.getMyQuotations = asyncHandler(async (req, res) => {
   const Quotation = require('../../models/Quotation')
-  const { status, search, page = 1, limit = 20 } = req.query
+  const { status, search, buildingType, minValue, maxValue, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
 
   const filter = { createdBy: req.user._id, ...dateFilter }
   if (status) filter.status = status
+  if (buildingType) filter.buildingType = buildingType
+  if (minValue || maxValue) {
+    filter.finalPrice = {}
+    if (minValue) filter.finalPrice.$gte = Number(minValue)
+    if (maxValue) filter.finalPrice.$lte = Number(maxValue)
+  }
+  if (search) filter.quoteNumber = { $regex: search, $options: 'i' }
 
   const skip = (parsedPage - 1) * parsedLimit
   const [quotations, total] = await Promise.all([
@@ -456,4 +467,29 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
   }))
 
   return success(res, { quotations: result, total, page: parsedPage, limit: parsedLimit })
+})
+
+exports.getQuotationStats = asyncHandler(async (req, res) => {
+  const mongoose = require('mongoose')
+  const Quotation = require('../../models/Quotation')
+  const dateFilter = buildDateFilter(req.query)
+  const filter = { createdBy: new mongoose.Types.ObjectId(req.user._id), ...dateFilter }
+
+  const rows = await Quotation.aggregate([
+    { $match: filter },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
+  ])
+
+  const byStatus = { draft: 0, sent: 0, accepted: 0, rejected: 0 }
+  rows.forEach(r => { if (byStatus[r._id] !== undefined) byStatus[r._id] = r.count })
+  const total = Object.values(byStatus).reduce((s, n) => s + n, 0)
+
+  return success(res, {
+    total,
+    approved: byStatus.accepted,
+    pendingApproval: byStatus.sent,
+    rejected: byStatus.rejected,
+    draft: byStatus.draft,
+    statusLabels: QUOTATION_STATUS_LABELS,
+  })
 })
