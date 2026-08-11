@@ -69,6 +69,14 @@
     {
       "key": "itemId",
       "value": ""
+    },
+    {
+      "key": "bidId",
+      "value": ""
+    },
+    {
+      "key": "bundleId",
+      "value": ""
     }
   ],
   "item": [
@@ -545,6 +553,19 @@
             ],
             "url": "{{baseUrl}}/admin/leads/{{leadId}}/timeline"
           }
+        },
+        {
+          "name": "Delete Lead",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/leads/{{leadId}}"
+          }
         }
       ]
     },
@@ -784,6 +805,20 @@
               "raw": "{\"department\":\"Sales\",\"permissions\":{\"leadAccess\":{\"view\":true,\"edit\":false,\"delete\":false}}}"
             }
           }
+        },
+        {
+          "name": "Delete Employee",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/employees/{{userId}}"
+          },
+          "_postman_note": "Blocked with 400 if the employee has active assigned leads — reassign first. 404 if the employee doesn't exist."
         },
         {
           "name": "Toggle Employee Status",
@@ -1844,10 +1879,10 @@
             "url": "{{baseUrl}}/admin/financials/wip-profits/{{leadId}}/payments",
             "body": {
               "mode": "raw",
-              "raw": "{\"payerName\":\"Test10010\",\"paymentType\":\"final\",\"amount\":5000,\"paymentDate\":\"2026-01-15\",\"transactionId\":\"UPI98234XYZ\",\"remarks\":\"January membership payment\"}"
+              "raw": "{\"paymentType\":\"final\",\"amount\":5000,\"paymentDate\":\"2026-01-15\",\"transactionId\":\"UPI98234XYZ\",\"remarks\":\"January membership payment\"}"
             }
           },
-          "_postman_note": "Matches the 'Add payment entry' modal exactly: Payer Name, Payment Type (deposit/progress/final), Amount, Payment Date, Transaction ID, Remarks. A WIP entry must already exist for this leadId (create one via 'Create WIP Entry' first)."
+          "_postman_note": "CHANGED — payerName is no longer accepted from the client; it's auto-derived server-side from the project's real linked customer (payerCustomerId + payerName both set automatically) so the payer can't be an arbitrary typed string. A WIP entry must already exist for this leadId (create one via 'Create WIP Entry' first)."
         },
         {
           "name": "Expenses List",
@@ -1985,6 +2020,41 @@
           "_postman_note": "Monthly bar chart. See response 'note' field for the budget-definition assumption used — confirm it matches product intent."
         },
         {
+          "name": "Expenses — Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/export"
+          }
+        },
+        {
+          "name": "Expenses — Import (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/expenses/import",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"csv\":\"category,subcategory,date,amount,description,projectId,buildingLabel,paymentMethod,status\\nVendor/Freight,Steel,2026-08-01,1200,Import test,,Building A,bank_transfer,paid\"}"
+            }
+          },
+          "_postman_note": "csv is the raw CSV text (not a file upload). Required columns: category, date, amount. Optional: subcategory, description, projectId, buildingLabel, paymentMethod, status."
+        },
+        {
           "name": "Add Expense",
           "request": {
             "method": "POST",
@@ -2050,6 +2120,65 @@
               }
             ],
             "url": "{{baseUrl}}/admin/financials/profit-loss"
+          },
+          "_postman_note": "Also accepts projectId, startDate, endDate. Returns summary as an ordered array of rows (Project Revenue, Other Income, Total Income (A), Direct/Indirect/Admin/Other Costs, Total Expenses (B), Operating Profit (A-B), Tax Expense, Net Profit) each with thisPeriod/lastPeriod/variance, plus incomeVsExpenseTrend (daily). See response 'note' field for the expense-category-mapping caveat."
+        },
+        {
+          "name": "Profit & Loss Statement — Filtered (project + period)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/profit-loss?projectId={{leadId}}&period=quarterly",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "profit-loss"],
+              "query": [
+                { "key": "projectId", "value": "{{leadId}}" },
+                { "key": "period", "value": "quarterly", "description": "monthly | quarterly | yearly — resolves to the current calendar month/quarter/year. Ignored if startDate/endDate are also passed (those take precedence)." }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Profit & Loss — Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/profit-loss/export"
+          },
+          "_postman_note": "Also accepts projectId, startDate, endDate, period (monthly|quarterly|yearly) — same filters as the main P&L endpoint."
+        },
+        {
+          "name": "Profit & Loss — Project-wise List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/profit-loss/projects?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "profit-loss", "projects"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -2066,6 +2195,55 @@
           }
         },
         {
+          "name": "Freight Cost Tracking — Carrier Analysis",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/freight-cost-tracking/carrier-analysis"
+          }
+        },
+        {
+          "name": "Freight Cost Tracking — Recent",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/freight-cost-tracking/recent?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "freight-cost-tracking", "recent"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "carrierId", "value": "", "disabled": true },
+                { "key": "projectId", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Freight Cost Tracking — Export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/financials/freight-cost-tracking/export"
+          }
+        },
+        {
           "name": "Margin Analysis",
           "request": {
             "method": "GET",
@@ -2076,6 +2254,50 @@
               }
             ],
             "url": "{{baseUrl}}/admin/financials/margin-analysis"
+          }
+        },
+        {
+          "name": "Margin Analysis — Trend Over Time",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/margin-analysis/trend?period=month",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "margin-analysis", "trend"],
+              "query": [
+                { "key": "period", "value": "month", "description": "month | quarter | year" },
+                { "key": "projectId", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Margin Analysis — By Project",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/margin-analysis/by-project?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "margin-analysis", "by-project"],
+              "query": [
+                { "key": "limit", "value": "10" },
+                { "key": "projectId", "value": "", "disabled": true },
+                { "key": "startDate", "value": "", "disabled": true },
+                { "key": "endDate", "value": "", "disabled": true }
+              ]
+            }
           }
         },
         {
@@ -3013,6 +3235,111 @@
               "raw": "{\"mbsCost\":2.9}"
             }
           }
+        },
+        {
+          "name": "Consolidated BOMs — All Projects",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/plant/bom/consolidated?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "plant", "bom", "consolidated"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Project Buildings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/projects/{{leadId}}/buildings"
+          }
+        },
+        {
+          "name": "Bundle Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/bundles/{{bundleId}}"
+          }
+        },
+        {
+          "name": "Update Bundle",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/bundles/{{bundleId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"notes\":\"Updated via admin panel\"}"
+            }
+          }
+        },
+        {
+          "name": "Award Freight Bid (Select)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/deliveries/bids/{{bidId}}/select"
+          },
+          "_postman_note": "Awards this bid: sets it to 'selected', rejects all other bids on the same delivery, confirms the delivery. Requires quotedAmount to already be set on the bid. Same controller also reachable at /admin/plant/freight-bids/{{bidId}}/select."
+        },
+        {
+          "name": "Request Freight Bid Revision",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plant/deliveries/bids/{{bidId}}/revision",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"note\":\"Please revise the quoted amount, it's above budget\",\"requestedBidAmount\":4500}"
+            }
+          },
+          "_postman_note": "note is required. Only works on bids in 'submitted' status. Same controller also reachable at /admin/plant/freight-bids/{{bidId}}/request-resubmit."
         }
       ]
     }

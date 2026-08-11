@@ -1023,16 +1023,37 @@ const variance = (current, previous) => {
   return { amount, pct }
 }
 
+// Resolves a "period" shorthand (monthly/quarterly/yearly) to a concrete date range for the
+// *current* calendar month/quarter/year. Ignored if explicit startDate/endDate are given —
+// those always take precedence.
+const resolvePeriodRange = (period, now) => {
+  if (period === 'yearly') return { start: new Date(now.getFullYear(), 0, 1), end: now }
+  if (period === 'quarterly') {
+    const qStartMonth = Math.floor(now.getMonth() / 3) * 3
+    return { start: new Date(now.getFullYear(), qStartMonth, 1), end: now }
+  }
+  if (period === 'monthly') return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now }
+  return null
+}
+
 exports.getProfitLoss = asyncHandler(async (req, res) => {
-  const { projectId, startDate, endDate } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
+  const { projectId, startDate, endDate, period } = req.query
+  if (period && !['monthly', 'quarterly', 'yearly'].includes(period)) {
+    return badRequest(res, 'period must be monthly, quarterly, or yearly')
+  }
+
+  const now = new Date()
+  const resolvedPeriod = !startDate && !endDate ? resolvePeriodRange(period, now) : null
+  const effectiveStartDate = startDate || resolvedPeriod?.start.toISOString()
+  const effectiveEndDate = endDate || resolvedPeriod?.end.toISOString()
+
+  const dateFilter = buildDateFilter({ startDate: effectiveStartDate, endDate: effectiveEndDate }, 'date')
   const filter = projectId ? { leadId: projectId } : {}
 
   // "Last Period" = same-length window immediately before startDate/endDate. Defaults to the
   // preceding calendar month when no explicit range is given.
-  const now = new Date()
-  const periodEnd = endDate ? new Date(endDate) : now
-  const periodStart = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1)
+  const periodEnd = effectiveEndDate ? new Date(effectiveEndDate) : now
+  const periodStart = effectiveStartDate ? new Date(effectiveStartDate) : new Date(now.getFullYear(), now.getMonth(), 1)
   const periodLengthMs = periodEnd.getTime() - periodStart.getTime()
   const prevEnd = new Date(periodStart.getTime() - 1)
   const prevStart = new Date(prevEnd.getTime() - periodLengthMs)
@@ -1045,8 +1066,8 @@ exports.getProfitLoss = asyncHandler(async (req, res) => {
 
   // "Income vs Expense Trend" chart — daily buckets across the selected period (falls back to
   // last 7 days if no range given), matching the Mon-Sun axis in the Figma reference.
-  const trendStart = startDate ? new Date(startDate) : new Date(now.getTime() - 6 * 86400000)
-  const trendEnd = endDate ? new Date(endDate) : now
+  const trendStart = effectiveStartDate ? new Date(effectiveStartDate) : new Date(now.getTime() - 6 * 86400000)
+  const trendEnd = effectiveEndDate ? new Date(effectiveEndDate) : now
   const [incomeTrendAgg, expenseTrendAgg] = await Promise.all([
     Invoice.aggregate([
       { $match: { ...filter, status: 'paid', date: { $gte: trendStart, $lte: trendEnd } } },
@@ -1093,8 +1114,17 @@ exports.getProfitLoss = asyncHandler(async (req, res) => {
 
 // GET /profit-loss/export
 exports.exportProfitLoss = asyncHandler(async (req, res) => {
-  const { projectId, startDate, endDate } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
+  const { projectId, startDate, endDate, period: periodType } = req.query
+  if (periodType && !['monthly', 'quarterly', 'yearly'].includes(periodType)) {
+    return badRequest(res, 'period must be monthly, quarterly, or yearly')
+  }
+
+  const now = new Date()
+  const resolvedPeriod = !startDate && !endDate ? resolvePeriodRange(periodType, now) : null
+  const effectiveStartDate = startDate || resolvedPeriod?.start.toISOString()
+  const effectiveEndDate = endDate || resolvedPeriod?.end.toISOString()
+
+  const dateFilter = buildDateFilter({ startDate: effectiveStartDate, endDate: effectiveEndDate }, 'date')
   const filter = projectId ? { leadId: projectId } : {}
   const period = await buildPeriodPL(filter, dateFilter)
 
