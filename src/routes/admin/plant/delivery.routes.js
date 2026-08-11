@@ -1,9 +1,27 @@
 const router = require('express').Router()
 const { body, param, query } = require('express-validator')
 const ctrl = require('../../../controllers/plant/delivery.controller')
+const freightBidCtrl = require('../../../controllers/plant/freightBid.controller')
 const validate = require('../../../middleware/validate')
 
 // ── Static routes BEFORE /:deliveryId ────────────────────────────────────────
+
+router.post('/bids/:bidId/select',
+  [param('bidId').isMongoId()],
+  validate,
+  freightBidCtrl.selectFreightBid
+)
+
+router.post('/bids/:bidId/revision',
+  [
+    param('bidId').isMongoId(),
+    body('note').trim().notEmpty().withMessage('note is required'),
+    body('bidAmount').optional().isFloat({ min: 0 }),
+    body('requestedBidAmount').optional().isFloat({ min: 0 }),
+  ],
+  validate,
+  freightBidCtrl.requestFreightBidResubmit
+)
 
 router.get('/freight/stats', validate, ctrl.getFreightLoadStats)
 

@@ -69,4 +69,40 @@ const generateWIPProfitsExcel = async (rows) => {
   return workbook.xlsx.writeBuffer()
 }
 
-module.exports = { generateFinancialOverviewExcel, generateWIPProfitsExcel }
+const generateExpensesExcel = async (rows) => {
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Expenses')
+
+  sheet.columns = [
+    { header: 'Expense ID',  key: 'expenseId',    width: 16 },
+    { header: 'Date',        key: 'date',           width: 14 },
+    { header: 'Category',    key: 'category',        width: 18 },
+    { header: 'Subcategory', key: 'subcategory',       width: 18 },
+    { header: 'Project',     key: 'projectName',        width: 22 },
+    { header: 'Building',    key: 'buildingLabel',       width: 14 },
+    { header: 'Amount',      key: 'amount',                width: 14 },
+    { header: 'Payment Method', key: 'paymentMethod',       width: 16 },
+    { header: 'Status',      key: 'status',                  width: 12 },
+    { header: 'Description', key: 'description',              width: 30 },
+  ]
+
+  for (const row of rows) {
+    sheet.addRow({
+      expenseId: row.expenseId || '—',
+      date: row.date ? new Date(row.date).toLocaleDateString() : '—',
+      category: row.category || '—',
+      subcategory: row.subcategory || '—',
+      projectName: row.projectName || '—',
+      buildingLabel: row.buildingLabel || '—',
+      amount: row.amount || 0,
+      paymentMethod: row.paymentMethod || '—',
+      status: row.status || '—',
+      description: row.description || '',
+    })
+  }
+
+  sheet.getRow(1).font = { bold: true }
+  return workbook.xlsx.writeBuffer()
+}
+
+module.exports = { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpensesExcel }
