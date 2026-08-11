@@ -8,7 +8,7 @@ router.use('/dashboard', require('./dashboard.routes'))
 router.use('/leads', require('./lead.routes'))
 router.use('/followups', require('./followup.routes'))
 router.use('/customers', require('./customer.routes'))
-router.use('/meetings', require('./meeting.routes'))
+router.use('/meeting', require('./meeting.routes'))
 
 const leadCtrl = require('../../controllers/sales/lead.controller')
 const followupCtrl = require('../../controllers/sales/followup.controller')
