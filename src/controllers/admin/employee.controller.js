@@ -115,7 +115,7 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
 })
 
 exports.createEmployee = asyncHandler(async (req, res) => {
-  const { name, email, phone, role } = req.body
+  const { name, email, phone, role, password } = req.body
 
   const exists = await User.findOne({ email: email.toLowerCase().trim() })
   if (exists) return badRequest(res, 'Email already in use')
@@ -129,7 +129,7 @@ exports.createEmployee = asyncHandler(async (req, res) => {
   if (role === 'sales') await roundRobinService.rebuildTracker()
 
   await mailer.sendEmployeeCredentials({
-    toEmail: user.email, name: user.name, role: user.role, tempPassword,
+    toEmail: user.email, name: user.name, role: user.role, tempPassword: password,
   })
 
   await auditService.log({
@@ -364,6 +364,7 @@ exports.deleteEmployee = asyncHandler(async (req, res) => {
 exports.resetPassword = asyncHandler(async (req, res) => {
   const employee = await User.findById(req.params.userId)
   if (!employee) return notFound(res, 'Employee not found')
+  if (!employee.isActive) return badRequest(res, 'Cannot reset password for inactive employee')
 
   const tempPassword = Math.random().toString(36).slice(-6) +
     Math.random().toString(36).slice(-4).toUpperCase()

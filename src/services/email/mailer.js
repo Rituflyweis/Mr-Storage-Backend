@@ -1,5 +1,15 @@
 const sgMail = require('@sendgrid/mail')
-const { SENDGRID_API_KEY, SENDGRID_FROM, MAIL_FROM } = require('../../config/env')
+const nodemailer = require('nodemailer')
+const {
+  SENDGRID_API_KEY,
+  SENDGRID_FROM,
+  MAIL_FROM,
+  SMTP_HOST,
+  SMTP_PORT,
+  SMTP_USER,
+  SMTP_PASS,
+  SMTP_MAIL_FROM,
+} = require('../../config/env')
 const { getInvoiceCompany } = require('../../config/invoiceCompany')
 const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
 const path = require('path')
@@ -23,6 +33,19 @@ const resolvedMailFrom = SENDGRID_FROM || MAIL_FROM
 
 const isEmailConfigured = () => Boolean(SENDGRID_API_KEY && resolvedMailFrom)
 const isSmtpConfigured = isEmailConfigured
+const isEnquiryNotificationConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && SMTP_MAIL_FROM)
+
+const enquiryTransporter = isEnquiryNotificationConfigured()
+  ? nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+  })
+  : null
 
 const normalizeAttachmentsForSendGrid = (attachments = []) =>
   attachments.map((attachment) => {
@@ -490,14 +513,24 @@ const sendOtp = async ({ toEmail, name, otp, expiresInMinutes = 10 }) => {
   })
 }
 
+const EMPLOYEE_LOGIN_URLS = {
+  admin: 'https://admin.storagematerials.org/sign-in/',
+  sales: 'https://sales.storagematerials.org/sign-in/',
+  plant: 'https://plant.storagematerials.org/login',
+}
+
 const sendEmployeeCredentials = async ({ toEmail, name, role, tempPassword }) => {
+  const normalizedRole = String(role || '').toLowerCase()
+  const loginUrl =
+    EMPLOYEE_LOGIN_URLS[normalizedRole] || EMPLOYEE_LOGIN_URLS.admin
+
   const template = loadTemplate('employee-credentials')
   const html = fillTemplate(template, {
     EMPLOYEE_NAME: name,
-    ROLE: role.charAt(0).toUpperCase() + role.slice(1),
+    ROLE: normalizedRole.charAt(0).toUpperCase() + normalizedRole.slice(1),
     EMAIL: toEmail,
     TEMP_PASSWORD: tempPassword,
-    LOGIN_URL: (process.env.APP_URL || '') + '/login',
+    LOGIN_URL: loginUrl,
   })
 
   await transporter.sendMail({
@@ -514,16 +547,25 @@ const sendNewCustomerEnquiryNotification = async ({
   customerEmail,
   customerPhone,
   countryCode,
+  source = 'ai_chat',
 }) => {
   const safeName = escapeHtml(customerName || 'N/A')
   const safeEmail = escapeHtml(customerEmail || 'N/A')
   const safePhone = escapeHtml(customerPhone || 'N/A')
   const safeCountryCode = escapeHtml(countryCode || '')
 
+  const isAiChat = source === 'ai_chat'
+  const introText = isAiChat
+    ? 'A new customer enquiry was created from AI chat init.'
+    : 'A new customer enquiry was submitted via form fill.'
+  const subject = isAiChat
+    ? 'New customer enquiry - AI chat'
+    : 'New customer enquiry - Form filled'
+
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
       <h2 style="margin:0 0 12px">New Customer Enquiry</h2>
-      <p>A new customer enquiry was created from AI chat init.</p>
+      <p>${introText}</p>
       <ul>
         <li><strong>Name:</strong> ${safeName}</li>
         <li><strong>Email:</strong> ${safeEmail}</li>
@@ -532,19 +574,27 @@ const sendNewCustomerEnquiryNotification = async ({
     </div>
   `
 
-  await transporter.sendMail({
-    from: resolvedMailFrom,
+  if (!enquiryTransporter) {
+    throw new Error('Enquiry email is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS.')
+  }
+
+  const info = await enquiryTransporter.sendMail({
+    from: SMTP_MAIL_FROM,
     to: toEmail,
-    subject: 'New customer enquiry',
+    subject,
     html,
     text: [
-      'New customer enquiry created from AI chat init.',
+      introText,
       '',
       `Name: ${customerName || 'N/A'}`,
       `Email: ${customerEmail || 'N/A'}`,
       `Phone: ${(countryCode || '').trim()} ${customerPhone || 'N/A'}`.trim(),
     ].join('\n'),
   })
+
+  console.log(
+    `[Nodemailer] Email sent successfully | to=${toEmail} | subject=${subject} | source=${source} | messageId=${info.messageId || '-'} | response=${info.response || '-'} | customer=${customerName || 'N/A'} <${customerEmail || 'N/A'}>`
+  )
 }
 
 const sendConsolidatedBOMToVendor = async ({
@@ -936,6 +986,7 @@ const sendDeliveryCallbackRequestEmail = async ({
 module.exports = {
   isEmailConfigured,
   isSmtpConfigured,
+  isEnquiryNotificationConfigured,
   buildCustomerBillToAddressHtml,
   sendQuotation,
   sendInvoice,

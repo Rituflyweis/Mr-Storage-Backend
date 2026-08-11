@@ -112,11 +112,22 @@ const makeDeliveryStatusHistory = (delivery) => {
 const getAssignedLeadIds = (req) => getScopedLeadIds(req)
 
 const getNextDeliveryNumber = async () => {
-  const latest = await Delivery.findOne({
-    deliveryNumber: { $regex: /^DEL-\d+$/ },
-  }).sort({ createdAt: -1 }).select('deliveryNumber').lean()
-  const current = latest?.deliveryNumber ? Number(String(latest.deliveryNumber).replace('DEL-', '')) : 0
-  const next = Number.isFinite(current) ? current + 1 : 1
+  const [latest] = await Delivery.aggregate([
+    { $match: { deliveryNumber: { $regex: /^DEL-\d+$/ } } },
+    {
+      $project: {
+        n: {
+          $toInt: {
+            $arrayElemAt: [{ $split: ['$deliveryNumber', '-'] }, 1],
+          },
+        },
+      },
+    },
+    { $sort: { n: -1 } },
+    { $limit: 1 },
+  ])
+
+  const next = (latest?.n || 0) + 1
   return `DEL-${String(next).padStart(4, '0')}`
 }
 
@@ -573,14 +584,28 @@ exports.createDelivery = asyncHandler(async (req, res) => {
     return forbidden(res, access.error)
   }
 
-  const deliveryNumber = await getNextDeliveryNumber()
-  const delivery = await Delivery.create({
-    leadId,
-    deliveryNumber,
-    status: 'draft',
-    statusHistory: [{ status: 'draft', changedAt: new Date() }],
-    ...buildDeliveryFieldsFromBody(req.body),
-  })
+  // Retry on rare deliveryNumber collisions (concurrent creates)
+  let delivery
+  let deliveryNumber
+  const maxAttempts = 5
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    deliveryNumber = await getNextDeliveryNumber()
+    try {
+      delivery = await Delivery.create({
+        leadId,
+        deliveryNumber,
+        status: 'draft',
+        statusHistory: [{ status: 'draft', changedAt: new Date() }],
+        ...buildDeliveryFieldsFromBody(req.body),
+      })
+      break
+    } catch (err) {
+      const isDupDeliveryNumber =
+        err?.code === 11000 &&
+        (err?.keyPattern?.deliveryNumber || String(err?.message || '').includes('deliveryNumber'))
+      if (!isDupDeliveryNumber || attempt === maxAttempts) throw err
+    }
+  }
 
   await auditService.log({
     type: 'plant',

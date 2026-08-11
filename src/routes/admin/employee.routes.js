@@ -14,6 +14,7 @@ router.post('/',
     body('name').notEmpty().trim(),
     body('email').isEmail(),
     body('role').notEmpty(),
+    body('password').notEmpty().trim(),
   ],
   validate,
   ctrl.createEmployee

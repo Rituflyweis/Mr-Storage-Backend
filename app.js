@@ -11,10 +11,12 @@ const app = express()
 app.use(helmet())
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-app.use(cors({
-  origin: NODE_ENV === 'production' ? CLIENT_URL : '*',
-  credentials: true,
-}))
+app.use(
+  cors({
+    origin: "*",
+    credentials: false,
+  })
+);
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }))

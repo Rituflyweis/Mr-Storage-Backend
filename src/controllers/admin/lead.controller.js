@@ -45,11 +45,12 @@ const leadListSocket = require('../../services/leadListSocket.service')
 
 exports.getLeadStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
+  const activeFilter = { isDeleted: { $ne: true }, ...dateFilter }
 
   const [total, assigned, unassigned, unread] = await Promise.all([
-    Lead.countDocuments(dateFilter),
-    Lead.countDocuments({ ...dateFilter, assignedSales: { $ne: null } }),
-    Lead.countDocuments({ ...dateFilter, assignedSales: null }),
+    Lead.countDocuments(activeFilter),
+    Lead.countDocuments({ ...activeFilter, assignedSales: { $ne: null } }),
+    Lead.countDocuments({ ...activeFilter, assignedSales: null }),
     Message.countDocuments({ isRead: false, senderType: 'customer' }),
   ])
 
@@ -205,7 +206,12 @@ exports.getAiHandledLeads = asyncHandler(async (req, res) => {
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const filter = { isHandedToSales: false, assignedSales: null, isStaffChatActive: { $ne: true } }
+  const filter = {
+    isDeleted: { $ne: true },
+    isHandedToSales: false,
+    assignedSales: null,
+    isStaffChatActive: { $ne: true },
+  }
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName email' })
@@ -226,7 +232,7 @@ exports.getSignedContracts = asyncHandler(async (req, res) => {
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const filter = { 'documents.type': 'contract' }
+  const filter = { isDeleted: { $ne: true }, 'documents.type': 'contract' }
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName' })
@@ -260,7 +266,7 @@ exports.getTerminatedLeads = asyncHandler(async (req, res) => {
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const filter = { isTerminated: true }
+  const filter = { isDeleted: { $ne: true }, isTerminated: true }
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName' })
@@ -293,6 +299,7 @@ exports.createLead = asyncHandler(async (req, res) => {
   if (leadPayload.projectName) {
     const existingLead = await Lead.findOne({
       customerId,
+      isDeleted: { $ne: true },
       projectName: { $regex: new RegExp(`^${escapeRegex(leadPayload.projectName)}$`, 'i') },
     })
       .select('_id projectName lifecycleStatus assignedSales isTerminated')
@@ -373,7 +380,7 @@ exports.editLead = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
   const lead = await Lead.findById(leadId)
-  if (!lead) return notFound(res, 'Lead not found')
+  if (!lead || lead.isDeleted) return notFound(res, 'Lead not found')
 
   const { error: updateError, lifecycleStatus } = applyLeadUpdateFromBody(lead, req.body)
   if (updateError) return badRequest(res, updateError)
@@ -382,6 +389,7 @@ exports.editLead = asyncHandler(async (req, res) => {
     const duplicate = await Lead.findOne({
       customerId: lead.customerId,
       _id: { $ne: lead._id },
+      isDeleted: { $ne: true },
       projectName: { $regex: new RegExp(`^${escapeRegex(lead.projectName)}$`, 'i') },
     })
       .select('_id projectName')
@@ -459,7 +467,7 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(leadId)
     .populate({ path: 'assignedSales', select: '_id name email role isActive' })
     .lean()
-  if (!lead) return notFound(res, 'Lead not found')
+  if (!lead || lead.isDeleted) return notFound(res, 'Lead not found')
 
   const [
     customer, quotations, auditLogs, activityLogs, followUps,
@@ -695,7 +703,7 @@ exports.terminateLead = asyncHandler(async (req, res) => {
   if (!reason || !reason.trim()) return badRequest(res, 'reason is required')
 
   const lead = await Lead.findById(leadId)
-  if (!lead) return notFound(res, 'Lead not found')
+  if (!lead || lead.isDeleted) return notFound(res, 'Lead not found')
 
   lead.isTerminated = true
   lead.terminationReason = reason.trim()
@@ -715,6 +723,33 @@ exports.terminateLead = asyncHandler(async (req, res) => {
   return success(res, { lead: enrichLeadDocument(lead) })
 })
 
+exports.deleteLead = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+
+  const lead = await Lead.findById(leadId)
+  if (!lead || lead.isDeleted) return notFound(res, 'Lead not found')
+
+  lead.isDeleted = true
+  lead.deletedAt = new Date()
+  lead.deletedBy = req.user._id
+  await lead.save()
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_DELETED,
+    leadId,
+    customerId: lead.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      projectName: lead.projectName || '',
+      jobId: lead.jobId || '',
+    },
+  })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'deleted' })
+
+  return success(res, { lead: enrichLeadDocument(lead) }, 'Lead deleted successfully')
+})
+
 exports.createProjectForCustomer = asyncHandler(async (req, res) => {
   const { customerId } = req.params
 
@@ -732,6 +767,7 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
   if (leadPayload.projectName) {
     const existingLead = await Lead.findOne({
       customerId,
+      isDeleted: { $ne: true },
       projectName: { $regex: new RegExp(`^${escapeRegex(leadPayload.projectName)}$`, 'i') },
     })
       .select('_id projectName lifecycleStatus assignedSales isTerminated')
@@ -747,7 +783,7 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
 
   let salesEmployeeId = leadPayload.assignedSales
   if (!salesEmployeeId) {
-    const lastLead = await Lead.findOne({ customerId }).sort({ createdAt: -1 }).lean()
+    const lastLead = await Lead.findOne({ customerId, isDeleted: { $ne: true } }).sort({ createdAt: -1 }).lean()
     if (lastLead?.assignedSales) {
       const prevRep = await User.findById(lastLead.assignedSales).lean()
       if (prevRep && prevRep.isActive === true) salesEmployeeId = lastLead.assignedSales

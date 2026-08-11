@@ -87,7 +87,7 @@ exports.chatInit = asyncHandler(async (req, res) => {
     })
     isNewCustomer = true
 
-    if (mailer.isEmailConfigured()) {
+    if (mailer.isEnquiryNotificationConfigured()) {
       try {
         await mailer.sendNewCustomerEnquiryNotification({
           toEmail: 'info@steelbuildingdepot.com',
@@ -95,6 +95,7 @@ exports.chatInit = asyncHandler(async (req, res) => {
           customerEmail: normalizedEmail,
           customerPhone: normalizedPhone,
           countryCode,
+          source: 'ai_chat',
         })
       } catch (err) {
         console.warn('[chatInit] Failed to send new customer enquiry notification:', err.message)

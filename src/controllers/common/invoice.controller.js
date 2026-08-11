@@ -121,8 +121,6 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     )
   }
 
-  const invoiceNumber = await generateInvoiceNumber()
-
   // PO number logic:
   // First invoice on this lead: auto-generate a new PO number
   // Second+ invoice on same lead: carry forward the first invoice's PO number
@@ -146,17 +144,32 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     paymentScheduleId = resolved.paymentScheduleId
   }
 
-  const invoice = await Invoice.create({
-    ...invoiceData,
-    invoiceNumber,
-    poNumber,
-    createdBy: req.user._id,
-    leadId,
-    customerId: lead.customerId,
-    quotationId: null,
-    paymentScheduleId,
-    paymentScheduleStageId: paymentScheduleStageId || null,
-  })
+  // Retry on rare invoiceNumber collisions (concurrent creates)
+  let invoice
+  let invoiceNumber
+  const maxAttempts = 5
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    invoiceNumber = await generateInvoiceNumber()
+    try {
+      invoice = await Invoice.create({
+        ...invoiceData,
+        invoiceNumber,
+        poNumber,
+        createdBy: req.user._id,
+        leadId,
+        customerId: lead.customerId,
+        quotationId: null,
+        paymentScheduleId,
+        paymentScheduleStageId: paymentScheduleStageId || null,
+      })
+      break
+    } catch (err) {
+      const isDupInvoiceNumber =
+        err?.code === 11000 &&
+        (err?.keyPattern?.invoiceNumber || String(err?.message || '').includes('invoiceNumber'))
+      if (!isDupInvoiceNumber || attempt === maxAttempts) throw err
+    }
+  }
 
   if (paymentScheduleStageId) {
     await setPaymentScheduleStageInvoiced(leadId, paymentScheduleStageId, invoice._id)

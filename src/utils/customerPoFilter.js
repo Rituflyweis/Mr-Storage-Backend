@@ -1,7 +1,7 @@
 const Lead = require('../models/Lead')
 
 /** Leads/projects visible in customer-panel project lists */
-const PO_PROJECT_MATCH = { isRaisedToPO: true }
+const PO_PROJECT_MATCH = { isRaisedToPO: true, isDeleted: { $ne: true } }
 
 /**
  * Customer IDs that have at least one project raised to PO.

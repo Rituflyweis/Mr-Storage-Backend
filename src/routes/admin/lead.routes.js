@@ -79,6 +79,8 @@ router.put('/:leadId/terminate',
   ctrl.terminateLead
 )
 
+router.delete('/:leadId', ctrl.deleteLead)
+
 router.put('/:leadId/temperature',
   [body('temperature').isIn(LEAD_TEMPERATURES)],
   validate,

@@ -179,6 +179,7 @@ exports.createLead = asyncHandler(async (req, res) => {
   if (leadPayload.projectName) {
     const existingLead = await Lead.findOne({
       customerId,
+      isDeleted: { $ne: true },
       projectName: { $regex: new RegExp(`^${escapeRegex(leadPayload.projectName)}$`, 'i') },
     })
       .select('_id projectName')
@@ -565,6 +566,7 @@ exports.editLead = asyncHandler(async (req, res) => {
     const duplicate = await Lead.findOne({
       customerId: lead.customerId,
       _id: { $ne: lead._id },
+      isDeleted: { $ne: true },
       projectName: { $regex: new RegExp(`^${escapeRegex(lead.projectName)}$`, 'i') },
     })
       .select('_id projectName')

@@ -1,6 +1,6 @@
 const asyncHandler = require('../../utils/asyncHandler')
 const bcrypt = require('bcryptjs')
-const { NewsLetter, Quotes, Inquire } = require('../../models/material')
+const { NewsLetter, Quotes, Inquire, BuildingType } = require('../../models/material')
 const Customer = require('../../models/Customer')
 const Lead = require('../../models/Lead')
 const auditService = require('../../services/audit.service')
@@ -8,7 +8,119 @@ const leadListSocket = require('../../services/leadListSocket.service')
 const { syncLeadBuildings } = require('../../services/leadBuilding.service')
 const mailer = require('../../services/email/mailer')
 const generateCustomerId = require('../../utils/generateCustomerId')
-const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
+const { AUDIT_ACTIONS } = require('../../config/constants')
+
+const CUSTOMER_PANEL_MESSAGE = 'You have an existing customer panel, please visit there to create a new project'
+const ENQUIRY_NOTIFY_EMAIL = 'info@steelbuildingdepot.com'
+
+const resolveBuildingTypeName = async (buildingTypeId) => {
+  const id = String(buildingTypeId || '').trim()
+  if (!id) return ''
+
+  const doc = await BuildingType.findById(id).select('title').lean()
+  return String(doc?.title || '').trim()
+}
+
+const findCustomerByEmailOrPhone = async (email, phone) => {
+  const query = { $or: [{ 'phone.number': phone }] }
+  if (email) query.$or.push({ email })
+  return Customer.findOne(query)
+}
+
+const customerHasActivePanel = async (customerId) => Lead.exists({
+  customerId,
+  isRaisedToPO: true,
+  isTerminated: false,
+})
+
+const sendFormEnquiryEmail = async ({ customerName, customerEmail, customerPhone, countryCode }, logTag) => {
+  if (!mailer.isEnquiryNotificationConfigured()) return
+
+  try {
+    await mailer.sendNewCustomerEnquiryNotification({
+      toEmail: ENQUIRY_NOTIFY_EMAIL,
+      customerName,
+      customerEmail,
+      customerPhone,
+      countryCode,
+      source: 'form',
+    })
+  } catch (err) {
+    console.warn(`[${logTag}] Failed to send new customer enquiry notification:`, err.message)
+  }
+}
+
+const resolveFormSubmissionCustomer = async (res, {
+  firstName,
+  lastName,
+  email,
+  phone,
+  countryCode,
+}) => {
+  let customer = await findCustomerByEmailOrPhone(email, phone)
+
+  if (customer) {
+    if (await customerHasActivePanel(customer._id)) {
+      res.status(409).json({ status: 409, message: CUSTOMER_PANEL_MESSAGE })
+      return null
+    }
+
+    return { customer, isNewCustomer: false }
+  }
+
+  if (!email) {
+    res.status(400).json({
+      status: 400,
+      message: 'email is required to create a new customer',
+    })
+    return null
+  }
+
+  const customerId = await generateCustomerId()
+  const hashedPassword = await bcrypt.hash(phone, 12)
+  customer = await Customer.create({
+    customerId,
+    firstName,
+    lastName,
+    email,
+    phone: { number: phone, countryCode },
+    password: hashedPassword,
+    source: 'chat',
+  })
+
+  return { customer, isNewCustomer: true }
+}
+
+const createFormLead = async ({
+  customerId,
+  isNewCustomer,
+  via,
+  leadData,
+}) => {
+  const lead = await Lead.create({
+    customerId,
+    source: 'chat',
+    lifecycleStatus: 'initial_contact',
+    lifecycleHistory: [
+      { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
+    ],
+    ...leadData,
+  })
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_CREATED,
+    leadId: lead._id,
+    customerId,
+    performedBy: null,
+    metadata: { source: 'chat', isNewCustomer, via },
+  })
+
+  await leadListSocket.emitLeadListCreated(lead._id, { trigger: via })
+  await syncLeadBuildings(lead, { createdBy: null })
+
+  return lead
+}
 
 exports.sendNewsLetterRequest = asyncHandler(async(req, res) => {
   const { email } = req.body
@@ -48,63 +160,25 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
     })
   }
 
-  const customerQuery = { $or: [{ 'phone.number': phone }] }
-  if (email) customerQuery.$or.push({ email })
-  let customer = await Customer.findOne(customerQuery)
+  const resolved = await resolveFormSubmissionCustomer(res, {
+    firstName,
+    lastName,
+    email,
+    phone,
+    countryCode,
+  })
+  if (!resolved) return
 
-  let isNewCustomer = false
-  if (!customer) {
-    if (!email) {
-      return res.status(400).json({
-        status: 400,
-        message: 'email is required to create a new customer',
-      })
-    }
-
-    const customerId = await generateCustomerId()
-    const hashedPassword = await bcrypt.hash(phone, 12)
-    customer = await Customer.create({
-      customerId,
-      firstName,
-      lastName,
-      email,
-      phone: { number: phone, countryCode },
-      password: hashedPassword,
-      source: 'chat',
-    })
-    isNewCustomer = true
-
-    if (mailer.isEmailConfigured()) {
-      try {
-        await mailer.sendNewCustomerEnquiryNotification({
-          toEmail: 'info@steelbuildingdepot.com',
-          customerName: firstName,
-          customerEmail: email,
-          customerPhone: phone,
-          countryCode,
-        })
-      } catch (err) {
-        console.warn('[sendQuotesRequest] Failed to send new customer enquiry notification:', err.message)
-      }
-    }
-  }
-
-  let lead = await Lead.findOne({
-    customerId: customer._id,
-    lifecycleStatus: { $nin: CLOSED_STAGES },
-  }).sort({ createdAt: -1 })
-
+  const { customer, isNewCustomer } = resolved
   const quoteNotes = String(req.body.notes || '').trim()
+  const buildingTypeName = await resolveBuildingTypeName(req.body.buildingTypeId)
 
-  if (!lead) {
-    lead = await Lead.create({
-      customerId: customer._id,
-      source: 'chat',
-      lifecycleStatus: 'initial_contact',
-      lifecycleHistory: [
-        { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
-      ],
-      buildingType: String(req.body.buildingTypeId || ''),
+  const lead = await createFormLead({
+    customerId: customer._id,
+    isNewCustomer,
+    via: 'material_quote',
+    leadData: {
+      buildingType: buildingTypeName,
       width: req.body.width ? Number(req.body.width) : null,
       length: req.body.length ? Number(req.body.length) : null,
       height: req.body.height ? Number(req.body.height) : null,
@@ -113,38 +187,15 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
         .join(', '),
       projectName: String(req.body.intendedUse || ''),
       notes: quoteNotes,
-    })
+    },
+  })
 
-    await auditService.log({
-      type: 'lead',
-      action: AUDIT_ACTIONS.LEAD_CREATED,
-      leadId: lead._id,
-      customerId: customer._id,
-      performedBy: null,
-      metadata: { source: 'chat', isNewCustomer, via: 'material_quote' },
-    })
-
-    await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'material_quote' })
-    await syncLeadBuildings(lead, { createdBy: null })
-  } else {
-    if (req.body.width) lead.width = Number(req.body.width)
-    if (req.body.length) lead.length = Number(req.body.length)
-    if (req.body.height) lead.height = Number(req.body.height)
-    if (req.body.buildingTypeId) lead.buildingType = String(req.body.buildingTypeId)
-
-    const mergedLocation = [req.body.siteAddress, req.body.city, req.body.state, req.body.country, req.body.zip || req.body.zipCode]
-      .filter(Boolean)
-      .join(', ')
-    if (mergedLocation) lead.location = mergedLocation
-    if (req.body.intendedUse) lead.projectName = String(req.body.intendedUse)
-
-    if (quoteNotes) {
-      const existingNotes = String(lead.notes || '').trim()
-      lead.notes = existingNotes ? `${existingNotes}\n\n${quoteNotes}` : quoteNotes
-    }
-
-    await lead.save()
-  }
+  await sendFormEnquiryEmail({
+    customerName: firstName,
+    customerEmail: email || customer.email,
+    customerPhone: phone,
+    countryCode,
+  }, 'sendQuotesRequest')
 
   const payload = {
     buildingTypeId: req.body.buildingTypeId,
@@ -173,7 +224,7 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
   const inquiryMessageParts = [
     req.body.notes ? `Notes: ${String(req.body.notes).trim()}` : '',
     req.body.intendedUse ? `Intended Use: ${String(req.body.intendedUse).trim()}` : '',
-    req.body.buildingTypeId ? `Building Type Id: ${String(req.body.buildingTypeId).trim()}` : '',
+    buildingTypeName ? `Building Type: ${buildingTypeName}` : '',
     req.body.width ? `Width: ${String(req.body.width).trim()}` : '',
     req.body.length ? `Length: ${String(req.body.length).trim()}` : '',
     req.body.height ? `Height: ${String(req.body.height).trim()}` : '',
@@ -212,78 +263,32 @@ exports.sendInquire = asyncHandler(async(req, res) => {
     })
   }
 
-  let customer = await Customer.findOne({
-    $or: [
-      { email },
-      { 'phone.number': phone },
-    ],
+  const resolved = await resolveFormSubmissionCustomer(res, {
+    firstName,
+    lastName: String(req.body.lastName || '').trim(),
+    email,
+    phone,
+    countryCode,
+  })
+  if (!resolved) return
+
+  const { customer, isNewCustomer } = resolved
+
+  const lead = await createFormLead({
+    customerId: customer._id,
+    isNewCustomer,
+    via: 'material_inquiry',
+    leadData: {
+      notes: String(req.body.message || '').trim(),
+    },
   })
 
-  let isNewCustomer = false
-  if (!customer) {
-    const customerId = await generateCustomerId()
-    const hashedPassword = await bcrypt.hash(phone, 12)
-    customer = await Customer.create({
-      customerId,
-      firstName,
-      lastName: String(req.body.lastName || '').trim(),
-      email,
-      phone: { number: phone, countryCode },
-      password: hashedPassword,
-      source: 'chat',
-    })
-    isNewCustomer = true
-
-    if (mailer.isEmailConfigured()) {
-      try {
-        await mailer.sendNewCustomerEnquiryNotification({
-          toEmail: 'info@steelbuildingdepot.com',
-          customerName: firstName,
-          customerEmail: email,
-          customerPhone: phone,
-          countryCode,
-        })
-      } catch (err) {
-        console.warn('[sendInquire] Failed to send new customer enquiry notification:', err.message)
-      }
-    }
-  }
-
-  let lead = await Lead.findOne({
-    customerId: customer._id,
-    lifecycleStatus: { $nin: CLOSED_STAGES },
-  }).sort({ createdAt: -1 })
-
-  if (!lead) {
-    lead = await Lead.create({
-      customerId: customer._id,
-      source: 'chat',
-      lifecycleStatus: 'initial_contact',
-      lifecycleHistory: [
-        { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
-      ],
-      notes: String(req.body.message || '').trim(),
-    })
-
-    await auditService.log({
-      type: 'lead',
-      action: AUDIT_ACTIONS.LEAD_CREATED,
-      leadId: lead._id,
-      customerId: customer._id,
-      performedBy: null,
-      metadata: { source: 'chat', isNewCustomer, via: 'material_inquiry' },
-    })
-
-    await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'material_inquiry' })
-    await syncLeadBuildings(lead, { createdBy: null })
-  } else if (req.body.message) {
-    const nextNote = String(req.body.message).trim()
-    if (nextNote) {
-      const existingNotes = String(lead.notes || '').trim()
-      lead.notes = existingNotes ? `${existingNotes}\n\n${nextNote}` : nextNote
-      await lead.save()
-    }
-  }
+  await sendFormEnquiryEmail({
+    customerName: firstName,
+    customerEmail: email,
+    customerPhone: phone,
+    countryCode,
+  }, 'sendInquire')
 
   const created = await Inquire.create({
     ...req.body,
