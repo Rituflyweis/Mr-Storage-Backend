@@ -2071,9 +2071,10 @@
             "url": "{{baseUrl}}/admin/financials/expenses",
             "body": {
               "mode": "raw",
-              "raw": "{\"category\":\"Vendor/Freight\",\"subcategory\":\"Steel Delivery\",\"date\":\"2026-07-15\",\"amount\":10000,\"description\":\"Freight charges\",\"leadId\":\"{{leadId}}\",\"buildingLabel\":\"Building A\",\"paymentMethod\":\"bank_transfer\",\"status\":\"paid\",\"receiptFile\":\"https://mr-storage-project.s3.ap-south-1.amazonaws.com/documents/receipt.pdf\"}"
+              "raw": "{\"category\":\"Vendor/Freight\",\"subcategory\":\"Steel Delivery\",\"date\":\"2026-07-15\",\"amount\":10000,\"description\":\"Freight charges\",\"leadId\":\"{{leadId}}\",\"buildingLabel\":\"Building A\",\"department\":\"Plant\",\"paymentMethod\":\"bank_transfer\",\"status\":\"paid\",\"receiptFile\":\"https://mr-storage-project.s3.ap-south-1.amazonaws.com/documents/receipt.pdf\"}"
             }
-          }
+          },
+          "_postman_note": "department is new — Sales | Plant | Construction | Support. Used by Budget vs Actual's department filter / groupBy."
         },
         {
           "name": "Update Expense",
@@ -2335,6 +2336,32 @@
               ]
             }
           }
+        },
+        {
+          "name": "Budget vs Actual (By Project) — Filtered",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/financials/budget-vs-actual?leadId={{leadId}}&startDate=2026-01-01&endDate=2026-12-31&department=Plant&costCategory=Vendor/Freight&groupBy=department",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "financials", "budget-vs-actual"],
+              "query": [
+                { "key": "leadId", "value": "{{leadId}}" },
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-12-31" },
+                { "key": "department", "value": "Plant", "description": "Sales | Plant | Construction | Support" },
+                { "key": "costCategory", "value": "Vendor/Freight" },
+                { "key": "groupBy", "value": "department", "description": "adds a byDepartment breakdown array to the response" }
+              ]
+            }
+          },
+          "_postman_note": "Cost head actuals are a best-effort category-name mapping — see response 'note' field. groupBy=department adds byDepartment[] alongside the normal costHeads[] table."
         }
       ]
     },

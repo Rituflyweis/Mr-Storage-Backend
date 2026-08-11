@@ -457,7 +457,7 @@ exports.getPaymentStatus = asyncHandler(async (req, res) => {
 // ─── Financial Overview Sub-pages ────────────────────────────────────────────
 
 const Expense = require('../../models/Expense')
-const { EXPENSE_STATUSES, EXPENSE_PAYMENT_METHODS } = Expense
+const { EXPENSE_STATUSES, EXPENSE_PAYMENT_METHODS, EXPENSE_DEPARTMENTS } = Expense
 const ExpenseCategory = require('../../models/ExpenseCategory')
 const FreightBid = require('../../models/FreightBid')
 const WIPProfit = require('../../models/WIPProfit')
@@ -759,6 +759,7 @@ exports.getExpenseFilters = asyncHandler(async (req, res) => {
     buildingLabels,
     statuses: EXPENSE_STATUSES,
     paymentMethods: EXPENSE_PAYMENT_METHODS,
+    departments: EXPENSE_DEPARTMENTS,
     projects: projects.map(p => ({ leadId: p._id, projectName: p.projectName, jobId: p.jobId })),
   })
 })
@@ -854,14 +855,14 @@ exports.importExpenses = asyncHandler(async (req, res) => {
 })
 
 exports.createExpense = asyncHandler(async (req, res) => {
-  const { category, subcategory, date, amount, description, leadId, buildingLabel, paymentMethod, status, receiptFile } = req.body
+  const { category, subcategory, date, amount, description, leadId, buildingLabel, department, paymentMethod, status, receiptFile } = req.body
 
   const count = await Expense.countDocuments()
   const expenseId = `EXP${String(count + 1).padStart(5, '0')}`
 
   const expense = await Expense.create({
     expenseId, category, subcategory, date, amount, description, leadId: leadId || null,
-    buildingLabel, paymentMethod, status, receiptFile, createdBy: req.user._id,
+    buildingLabel, department, paymentMethod, status, receiptFile, createdBy: req.user._id,
   })
 
   return success(res, { expense })
@@ -871,7 +872,7 @@ exports.updateExpense = asyncHandler(async (req, res) => {
   const expense = await Expense.findById(req.params.expenseId)
   if (!expense) return notFound(res, 'Expense not found')
 
-  const { category, subcategory, date, amount, description, leadId, buildingLabel, paymentMethod, status, receiptFile } = req.body
+  const { category, subcategory, date, amount, description, leadId, buildingLabel, department, paymentMethod, status, receiptFile } = req.body
   if (category !== undefined) expense.category = category
   if (subcategory !== undefined) expense.subcategory = subcategory
   if (date !== undefined) expense.date = date
@@ -879,6 +880,7 @@ exports.updateExpense = asyncHandler(async (req, res) => {
   if (description !== undefined) expense.description = description
   if (leadId !== undefined) expense.leadId = leadId || null
   if (buildingLabel !== undefined) expense.buildingLabel = buildingLabel
+  if (department !== undefined) expense.department = department
   if (paymentMethod !== undefined) expense.paymentMethod = paymentMethod
   if (status !== undefined) expense.status = status
   if (receiptFile !== undefined) expense.receiptFile = receiptFile
@@ -1459,8 +1461,20 @@ exports.getMarginByProjects = asyncHandler(async (req, res) => {
   return success(res, { projects })
 })
 
+// Maps real Expense.category values onto the fixed "Cost Head" rows shown in the Figma table.
+// Best-effort — category names are free-text/dynamic (ExpenseCategory), not a fixed cost-head
+// taxonomy. Categories not matched by any row fall into Miscellaneous Cost.
+const COST_HEAD_CATEGORY_MAP = [
+  { head: 'Material Cost', categories: ['Vendor/Freight'], budgetField: 'materialBudget' },
+  { head: 'Carrier/Freight Cost', categories: ['Freight', 'Logistics'], budgetField: 'logisticBudget' },
+  { head: 'Manpower/Labor Cost', categories: ['Salaries', 'Operations'], budgetField: 'productionBudget' },
+  { head: 'Equipment Cost', categories: ['Equipment'], budgetField: null },
+  { head: 'Subcontractor Cost', categories: ['Subcontractor'], budgetField: 'shipperBudget' },
+  { head: 'Miscellaneous Cost', categories: ['Miscellaneous', 'Marketing'], budgetField: 'otherCost' },
+]
+
 exports.getBudgetVsActual = asyncHandler(async (req, res) => {
-  const { leadId } = req.query
+  const { leadId, startDate, endDate, department, costCategory, groupBy } = req.query
   if (!leadId) {
     const leads = await Lead.find({ isTerminated: { $ne: true } })
       .select('projectName jobId')
@@ -1469,33 +1483,46 @@ exports.getBudgetVsActual = asyncHandler(async (req, res) => {
     return success(res, { projects: leads })
   }
 
-  const [lead, budget, invoiceAgg, expenseAgg] = await Promise.all([
+  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
+  const expenseFilter = { leadId: new mongoose.Types.ObjectId(leadId), isActive: true, ...dateFilter }
+  if (department) expenseFilter.department = department
+  if (costCategory) expenseFilter.category = costCategory
+
+  const [lead, budget, invoiceAgg, expenseByCategory] = await Promise.all([
     Lead.findById(leadId).populate('customerId', 'firstName lastName').lean(),
     ProjectBudget.findOne({ leadId }).lean(),
-    Invoice.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId) } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Expense.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId) } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    Invoice.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId), ...(startDate || endDate ? buildDateFilter({ startDate, endDate }, 'date') : {}) } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    Expense.aggregate([{ $match: expenseFilter }, { $group: { _id: '$category', total: { $sum: '$amount' } } }]),
   ])
 
   if (!lead) return notFound(res, 'Project not found')
 
+  const totalActualExpense = expenseByCategory.reduce((s, c) => s + c.total, 0)
   const totalBudget = budget?.totalBudget || 0
-  const totalActual = (invoiceAgg[0]?.total || 0) + (expenseAgg[0]?.total || 0)
+  const totalActual = (invoiceAgg[0]?.total || 0) + totalActualExpense
   const variance = totalActual - totalBudget
   const budgetUsedPct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0
 
-  const costHeads = [
-    { head: 'Material Cost',       budget: budget?.materialBudget || 0, actual: expenseAgg[0]?.total * 0.4 || 0 },
-    { head: 'Carrier/Freight Cost', budget: budget?.logisticBudget || 0, actual: expenseAgg[0]?.total * 0.2 || 0 },
-    { head: 'Manpower/Labor Cost',  budget: budget?.productionBudget || 0, actual: expenseAgg[0]?.total * 0.2 || 0 },
-    { head: 'Equipment Cost',       budget: 0, actual: expenseAgg[0]?.total * 0.1 || 0 },
-    { head: 'Subcontractor Cost',   budget: budget?.shipperBudget || 0, actual: expenseAgg[0]?.total * 0.05 || 0 },
-    { head: 'Miscellaneous Cost',   budget: budget?.otherCost || 0, actual: expenseAgg[0]?.total * 0.05 || 0 },
-  ].map(row => ({
-    ...row,
-    variance: row.actual - row.budget,
-    variancePct: row.budget > 0 ? +((((row.actual - row.budget) / row.budget) * 100).toFixed(2)) : 0,
-    status: row.actual > row.budget ? 'Over Budget' : 'Under Budget',
-  }))
+  const matchedCategories = new Set(COST_HEAD_CATEGORY_MAP.flatMap(r => r.categories))
+  const costHeads = COST_HEAD_CATEGORY_MAP.map(row => {
+    let actual = expenseByCategory.filter(c => row.categories.includes(c._id)).reduce((s, c) => s + c.total, 0)
+    if (row.head === 'Miscellaneous Cost') {
+      actual += expenseByCategory.filter(c => !matchedCategories.has(c._id)).reduce((s, c) => s + c.total, 0)
+    }
+    const rowBudget = row.budgetField ? (budget?.[row.budgetField] || 0) : 0
+    return {
+      head: row.head,
+      budget: rowBudget,
+      actual,
+      variance: actual - rowBudget,
+      variancePct: rowBudget > 0 ? +((((actual - rowBudget) / rowBudget) * 100).toFixed(2)) : 0,
+      status: actual > rowBudget ? 'Over Budget' : 'Under Budget',
+    }
+  })
+
+  const grouped = groupBy === 'department'
+    ? await Expense.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId), isActive: true, ...dateFilter } }, { $group: { _id: '$department', total: { $sum: '$amount' } } }])
+    : null
 
   return success(res, {
     project: {
@@ -1513,5 +1540,7 @@ exports.getBudgetVsActual = asyncHandler(async (req, res) => {
       status: variance > 0 ? 'Over Budget' : 'Under Budget',
     },
     costHeads,
+    ...(grouped ? { byDepartment: grouped.map(g => ({ department: g._id || 'Unspecified', total: g.total })) } : {}),
+    note: 'Cost head actuals are a best-effort mapping from real Expense.category values (see COST_HEAD_CATEGORY_MAP) since categories are free-text/dynamic, not a fixed cost-head taxonomy. Unmatched categories fall into Miscellaneous Cost.',
   })
 })
