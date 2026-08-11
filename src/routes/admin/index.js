@@ -17,5 +17,10 @@ router.use('/po-orders', require('./po.routes'))
 router.use('/financials', require('./financial.routes'))
 router.use('/reports', require('./reports.routes'))
 router.use('/activity', require('./pageActivity.routes'))
+router.use('/products',      require('./product.routes'))
+router.use('/roles',         require('./role.routes'))
+router.use('/invoices',      require('./invoice.routes'))
+router.use('/construction',  require('./construction.routes'))
+router.use('/chat',          require('./chat.routes'))
 
 module.exports = router

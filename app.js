@@ -22,6 +22,15 @@ app.use(
 app.use(express.json({ limit: '2mb' }))
 app.use(express.urlencoded({ extended: true }))
 
+// express.json()/urlencoded() leave req.body as undefined (not {}) when the request
+// has no Content-Type or an empty body — every controller destructures straight off
+// req.body, so guarantee it's always at least an object here rather than patching
+// every call site.
+app.use((req, res, next) => {
+  if (req.body === undefined) req.body = {}
+  next()
+})
+
 // // ── Global rate limit ─────────────────────────────────────────────────────────
 // app.use(rateLimit({
 //   windowMs: 15 * 60 * 1000,
@@ -43,8 +52,9 @@ app.use('/api/admin',   require('./src/routes/admin/index'))
 app.use('/api/sales',   require('./src/routes/sales/index'))
 // Alias without /api — some clients call /sales/* directly on the API host
 app.use('/sales',         require('./src/routes/sales/index'))
-app.use('/api/account', require('./src/routes/account/index'))
-app.use('/api/plant',   require('./src/routes/plant/index'))
+app.use('/api/account',       require('./src/routes/account/index'))
+app.use('/api/plant',         require('./src/routes/plant/index'))
+app.use('/api/construction',  require('./src/routes/construction/index'))
 app.use('/api',         require('./src/routes/common/index'))
 app.use('/api/v1',      require('./src/routes/material/index'))
 

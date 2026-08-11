@@ -78,6 +78,13 @@ const BundleSchema = new mongoose.Schema(
     handlingInstruction: { type: String, default: '' },
     warnings: { type: [String], default: [] },
     notes: { type: String, default: '' },
+
+    labelPrinted: { type: Boolean, default: false },
+    labelPrintedAt: { type: Date, default: null },
+    verified: { type: Boolean, default: false },
+    verifiedAt: { type: Date, default: null },
+    mismatchNotes: { type: String, default: '' },
+    mismatchReportedAt: { type: Date, default: null },
   },
   { timestamps: true }
 )

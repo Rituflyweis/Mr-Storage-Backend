@@ -11,6 +11,7 @@ const ShipperRequest = require('../../models/ShipperRequest')
 const Vendor = require('../../models/Vendor')
 const auditService = require('../../services/audit.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
+const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
 const {
   computeFreightEnvelopeDimensions,
@@ -34,8 +35,11 @@ const DELIVERY_STATUS_TRANSITIONS = {
   carrier_selected: ['scheduled', 'confirmed', 'in_transit', 'delayed', 'cancelled'],
   scheduled: ['confirmed', 'in_transit', 'delayed', 'cancelled'],
   confirmed: ['in_transit', 'delayed', 'cancelled'],
-  in_transit: ['delivered', 'delayed', 'cancelled'],
+  in_transit: ['staged', 'delivered', 'delayed', 'cancelled'],
   delayed: ['scheduled', 'confirmed', 'in_transit', 'delivered', 'cancelled'],
+  staged: ['delivered', 'partial_received', 'received', 'cancelled'],
+  delivered: ['partial_received', 'received'],
+  partial_received: ['received'],
 }
 
 const DELIVERY_RESCHEDULE_BLOCKED_STATUSES = new Set(['cancelled', 'delivered'])
@@ -105,8 +109,7 @@ const makeDeliveryStatusHistory = (delivery) => {
     .sort((a, b) => new Date(a.changedAt || 0).getTime() - new Date(b.changedAt || 0).getTime())
 }
 
-const getAssignedLeadIds = async (plantUserId) =>
-  POOrder.distinct('leadId', { assignedTo: plantUserId, status: 'approved' })
+const getAssignedLeadIds = (req) => getScopedLeadIds(req)
 
 const getNextDeliveryNumber = async () => {
   const [latest] = await Delivery.aggregate([
@@ -1188,7 +1191,7 @@ exports.getDeliveryDetail = asyncHandler(async (req, res) => {
 })
 
 exports.getFreightLoadStats = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) {
     return success(res, {
       totalLoads: 0,
@@ -1261,7 +1264,7 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
     baseFilter.status = { $ne: 'draft' }
   }
 
-  const assignedLeadIds = await getAssignedLeadIds(req.user._id)
+  const assignedLeadIds = await getAssignedLeadIds(req)
   if (!assignedLeadIds.length) {
     return success(res, { requests: [], total: 0, page, limit })
   }
@@ -1390,7 +1393,7 @@ exports.getFreightLoads = asyncHandler(async (req, res) => {
 })
 
 exports.getAwardedLoadStats = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) {
     return success(res, {
       totalAwarded: 0,
@@ -1431,7 +1434,7 @@ exports.getAwardedLoads = asyncHandler(async (req, res) => {
 })
 
 exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) {
     return success(res, { dates: [] })
   }
@@ -1501,7 +1504,7 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
 })
 
 exports.getAllDeliveryStats = asyncHandler(async (req, res) => {
-  const leadIds = await getAssignedLeadIds(req.user._id)
+  const leadIds = await getAssignedLeadIds(req)
   if (!leadIds.length) {
     return success(res, {
       totalCount: 0,
@@ -1524,7 +1527,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20))
   const skip = (page - 1) * limit
 
-  const assignedLeadIds = await getAssignedLeadIds(req.user._id)
+  const assignedLeadIds = await getAssignedLeadIds(req)
   if (!assignedLeadIds.length) {
     return success(res, { deliveries: [], total: 0, page, limit })
   }
@@ -1699,6 +1702,8 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
     ? String(additionalNotes).trim()
     : delivery.additionalNotes
 
+  const previousDate = delivery.deliveryDate
+
   delivery.deliveryDate = newDate
   delivery.deliveryTime = start
   delivery.timeWindowStart = start
@@ -1706,6 +1711,7 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
   delivery.timings = formatDeliveryTimeWindow(start, end)
   delivery.additionalNotes = notes
   delivery.rescheduleHistory.push({
+    previousDate,
     date: newDate,
     timeWindowStart: start,
     timeWindowEnd: end,
@@ -1748,6 +1754,7 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
     reschedule: latestReschedule
       ? {
           _id: latestReschedule._id,
+          previousDate: latestReschedule.previousDate,
           date: latestReschedule.date,
           timeWindowStart: latestReschedule.timeWindowStart,
           timeWindowEnd: latestReschedule.timeWindowEnd,
@@ -1755,6 +1762,7 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
           additionalNotes: latestReschedule.additionalNotes,
           rescheduledAt: latestReschedule.rescheduledAt,
           rescheduledBy: latestReschedule.rescheduledBy,
+          acknowledged: latestReschedule.acknowledged,
         }
       : null,
     rescheduleHistory: delivery.rescheduleHistory,
