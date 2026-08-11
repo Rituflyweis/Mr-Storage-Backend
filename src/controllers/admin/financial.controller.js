@@ -1331,13 +1331,14 @@ exports.exportFreightCosts = asyncHandler(async (req, res) => {
 exports.getMarginAnalysis = asyncHandler(async (req, res) => {
   const { projectId, startDate, endDate } = req.query
   const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
+  const projectFilter = projectId ? { leadId: new mongoose.Types.ObjectId(projectId) } : {}
 
   const now = new Date()
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
   const [overallAgg, trendAgg, projectMargins] = await Promise.all([
     Invoice.aggregate([
-      { $match: { ...dateFilter, status: 'paid' } },
+      { $match: { ...projectFilter, ...dateFilter, status: 'paid' } },
       { $lookup: { from: 'expenses', localField: 'leadId', foreignField: 'leadId', as: 'expenses' } },
       { $group: {
         _id: null,
@@ -1346,12 +1347,12 @@ exports.getMarginAnalysis = asyncHandler(async (req, res) => {
       }},
     ]),
     Invoice.aggregate([
-      { $match: { status: 'paid', date: { $gte: sixMonthsAgo } } },
+      { $match: { ...projectFilter, status: 'paid', date: dateFilter.date || { $gte: sixMonthsAgo } } },
       { $group: { _id: { year: { $year: '$date' }, month: { $month: '$date' } }, revenue: { $sum: '$totalAmount' } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
     Invoice.aggregate([
-      { $match: { ...dateFilter, status: 'paid' } },
+      { $match: { ...projectFilter, ...dateFilter, status: 'paid' } },
       { $group: { _id: '$leadId', revenue: { $sum: '$totalAmount' } } },
       { $sort: { revenue: -1 } },
       { $limit: 10 },
