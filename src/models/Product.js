@@ -25,8 +25,18 @@ const ProductSchema = new mongoose.Schema(
     maxMargin:       { type: Number, default: 0 },
 
     // Quantity
-    inputTypeRequired: { type: String, default: '', trim: true },
-    defaultQty:        { type: Number, default: 1 },
+    inputTypeRequired:    { type: String, default: '', trim: true },
+    defaultQty:           { type: Number, default: 1 },
+    allowQuantityOverride: { type: Boolean, default: true },
+    minOrderQuantity:     { type: Number, default: 1 },
+    leadTime:             { type: String, default: '', trim: true },
+    stockTracking:        { type: Boolean, default: false },
+
+    // Cost breakdown — totalCost is server-computed (materialCost + laborCost + overheadCost)
+    materialCost: { type: Number, default: 0 },
+    laborCost:    { type: Number, default: 0 },
+    overheadCost: { type: Number, default: 0 },
+    totalCost:    { type: Number, default: 0 },
 
     // Tax & Accounting
     taxCategory:  { type: String, default: '', trim: true },

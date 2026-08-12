@@ -1052,9 +1052,10 @@
 						"url": "{{baseUrl}}/admin/products",
 						"body": {
 							"mode": "raw",
-							"raw": "{\"name\":\"Main Frame (steel)\",\"description\":\"Primary structural steel frame\",\"category\":\"Structure\",\"subcategory\":\"Primary Frame\",\"skuPartCode\":\"ST-MF-001\",\"vendorShipper\":\"Vendor A\",\"pricingType\":\"per_lb\",\"unit\":\"lb\",\"baseCost\":2.40,\"defaultMargin\":30,\"sellingPrice\":3.12,\"minMargin\":20,\"maxMargin\":40,\"taxable\":true,\"usageMapping\":[\"quotation\",\"bom_takeoff\"],\"smdtLinkedCode\":\"MF-001\",\"status\":\"active\",\"priceLock\":false}"
+							"raw": "{\n  \"name\": \"Main Frame (steel)\",\n  \"description\": \"Primary structural steel frame\",\n  \"category\": \"Structure\",\n  \"subcategory\": \"Primary Frame\",\n  \"skuPartCode\": \"ST-MF-001\",\n  \"vendorShipper\": \"Vendor A\",\n  \"productImage\": \"https://cdn.example.com/products/mainframe.jpg\",\n  \"pricingType\": \"per_lb\",\n  \"unit\": \"lb\",\n  \"baseCost\": 2.4,\n  \"defaultMargin\": 30,\n  \"sellingPrice\": 3.12,\n  \"minMargin\": 20,\n  \"maxMargin\": 40,\n  \"inputTypeRequired\": \"weight\",\n  \"defaultQty\": 1,\n  \"allowQuantityOverride\": true,\n  \"leadTime\": \"4-6 weeks\",\n  \"minOrderQuantity\": 500,\n  \"stockTracking\": true,\n  \"materialCost\": 1.6,\n  \"laborCost\": 0.45,\n  \"overheadCost\": 0.2,\n  \"taxCategory\": \"Standard\",\n  \"accountCode\": \"COGS-1001\",\n  \"taxable\": true,\n  \"usageMapping\": [\n    \"quotation\",\n    \"bom_takeoff\"\n  ],\n  \"smdtLinkedCode\": \"MF-001\",\n  \"smdtLastSynced\": \"2026-08-10T00:00:00.000Z\",\n  \"smdtSyncSource\": \"SMDT-Sheet-A\",\n  \"status\": \"draft\",\n  \"effectiveFrom\": \"2026-08-01\",\n  \"priceLock\": false\n}"
 						}
-					}
+					},
+					"_postman_note": "Added missing fields per Figma Product Library screen: productImage (S3 URL \u2014 upload via /common/upload/presigned-url first, then pass the resulting URL here), allowQuantityOverride, leadTime, minOrderQuantity, stockTracking, materialCost/laborCost/overheadCost. totalCost is always server-computed as materialCost+laborCost+overheadCost \u2014 any client-sent value is ignored. status accepts \"draft\" to save without publishing (existing enum already supported this)."
 				},
 				{
 					"name": "Get Product Detail",
@@ -1086,9 +1087,10 @@
 						"url": "{{baseUrl}}/admin/products/{{productId}}",
 						"body": {
 							"mode": "raw",
-							"raw": "{\"baseCost\":2.60,\"defaultMargin\":32,\"priceLock\":true}"
+							"raw": "{\n  \"materialCost\": 2.0,\n  \"laborCost\": 0.5,\n  \"overheadCost\": 0.25,\n  \"leadTime\": \"3-5 weeks\",\n  \"minOrderQuantity\": 250,\n  \"status\": \"draft\"\n}"
 						}
-					}
+					},
+					"_postman_note": "totalCost auto-recomputes whenever materialCost/laborCost/overheadCost is included in the update body."
 				},
 				{
 					"name": "Deactivate Product",

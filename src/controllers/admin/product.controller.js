@@ -23,8 +23,21 @@ exports.listProducts = asyncHandler(async (req, res) => {
   return success(res, { products, total, page: parsedPage, limit: parsedLimit })
 })
 
+// totalCost is always derived server-side — never trust a client-supplied value for it.
+const computeTotalCost = (src) => {
+  const materialCost = Number(src.materialCost) || 0
+  const laborCost    = Number(src.laborCost)    || 0
+  const overheadCost = Number(src.overheadCost) || 0
+  return Math.round((materialCost + laborCost + overheadCost) * 100) / 100
+}
+
 exports.createProduct = asyncHandler(async (req, res) => {
-  const product = await Product.create({ ...req.body, createdBy: req.user._id })
+  const { totalCost: _ignoredClientTotalCost, ...payload } = req.body
+  const product = await Product.create({
+    ...payload,
+    totalCost: computeTotalCost(payload),
+    createdBy: req.user._id,
+  })
   return created(res, { product })
 })
 
@@ -35,8 +48,17 @@ exports.getProduct = asyncHandler(async (req, res) => {
 })
 
 exports.updateProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findByIdAndUpdate(req.params.productId, req.body, { new: true, runValidators: true }).lean()
-  if (!product) return notFound(res, 'Product not found')
+  const { totalCost: _ignoredClientTotalCost, ...payload } = req.body
+
+  const existing = await Product.findById(req.params.productId).lean()
+  if (!existing) return notFound(res, 'Product not found')
+
+  const COST_KEYS = ['materialCost', 'laborCost', 'overheadCost']
+  if (COST_KEYS.some(k => payload[k] !== undefined)) {
+    payload.totalCost = computeTotalCost({ ...existing, ...payload })
+  }
+
+  const product = await Product.findByIdAndUpdate(req.params.productId, payload, { new: true, runValidators: true }).lean()
   return success(res, { product })
 })
 
