@@ -1,6 +1,9 @@
 const mongoose = require('mongoose')
+const { LIFECYCLE_STAGES } = require('../config/constants')
 
-const STEP_KEYS = ['design', 'fabrication', 'dispatch', 'install', 'complete']
+// One entry per granular sales+plant lifecycle stage — matches the Customer Panel's per-stage
+// "Project Steps" tracker 1:1 with the Plant Panel, rather than 5 collapsed buckets.
+const STEP_KEYS = [...LIFECYCLE_STAGES]
 
 const AttachmentSchema = new mongoose.Schema(
   {

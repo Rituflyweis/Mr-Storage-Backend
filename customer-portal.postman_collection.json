@@ -423,7 +423,8 @@
 							]
 						},
 						"description": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule, navigation\n\nlead now also includes: buildingsCount (count of Building docs for this project), createdAt, plannedStartDate, endDate\n\nnavigation { previous, next } \u2014 sibling project { _id, jobId, projectName } in the customer's project list (same order as Get All Projects), for the prev/next project switcher button. null at either end of the list."
-					}
+					},
+					"_postman_note": "projectSteps now has 21 individual entries (one per granular sales+plant lifecycle stage: initial_contact -> ... -> delivered) instead of 5 collapsed buckets (Design/Fabrication/Dispatch/Install/Complete) \u2014 matches the Plant Panel's stage-by-stage tracking 1:1. Each stage key is now one of: initial_contact, requirements_gathered, proposal_sent, negotiation, deal_closed, payment_done, converted_to_po, sent_to_admin, released_to_plant, drawings_received, bom_received, bom_review, material_check, production_planning, fabrication_started, quality_inspection, packing_bundling, shipper_prepared, ready_for_delivery, dispatched, delivered."
 				},
 				{
 					"name": "Get Project Stats",
@@ -567,10 +568,11 @@
 						},
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"buildingType\": \"warehouse\",\n  \"location\": \"Pune, Maharashtra\",\n  \"roofStyle\": \"gable\",\n  \"sqft\": \"5000\",\n  \"width\": 50,\n  \"length\": 100,\n  \"description\": \"Steel warehouse \u2014 clear span, 18ft eave height\"\n}"
+							"raw": "{\n  \"projectName\": \"ABC Warehouse Expansion\",\n  \"buildingType\": \"Warehouse\",\n  \"expectedStartDate\": \"2026-09-15\",\n  \"targetCompletionDate\": \"2026-12-30\",\n  \"fullAddress\": \"Baner Road\",\n  \"city\": \"Pune\",\n  \"pincode\": \"412101\",\n  \"state\": \"Maharashtra\",\n  \"width\": 20,\n  \"length\": 20,\n  \"height\": 20,\n  \"doors\": 2,\n  \"windows\": 4,\n  \"insulation\": 5,\n  \"description\": \"Describe any special requirements, preferred materials, design requirements, delivery expectations, or other information our team should know.\"\n}"
 						},
 						"description": "Creates a new project enquiry (lead) for this customer. Sets lifecycleStatus: initial_contact."
-					}
+					},
+					"_postman_note": "Updated to match the Figma \"Create New Project\" form. Required: projectName, buildingType, expectedStartDate, targetCompletionDate, fullAddress, city, pincode, state. Optional: width/length/height/doors/windows/insulation, description. Creates a Lead with source=customer_portal, lifecycleStatus=initial_contact."
 				},
 				{
 					"name": "Get Project Tracking",
@@ -595,7 +597,7 @@
 							]
 						}
 					},
-					"_postman_note": "'Project Tracking' tab. projectSteps now includes per-step startedBy/startedAt/completedBy/completedAt/currentStage(sub-label)/completionPct/expectedCompletion/notes/attachments[] \u2014 sourced from ProjectStepDetail records the construction panel writes via PUT /construction/projects/:leadId/steps/:stepKey. Also includes taskProgress, timeline, milestones."
+					"_postman_note": "projectSteps now has 21 individual entries (one per granular sales+plant lifecycle stage: initial_contact -> ... -> delivered) instead of 5 collapsed buckets (Design/Fabrication/Dispatch/Install/Complete) \u2014 matches the Plant Panel's stage-by-stage tracking 1:1. Each stage key is now one of: initial_contact, requirements_gathered, proposal_sent, negotiation, deal_closed, payment_done, converted_to_po, sent_to_admin, released_to_plant, drawings_received, bom_received, bom_review, material_check, production_planning, fabrication_started, quality_inspection, packing_bundling, shipper_prepared, ready_for_delivery, dispatched, delivered."
 				},
 				{
 					"name": "List Projects \u2014 Proposed/New Enquiry Tab",

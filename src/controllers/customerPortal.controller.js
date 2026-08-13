@@ -35,7 +35,7 @@ const bcrypt = require('bcryptjs')
 const env = require('../config/env')
 const auditService = require('../services/audit.service')
 const { syncLeadBuildings } = require('../services/leadBuilding.service')
-const { AUDIT_ACTIONS } = require('../config/constants')
+const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
 const { enrichLeadDocument } = require('../utils/leadProjectId')
 
 const s3 = new S3Client({
@@ -48,26 +48,39 @@ const s3 = new S3Client({
 
 const CLOSED_STAGES = ['payment_done', 'delivered']
 
-// "Project Steps" stepper (Design -> Fabrication -> Dispatch -> Install -> Complete) shown on
-// the Project Details / Dashboard screens. Maps the 21 granular sales+plant lifecycle stages
-// down to these 5 customer-facing buckets. NOTE: nothing in the data model marks a project
-// "Complete" beyond delivery — there is no separate installation/closure stage or flag today —
-// so the Install bucket becomes "in_progress" once delivered and Complete stays "pending"
-// until that gap is closed with a real signal.
-const PROJECT_STEP_DEFS = [
-  {
-    key: 'design', label: 'Design',
-    stages: [
-      'initial_contact', 'requirements_gathered', 'proposal_sent', 'negotiation', 'deal_closed',
-      'payment_done', 'converted_to_po', 'sent_to_admin',
-      'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
-    ],
-  },
-  { key: 'fabrication', label: 'Fabrication', stages: ['material_check', 'production_planning', 'fabrication_started', 'quality_inspection'] },
-  { key: 'dispatch', label: 'Dispatch', stages: ['packing_bundling', 'shipper_prepared', 'ready_for_delivery', 'dispatched'] },
-  { key: 'install', label: 'Install', stages: ['delivered'] },
-  { key: 'complete', label: 'Complete', stages: [] },
-]
+// Human-readable label per lifecycle stage — same wording used across Sales/Plant panels.
+const STAGE_LABELS = {
+  initial_contact: 'Initial Contact',
+  requirements_gathered: 'Requirements Gathered',
+  proposal_sent: 'Proposal Sent',
+  negotiation: 'Negotiation',
+  deal_closed: 'Deal Closed',
+  payment_done: 'Payment Done',
+  converted_to_po: 'Converted to PO',
+  sent_to_admin: 'Sent to Admin',
+  released_to_plant: 'Released to Plant',
+  drawings_received: 'Drawings Received',
+  bom_received: 'BOM Received',
+  bom_review: 'BOM Review',
+  material_check: 'Material Check',
+  production_planning: 'Production Planning',
+  fabrication_started: 'Fabrication Started',
+  quality_inspection: 'Quality Inspection',
+  packing_bundling: 'Packing & Bundling',
+  shipper_prepared: 'Shipper Prepared',
+  ready_for_delivery: 'Ready for Delivery',
+  dispatched: 'Dispatched',
+  delivered: 'Delivered',
+}
+
+// "Project Steps" stepper shown on the Project Details / Dashboard screens — one entry per
+// granular lifecycle stage (8 sales + 13 plant = 21), matching the Plant Panel's own
+// stage-by-stage tracking 1:1 instead of collapsing them into broader buckets.
+const PROJECT_STEP_DEFS = LIFECYCLE_STAGES.map((stage) => ({
+  key: stage,
+  label: STAGE_LABELS[stage] || stage,
+  stages: [stage],
+}))
 
 // stepDetails: ProjectStepDetail[] for this lead — optional descriptive overlay
 // (startedBy/completedBy/currentStage sub-label/completionPct/expectedCompletion/notes/attachments).
@@ -462,20 +475,38 @@ exports.getProject = asyncHandler(async (req, res) => {
   })
 })
 
+// POST /projects — Figma "Create New Project" (project enquiry) form
 exports.createProject = asyncHandler(async (req, res) => {
-  const { buildingType, location, roofStyle, sqft, width, length, description } = req.body
+  const {
+    projectName, buildingType, expectedStartDate, targetCompletionDate,
+    fullAddress, city, pincode, state,
+    width, length, height, doors, windows, insulation,
+    description,
+    // legacy field names — kept for backward compatibility with existing integrations
+    location, roofStyle, sqft,
+  } = req.body
 
   const lead = await Lead.create({
-    customerId:      req.customer._id,
+    customerId:        req.customer._id,
+    projectName:       projectName || '',
     buildingType,
-    location,
-    roofStyle:       roofStyle  || '',
-    sqft:            sqft       || '',
-    width:           width      ?? null,
-    length:          length     ?? null,
-    notes:           description || '',
-    source:          'customer_portal',
-    lifecycleStatus: 'initial_contact',
+    location:           fullAddress || location || '',
+    city:               city || '',
+    state:              state || '',
+    pincode:            pincode || '',
+    plannedStartDate:  expectedStartDate    ? new Date(expectedStartDate)    : null,
+    endDate:           targetCompletionDate ? new Date(targetCompletionDate) : null,
+    roofStyle:         roofStyle || '',
+    sqft:              sqft || '',
+    width:             width  ?? null,
+    length:            length ?? null,
+    height:            height ?? null,
+    doors:             doors ?? null,
+    windows:           windows ?? null,
+    insulation:        insulation ?? null,
+    notes:             description || '',
+    source:            'customer_portal',
+    lifecycleStatus:   'initial_contact',
     lifecycleHistory: [
       { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
     ],
@@ -486,24 +517,34 @@ exports.createProject = asyncHandler(async (req, res) => {
     action:     AUDIT_ACTIONS.CUSTOMER_PROJECT_CREATED,
     leadId:     lead._id,
     customerId: req.customer._id,
-    metadata:   { buildingType, location },
+    metadata:   { projectName, buildingType, location: lead.location },
   })
 
   await syncLeadBuildings(lead, { createdBy: null })
 
   return created(res, {
     lead: {
-      _id:             lead._id,
-      buildingType:    lead.buildingType,
-      location:        lead.location,
-      roofStyle:       lead.roofStyle,
-      sqft:            lead.sqft,
-      width:           lead.width,
-      length:          lead.length,
-      notes:           lead.notes,
-      source:          lead.source,
-      lifecycleStatus: lead.lifecycleStatus,
-      assignedSales:   null,
+      _id:              lead._id,
+      projectName:      lead.projectName,
+      buildingType:     lead.buildingType,
+      location:         lead.location,
+      city:             lead.city,
+      state:            lead.state,
+      pincode:          lead.pincode,
+      plannedStartDate: lead.plannedStartDate,
+      endDate:          lead.endDate,
+      roofStyle:        lead.roofStyle,
+      sqft:             lead.sqft,
+      width:            lead.width,
+      length:           lead.length,
+      height:           lead.height,
+      doors:            lead.doors,
+      windows:          lead.windows,
+      insulation:       lead.insulation,
+      notes:            lead.notes,
+      source:           lead.source,
+      lifecycleStatus:  lead.lifecycleStatus,
+      assignedSales:    null,
     },
   })
 })

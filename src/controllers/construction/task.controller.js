@@ -237,7 +237,7 @@ exports.updateMilestone = asyncHandler(async (req, res) => {
   return success(res, { milestone }, 'Milestone updated')
 })
 
-const STEP_KEYS = ['design', 'fabrication', 'dispatch', 'install', 'complete']
+const { STEP_KEYS } = ProjectStepDetail
 
 // PUT /projects/:leadId/steps/:stepKey — "Current Step Details" panel on the customer's Project Tracking tab
 exports.updateProjectStep = asyncHandler(async (req, res) => {
