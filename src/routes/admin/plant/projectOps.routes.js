@@ -7,6 +7,7 @@ const deliveryCtrl = require('../../../controllers/plant/delivery.controller')
 const validate = require('../../../middleware/validate')
 const { BOM_FILE_FORMATS, TRUCK_TYPES } = require('../../../config/constants')
 
+router.get('/:leadId/buildings', ctrl.getProjectBuildings)
 router.get('/:leadId/drawings',
   [param('leadId').isMongoId()],
   validate,

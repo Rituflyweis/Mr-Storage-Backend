@@ -262,6 +262,28 @@ exports.getQuoteSummary = asyncHandler(async (req, res) => {
   return success(res, { summary });
 });
 
+exports.deleteQuotation = asyncHandler(async (req, res) => {
+  const quotation = await Quotation.findById(req.params.quotationId)
+  if (!quotation) return notFound(res, 'Quotation not found')
+  if (req.user.role === 'sales' && String(quotation.createdBy) !== String(req.user._id)) {
+    return forbidden(res, 'Access denied')
+  }
+  if (quotation.status !== 'draft') return badRequest(res, 'Only draft quotations can be deleted')
+
+  await Quotation.findByIdAndDelete(req.params.quotationId)
+
+  await auditService.log({
+    type: 'quotation',
+    action: AUDIT_ACTIONS.QUOTATION_DELETED,
+    leadId: quotation.leadId,
+    customerId: quotation.customerId,
+    performedBy: req.user._id,
+    metadata: { quotationId: quotation._id },
+  })
+
+  return success(res, {}, 'Quotation deleted')
+})
+
 exports.getLeadQuotations = asyncHandler(async (req, res) => {
   const { leadId } = req.params;
   const dateFilter = buildDateFilter(req.query);

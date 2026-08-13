@@ -1,6 +1,7 @@
 const Message = require('../../models/Message')
 const Lead = require('../../models/Lead')
 const chatLifecycle = require('../chat/chatLifecycle.service')
+const staffPresence = require('./staffPresence.service')
 
 const assertStaffCanAccessLead = async (socket, lead) => {
   const isSales = socket.user.role === 'sales'
@@ -17,6 +18,7 @@ const adminHandler = (socket, adminNS) => {
     if (!leadId) return
     socket.join(`lead:${leadId}`)
     socket.data.activeLead = leadId
+    staffPresence.registerJoin(socket, leadId)
 
     const status = await chatLifecycle.getChatStatusByLeadId(leadId)
     if (status) socket.emit('chat_status', status)
@@ -25,6 +27,7 @@ const adminHandler = (socket, adminNS) => {
   socket.on('leave_lead_chat', ({ leadId }) => {
     if (!leadId) return
     socket.leave(`lead:${leadId}`)
+    staffPresence.registerLeave(socket, leadId)
   })
 
   socket.on('end_lead_chat', async ({ leadId }) => {

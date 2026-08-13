@@ -1,6 +1,7 @@
 const mongoose = require('mongoose')
 const Invoice = require('../../models/Invoice')
 const Lead = require('../../models/Lead')
+const Customer = require('../../models/Customer')
 const ProjectBudget = require('../../models/ProjectBudget')
 const Tax = require('../../models/Tax')
 const PaymentApproval = require('../../models/PaymentApproval')
@@ -8,7 +9,8 @@ const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { withProjectIdFields } = require('../../utils/leadProjectId')
-const { generateFinancialOverviewExcel, generateWIPProfitsExcel } = require('../../utils/exportFinancialAdmin')
+const { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpensesExcel } = require('../../utils/exportFinancialAdmin')
+const { parse: parseCsv } = require('csv-parse/sync')
 
 exports.getOverview = asyncHandler(async (req, res) => {
   const base = buildDateFilter(req.query)
@@ -455,7 +457,7 @@ exports.getPaymentStatus = asyncHandler(async (req, res) => {
 // ─── Financial Overview Sub-pages ────────────────────────────────────────────
 
 const Expense = require('../../models/Expense')
-const { EXPENSE_STATUSES, EXPENSE_PAYMENT_METHODS } = Expense
+const { EXPENSE_STATUSES, EXPENSE_PAYMENT_METHODS, EXPENSE_DEPARTMENTS } = Expense
 const ExpenseCategory = require('../../models/ExpenseCategory')
 const FreightBid = require('../../models/FreightBid')
 const WIPProfit = require('../../models/WIPProfit')
@@ -467,7 +469,7 @@ exports.getFinancialOverview = asyncHandler(async (req, res) => {
   const now = new Date()
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
-  const [revenueAgg, grossProfitAgg, expenseAgg, revenueTrend, topCustomers] = await Promise.all([
+  const [revenueAgg, grossProfitAgg, expenseAgg, revenueTrend, topCustomers, expenseTrend, expenseByCategory] = await Promise.all([
     Invoice.aggregate([{ $match: { ...dateFilter, ...projectFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
     Invoice.aggregate([
       { $match: { ...dateFilter, ...projectFilter, status: 'paid' } },
@@ -490,6 +492,15 @@ exports.getFinancialOverview = asyncHandler(async (req, res) => {
       { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
       { $project: { customer: { firstName: 1, lastName: 1 }, revenue: 1 } },
     ]),
+    Expense.aggregate([
+      { $match: { ...projectFilter, date: { $gte: sixMonthsAgo } } },
+      { $group: { _id: { year: { $year: '$date' }, month: { $month: '$date' } }, expense: { $sum: '$amount' } } },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ]),
+    Expense.aggregate([
+      { $match: { ...dateFilter, ...projectFilter } },
+      { $group: { _id: '$category', total: { $sum: '$amount' } } },
+    ]),
   ])
 
   const totalRevenue = revenueAgg[0]?.total || 0
@@ -499,6 +510,30 @@ exports.getFinancialOverview = asyncHandler(async (req, res) => {
   const netProfit = grossProfit * 0.85
   const operatingCashFlow = netProfit * 0.9
 
+  // "Income vs Expense" bar chart — merge revenue-by-month and expense-by-month into one series.
+  const monthKey = (y, m) => `${y}-${m}`
+  const revenueByMonth = new Map(revenueTrend.map(r => [monthKey(r._id.year, r._id.month), r.revenue]))
+  const expenseByMonth = new Map(expenseTrend.map(e => [monthKey(e._id.year, e._id.month), e.expense]))
+  const allMonthKeys = [...new Set([...revenueByMonth.keys(), ...expenseByMonth.keys()])].sort()
+  const incomeVsExpenseTrend = allMonthKeys.map(key => {
+    const [year, month] = key.split('-').map(Number)
+    return { year, month, income: revenueByMonth.get(key) || 0, expense: expenseByMonth.get(key) || 0 }
+  })
+
+  // "Profitability (Net Profit)" donut — best-effort split since expense categories are
+  // free-text/dynamic (see ExpenseCategory), not a fixed COGS/Operating taxonomy. "Vendor/Freight"
+  // is treated as cost-of-goods-sold, everything else as operating expense. No "other income"
+  // tracked anywhere in the schema, so that's always 0 — flag if that needs a real data source.
+  const costOfGoodsSold = expenseByCategory.filter(c => c._id === 'Vendor/Freight').reduce((s, c) => s + c.total, 0)
+  const operatingExpenses = expenseByCategory.filter(c => c._id !== 'Vendor/Freight').reduce((s, c) => s + c.total, 0)
+  const profitabilityBreakdown = {
+    costOfGoodsSold,
+    operatingExpenses,
+    otherIncome: 0,
+    netProfit: Math.round(netProfit),
+    note: 'costOfGoodsSold/operatingExpenses is a best-effort split (Vendor/Freight category = COGS, everything else = operating) since expense categories are free-text, not a fixed COGS/Operating taxonomy. otherIncome is always 0 — no such data source exists in the schema yet.',
+  }
+
   return success(res, {
     totalRevenue,
     grossProfit,
@@ -506,6 +541,8 @@ exports.getFinancialOverview = asyncHandler(async (req, res) => {
     netProfit: Math.round(netProfit),
     operatingCashFlow: Math.round(operatingCashFlow),
     revenueTrend,
+    incomeVsExpenseTrend,
+    profitabilityBreakdown,
     totalExpenses,
     topCustomers,
   })
@@ -608,12 +645,21 @@ exports.createWIPEntry = asyncHandler(async (req, res) => {
 // matching deposit/progress/final total on the project's WIP record.
 exports.addWIPPayment = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { payerName, paymentType, amount, paymentDate, transactionId, remarks } = req.body
+  const { paymentType, amount, paymentDate, transactionId, remarks } = req.body
 
   const wip = await WIPProfit.findOne({ leadId })
   if (!wip) return notFound(res, 'No WIP entry exists for this project yet — create one first via POST /wip-profits')
 
-  wip.payments.push({ payerName, paymentType, amount, paymentDate, transactionId, remarks, recordedBy: req.user._id })
+  // payerName is server-derived from the project's real customer record, not client input —
+  // keeps the payer identity tied to an actual account instead of an arbitrary typed string.
+  const lead = await Lead.findById(leadId).select('customerId').lean()
+  const customer = lead?.customerId ? await Customer.findById(lead.customerId).select('firstName lastName').lean() : null
+  const payerName = customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : ''
+
+  wip.payments.push({
+    payerCustomerId: customer?._id || null,
+    payerName, paymentType, amount, paymentDate, transactionId, remarks, recordedBy: req.user._id,
+  })
 
   if (paymentType === 'deposit') wip.depositPaid += amount
   else if (paymentType === 'progress') wip.progressPaid += amount
@@ -713,6 +759,7 @@ exports.getExpenseFilters = asyncHandler(async (req, res) => {
     buildingLabels,
     statuses: EXPENSE_STATUSES,
     paymentMethods: EXPENSE_PAYMENT_METHODS,
+    departments: EXPENSE_DEPARTMENTS,
     projects: projects.map(p => ({ leadId: p._id, projectName: p.projectName, jobId: p.jobId })),
   })
 })
@@ -735,15 +782,87 @@ exports.createExpenseCategory = asyncHandler(async (req, res) => {
   return success(res, { category })
 })
 
+// GET /expenses/export — "Export Report" button on Expenses Management screen
+exports.exportExpenses = asyncHandler(async (req, res) => {
+  const { category, projectId, buildingLabel, status, startDate, endDate } = req.query
+  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
+
+  const filter = { isActive: true, ...dateFilter }
+  if (category && category !== 'All') filter.category = category
+  if (projectId) filter.leadId = projectId
+  if (buildingLabel) filter.buildingLabel = buildingLabel
+  if (status) filter.status = status
+
+  const expenses = await Expense.find(filter)
+    .populate({ path: 'leadId', select: 'projectName jobId' })
+    .sort({ date: -1 })
+    .lean()
+
+  const rows = expenses.map(e => ({
+    expenseId: e.expenseId,
+    date: e.date,
+    category: e.category,
+    subcategory: e.subcategory,
+    projectName: e.leadId?.projectName || '',
+    buildingLabel: e.buildingLabel,
+    amount: e.amount,
+    paymentMethod: e.paymentMethod,
+    status: e.status,
+    description: e.description,
+  }))
+
+  const buffer = await generateExpensesExcel(rows)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="expenses.xlsx"')
+  return res.send(buffer)
+})
+
+// POST /expenses/import — "Import Expenses" button. Body: { csv: "<raw csv text>" }
+// Expected columns: category,subcategory,date,amount,description,projectId,buildingLabel,paymentMethod,status
+exports.importExpenses = asyncHandler(async (req, res) => {
+  if (!req.body.csv) return badRequest(res, 'CSV data required in body.csv')
+
+  let records
+  try {
+    records = parseCsv(req.body.csv, { columns: true, skip_empty_lines: true, trim: true })
+  } catch (err) {
+    return badRequest(res, `Invalid CSV: ${err.message}`)
+  }
+
+  const results = { imported: 0, skipped: 0, errors: [] }
+  let count = await Expense.countDocuments()
+
+  for (const row of records) {
+    try {
+      const { category, subcategory, date, amount, description, projectId, buildingLabel, paymentMethod, status } = row
+      if (!category || !date || !amount) { results.skipped++; results.errors.push({ row, error: 'category, date, and amount are required' }); continue }
+
+      count += 1
+      await Expense.create({
+        expenseId: `EXP${String(count).padStart(5, '0')}`,
+        category, subcategory: subcategory || '', date: new Date(date), amount: Number(amount),
+        description: description || '', leadId: projectId || null, buildingLabel: buildingLabel || '',
+        paymentMethod: paymentMethod || undefined, status: status || 'pending', createdBy: req.user._id,
+      })
+      results.imported++
+    } catch (err) {
+      results.skipped++
+      results.errors.push({ row, error: err.message })
+    }
+  }
+
+  return success(res, results, `Imported ${results.imported} expense(s), skipped ${results.skipped}`)
+})
+
 exports.createExpense = asyncHandler(async (req, res) => {
-  const { category, subcategory, date, amount, description, leadId, buildingLabel, paymentMethod, status, receiptFile } = req.body
+  const { category, subcategory, date, amount, description, leadId, buildingLabel, department, paymentMethod, status, receiptFile } = req.body
 
   const count = await Expense.countDocuments()
   const expenseId = `EXP${String(count + 1).padStart(5, '0')}`
 
   const expense = await Expense.create({
     expenseId, category, subcategory, date, amount, description, leadId: leadId || null,
-    buildingLabel, paymentMethod, status, receiptFile, createdBy: req.user._id,
+    buildingLabel, department, paymentMethod, status, receiptFile, createdBy: req.user._id,
   })
 
   return success(res, { expense })
@@ -753,7 +872,7 @@ exports.updateExpense = asyncHandler(async (req, res) => {
   const expense = await Expense.findById(req.params.expenseId)
   if (!expense) return notFound(res, 'Expense not found')
 
-  const { category, subcategory, date, amount, description, leadId, buildingLabel, paymentMethod, status, receiptFile } = req.body
+  const { category, subcategory, date, amount, description, leadId, buildingLabel, department, paymentMethod, status, receiptFile } = req.body
   if (category !== undefined) expense.category = category
   if (subcategory !== undefined) expense.subcategory = subcategory
   if (date !== undefined) expense.date = date
@@ -761,6 +880,7 @@ exports.updateExpense = asyncHandler(async (req, res) => {
   if (description !== undefined) expense.description = description
   if (leadId !== undefined) expense.leadId = leadId || null
   if (buildingLabel !== undefined) expense.buildingLabel = buildingLabel
+  if (department !== undefined) expense.department = department
   if (paymentMethod !== undefined) expense.paymentMethod = paymentMethod
   if (status !== undefined) expense.status = status
   if (receiptFile !== undefined) expense.receiptFile = receiptFile
@@ -866,51 +986,207 @@ exports.getExpenseBudgetVsActualTrend = asyncHandler(async (req, res) => {
   })
 })
 
-exports.getProfitLoss = asyncHandler(async (req, res) => {
-  const { projectId, startDate, endDate } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
-  const filter = projectId ? { leadId: projectId } : {}
+// Splits total expenses across the 4 "Expenses" rows in the Figma P&L table. Same caveat as
+// Financial Overview's profitability breakdown — expense categories are free-text/dynamic, not a
+// fixed Direct/Indirect/Admin/Other taxonomy, so this is a best-effort mapping by category name.
+const splitExpenseBreakdown = (byCategory) => {
+  const get = (names) => byCategory.filter(c => names.includes(c._id)).reduce((s, c) => s + c.total, 0)
+  const directCosts = get(['Vendor/Freight'])
+  const indirectCosts = get(['Operations'])
+  const administrativeExpenses = get(['Salaries', 'Marketing'])
+  const known = directCosts + indirectCosts + administrativeExpenses
+  const total = byCategory.reduce((s, c) => s + c.total, 0)
+  const otherExpenses = Math.max(0, total - known)
+  return { directCosts, indirectCosts, administrativeExpenses, otherExpenses, totalExpenses: total }
+}
 
-  const [incomeAgg, expenseAgg, prevIncomeAgg, prevExpenseAgg] = await Promise.all([
+const buildPeriodPL = async (filter, dateFilter) => {
+  const [incomeAgg, otherIncomeAgg, expenseByCategory, taxAgg] = await Promise.all([
     Invoice.aggregate([{ $match: { ...filter, ...dateFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Expense.aggregate([{ $match: { ...filter, ...dateFilter, isActive: true } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
-    Invoice.aggregate([{ $match: { ...filter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Expense.aggregate([{ $match: { ...filter, isActive: true } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    Promise.resolve([{ total: 0 }]), // no "other income" data source exists in the schema yet
+    Expense.aggregate([{ $match: { ...filter, ...dateFilter, isActive: true } }, { $group: { _id: '$category', total: { $sum: '$amount' } } }]),
+    Tax.aggregate([{ $match: { ...dateFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
   ])
 
-  const totalRevenue = incomeAgg[0]?.total || 0
-  const totalExpenses = expenseAgg[0]?.total || 0
-  const grossProfit = totalRevenue - totalExpenses
-  const netProfit = grossProfit * 0.78
-  const netProfitMargin = totalRevenue > 0 ? Math.round((netProfit / totalRevenue) * 100) : 0
+  const projectRevenue = incomeAgg[0]?.total || 0
+  const otherIncome = otherIncomeAgg[0]?.total || 0
+  const totalIncome = projectRevenue + otherIncome
+  const expenseBreakdown = splitExpenseBreakdown(expenseByCategory)
+  const operatingProfit = totalIncome - expenseBreakdown.totalExpenses
+  const taxExpense = taxAgg[0]?.total || 0
+  const netProfit = operatingProfit - taxExpense
 
-  const prevRevenue = prevIncomeAgg[0]?.total || 0
-  const prevExpenses = prevExpenseAgg[0]?.total || 0
-  const prevGrossProfit = prevRevenue - prevExpenses
+  return { projectRevenue, otherIncome, totalIncome, expenseBreakdown, operatingProfit, taxExpense, netProfit }
+}
+
+const variance = (current, previous) => {
+  const amount = current - previous
+  const pct = previous !== 0 ? Math.round((amount / Math.abs(previous)) * 100 * 100) / 100 : 0
+  return { amount, pct }
+}
+
+// Resolves a "period" shorthand (monthly/quarterly/yearly) to a concrete date range for the
+// *current* calendar month/quarter/year. Ignored if explicit startDate/endDate are given —
+// those always take precedence.
+const resolvePeriodRange = (period, now) => {
+  if (period === 'yearly') return { start: new Date(now.getFullYear(), 0, 1), end: now }
+  if (period === 'quarterly') {
+    const qStartMonth = Math.floor(now.getMonth() / 3) * 3
+    return { start: new Date(now.getFullYear(), qStartMonth, 1), end: now }
+  }
+  if (period === 'monthly') return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now }
+  return null
+}
+
+exports.getProfitLoss = asyncHandler(async (req, res) => {
+  const { projectId, startDate, endDate, period } = req.query
+  if (period && !['monthly', 'quarterly', 'yearly'].includes(period)) {
+    return badRequest(res, 'period must be monthly, quarterly, or yearly')
+  }
+
+  const now = new Date()
+  const resolvedPeriod = !startDate && !endDate ? resolvePeriodRange(period, now) : null
+  const effectiveStartDate = startDate || resolvedPeriod?.start.toISOString()
+  const effectiveEndDate = endDate || resolvedPeriod?.end.toISOString()
+
+  const dateFilter = buildDateFilter({ startDate: effectiveStartDate, endDate: effectiveEndDate }, 'date')
+  const filter = projectId ? { leadId: projectId } : {}
+
+  // "Last Period" = same-length window immediately before startDate/endDate. Defaults to the
+  // preceding calendar month when no explicit range is given.
+  const periodEnd = effectiveEndDate ? new Date(effectiveEndDate) : now
+  const periodStart = effectiveStartDate ? new Date(effectiveStartDate) : new Date(now.getFullYear(), now.getMonth(), 1)
+  const periodLengthMs = periodEnd.getTime() - periodStart.getTime()
+  const prevEnd = new Date(periodStart.getTime() - 1)
+  const prevStart = new Date(prevEnd.getTime() - periodLengthMs)
+  const prevDateFilter = buildDateFilter({ startDate: prevStart.toISOString(), endDate: prevEnd.toISOString() }, 'date')
+
+  const [thisPeriod, lastPeriod] = await Promise.all([
+    buildPeriodPL(filter, dateFilter),
+    buildPeriodPL(filter, prevDateFilter),
+  ])
+
+  // "Income vs Expense Trend" chart — daily buckets across the selected period (falls back to
+  // last 7 days if no range given), matching the Mon-Sun axis in the Figma reference.
+  const trendStart = effectiveStartDate ? new Date(effectiveStartDate) : new Date(now.getTime() - 6 * 86400000)
+  const trendEnd = effectiveEndDate ? new Date(effectiveEndDate) : now
+  const [incomeTrendAgg, expenseTrendAgg] = await Promise.all([
+    Invoice.aggregate([
+      { $match: { ...filter, status: 'paid', date: { $gte: trendStart, $lte: trendEnd } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, total: { $sum: '$totalAmount' } } },
+    ]),
+    Expense.aggregate([
+      { $match: { ...filter, isActive: true, date: { $gte: trendStart, $lte: trendEnd } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, total: { $sum: '$amount' } } },
+    ]),
+  ])
+  const incomeByDay = new Map(incomeTrendAgg.map(r => [r._id, r.total]))
+  const expenseByDay = new Map(expenseTrendAgg.map(r => [r._id, r.total]))
+  const incomeVsExpenseTrend = []
+  for (let d = new Date(trendStart); d <= trendEnd; d.setDate(d.getDate() + 1)) {
+    const key = d.toISOString().slice(0, 10)
+    incomeVsExpenseTrend.push({ date: key, income: incomeByDay.get(key) || 0, expense: expenseByDay.get(key) || 0 })
+  }
 
   return success(res, {
-    totalRevenue,
-    totalExpenses,
-    grossProfit,
-    netProfit: Math.round(netProfit),
-    netProfitMargin,
-    summary: {
-      thisMonth: { totalRevenue, totalExpenses, grossProfit, netProfit: Math.round(netProfit) },
-      lastMonth: { totalRevenue: prevRevenue, totalExpenses: prevExpenses, grossProfit: prevGrossProfit },
-    },
-    incomeBreakdown: {
-      projectRevenue: totalRevenue * 0.95,
-      otherIncome: totalRevenue * 0.05,
-      totalIncome: totalRevenue,
-    },
-    expenseBreakdown: {
-      directCosts:            totalExpenses * 0.4,
-      indirectCosts:          totalExpenses * 0.2,
-      administrativeExpenses: totalExpenses * 0.2,
-      otherExpenses:          totalExpenses * 0.2,
-      totalExpenses,
-    },
+    totalRevenue: thisPeriod.totalIncome,
+    totalExpenses: thisPeriod.expenseBreakdown.totalExpenses,
+    grossProfit: thisPeriod.operatingProfit,
+    netProfit: thisPeriod.netProfit,
+    netProfitMargin: thisPeriod.totalIncome > 0 ? Math.round((thisPeriod.netProfit / thisPeriod.totalIncome) * 100) : 0,
+    incomeVsExpenseTrend,
+    summary: [
+      { particulars: 'Project Revenue', section: 'income', thisPeriod: thisPeriod.projectRevenue, lastPeriod: lastPeriod.projectRevenue, variance: variance(thisPeriod.projectRevenue, lastPeriod.projectRevenue) },
+      { particulars: 'Other Income', section: 'income', thisPeriod: thisPeriod.otherIncome, lastPeriod: lastPeriod.otherIncome, variance: variance(thisPeriod.otherIncome, lastPeriod.otherIncome) },
+      { particulars: 'Total Income (A)', section: 'income', bold: true, thisPeriod: thisPeriod.totalIncome, lastPeriod: lastPeriod.totalIncome, variance: variance(thisPeriod.totalIncome, lastPeriod.totalIncome) },
+      { particulars: 'Direct Costs', section: 'expenses', thisPeriod: thisPeriod.expenseBreakdown.directCosts, lastPeriod: lastPeriod.expenseBreakdown.directCosts, variance: variance(thisPeriod.expenseBreakdown.directCosts, lastPeriod.expenseBreakdown.directCosts) },
+      { particulars: 'Indirect Costs', section: 'expenses', thisPeriod: thisPeriod.expenseBreakdown.indirectCosts, lastPeriod: lastPeriod.expenseBreakdown.indirectCosts, variance: variance(thisPeriod.expenseBreakdown.indirectCosts, lastPeriod.expenseBreakdown.indirectCosts) },
+      { particulars: 'Administrative Expenses', section: 'expenses', thisPeriod: thisPeriod.expenseBreakdown.administrativeExpenses, lastPeriod: lastPeriod.expenseBreakdown.administrativeExpenses, variance: variance(thisPeriod.expenseBreakdown.administrativeExpenses, lastPeriod.expenseBreakdown.administrativeExpenses) },
+      { particulars: 'Other Expenses', section: 'expenses', thisPeriod: thisPeriod.expenseBreakdown.otherExpenses, lastPeriod: lastPeriod.expenseBreakdown.otherExpenses, variance: variance(thisPeriod.expenseBreakdown.otherExpenses, lastPeriod.expenseBreakdown.otherExpenses) },
+      { particulars: 'Total Expenses (B)', section: 'expenses', bold: true, thisPeriod: thisPeriod.expenseBreakdown.totalExpenses, lastPeriod: lastPeriod.expenseBreakdown.totalExpenses, variance: variance(thisPeriod.expenseBreakdown.totalExpenses, lastPeriod.expenseBreakdown.totalExpenses) },
+      { particulars: 'Operating Profit (A-B)', section: 'profit', bold: true, thisPeriod: thisPeriod.operatingProfit, lastPeriod: lastPeriod.operatingProfit, variance: variance(thisPeriod.operatingProfit, lastPeriod.operatingProfit) },
+      { particulars: 'Tax Expense', section: 'profit', thisPeriod: thisPeriod.taxExpense, lastPeriod: lastPeriod.taxExpense, variance: variance(thisPeriod.taxExpense, lastPeriod.taxExpense) },
+      { particulars: 'Net Profit', section: 'profit', bold: true, underline: true, thisPeriod: thisPeriod.netProfit, lastPeriod: lastPeriod.netProfit, variance: variance(thisPeriod.netProfit, lastPeriod.netProfit) },
+    ],
+    incomeBreakdown: { projectRevenue: thisPeriod.projectRevenue, otherIncome: thisPeriod.otherIncome, totalIncome: thisPeriod.totalIncome },
+    expenseBreakdown: thisPeriod.expenseBreakdown,
+    note: 'Direct/Indirect/Administrative/Other expense split and Other Income are best-effort mappings — see splitExpenseBreakdown comment. Confirm these match the intended definitions.',
   })
+})
+
+// GET /profit-loss/export
+exports.exportProfitLoss = asyncHandler(async (req, res) => {
+  const { projectId, startDate, endDate, period: periodType } = req.query
+  if (periodType && !['monthly', 'quarterly', 'yearly'].includes(periodType)) {
+    return badRequest(res, 'period must be monthly, quarterly, or yearly')
+  }
+
+  const now = new Date()
+  const resolvedPeriod = !startDate && !endDate ? resolvePeriodRange(periodType, now) : null
+  const effectiveStartDate = startDate || resolvedPeriod?.start.toISOString()
+  const effectiveEndDate = endDate || resolvedPeriod?.end.toISOString()
+
+  const dateFilter = buildDateFilter({ startDate: effectiveStartDate, endDate: effectiveEndDate }, 'date')
+  const filter = projectId ? { leadId: projectId } : {}
+  const period = await buildPeriodPL(filter, dateFilter)
+
+  const workbook = new (require('exceljs')).Workbook()
+  const sheet = workbook.addWorksheet('Profit & Loss')
+  sheet.columns = [{ header: 'Particulars', key: 'p', width: 28 }, { header: 'Amount', key: 'a', width: 18 }]
+  sheet.addRow({ p: 'Project Revenue', a: period.projectRevenue })
+  sheet.addRow({ p: 'Other Income', a: period.otherIncome })
+  sheet.addRow({ p: 'Total Income (A)', a: period.totalIncome })
+  sheet.addRow({ p: 'Direct Costs', a: period.expenseBreakdown.directCosts })
+  sheet.addRow({ p: 'Indirect Costs', a: period.expenseBreakdown.indirectCosts })
+  sheet.addRow({ p: 'Administrative Expenses', a: period.expenseBreakdown.administrativeExpenses })
+  sheet.addRow({ p: 'Other Expenses', a: period.expenseBreakdown.otherExpenses })
+  sheet.addRow({ p: 'Total Expenses (B)', a: period.expenseBreakdown.totalExpenses })
+  sheet.addRow({ p: 'Operating Profit (A-B)', a: period.operatingProfit })
+  sheet.addRow({ p: 'Tax Expense', a: period.taxExpense })
+  sheet.addRow({ p: 'Net Profit', a: period.netProfit })
+  sheet.getRow(1).font = { bold: true }
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="profit-and-loss.xlsx"')
+  return res.send(buffer)
+})
+
+// GET /profit-loss/projects — "Project-wise Profit & Loss" table
+exports.getProfitLossByProject = asyncHandler(async (req, res) => {
+  const { startDate, endDate, page = 1, limit = 20 } = req.query
+  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
+
+  const leads = await Lead.find({ quoteValue: { $gt: 0 } })
+    .select('projectName jobId')
+    .sort({ createdAt: -1 })
+    .skip((parseInt(page) - 1) * parseInt(limit))
+    .limit(parseInt(limit))
+    .lean()
+  const total = await Lead.countDocuments({ quoteValue: { $gt: 0 } })
+
+  const projects = await Promise.all(leads.map(async (lead) => {
+    const [revenueAgg, expenseAgg] = await Promise.all([
+      Invoice.aggregate([{ $match: { leadId: lead._id, ...dateFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+      Expense.aggregate([{ $match: { leadId: lead._id, ...dateFilter, isActive: true } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    ])
+    const revenue = revenueAgg[0]?.total || 0
+    const totalExpenses = expenseAgg[0]?.total || 0
+    const netProfit = revenue - totalExpenses
+    const netProfitMargin = revenue > 0 ? Math.round((netProfit / revenue) * 100 * 100) / 100 : 0
+    return {
+      projectId: lead.jobId,
+      leadId: lead._id,
+      projectName: lead.projectName,
+      revenue,
+      totalExpenses,
+      netProfit,
+      netProfitMargin,
+      status: netProfit >= 0 ? 'Profitable' : 'Loss',
+    }
+  }))
+
+  return success(res, { projects, total, page: parseInt(page), limit: parseInt(limit) })
 })
 
 exports.getFreightCostTracking = asyncHandler(async (req, res) => {
@@ -952,16 +1228,117 @@ exports.getFreightCostTracking = asyncHandler(async (req, res) => {
   })
 })
 
+// GET /freight-cost-tracking/carrier-analysis — "Carrier Cost Analysis" cards
+exports.getFreightCarrierCostAnalysis = asyncHandler(async (req, res) => {
+  const dateFilter = buildDateFilter(req.query, 'createdAt')
+
+  const carriers = await FreightBid.aggregate([
+    { $match: { ...dateFilter, status: 'selected' } },
+    { $group: { _id: '$carrierId', totalCost: { $sum: '$quotedAmount' }, deliveryCount: { $sum: 1 } } },
+    { $sort: { totalCost: -1 } },
+    { $lookup: { from: 'freightcarriers', localField: '_id', foreignField: '_id', as: 'carrier' } },
+    { $unwind: { path: '$carrier', preserveNullAndEmptyArrays: true } },
+  ])
+
+  const grandTotal = carriers.reduce((s, c) => s + c.totalCost, 0)
+
+  return success(res, {
+    carriers: carriers.map(c => ({
+      carrierId: c._id,
+      carrierName: c.carrier?.carrierName || 'Unknown',
+      totalCost: c.totalCost,
+      deliveryCount: c.deliveryCount,
+      percentOfTotal: grandTotal > 0 ? Math.round((c.totalCost / grandTotal) * 100) : 0,
+    })),
+    grandTotal,
+  })
+})
+
+// GET /freight-cost-tracking/recent — "Recent Freight Costs" list
+exports.getRecentFreightCosts = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, carrierId, projectId } = req.query
+  const filter = { status: 'selected' }
+  if (carrierId) filter.carrierId = carrierId
+
+  const [bids, total] = await Promise.all([
+    FreightBid.find(filter)
+      .populate('carrierId', 'carrierName')
+      .populate({ path: 'deliveryId', select: 'deliveryNumber leadId', populate: { path: 'leadId', select: 'projectName jobId' } })
+      .sort({ selectedAt: -1 })
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .limit(parseInt(limit))
+      .lean(),
+    FreightBid.countDocuments(filter),
+  ])
+
+  const filtered = projectId ? bids.filter(b => String(b.deliveryId?.leadId?._id) === projectId) : bids
+  const bidIds = filtered.map(b => b._id)
+  const approvals = bidIds.length
+    ? await PaymentApproval.find({ linkedType: 'freight_bid', linkedId: { $in: bidIds } }).select('linkedId status').lean()
+    : []
+  const approvalByBid = new Map(approvals.map(a => [String(a.linkedId), a.status]))
+
+  const rows = filtered.map(b => ({
+    freightId: `FR-${String(b._id).slice(-6).toUpperCase()}`,
+    bidId: b._id,
+    project: b.deliveryId?.leadId ? { leadId: b.deliveryId.leadId._id, projectName: b.deliveryId.leadId.projectName, jobId: b.deliveryId.leadId.jobId } : null,
+    carrier: b.carrierId?.carrierName || '',
+    deliveryId: b.deliveryId?.deliveryNumber || '',
+    date: b.selectedAt || b.updatedAt,
+    cost: b.quotedAmount || 0,
+    status: approvalByBid.get(String(b._id)) === 'approved' ? 'Paid' : (approvalByBid.get(String(b._id)) ? 'Pending' : 'Invoiced'),
+  }))
+
+  return success(res, { costs: rows, total, page: parseInt(page), limit: parseInt(limit) })
+})
+
+// GET /freight-cost-tracking/export
+exports.exportFreightCosts = asyncHandler(async (req, res) => {
+  const bids = await FreightBid.find({ status: 'selected' })
+    .populate('carrierId', 'carrierName')
+    .populate({ path: 'deliveryId', select: 'deliveryNumber leadId', populate: { path: 'leadId', select: 'projectName jobId' } })
+    .sort({ selectedAt: -1 })
+    .lean()
+
+  const workbook = new (require('exceljs')).Workbook()
+  const sheet = workbook.addWorksheet('Freight Costs')
+  sheet.columns = [
+    { header: 'Freight ID', key: 'freightId', width: 14 },
+    { header: 'Project', key: 'project', width: 24 },
+    { header: 'Carrier', key: 'carrier', width: 20 },
+    { header: 'Delivery ID', key: 'deliveryId', width: 16 },
+    { header: 'Date', key: 'date', width: 14 },
+    { header: 'Cost', key: 'cost', width: 14 },
+  ]
+  for (const b of bids) {
+    sheet.addRow({
+      freightId: `FR-${String(b._id).slice(-6).toUpperCase()}`,
+      project: b.deliveryId?.leadId?.projectName || '—',
+      carrier: b.carrierId?.carrierName || '—',
+      deliveryId: b.deliveryId?.deliveryNumber || '—',
+      date: b.selectedAt ? new Date(b.selectedAt).toLocaleDateString() : '—',
+      cost: b.quotedAmount || 0,
+    })
+  }
+  sheet.getRow(1).font = { bold: true }
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="freight-costs.xlsx"')
+  return res.send(buffer)
+})
+
 exports.getMarginAnalysis = asyncHandler(async (req, res) => {
   const { projectId, startDate, endDate } = req.query
   const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
+  const projectFilter = projectId ? { leadId: new mongoose.Types.ObjectId(projectId) } : {}
 
   const now = new Date()
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
   const [overallAgg, trendAgg, projectMargins] = await Promise.all([
     Invoice.aggregate([
-      { $match: { ...dateFilter, status: 'paid' } },
+      { $match: { ...projectFilter, ...dateFilter, status: 'paid' } },
       { $lookup: { from: 'expenses', localField: 'leadId', foreignField: 'leadId', as: 'expenses' } },
       { $group: {
         _id: null,
@@ -970,12 +1347,12 @@ exports.getMarginAnalysis = asyncHandler(async (req, res) => {
       }},
     ]),
     Invoice.aggregate([
-      { $match: { status: 'paid', date: { $gte: sixMonthsAgo } } },
+      { $match: { ...projectFilter, status: 'paid', date: dateFilter.date || { $gte: sixMonthsAgo } } },
       { $group: { _id: { year: { $year: '$date' }, month: { $month: '$date' } }, revenue: { $sum: '$totalAmount' } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
     Invoice.aggregate([
-      { $match: { ...dateFilter, status: 'paid' } },
+      { $match: { ...projectFilter, ...dateFilter, status: 'paid' } },
       { $group: { _id: '$leadId', revenue: { $sum: '$totalAmount' } } },
       { $sort: { revenue: -1 } },
       { $limit: 10 },
@@ -1001,8 +1378,104 @@ exports.getMarginAnalysis = asyncHandler(async (req, res) => {
   })
 })
 
+// GET /margin-analysis/trend?period=month|quarter|year — "Margin Trend Over Time" chart
+exports.getMarginTrendOverTime = asyncHandler(async (req, res) => {
+  const { period = 'month', projectId } = req.query
+  if (!['month', 'quarter', 'year'].includes(period)) return badRequest(res, 'period must be month, quarter, or year')
+
+  const now = new Date()
+  const rangeStart = period === 'year'
+    ? new Date(now.getFullYear() - 4, 0, 1)
+    : period === 'quarter'
+      ? new Date(now.getFullYear() - 2, 0, 1)
+      : new Date(now.getFullYear(), now.getMonth() - 11, 1)
+
+  const projectFilter = projectId ? { leadId: projectId } : {}
+
+  const groupId = period === 'year'
+    ? { year: { $year: '$date' } }
+    : period === 'quarter'
+      ? { year: { $year: '$date' }, quarter: { $ceil: { $divide: [{ $month: '$date' }, 3] } } }
+      : { year: { $year: '$date' }, month: { $month: '$date' } }
+
+  const [revenueAgg, expenseAgg] = await Promise.all([
+    Invoice.aggregate([
+      { $match: { ...projectFilter, status: 'paid', date: { $gte: rangeStart } } },
+      { $group: { _id: groupId, revenue: { $sum: '$totalAmount' } } },
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.quarter': 1 } },
+    ]),
+    Expense.aggregate([
+      { $match: { ...projectFilter, isActive: true, date: { $gte: rangeStart } } },
+      { $group: { _id: groupId, expense: { $sum: '$amount' } } },
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.quarter': 1 } },
+    ]),
+  ])
+
+  const keyOf = (id) => period === 'year' ? `${id.year}` : period === 'quarter' ? `${id.year}-Q${id.quarter}` : `${id.year}-${id.month}`
+  const revenueByKey = new Map(revenueAgg.map(r => [keyOf(r._id), r.revenue]))
+  const expenseByKey = new Map(expenseAgg.map(e => [keyOf(e._id), e.expense]))
+  const allKeys = [...new Set([...revenueByKey.keys(), ...expenseByKey.keys()])].sort()
+
+  const trend = allKeys.map(key => {
+    const revenue = revenueByKey.get(key) || 0
+    const expense = expenseByKey.get(key) || 0
+    const grossProfit = revenue - expense
+    return { period: key, revenue, expense, grossMarginPct: revenue > 0 ? Math.round((grossProfit / revenue) * 100) : 0 }
+  })
+
+  return success(res, { period, trend })
+})
+
+// GET /margin-analysis/by-project?projectId=... — "Margin by Projects" chart, optionally scoped to one project
+exports.getMarginByProjects = asyncHandler(async (req, res) => {
+  const { projectId, startDate, endDate, limit = 10 } = req.query
+  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
+  const filter = projectId ? { leadId: projectId } : {}
+
+  const revenueByProject = await Invoice.aggregate([
+    { $match: { ...filter, ...dateFilter, status: 'paid' } },
+    { $group: { _id: '$leadId', revenue: { $sum: '$totalAmount' } } },
+    { $sort: { revenue: -1 } },
+    { $limit: parseInt(limit) },
+    { $lookup: { from: 'leads', localField: '_id', foreignField: '_id', as: 'lead' } },
+    { $unwind: { path: '$lead', preserveNullAndEmptyArrays: true } },
+  ])
+
+  const projects = await Promise.all(revenueByProject.map(async (r) => {
+    const expenseAgg = await Expense.aggregate([
+      { $match: { leadId: r._id, ...dateFilter, isActive: true } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ])
+    const expenses = expenseAgg[0]?.total || 0
+    const grossProfit = r.revenue - expenses
+    return {
+      leadId: r._id,
+      projectName: r.lead?.projectName || '',
+      jobId: r.lead?.jobId || '',
+      revenue: r.revenue,
+      expenses,
+      grossProfit,
+      grossMarginPct: r.revenue > 0 ? Math.round((grossProfit / r.revenue) * 100) : 0,
+    }
+  }))
+
+  return success(res, { projects })
+})
+
+// Maps real Expense.category values onto the fixed "Cost Head" rows shown in the Figma table.
+// Best-effort — category names are free-text/dynamic (ExpenseCategory), not a fixed cost-head
+// taxonomy. Categories not matched by any row fall into Miscellaneous Cost.
+const COST_HEAD_CATEGORY_MAP = [
+  { head: 'Material Cost', categories: ['Vendor/Freight'], budgetField: 'materialBudget' },
+  { head: 'Carrier/Freight Cost', categories: ['Freight', 'Logistics'], budgetField: 'logisticBudget' },
+  { head: 'Manpower/Labor Cost', categories: ['Salaries', 'Operations'], budgetField: 'productionBudget' },
+  { head: 'Equipment Cost', categories: ['Equipment'], budgetField: null },
+  { head: 'Subcontractor Cost', categories: ['Subcontractor'], budgetField: 'shipperBudget' },
+  { head: 'Miscellaneous Cost', categories: ['Miscellaneous', 'Marketing'], budgetField: 'otherCost' },
+]
+
 exports.getBudgetVsActual = asyncHandler(async (req, res) => {
-  const { leadId } = req.query
+  const { leadId, startDate, endDate, department, costCategory, groupBy } = req.query
   if (!leadId) {
     const leads = await Lead.find({ isTerminated: { $ne: true } })
       .select('projectName jobId')
@@ -1011,33 +1484,46 @@ exports.getBudgetVsActual = asyncHandler(async (req, res) => {
     return success(res, { projects: leads })
   }
 
-  const [lead, budget, invoiceAgg, expenseAgg] = await Promise.all([
+  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
+  const expenseFilter = { leadId: new mongoose.Types.ObjectId(leadId), isActive: true, ...dateFilter }
+  if (department) expenseFilter.department = department
+  if (costCategory) expenseFilter.category = costCategory
+
+  const [lead, budget, invoiceAgg, expenseByCategory] = await Promise.all([
     Lead.findById(leadId).populate('customerId', 'firstName lastName').lean(),
     ProjectBudget.findOne({ leadId }).lean(),
-    Invoice.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId) } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Expense.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId) } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    Invoice.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId), ...(startDate || endDate ? buildDateFilter({ startDate, endDate }, 'date') : {}) } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    Expense.aggregate([{ $match: expenseFilter }, { $group: { _id: '$category', total: { $sum: '$amount' } } }]),
   ])
 
   if (!lead) return notFound(res, 'Project not found')
 
+  const totalActualExpense = expenseByCategory.reduce((s, c) => s + c.total, 0)
   const totalBudget = budget?.totalBudget || 0
-  const totalActual = (invoiceAgg[0]?.total || 0) + (expenseAgg[0]?.total || 0)
+  const totalActual = (invoiceAgg[0]?.total || 0) + totalActualExpense
   const variance = totalActual - totalBudget
   const budgetUsedPct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0
 
-  const costHeads = [
-    { head: 'Material Cost',       budget: budget?.materialBudget || 0, actual: expenseAgg[0]?.total * 0.4 || 0 },
-    { head: 'Carrier/Freight Cost', budget: budget?.logisticBudget || 0, actual: expenseAgg[0]?.total * 0.2 || 0 },
-    { head: 'Manpower/Labor Cost',  budget: budget?.productionBudget || 0, actual: expenseAgg[0]?.total * 0.2 || 0 },
-    { head: 'Equipment Cost',       budget: 0, actual: expenseAgg[0]?.total * 0.1 || 0 },
-    { head: 'Subcontractor Cost',   budget: budget?.shipperBudget || 0, actual: expenseAgg[0]?.total * 0.05 || 0 },
-    { head: 'Miscellaneous Cost',   budget: budget?.otherCost || 0, actual: expenseAgg[0]?.total * 0.05 || 0 },
-  ].map(row => ({
-    ...row,
-    variance: row.actual - row.budget,
-    variancePct: row.budget > 0 ? +((((row.actual - row.budget) / row.budget) * 100).toFixed(2)) : 0,
-    status: row.actual > row.budget ? 'Over Budget' : 'Under Budget',
-  }))
+  const matchedCategories = new Set(COST_HEAD_CATEGORY_MAP.flatMap(r => r.categories))
+  const costHeads = COST_HEAD_CATEGORY_MAP.map(row => {
+    let actual = expenseByCategory.filter(c => row.categories.includes(c._id)).reduce((s, c) => s + c.total, 0)
+    if (row.head === 'Miscellaneous Cost') {
+      actual += expenseByCategory.filter(c => !matchedCategories.has(c._id)).reduce((s, c) => s + c.total, 0)
+    }
+    const rowBudget = row.budgetField ? (budget?.[row.budgetField] || 0) : 0
+    return {
+      head: row.head,
+      budget: rowBudget,
+      actual,
+      variance: actual - rowBudget,
+      variancePct: rowBudget > 0 ? +((((actual - rowBudget) / rowBudget) * 100).toFixed(2)) : 0,
+      status: actual > rowBudget ? 'Over Budget' : 'Under Budget',
+    }
+  })
+
+  const grouped = groupBy === 'department'
+    ? await Expense.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId), isActive: true, ...dateFilter } }, { $group: { _id: '$department', total: { $sum: '$amount' } } }])
+    : null
 
   return success(res, {
     project: {
@@ -1055,5 +1541,7 @@ exports.getBudgetVsActual = asyncHandler(async (req, res) => {
       status: variance > 0 ? 'Over Budget' : 'Under Budget',
     },
     costHeads,
+    ...(grouped ? { byDepartment: grouped.map(g => ({ department: g._id || 'Unspecified', total: g.total })) } : {}),
+    note: 'Cost head actuals are a best-effort mapping from real Expense.category values (see COST_HEAD_CATEGORY_MAP) since categories are free-text/dynamic, not a fixed cost-head taxonomy. Unmatched categories fall into Miscellaneous Cost.',
   })
 })

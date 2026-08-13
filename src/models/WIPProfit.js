@@ -5,6 +5,7 @@ const PAYMENT_ENTRY_TYPES = ['deposit', 'progress', 'final']
 
 const PaymentEntrySchema = new mongoose.Schema(
   {
+    payerCustomerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
     payerName:     { type: String, default: '', trim: true },
     paymentType:   { type: String, enum: PAYMENT_ENTRY_TYPES, required: true },
     amount:        { type: Number, required: true },

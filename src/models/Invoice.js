@@ -1,5 +1,10 @@
 const mongoose = require('mongoose')
-const { INVOICE_STATUSES, INVOICE_VALUE_TYPES } = require('../config/constants')
+const { INVOICE_STATUSES, INVOICE_VALUE_TYPES, PAYMENT_PROOF_STATUSES } = require('../config/constants')
+
+const PaymentProofFileSchema = new mongoose.Schema(
+  { url: { type: String, required: true }, name: { type: String, default: '' } },
+  { _id: false }
+)
 const { computeInvoiceDueDate } = require('../utils/invoiceDueDate')
 
 const LineItemSchema = new mongoose.Schema(
@@ -64,6 +69,21 @@ const InvoiceSchema = new mongoose.Schema(
     // Mark as paid — stores who did it and when
     paidBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     paidAt:  { type: Date, default: null },
+
+    // Customer-submitted payment receipt review — separate from `status`, since the invoice only
+    // flips to 'paid' once admin/sales verifies the proof (see PAYMENT_PROOF_STATUSES).
+    paymentProof: {
+      status:         { type: String, enum: PAYMENT_PROOF_STATUSES, default: 'none' },
+      files:          { type: [PaymentProofFileSchema], default: [] },
+      transactionId:  { type: String, default: '', trim: true },
+      paymentDate:    { type: Date, default: null },
+      amount:         { type: Number, default: null },
+      notes:          { type: String, default: '', trim: true },
+      submittedAt:    { type: Date, default: null },
+      reviewedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      reviewedAt:     { type: Date, default: null },
+      reviewNotes:    { type: String, default: '', trim: true },
+    },
   },
   { timestamps: true }
 )
