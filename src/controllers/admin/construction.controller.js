@@ -311,6 +311,19 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
   doc.notes = req.body.notes || doc.notes
   await doc.save()
 
+  // Lets the Customer Panel invalidate/refetch its drawings query in real time instead of the
+  // approval status appearing stale until the next manual refresh.
+  if (global.io) {
+    const payload = {
+      documentId: String(doc._id),
+      leadId: String(doc.leadId),
+      status: doc.status,
+      approvedAt: doc.approvedAt,
+    }
+    global.io.of('/chat').to(`lead:${doc.leadId}`).emit('drawing_status_updated', payload)
+    global.io.of('/admin').to(`lead:${doc.leadId}`).emit('drawing_status_updated', payload)
+  }
+
   return success(res, { document: doc })
 })
 

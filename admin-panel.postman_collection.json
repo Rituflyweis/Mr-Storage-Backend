@@ -2909,7 +2909,8 @@
 							"mode": "raw",
 							"raw": "{\"status\":\"approved\"}"
 						}
-					}
+					},
+					"_postman_note": "Now emits socket event \"drawing_status_updated\" ({documentId,leadId,status,approvedAt}) to the /chat namespace (lead:{leadId} room, reaches the Customer Panel) and /admin namespace \u2014 lets the frontend invalidate/refetch its drawings query in real time instead of showing a stale approval status."
 				},
 				{
 					"name": "All Deliveries (Construction)",
