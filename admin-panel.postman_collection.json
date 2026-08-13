@@ -2867,7 +2867,8 @@
 							}
 						],
 						"url": "{{baseUrl}}/admin/construction/drawings"
-					}
+					},
+					"_postman_note": "Previously excluded comments from the list response (.select(\"-comments\")) \u2014 now includes the full populated comments array on every document, so customer-submitted drawing comments are visible here too, not just on the single-document detail view."
 				},
 				{
 					"name": "Upload Drawing",

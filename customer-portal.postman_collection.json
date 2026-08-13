@@ -678,8 +678,7 @@
 								"drawings"
 							]
 						}
-					},
-					"_postman_note": "Cross-project list with numberOfBuildings/totalDrawings/lastUpdate per project"
+					}
 				},
 				{
 					"name": "Get Project Drawings & Images",
@@ -727,7 +726,8 @@
 							]
 						},
 						"description": "Returns:\n  drawings[]        \u2014 DrawingDocument records (with status, revisionNote, fileUrl)\n  embeddedDocuments[] \u2014 from lead.documents array\n  total\n\nTest script auto-saves first drawing _id to {{docId}}.\n\nMock data (PRO-001):\n  Foundation Plan Rev A   (architectural, approved)\n  Structural Steel Layout (structural,   approved)\n  Roof Panel Layout       (architectural, approved)\n  Electrical Plan         (other,         under_review)\n  Site Elevation          (other,         approved)\n\nStatuses: pending | approved | rejected | under_review"
-					}
+					},
+					"_postman_note": "Response now includes a top-level \"project\" block (jobId, projectName, buildingType, location, lifecycleStatus, numberOfBuildings) and each drawing's \"comments\" array is populated (commentedBy/commentedByCustomer resolved to name)."
 				},
 				{
 					"name": "Approve Drawing",
@@ -841,6 +841,41 @@
 						}
 					},
 					"_postman_note": "Path segment is the building label (URL-encode spaces). Returns drawings[] (category=drawing|photo) + documents[] (category=document) separately"
+				},
+				{
+					"name": "Add Drawing Comment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/comments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"customer",
+								"projects",
+								"{{leadId}}",
+								"drawings",
+								"{{docId}}",
+								"comments"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"Please clarify duct size near column B4\"\n}"
+						}
+					},
+					"_postman_note": "Stored on the same DrawingDocument.comments array admin/plant already read, so it shows up wherever the drawing is accessed (admin construction panel list + detail). Emits socket \"drawing_comment_added\" to the /admin namespace lead room."
 				}
 			]
 		},

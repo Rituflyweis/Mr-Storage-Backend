@@ -233,7 +233,8 @@ exports.getDrawings = asyncHandler(async (req, res) => {
   const docs = await DrawingDocument.find(filter)
     .populate({ path: 'leadId', select: 'projectName jobId location' })
     .populate({ path: 'uploadedBy', select: 'name' })
-    .select('-comments')
+    .populate({ path: 'comments.commentedBy', select: 'name' })
+    .populate({ path: 'comments.commentedByCustomer', select: 'firstName lastName' })
     .sort({ createdAt: -1 })
     .lean()
 

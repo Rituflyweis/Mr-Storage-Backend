@@ -35,6 +35,7 @@ router.get('/projects/:leadId/buildings',                          ctrl.getProje
 router.get('/projects/:leadId/buildings/:buildingLabel',           ctrl.getBuildingDrawings)
 router.post('/projects/:leadId/drawings/:docId/approve',           ctrl.approveDrawing)
 router.post('/projects/:leadId/drawings/:docId/request-revision',  ctrl.requestDrawingRevision)
+router.post('/projects/:leadId/drawings/:docId/comments',          [body('text').trim().notEmpty()], validate, ctrl.addDrawingComment)
 router.get('/projects/:leadId/activity',                           ctrl.getProjectActivity)
 router.get('/projects/:leadId/notes',                              ctrl.getProjectNotes)
 router.get('/projects/:leadId/followups',                          ctrl.getProjectFollowUps)

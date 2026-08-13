@@ -1560,11 +1560,15 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
   const drawings = await DrawingDocument.find(filter)
     .populate('uploadedBy', 'name')
     .populate('approvedBy', 'name')
+    .populate('comments.commentedBy', 'name')
+    .populate('comments.commentedByCustomer', 'firstName lastName')
     .sort({ createdAt: -1 })
     .lean()
 
   // Also include documents embedded in Lead
-  const fullLead = await Lead.findById(req.params.leadId).select('documents').lean()
+  const fullLead = await Lead.findById(req.params.leadId)
+    .select('projectName jobId buildingType location lifecycleStatus numberOfBuildings documents')
+    .lean()
   const embeddedDocs = (fullLead?.documents || []).map(d => ({
     _id: d._id,
     name: d.name,
@@ -1574,7 +1578,20 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
     uploadedAt: d.uploadedAt,
   }))
 
-  return success(res, { drawings, embeddedDocuments: embeddedDocs, total: drawings.length + embeddedDocs.length })
+  return success(res, {
+    project: {
+      _id: fullLead._id,
+      jobId: fullLead.jobId,
+      projectName: fullLead.projectName,
+      buildingType: fullLead.buildingType,
+      location: fullLead.location,
+      lifecycleStatus: fullLead.lifecycleStatus,
+      numberOfBuildings: fullLead.numberOfBuildings || 1,
+    },
+    drawings,
+    embeddedDocuments: embeddedDocs,
+    total: drawings.length + embeddedDocs.length,
+  })
 })
 
 // GET /drawings — cross-project landing page ("Project Drawings" — lists every project with its building/drawing counts)
@@ -1967,6 +1984,40 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
   })
 
   return success(res, { message: 'Revision requested', drawing: { _id: doc._id, name: doc.name, status: doc.status, revisionNote: doc.revisionNote } })
+})
+
+// POST /projects/:leadId/drawings/:docId/comments — customer adds a comment on a drawing.
+// Stored on the same DrawingDocument.comments array admin/plant already read, so it shows up
+// wherever the drawing is accessed (admin construction panel, drawing detail, etc).
+exports.addDrawingComment = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId).select('customerId').lean()
+  if (!lead) return notFound(res, 'Project not found')
+  if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
+
+  const { text } = req.body
+  if (!text?.trim()) return badRequest(res, 'text is required')
+
+  const doc = await DrawingDocument.findOne({ _id: req.params.docId, leadId: req.params.leadId })
+  if (!doc) return notFound(res, 'Drawing not found')
+
+  const customer = await Customer.findById(req.customer._id).select('firstName lastName').lean()
+
+  doc.comments.push({
+    text: text.trim(),
+    commentedByCustomer: req.customer._id,
+    authorName: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '',
+  })
+  await doc.save()
+
+  if (global.io) {
+    global.io.of('/admin').to(`lead:${req.params.leadId}`).emit('drawing_comment_added', {
+      documentId: String(doc._id),
+      leadId: req.params.leadId,
+      comment: doc.comments[doc.comments.length - 1],
+    })
+  }
+
+  return created(res, { comment: doc.comments[doc.comments.length - 1] }, 'Comment added')
 })
 
 // ── Material Orders ───────────────────────────────────────────────────────────
