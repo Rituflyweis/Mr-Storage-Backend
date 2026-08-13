@@ -335,13 +335,17 @@ exports.getDashboard = asyncHandler(async (req, res) => {
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 
+// Figma "My Projects" tabs — Proposed/New Enquiry (pre-PO) vs Confirmed (PO raised), mirrors the
+// isRaisedToPO flag already used to gate the Lead -> POOrder -> Invoice pipeline elsewhere.
 exports.getProjects = asyncHandler(async (req, res) => {
-  const { lifecycleStatus, page = 1, limit = 20 } = req.query
+  const { lifecycleStatus, tab, page = 1, limit = 20 } = req.query
   const skip = (Number(page) - 1) * Number(limit)
 
   const baseFilter = { customerId: req.customer._id }
   const filter = { ...baseFilter }
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
+  if (tab === 'proposed') filter.isRaisedToPO = { $ne: true }
+  if (tab === 'confirmed') filter.isRaisedToPO = true
 
   const ACTIVE_STAGES = [
     'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
@@ -353,9 +357,9 @@ exports.getProjects = asyncHandler(async (req, res) => {
     'negotiation', 'deal_closed', 'payment_done', 'converted_to_po', 'sent_to_admin',
   ]
 
-  const [projects, total, activeCount, wipCount, cancelledCount] = await Promise.all([
+  const [projects, total, activeCount, wipCount, cancelledCount, proposedCount, confirmedCount] = await Promise.all([
     Lead.find(filter)
-      .select('jobId projectName buildingType location lifecycleStatus quoteValue isQuoteReady source documents assignedSales plannedStartDate endDate')
+      .select('jobId projectName buildingType location lifecycleStatus quoteValue isQuoteReady isRaisedToPO source documents assignedSales plannedStartDate endDate')
       .populate('assignedSales', 'name email')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -365,6 +369,8 @@ exports.getProjects = asyncHandler(async (req, res) => {
     Lead.countDocuments({ ...baseFilter, lifecycleStatus: { $in: ACTIVE_STAGES } }),
     Lead.countDocuments({ ...baseFilter, lifecycleStatus: { $in: WIP_STAGES } }),
     Lead.countDocuments({ ...baseFilter, isTerminated: true }),
+    Lead.countDocuments({ ...baseFilter, isRaisedToPO: { $ne: true } }),
+    Lead.countDocuments({ ...baseFilter, isRaisedToPO: true }),
   ])
 
   const totalAll = await Lead.countDocuments(baseFilter)
@@ -375,6 +381,8 @@ exports.getProjects = asyncHandler(async (req, res) => {
       active: activeCount,
       workInProgress: wipCount,
       cancelled: cancelledCount,
+      proposed: proposedCount,
+      confirmed: confirmedCount,
     },
     projects: projects.map(enrichLeadDocument),
     total,
@@ -579,9 +587,11 @@ exports.getDocuments = asyncHandler(async (req, res) => {
 
 exports.getPayments = asyncHandler(async (req, res) => {
   const customerId = req.customer._id
+  const { leadId } = req.query
+  const invoiceFilter = { customerId, ...(leadId ? { leadId } : {}) }
 
   const [invoices, leads] = await Promise.all([
-    Invoice.find({ customerId }).select('-paidBy -createdBy -__v').lean(),
+    Invoice.find(invoiceFilter).select('-paidBy -createdBy -__v').lean(),
     Lead.find({ customerId }).select('buildingType location').lean(),
   ])
 
@@ -679,11 +689,12 @@ exports.getPresignedUrl = asyncHandler(async (req, res) => {
 })
 
 exports.getPaymentInvoices = asyncHandler(async (req, res) => {
-  const { status } = req.query
+  const { status, leadId } = req.query
   const customerId = req.customer._id
 
   const invoiceFilter = { customerId }
   if (status) invoiceFilter.status = status
+  if (leadId) invoiceFilter.leadId = leadId
 
   const [invoices, leads] = await Promise.all([
     Invoice.find(invoiceFilter).select('-paidBy -createdBy -__v').sort({ createdAt: -1 }).lean(),
@@ -750,6 +761,51 @@ exports.getPaymentInvoiceDetail = asyncHandler(async (req, res) => {
     invoice: { ...invoice, dueDate: computeDueDate(invoice), project: lead || null },
     paymentSchedule,
   })
+})
+
+// POST /payments/invoices/:invoiceId/payment-proof — customer uploads transaction receipt.
+// Invoice stays unpaid (status untouched) until admin/sales verifies via the /verify endpoint.
+exports.submitPaymentProof = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId)
+  if (!invoice) return notFound(res, 'Invoice not found')
+  if (String(invoice.customerId) !== String(req.customer._id)) return forbidden(res, 'This invoice does not belong to your account')
+  if (invoice.status === 'paid') return badRequest(res, 'Invoice is already paid')
+
+  const { files, transactionId, paymentDate, amount, notes } = req.body
+  if (!Array.isArray(files) || !files.length) return badRequest(res, 'At least one receipt file is required')
+
+  invoice.paymentProof = {
+    status: 'pending_review',
+    files: files.map(f => ({ url: f.url, name: f.name || '' })),
+    transactionId: transactionId || '',
+    paymentDate: paymentDate ? new Date(paymentDate) : null,
+    amount: amount != null ? Number(amount) : null,
+    notes: notes || '',
+    submittedAt: new Date(),
+    reviewedBy: null,
+    reviewedAt: null,
+    reviewNotes: '',
+  }
+  await invoice.save()
+
+  await auditService.log({
+    type: 'invoice',
+    action: AUDIT_ACTIONS.PAYMENT_PROOF_SUBMITTED,
+    leadId: invoice.leadId,
+    customerId: invoice.customerId,
+    performedBy: req.customer._id,
+    metadata: { invoiceId: invoice._id, transactionId },
+  })
+
+  if (global.io) {
+    global.io.of('/admin').to('admin_room').emit('payment_proof_submitted', {
+      invoiceId: String(invoice._id),
+      invoiceNumber: invoice.invoiceNumber,
+      leadId: String(invoice.leadId),
+    })
+  }
+
+  return success(res, { invoice }, 'Receipt submitted — pending review')
 })
 
 // GET /payments/invoice-stats  — Figma cards: Total Project Value, Pending Amount, Amount Paid, Upcoming Invoice Due
@@ -2255,6 +2311,23 @@ const CHAT_CHANNELS = [
 ]
 
 // GET /chat/channels — per-project channel list with unread counts
+// GET /chat/presence?leadId= — initial online/offline state for both sides (sockets only push
+// updates after connecting; this covers the state on first page load).
+exports.getChatPresence = asyncHandler(async (req, res) => {
+  const { leadId } = req.query
+  if (!leadId) return badRequest(res, 'leadId is required')
+
+  const lead = await Lead.findById(leadId).select('customerId isOnline').lean()
+  if (!lead || String(lead.customerId) !== String(req.customer._id)) return notFound(res, 'Project not found')
+
+  const staffPresence = require('../services/socket/staffPresence.service')
+  return success(res, {
+    leadId,
+    customerIsOnline: Boolean(lead.isOnline),
+    staffIsOnline: staffPresence.isLeadStaffOnline(leadId),
+  })
+})
+
 exports.getChatChannels = asyncHandler(async (req, res) => {
   const { leadId } = req.query
   if (!leadId) return badRequest(res, 'leadId is required')

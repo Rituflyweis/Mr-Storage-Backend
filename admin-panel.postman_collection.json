@@ -77,6 +77,10 @@
 		{
 			"key": "bundleId",
 			"value": ""
+		},
+		{
+			"key": "invoiceId",
+			"value": ""
 		}
 	],
 	"item": [
@@ -1878,6 +1882,102 @@
 							]
 						}
 					}
+				},
+				{
+					"name": "Payment Receipt Verification [NEW]",
+					"item": [
+						{
+							"name": "Pending Payment Proofs (Review Queue)",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/invoices/payment-proofs/pending",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"invoices",
+										"payment-proofs",
+										"pending"
+									]
+								}
+							},
+							"_postman_note": "Customer-submitted receipts awaiting review (Figma MOM: \"Add a payment receipt submission flow... Admin can verify/approve the payment only after receiving the payment receipt\"). Sales sees only proofs on their assigned leads; admin sees all."
+						},
+						{
+							"name": "Verify Payment Proof (Approve)",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/invoices/{{invoiceId}}/payment-proof/verify",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"invoices",
+										"{{invoiceId}}",
+										"payment-proof",
+										"verify"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"reviewNotes\": \"Confirmed with bank statement\"\n}"
+								}
+							},
+							"_postman_note": "Marks the invoice as paid (status=paid, paidAt/paidBy set) and paymentProof.status=verified. Fails with 400 if there is no pending_review proof on this invoice."
+						},
+						{
+							"name": "Reject Payment Proof",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/invoices/{{invoiceId}}/payment-proof/reject",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"invoices",
+										"{{invoiceId}}",
+										"payment-proof",
+										"reject"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"reviewNotes\": \"Amount mismatch, please resubmit the correct receipt\"\n}"
+								}
+							},
+							"_postman_note": "Invoice stays unpaid; paymentProof.status=rejected with reviewNotes. Customer can resubmit via POST /customer/payments/invoices/:invoiceId/payment-proof, which resets it to pending_review."
+						}
+					],
+					"_postman_note": "Backs the Customer Panel \"Upload Transaction Receipt\" flow \u2014 customer uploads proof (stays pending), admin/sales verifies or rejects here. Uses {{token}} (admin/sales), not the customer token."
 				}
 			]
 		},

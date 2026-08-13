@@ -56,6 +56,9 @@ const INVOICE_CREATE_MIN_LIFECYCLE_STAGE = 'proposal_sent'
 const PRIORITY_LEVELS = ['low', 'medium', 'high', 'urgent']
 const QUOTATION_STATUSES = ['draft', 'sent', 'accepted', 'rejected']
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
+/** Customer-submitted payment receipt review state — independent of invoice.status (invoice only
+ * flips to 'paid' once admin/sales verifies the proof). */
+const PAYMENT_PROOF_STATUSES = ['none', 'pending_review', 'verified', 'rejected']
 /** Line-item markup/tax input mode: percentage (of rate / line subtotal) or flat amount */
 const INVOICE_VALUE_TYPES = ['percentage', 'amount']
 const FOLLOW_UP_STATUSES = ['pending', 'completed']
@@ -119,6 +122,9 @@ const AUDIT_ACTIONS = {
   INVOICE_SENT:             'invoice.sent',
   INVOICE_PAID:             'invoice.paid',
   INVOICE_EDITED:           'invoice.edited',
+  PAYMENT_PROOF_SUBMITTED: 'invoice.payment_proof_submitted',
+  PAYMENT_PROOF_VERIFIED:  'invoice.payment_proof_verified',
+  PAYMENT_PROOF_REJECTED:  'invoice.payment_proof_rejected',
   PAYMENT_STAGE_INVOICED:   'payment.stage_invoiced',
   PAYMENT_STAGE_PAID:       'payment.stage_paid',
   PAYMENT_SCHEDULE_UPDATED: 'payment.schedule_updated',
@@ -240,6 +246,7 @@ module.exports = {
   PRIORITY_LEVELS,
   QUOTATION_STATUSES,
   INVOICE_STATUSES,
+  PAYMENT_PROOF_STATUSES,
   INVOICE_VALUE_TYPES,
   FOLLOW_UP_STATUSES,
   FOLLOW_UP_MODES,

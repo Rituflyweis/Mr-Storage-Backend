@@ -72,6 +72,7 @@ router.get('/payments/invoice-stats',  ctrl.getInvoiceStats)
 router.get('/payments',                ctrl.getPayments)
 router.get('/payments/invoices',       ctrl.getPaymentInvoices)
 router.get('/payments/invoices/:invoiceId', ctrl.getPaymentInvoiceDetail)
+router.post('/payments/invoices/:invoiceId/payment-proof', ctrl.submitPaymentProof)
 router.get('/payments/tax-report',     ctrl.getTaxReport)
 
 // Delivery Schedule (static routes before the smart :id dispatch route)
@@ -112,6 +113,7 @@ router.get('/bundles/:bundleId/download',             ctrl.downloadBundleContent
 router.get('/bundles/:bundleId/download/packing-list', ctrl.downloadBundlePackingList)
 
 // Communication / Chat
+router.get('/chat/presence',                 ctrl.getChatPresence)
 router.get('/chat/channels',                 ctrl.getChatChannels)
 router.get('/chat/:channel/messages',        ctrl.getChatMessages)
 router.post('/chat/:channel/messages',       ctrl.sendChatMessage)
