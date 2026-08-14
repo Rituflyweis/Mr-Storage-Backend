@@ -424,7 +424,7 @@
 						},
 						"description": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule, navigation\n\nlead now also includes: buildingsCount (count of Building docs for this project), createdAt, plannedStartDate, endDate\n\nnavigation { previous, next } \u2014 sibling project { _id, jobId, projectName } in the customer's project list (same order as Get All Projects), for the prev/next project switcher button. null at either end of the list."
 					},
-					"_postman_note": "projectSteps now has 21 individual entries (one per granular sales+plant lifecycle stage: initial_contact -> ... -> delivered) instead of 5 collapsed buckets (Design/Fabrication/Dispatch/Install/Complete) \u2014 matches the Plant Panel's stage-by-stage tracking 1:1. Each stage key is now one of: initial_contact, requirements_gathered, proposal_sent, negotiation, deal_closed, payment_done, converted_to_po, sent_to_admin, released_to_plant, drawings_received, bom_received, bom_review, material_check, production_planning, fabrication_started, quality_inspection, packing_bundling, shipper_prepared, ready_for_delivery, dispatched, delivered."
+					"_postman_note": "Fixed a real bug: the Mongoose .select() was missing jobId, so lead.jobId/projectId always came back as \"\" even when the Lead document had a real PRO-xxxx job id. Now also includes projectName, roofStyle, sqft, width/length/height, numDoors/numWindows/numInsulation, numberOfBuildings, notes, source."
 				},
 				{
 					"name": "Get Project Stats",
@@ -572,7 +572,7 @@
 						},
 						"description": "Creates a new project enquiry (lead) for this customer. Sets lifecycleStatus: initial_contact."
 					},
-					"_postman_note": "Updated to match the Figma \"Create New Project\" form. Required: projectName, buildingType, expectedStartDate, targetCompletionDate, fullAddress, city, pincode, state. Optional: width/length/height/doors/windows/insulation, description. Creates a Lead with source=customer_portal, lifecycleStatus=initial_contact."
+					"_postman_note": "Updated to match the Figma \"Create New Project\" form. Required: projectName, buildingType, expectedStartDate, targetCompletionDate, fullAddress, city, pincode, state. Optional: width/length/height/doors/windows/insulation, description. Creates a Lead with source=customer_portal, lifecycleStatus=initial_contact. Request body keys doors/windows/insulation map to Lead.numDoors/numWindows/numInsulation (existing model fields \u2014 response echoes them back as numDoors/numWindows/numInsulation)."
 				},
 				{
 					"name": "Get Project Tracking",

@@ -408,7 +408,11 @@ exports.getProject = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
   const lead = await Lead.findById(leadId)
-    .select('customerId buildingType location lifecycleStatus lifecycleHistory quoteValue documents assignedSales createdAt plannedStartDate endDate')
+    .select(
+      'customerId jobId projectName buildingType location city state pincode roofStyle sqft ' +
+      'width length height numDoors numWindows numInsulation numberOfBuildings notes source ' +
+      'lifecycleStatus lifecycleHistory quoteValue documents assignedSales createdAt plannedStartDate endDate'
+    )
     .populate('assignedSales', 'name email')
     .lean()
 
@@ -501,9 +505,9 @@ exports.createProject = asyncHandler(async (req, res) => {
     width:             width  ?? null,
     length:            length ?? null,
     height:            height ?? null,
-    doors:             doors ?? null,
-    windows:           windows ?? null,
-    insulation:        insulation ?? null,
+    numDoors:          doors ?? null,
+    numWindows:        windows ?? null,
+    numInsulation:     insulation ?? null,
     notes:             description || '',
     source:            'customer_portal',
     lifecycleStatus:   'initial_contact',
@@ -538,9 +542,9 @@ exports.createProject = asyncHandler(async (req, res) => {
       width:            lead.width,
       length:           lead.length,
       height:           lead.height,
-      doors:            lead.doors,
-      windows:          lead.windows,
-      insulation:       lead.insulation,
+      numDoors:         lead.numDoors,
+      numWindows:       lead.numWindows,
+      numInsulation:    lead.numInsulation,
       notes:            lead.notes,
       source:           lead.source,
       lifecycleStatus:  lead.lifecycleStatus,
