@@ -1623,6 +1623,29 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
     uploadedAt: d.uploadedAt,
   }))
 
+  // Plant Panel uploads fabrication drawings onto Building.drawings — a separate, per-building
+  // versioned store from DrawingDocument (used by admin/customer's own drawing upload+comment
+  // flow). Surfaced here as its own array (different status enum / no comments) rather than
+  // merged into `drawings`, so nothing here silently loses the version/building context.
+  const buildings = await Building.find({ leadId: req.params.leadId })
+    .select('buildingNumber drawings')
+    .populate('drawings.uploadedBy', 'name')
+    .lean()
+  const plantDrawings = buildings.flatMap((b) =>
+    (b.drawings || []).map((d) => ({
+      _id: d._id,
+      buildingNumber: b.buildingNumber,
+      versionNumber: d.versionNumber,
+      name: d.fileName,
+      fileUrl: d.fileUrl,
+      status: d.status,
+      rejectionReason: d.rejectionReason,
+      uploadedBy: d.uploadedBy,
+      uploadedAt: d.uploadedAt,
+      reviewedAt: d.reviewedAt,
+    }))
+  )
+
   return success(res, {
     project: {
       _id: fullLead._id,
@@ -1635,7 +1658,8 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
     },
     drawings,
     embeddedDocuments: embeddedDocs,
-    total: drawings.length + embeddedDocs.length,
+    plantDrawings,
+    total: drawings.length + embeddedDocs.length + plantDrawings.length,
   })
 })
 
