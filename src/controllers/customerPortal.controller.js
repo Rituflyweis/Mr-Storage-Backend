@@ -1602,12 +1602,11 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
   const filter = { leadId: req.params.leadId }
   if (type) filter.documentType = type
 
-  const drawings = await DrawingDocument.find(filter)
+  const drawingDocs = await DrawingDocument.find(filter)
     .populate('uploadedBy', 'name')
     .populate('approvedBy', 'name')
     .populate('comments.commentedBy', 'name')
     .populate('comments.commentedByCustomer', 'firstName lastName')
-    .sort({ createdAt: -1 })
     .lean()
 
   // Also include documents embedded in Lead
@@ -1624,27 +1623,40 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
   }))
 
   // Plant Panel uploads fabrication drawings onto Building.drawings — a separate, per-building
-  // versioned store from DrawingDocument (used by admin/customer's own drawing upload+comment
-  // flow). Surfaced here as its own array (different status enum / no comments) rather than
-  // merged into `drawings`, so nothing here silently loses the version/building context.
+  // versioned store from DrawingDocument. Mapped onto the same shape/keys as DrawingDocument and
+  // merged into the single `drawings` array below, so the response structure doesn't change.
+  const PLANT_STATUS_MAP = { pending_review: 'pending', approved: 'approved', rejected: 'rejected' }
   const buildings = await Building.find({ leadId: req.params.leadId })
     .select('buildingNumber drawings')
     .populate('drawings.uploadedBy', 'name')
     .lean()
-  const plantDrawings = buildings.flatMap((b) =>
+  const plantDrawingsMapped = buildings.flatMap((b) =>
     (b.drawings || []).map((d) => ({
       _id: d._id,
-      buildingNumber: b.buildingNumber,
-      versionNumber: d.versionNumber,
+      leadId: req.params.leadId,
+      buildingLabel: `Building ${b.buildingNumber}`,
+      category: 'drawing',
       name: d.fileName,
       fileUrl: d.fileUrl,
-      status: d.status,
-      rejectionReason: d.rejectionReason,
+      fileType: '',
+      fileSize: 0,
+      documentType: 'other',
+      status: PLANT_STATUS_MAP[d.status] || d.status,
       uploadedBy: d.uploadedBy,
-      uploadedAt: d.uploadedAt,
-      reviewedAt: d.reviewedAt,
+      approvedBy: null,
+      approvedAt: d.status === 'approved' ? d.reviewedAt : null,
+      notes: d.rejectionReason || '',
+      revisionNote: d.rejectionReason || '',
+      revisionRequestedAt: d.status === 'rejected' ? d.reviewedAt : null,
+      comments: [],
+      versionNumber: d.versionNumber,
+      createdAt: d.uploadedAt,
+      updatedAt: d.reviewedAt || d.uploadedAt,
     }))
   )
+
+  const drawings = [...drawingDocs, ...plantDrawingsMapped]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
   return success(res, {
     project: {
@@ -1658,8 +1670,7 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
     },
     drawings,
     embeddedDocuments: embeddedDocs,
-    plantDrawings,
-    total: drawings.length + embeddedDocs.length + plantDrawings.length,
+    total: drawings.length + embeddedDocs.length,
   })
 })
 
