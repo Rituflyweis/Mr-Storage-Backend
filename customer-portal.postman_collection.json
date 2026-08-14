@@ -680,7 +680,8 @@
 								"drawings"
 							]
 						}
-					}
+					},
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				},
 				{
 					"name": "Get Project Drawings & Images",
@@ -756,7 +757,8 @@
 							]
 						},
 						"description": "Customer approves a drawing.\n\nSets status \u2192 approved, approvedAt \u2192 now.\nReturns: { _id, name, status }\n\nRun 'Get Project Drawings' first to populate {{docId}}."
-					}
+					},
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				},
 				{
 					"name": "Request Drawing Revision",
@@ -791,7 +793,8 @@
 							"raw": "{\n  \"note\": \"Please adjust the roof pitch from 3:12 to 4:12 and increase eave height to 22ft\"\n}"
 						},
 						"description": "Customer requests a revision on a drawing.\n\nSets status \u2192 under_review, saves revisionNote + revisionRequestedAt.\nnote is required.\nReturns: { _id, name, status, revisionNote }"
-					}
+					},
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				},
 				{
 					"name": "Get Project Buildings",
@@ -816,7 +819,7 @@
 							]
 						}
 					},
-					"_postman_note": "Per-building drawing/document counts \u2014 'Select a building' screen"
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				},
 				{
 					"name": "Get Building Drawings & Documents",
@@ -842,7 +845,7 @@
 							]
 						}
 					},
-					"_postman_note": "Path segment is the building label (URL-encode spaces). Returns drawings[] (category=drawing|photo) + documents[] (category=document) separately"
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				},
 				{
 					"name": "Add Drawing Comment",
@@ -877,7 +880,7 @@
 							"raw": "{\n  \"text\": \"Please clarify duct size near column B4\"\n}"
 						}
 					},
-					"_postman_note": "Stored on the same DrawingDocument.comments array admin/plant already read, so it shows up wherever the drawing is accessed (admin construction panel list + detail). Emits socket \"drawing_comment_added\" to the /admin namespace lead room."
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				}
 			]
 		},
