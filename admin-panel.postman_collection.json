@@ -3707,6 +3707,31 @@
 					"_postman_note": "Returns an .xlsx workbook (Content-Disposition attachment) of the same rows getSavings would return, filtered the same way (status/startDate/endDate/search/projectId)."
 				},
 				{
+					"name": "Freight Load Filters (statuses, carriers, projects, customers)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/freight-loads/filters",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"freight-loads",
+								"filters"
+							]
+						}
+					},
+					"_postman_note": "New endpoint to populate the Freight Loads / Awarded Loads filter dropdowns. Returns the full FREIGHT_BID_STATUSES enum, plus carriers/projects/customers narrowed to only those that actually appear on at least one FreightBid (not every carrier/lead/customer in the system)."
+				},
+				{
 					"name": "Freight Loads",
 					"request": {
 						"method": "GET",
@@ -3717,7 +3742,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseUrl}}/admin/plant/freight-loads?status=submitted&carrierId={{carrierId}}&projectId={{leadId}}&startDate=2026-01-01&endDate=2026-12-31&page=1&limit=20",
+							"raw": "{{baseUrl}}/admin/plant/freight-loads?status=submitted&carrierId={{carrierId}}&projectId={{leadId}}&customerId={{customerId}}&startDate=2026-01-01&endDate=2026-12-31&search=TKN&page=1&limit=20",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -3740,12 +3765,20 @@
 									"value": "{{leadId}}"
 								},
 								{
+									"key": "customerId",
+									"value": "{{customerId}}"
+								},
+								{
 									"key": "startDate",
 									"value": "2026-01-01"
 								},
 								{
 									"key": "endDate",
 									"value": "2026-12-31"
+								},
+								{
+									"key": "search",
+									"value": "TKN"
 								},
 								{
 									"key": "page",
@@ -3758,7 +3791,7 @@
 							]
 						}
 					},
-					"_postman_note": "Added carrierId/projectId/customerId/startDate/endDate filters (previously only status+search). Also now excludes bids whose Delivery/Lead was deleted (orphaned rows the frontend couldn't open anyway)."
+					"_postman_note": "customerId filter already worked server-side (matches Lead.customerId via deliveryId.leadId) but was undocumented/unvalidated \u2014 now has an express-validator isMongoId() check on the route, same as the other id filters."
 				},
 				{
 					"name": "Awarded Loads",
@@ -3770,9 +3803,53 @@
 								"value": "Bearer {{token}}"
 							}
 						],
-						"url": "{{baseUrl}}/admin/plant/awarded-loads"
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/awarded-loads?carrierId={{carrierId}}&projectId={{leadId}}&customerId={{customerId}}&startDate=2026-01-01&endDate=2026-12-31&search=TKN&page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"awarded-loads"
+							],
+							"query": [
+								{
+									"key": "carrierId",
+									"value": "{{carrierId}}"
+								},
+								{
+									"key": "projectId",
+									"value": "{{leadId}}"
+								},
+								{
+									"key": "customerId",
+									"value": "{{customerId}}"
+								},
+								{
+									"key": "startDate",
+									"value": "2026-01-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-12-31"
+								},
+								{
+									"key": "search",
+									"value": "TKN"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
 					},
-					"_postman_note": "Already fully supports status/projectId/customerId/carrierId/startDate/endDate/search filters via getFreightLoadsCommon \u2014 no change needed, confirmed working."
+					"_postman_note": "Added carrierId/projectId/customerId/startDate/endDate/search filters to match Freight Loads (status is always 'selected' here by definition of \"awarded\"). Also fixed: search was previously destructured from req.query but never applied to the filter \u2014 dead code."
 				},
 				{
 					"name": "Deliveries Calendar",

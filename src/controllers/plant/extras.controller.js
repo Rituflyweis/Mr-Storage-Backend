@@ -2,6 +2,8 @@ const ExcelJS = require('exceljs')
 const Lead = require('../../models/Lead')
 const Delivery = require('../../models/Delivery')
 const FreightBid = require('../../models/FreightBid')
+const FreightCarrier = require('../../models/FreightCarrier')
+const Customer = require('../../models/Customer')
 const BundlePlan = require('../../models/BundlePlan')
 const SMDTItem = require('../../models/SMDTItem')
 const SMDTCostVersion = require('../../models/SMDTCostVersion')
@@ -11,6 +13,7 @@ const WIPProfit = require('../../models/WIPProfit')
 const asyncHandler = require('../../utils/asyncHandler')
 const { success, notFound } = require('../../utils/apiResponse')
 const { buildDateFilter } = require('../../utils/dateRange')
+const { FREIGHT_BID_STATUSES } = require('../../config/constants')
 
 const computeSavings = async ({ startDate, endDate, status, search, projectId }) => {
   const dateFilter = buildDateFilter({ startDate, endDate })
@@ -174,21 +177,25 @@ exports.getFreightLoads = asyncHandler(async (req, res) => {
 })
 
 exports.getAwardedLoads = asyncHandler(async (req, res) => {
-  const { search, page = 1, limit = 20 } = req.query
+  const { search, carrierId, projectId, customerId, startDate, endDate, page = 1, limit = 20 } = req.query
 
   const filter = { status: 'selected' }
+  if (carrierId) filter.carrierId = carrierId
+  if (search) filter.$or = [
+    { token: { $regex: search, $options: 'i' } },
+  ]
+  const dateFilter = buildDateFilter({ startDate, endDate })
+  if (dateFilter.createdAt) filter.createdAt = dateFilter.createdAt
 
-  const [bids, total, statsAgg] = await Promise.all([
+  const [rawBids, total, statsAgg] = await Promise.all([
     FreightBid.find(filter)
       .populate({
         path: 'deliveryId',
         select: 'leadId material pickupLocation dropoffLocation scheduledDate status',
-        populate: { path: 'leadId', select: 'projectName jobId' },
+        populate: { path: 'leadId', select: 'projectName jobId customerId' },
       })
       .populate({ path: 'carrierId', select: 'carrierName phone contactName' })
       .sort({ selectedAt: -1 })
-      .skip((parseInt(page) - 1) * parseInt(limit))
-      .limit(parseInt(limit))
       .lean(),
     FreightBid.countDocuments(filter),
     FreightBid.aggregate([
@@ -201,6 +208,13 @@ exports.getAwardedLoads = asyncHandler(async (req, res) => {
     ]),
   ])
 
+  let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
+  if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
+  if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
+
+  const filteredTotal = (projectId || customerId) ? bids.length : total - (rawBids.length - bids.length)
+  const paged = bids.slice((parseInt(page) - 1) * parseInt(limit), (parseInt(page) - 1) * parseInt(limit) + parseInt(limit))
+
   const s = statsAgg[0] || {}
   return success(res, {
     stats: {
@@ -209,10 +223,43 @@ exports.getAwardedLoads = asyncHandler(async (req, res) => {
       delivered:    0,
       totalSpent:   s.totalSpent || 0,
     },
-    loads: bids,
-    total,
+    loads: paged,
+    total: filteredTotal,
     page: parseInt(page),
     limit: parseInt(limit),
+  })
+})
+
+exports.getFreightLoadFilters = asyncHandler(async (req, res) => {
+  const [carrierIds, deliveryIds] = await Promise.all([
+    FreightBid.distinct('carrierId'),
+    FreightBid.distinct('deliveryId'),
+  ])
+
+  const [carriers, deliveries] = await Promise.all([
+    carrierIds.length
+      ? FreightCarrier.find({ _id: { $in: carrierIds } }).select('carrierName').sort({ carrierName: 1 }).lean()
+      : [],
+    deliveryIds.length
+      ? Delivery.find({ _id: { $in: deliveryIds } }).select('leadId').lean()
+      : [],
+  ])
+
+  const leadIds = [...new Set(deliveries.map((d) => String(d.leadId)).filter(Boolean))]
+  const leads = leadIds.length
+    ? await Lead.find({ _id: { $in: leadIds } }).select('projectName jobId customerId').sort({ projectName: 1 }).lean()
+    : []
+
+  const customerIds = [...new Set(leads.map((l) => String(l.customerId)).filter(Boolean))]
+  const customers = customerIds.length
+    ? await Customer.find({ _id: { $in: customerIds } }).select('firstName lastName').sort({ firstName: 1 }).lean()
+    : []
+
+  return success(res, {
+    statuses: FREIGHT_BID_STATUSES,
+    carriers: carriers.map((c) => ({ _id: c._id, carrierName: c.carrierName })),
+    projects: leads.map((l) => ({ _id: l._id, projectName: l.projectName, jobId: l.jobId })),
+    customers: customers.map((c) => ({ _id: c._id, name: `${c.firstName} ${c.lastName || ''}`.trim() })),
   })
 })
 

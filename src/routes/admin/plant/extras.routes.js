@@ -2,6 +2,7 @@ const router = require('express').Router()
 const { body, param, query } = require('express-validator')
 const ctrl = require('../../../controllers/plant/extras.controller')
 const validate = require('../../../middleware/validate')
+const { FREIGHT_BID_STATUSES } = require('../../../config/constants')
 
 // Savings
 router.get('/savings',
@@ -19,8 +20,38 @@ router.get('/savings/export',
 )
 
 // Freight Loads
-router.get('/freight-loads',   ctrl.getFreightLoads)
-router.get('/awarded-loads',   ctrl.getAwardedLoads)
+router.get('/freight-loads/filters', ctrl.getFreightLoadFilters)
+
+router.get('/freight-loads',
+  [
+    query('status').optional().isIn(FREIGHT_BID_STATUSES),
+    query('carrierId').optional().isMongoId(),
+    query('projectId').optional().isMongoId(),
+    query('customerId').optional().isMongoId(),
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+    query('search').optional().trim(),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+  ],
+  validate,
+  ctrl.getFreightLoads
+)
+
+router.get('/awarded-loads',
+  [
+    query('carrierId').optional().isMongoId(),
+    query('projectId').optional().isMongoId(),
+    query('customerId').optional().isMongoId(),
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+    query('search').optional().trim(),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+  ],
+  validate,
+  ctrl.getAwardedLoads
+)
 
 // Deliveries
 router.get('/deliveries-calendar', ctrl.getDeliveriesCalendar)
