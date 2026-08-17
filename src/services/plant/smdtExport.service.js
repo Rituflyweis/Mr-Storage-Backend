@@ -29,16 +29,17 @@ const buildSMDTExportFilter = ({
   return filter
 }
 
-const buildSMDTStats = async (activeVersion) => {
+const buildSMDTStats = async (activeVersion, filters = {}) => {
   if (!activeVersion) {
     return {
       totalItems: 0,
       totalItemCost: 0,
+      newAdded: 0,
       newlyAdded: 0,
     }
   }
 
-  const baseFilter = { costVersionId: activeVersion._id, isActive: true }
+  const baseFilter = buildSMDTExportFilter({ ...filters, activeVersionId: activeVersion._id })
   const items = await SMDTItem.find(baseFilter)
     .select('mbsCost currentMarketCost createdAt')
     .lean()
@@ -49,14 +50,15 @@ const buildSMDTStats = async (activeVersion) => {
   }, 0)
 
   const versionCreatedAt = activeVersion.createdAt ? new Date(activeVersion.createdAt) : null
-  const newlyAdded = versionCreatedAt
+  const newAdded = versionCreatedAt
     ? items.filter((row) => new Date(row.createdAt).getTime() >= versionCreatedAt.getTime()).length
     : 0
 
   return {
     totalItems: items.length,
     totalItemCost: Math.round(totalItemCost * 100) / 100,
-    newlyAdded,
+    newAdded,
+    newlyAdded: newAdded,
     lastImportInserted: activeVersion.stats?.inserted ?? 0,
     lastImportUpdated: activeVersion.stats?.updated ?? 0,
   }
@@ -122,9 +124,9 @@ const exportActiveSMDTToExcelBuffer = async (query = {}) => {
   return workbook.xlsx.writeBuffer()
 }
 
-const getActiveSMDTStats = async () => {
+const getActiveSMDTStats = async (filters = {}) => {
   const activeVersion = await getActiveCostVersion()
-  const stats = await buildSMDTStats(activeVersion)
+  const stats = await buildSMDTStats(activeVersion, filters)
 
   return {
     activeVersion: activeVersion

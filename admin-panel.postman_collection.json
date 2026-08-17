@@ -3636,7 +3636,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseUrl}}/admin/plant/savings?status=Good&startDate=2026-01-01&endDate=2026-12-31&search=warehouse",
+							"raw": "{{baseUrl}}/admin/plant/savings?status=Good&startDate=2026-01-01&endDate=2026-12-31&search=warehouse&projectId={{leadId}}",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -3661,11 +3661,50 @@
 								{
 									"key": "search",
 									"value": "warehouse"
+								},
+								{
+									"key": "projectId",
+									"value": "{{leadId}}"
 								}
 							]
 						}
 					},
-					"_postman_note": "Added \"search\" filter (matches projectName/jobId) alongside the existing status/startDate/endDate. Note: actualCost is a randomized placeholder (no real actual-cost tracking source exists yet) \u2014 response now includes a \"note\" field flagging this, savings/loss figures are illustrative only."
+					"_postman_note": "Added \"projectId\" filter (matches Lead._id) alongside status/startDate/endDate/search. actualCost is now real (WIPProfit.currentCost, else summed active Expense records) \u2014 no longer randomized; projects with neither cost source are excluded (see excludedNoCostData in the response)."
+				},
+				{
+					"name": "Savings \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/savings/export?status=Good&projectId={{leadId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"savings",
+								"export"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "Good"
+								},
+								{
+									"key": "projectId",
+									"value": "{{leadId}}"
+								}
+							]
+						}
+					},
+					"_postman_note": "Returns an .xlsx workbook (Content-Disposition attachment) of the same rows getSavings would return, filtered the same way (status/startDate/endDate/search/projectId)."
 				},
 				{
 					"name": "Freight Loads",
@@ -4041,6 +4080,40 @@
 						}
 					},
 					"_postman_note": "Fixed: this route was missing entirely (404) \u2014 admin/plant/projectOps.routes.js never wired plant/project.controller.js's getProjectDrawings, unlike buildings/bom/shipper which were already mirrored here. Now available with the same admin-scope access (assertPlantProjectAccess) as every other admin/plant/projects/:leadId/* route."
+				},
+				{
+					"name": "Upload Project Drawings",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/projects/{{leadId}}/drawings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"projects",
+								"{{leadId}}",
+								"drawings"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\"drawings\": [{\"buildingId\": \"{{buildingId}}\", \"fileUrl\": \"https://example.com/files/drawing-1.pdf\", \"fileName\": \"drawing-1.pdf\"}]}"
+						}
+					},
+					"_postman_note": "Added alongside the GET route - POST /admin/plant/projects/:leadId/drawings (uploadProjectDrawings) was also wired in projectOps.routes.js but missing from the collection."
 				},
 				{
 					"name": "BOM Projects \u2014 Filtered by Project",

@@ -17,6 +17,12 @@ router.post('/upload',
 )
 
 router.get('/stats',
+  [
+    query('category').optional().isIn(SMDT_CATEGORIES),
+    query('isFrameType').optional().isIn(['true', 'false']),
+    query('isActive').optional().isIn(['true', 'false', 'all']),
+    query('search').optional().trim(),
+  ],
   validate,
   ctrl.getSMDTStats
 )

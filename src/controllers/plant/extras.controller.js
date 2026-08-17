@@ -1,3 +1,4 @@
+const ExcelJS = require('exceljs')
 const Lead = require('../../models/Lead')
 const Delivery = require('../../models/Delivery')
 const FreightBid = require('../../models/FreightBid')
@@ -5,16 +6,17 @@ const BundlePlan = require('../../models/BundlePlan')
 const SMDTItem = require('../../models/SMDTItem')
 const SMDTCostVersion = require('../../models/SMDTCostVersion')
 const PackingList = require('../../models/PackingList')
+const Expense = require('../../models/Expense')
+const WIPProfit = require('../../models/WIPProfit')
 const asyncHandler = require('../../utils/asyncHandler')
 const { success, notFound } = require('../../utils/apiResponse')
 const { buildDateFilter } = require('../../utils/dateRange')
 
-exports.getSavings = asyncHandler(async (req, res) => {
-  const { startDate, endDate, status, search } = req.query
+const computeSavings = async ({ startDate, endDate, status, search, projectId }) => {
   const dateFilter = buildDateFilter({ startDate, endDate })
-  const now = new Date()
 
   const filter = { ...dateFilter, isTerminated: { $ne: true }, quoteValue: { $gt: 0 } }
+  if (projectId) filter._id = projectId
   if (search?.trim()) {
     filter.$or = [
       { projectName: { $regex: search.trim(), $options: 'i' } },
@@ -27,9 +29,31 @@ exports.getSavings = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .lean()
 
+  const leadIds = leads.map(lead => lead._id)
+
+  const [wipEntries, expenseTotals] = await Promise.all([
+    WIPProfit.find({ leadId: { $in: leadIds } }).select('leadId currentCost').lean(),
+    Expense.aggregate([
+      { $match: { leadId: { $in: leadIds }, isActive: true } },
+      { $group: { _id: '$leadId', total: { $sum: '$amount' } } },
+    ]),
+  ])
+
+  const wipCostMap = new Map(wipEntries.map(w => [String(w.leadId), w.currentCost]))
+  const expenseCostMap = new Map(expenseTotals.map(e => [String(e._id), e.total]))
+
+  let excludedNoCostData = 0
+
   const savingsList = leads.map(lead => {
+    const leadKey = String(lead._id)
+    const actualCost = wipCostMap.has(leadKey) ? wipCostMap.get(leadKey) : expenseCostMap.get(leadKey)
+
+    if (actualCost == null) {
+      excludedNoCostData += 1
+      return null
+    }
+
     const smdtCost = lead.quoteValue * 0.85
-    const actualCost = lead.quoteValue * (0.8 + Math.random() * 0.1)
     const savings = smdtCost - actualCost
     const savingsPct = smdtCost > 0 ? +((savings / smdtCost) * 100).toFixed(1) : 0
     const profitLoss = savings > 0 ? 'Profit' : 'Loss'
@@ -47,16 +71,50 @@ exports.getSavings = asyncHandler(async (req, res) => {
     }
   }).filter(Boolean)
 
-  const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const totalSavingsThisMonth = savingsList.filter(s => s.savings > 0).reduce((a, b) => a + b.savings, 0)
   const totalLossThisMonth = Math.abs(savingsList.filter(s => s.savings < 0).reduce((a, b) => a + b.savings, 0))
+
+  return { savingsList, excludedNoCostData, totalSavingsThisMonth, totalLossThisMonth }
+}
+
+exports.getSavings = asyncHandler(async (req, res) => {
+  const { startDate, endDate, status, search, projectId } = req.query
+  const { savingsList, excludedNoCostData, totalSavingsThisMonth, totalLossThisMonth } =
+    await computeSavings({ startDate, endDate, status, search, projectId })
 
   return success(res, {
     stats: { totalSavingsThisMonth, totalLossThisMonth },
     savings: savingsList,
     total: savingsList.length,
-    note: 'actualCost is a randomized placeholder (Lead.quoteValue * random factor) — there is no real actual-cost tracking source wired in yet, so savings/loss figures here are illustrative, not real.',
+    excludedNoCostData,
+    note: 'actualCost = WIPProfit.currentCost when an admin has entered one for the project, otherwise the sum of that project\'s active Expense records. Projects with neither (excludedNoCostData) are left out rather than shown with a fabricated cost.',
   })
+})
+
+exports.exportSavings = asyncHandler(async (req, res) => {
+  const { startDate, endDate, status, search, projectId } = req.query
+  const { savingsList } = await computeSavings({ startDate, endDate, status, search, projectId })
+
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Savings')
+
+  sheet.columns = [
+    { header: 'Project Name', key: 'projectName', width: 28 },
+    { header: 'SMDT Cost', key: 'smdtCost', width: 14 },
+    { header: 'Actual Cost', key: 'actualCost', width: 14 },
+    { header: 'Savings', key: 'savings', width: 14 },
+    { header: 'Savings %', key: 'savingsPct', width: 12 },
+    { header: 'Profit/Loss', key: 'profitLoss', width: 12 },
+    { header: 'Status', key: 'status', width: 14 },
+  ]
+  sheet.getRow(1).font = { bold: true }
+
+  for (const row of savingsList) sheet.addRow(row)
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="savings.xlsx"')
+  return res.send(buffer)
 })
 
 exports.getFreightLoads = asyncHandler(async (req, res) => {

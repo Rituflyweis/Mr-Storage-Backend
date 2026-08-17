@@ -1,10 +1,22 @@
 const router = require('express').Router()
-const { body, param } = require('express-validator')
+const { body, param, query } = require('express-validator')
 const ctrl = require('../../../controllers/plant/extras.controller')
 const validate = require('../../../middleware/validate')
 
 // Savings
-router.get('/savings', ctrl.getSavings)
+router.get('/savings',
+  [query('projectId').optional().isMongoId()],
+  validate,
+  ctrl.getSavings
+)
+router.get('/savings/export',
+  [
+    query('projectId').optional().isMongoId(),
+    query('status').optional().isIn(['Good', 'Over Budget']),
+  ],
+  validate,
+  ctrl.exportSavings
+)
 
 // Freight Loads
 router.get('/freight-loads',   ctrl.getFreightLoads)
