@@ -1,4 +1,5 @@
 const crypto = require('crypto')
+const mongoose = require('mongoose')
 const Delivery = require('../../models/Delivery')
 const BundlePlan = require('../../models/BundlePlan')
 const Bundle = require('../../models/Bundle')
@@ -261,11 +262,8 @@ const getSubmittedBidAmount = (row) => {
 
 const toObjectId = (val) => {
   if (!val) return null
-  try {
-    return Delivery.db.Types.ObjectId(String(val))
-  } catch (err) {
-    return null
-  }
+  if (!mongoose.Types.ObjectId.isValid(String(val))) return null
+  return new mongoose.Types.ObjectId(String(val))
 }
 
 const normalizeDateOnly = (value) => {
