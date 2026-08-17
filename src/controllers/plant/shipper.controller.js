@@ -114,13 +114,22 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
     row.fileReceivedStatus = resolveFileReceivedStatus(row.totalShipperFiles, row.receivedShipperFiles)
   }
 
-  const projects = [...projectMap.values()].sort((a, b) => {
+  let projects = [...projectMap.values()].sort((a, b) => {
     const aTime = a.latestSubmittedAt ? new Date(a.latestSubmittedAt).getTime() : 0
     const bTime = b.latestSubmittedAt ? new Date(b.latestSubmittedAt).getTime() : 0
     return bTime - aTime
   })
 
-  return success(res, { projects, total: projects.length })
+  if (req.query.fileStatus) {
+    projects = projects.filter((p) => p.fileReceivedStatus === req.query.fileStatus)
+  }
+
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))
+  const total = projects.length
+  const paged = projects.slice((page - 1) * limit, (page - 1) * limit + limit)
+
+  return success(res, { projects: paged, total, page, limit })
 })
 
 exports.getShipperFilesStats = asyncHandler(async (req, res) => {

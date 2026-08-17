@@ -245,14 +245,31 @@ exports.getCarrierDetail = asyncHandler(async (req, res) => {
     return latest
   }, null)
 
-  const assignedProjects = [
-    ...new Set(
-      awardedBids
-        .map(bid => bid.deliveryId?.leadId?._id || bid.deliveryId?.leadId)
-        .filter(Boolean)
-        .map(id => String(id))
-    ),
-  ].length
+  const assignedProjectsMap = new Map()
+  for (const bid of awardedBids) {
+    const lead = bid.deliveryId?.leadId
+    const leadId = lead?._id || lead
+    if (!leadId) continue
+    const key = String(leadId)
+    if (!assignedProjectsMap.has(key)) {
+      assignedProjectsMap.set(key, {
+        _id: leadId,
+        projectName: lead?.projectName || '',
+        jobId: lead?.jobId || '',
+        deliveryCount: 0,
+        lastAwardedAt: null,
+      })
+    }
+    const entry = assignedProjectsMap.get(key)
+    entry.deliveryCount += 1
+    const awardedAt = bid.selectedAt || bid.updatedAt
+    if (awardedAt && (!entry.lastAwardedAt || new Date(awardedAt) > new Date(entry.lastAwardedAt))) {
+      entry.lastAwardedAt = awardedAt
+    }
+  }
+  const assignedProjects = [...assignedProjectsMap.values()].sort(
+    (a, b) => new Date(b.lastAwardedAt || 0) - new Date(a.lastAwardedAt || 0)
+  )
 
   const freightHistory = bids.map(bid => ({
     _id: bid._id,
@@ -282,8 +299,9 @@ exports.getCarrierDetail = asyncHandler(async (req, res) => {
       avgBid: stats.avgBid,
       lastAwardedDate,
       avgResponseTimeHours: calcAvgResponseHours(bids),
-      assignedProjects,
+      assignedProjects: assignedProjects.length,
     },
+    assignedProjects,
     freightHistory,
   })
 })

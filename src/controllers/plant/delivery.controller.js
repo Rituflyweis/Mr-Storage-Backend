@@ -1355,7 +1355,7 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
   ])
 
   const total = totalRows[0]?.total || 0
-  const leadIds = [...new Set(rows.map((r) => String(r.leadId?._id || r.leadId)).filter(Boolean))]
+  const leadIds = [...new Set(rows.map((r) => r.leadId?._id || r.leadId).filter(Boolean).map(String))]
   const shipperMap = await fetchShipperVendorsByLeadIds(leadIds)
 
   const requests = rows.map((row) => {
@@ -1476,7 +1476,11 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
     ? deliveries.filter((d) => String(d.leadId?.customerId?._id || d.leadId?.customerId) === String(customerFilterId))
     : deliveries
 
-  const leadIdsInRows = [...new Set(filteredDeliveries.map((d) => String(d.leadId?._id || d.leadId)).filter(Boolean))]
+  // Filter out deliveries with no lead BEFORE stringifying — String(null) is the truthy string
+  // "null", which .filter(Boolean) doesn't catch and then fails ObjectId casting downstream.
+  const leadIdsInRows = [...new Set(
+    filteredDeliveries.map((d) => d.leadId?._id || d.leadId).filter(Boolean).map(String)
+  )]
   const shipperMap = await fetchShipperVendorsByLeadIds(leadIdsInRows)
 
   const grouped = new Map()
@@ -1628,7 +1632,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   ])
   const total = totalRows[0]?.total || 0
 
-  const leadIds = [...new Set(rows.map((r) => String(r.leadDoc?._id || r.leadId)).filter(Boolean))]
+  const leadIds = [...new Set(rows.map((r) => r.leadDoc?._id || r.leadId).filter(Boolean).map(String))]
   const shipperMap = await fetchShipperVendorsByLeadIds(leadIds)
 
   const deliveries = rows.map((row) =>

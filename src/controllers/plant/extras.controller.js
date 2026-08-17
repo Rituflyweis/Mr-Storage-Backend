@@ -10,11 +10,19 @@ const { success, notFound } = require('../../utils/apiResponse')
 const { buildDateFilter } = require('../../utils/dateRange')
 
 exports.getSavings = asyncHandler(async (req, res) => {
-  const { startDate, endDate, status } = req.query
+  const { startDate, endDate, status, search } = req.query
   const dateFilter = buildDateFilter({ startDate, endDate })
   const now = new Date()
 
-  const leads = await Lead.find({ ...dateFilter, isTerminated: { $ne: true }, quoteValue: { $gt: 0 } })
+  const filter = { ...dateFilter, isTerminated: { $ne: true }, quoteValue: { $gt: 0 } }
+  if (search?.trim()) {
+    filter.$or = [
+      { projectName: { $regex: search.trim(), $options: 'i' } },
+      { jobId: { $regex: search.trim(), $options: 'i' } },
+    ]
+  }
+
+  const leads = await Lead.find(filter)
     .select('projectName jobId quoteValue lifecycleStatus')
     .sort({ createdAt: -1 })
     .lean()
@@ -47,35 +55,47 @@ exports.getSavings = asyncHandler(async (req, res) => {
     stats: { totalSavingsThisMonth, totalLossThisMonth },
     savings: savingsList,
     total: savingsList.length,
+    note: 'actualCost is a randomized placeholder (Lead.quoteValue * random factor) — there is no real actual-cost tracking source wired in yet, so savings/loss figures here are illustrative, not real.',
   })
 })
 
 exports.getFreightLoads = asyncHandler(async (req, res) => {
-  const { status, search, page = 1, limit = 20 } = req.query
+  const { status, search, carrierId, projectId, customerId, startDate, endDate, page = 1, limit = 20 } = req.query
 
   const filter = {}
   if (status) filter.status = status
+  if (carrierId) filter.carrierId = carrierId
   if (search) filter.$or = [
     { token: { $regex: search, $options: 'i' } },
   ]
+  const dateFilter = buildDateFilter({ startDate, endDate })
+  if (dateFilter.createdAt) filter.createdAt = dateFilter.createdAt
 
-  const [bids, total, statsAgg] = await Promise.all([
+  // Every FreightBid, by definition, has already been sent for bidding (the model has no
+  // "draft"/pre-send status) — but bids whose Delivery/Lead was later deleted point nowhere,
+  // so the frontend "view load" redirect has nothing valid to open. Excluded here.
+  const [rawBids, total, statsAgg] = await Promise.all([
     FreightBid.find(filter)
       .populate({
         path: 'deliveryId',
         select: 'leadId material pickupLocation dropoffLocation scheduledDate requestedAt',
-        populate: { path: 'leadId', select: 'projectName jobId' },
+        populate: { path: 'leadId', select: 'projectName jobId customerId' },
       })
       .populate({ path: 'carrierId', select: 'carrierName phone' })
       .sort({ createdAt: -1 })
-      .skip((parseInt(page) - 1) * parseInt(limit))
-      .limit(parseInt(limit))
       .lean(),
     FreightBid.countDocuments(filter),
     FreightBid.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$quotedAmount' } } },
     ]),
   ])
+
+  let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
+  if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
+  if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
+
+  const filteredTotal = (projectId || customerId) ? bids.length : total - (rawBids.length - bids.length)
+  const paged = bids.slice((parseInt(page) - 1) * parseInt(limit), (parseInt(page) - 1) * parseInt(limit) + parseInt(limit))
 
   const statMap = Object.fromEntries(statsAgg.map(s => [s._id, { count: s.count, amount: s.amount }]))
 
@@ -88,8 +108,8 @@ exports.getFreightLoads = asyncHandler(async (req, res) => {
       requestedLoads:  statMap['sent']?.count || 0,
       bidsPending:     statMap['submitted']?.count || 0,
     },
-    loads: bids,
-    total,
+    loads: paged,
+    total: filteredTotal,
     page: parseInt(page),
     limit: parseInt(limit),
   })

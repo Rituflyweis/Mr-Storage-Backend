@@ -8,6 +8,17 @@ const validate = require('../../../middleware/validate')
 const { BOM_FILE_FORMATS, TRUCK_TYPES } = require('../../../config/constants')
 
 router.get('/:leadId/buildings', ctrl.getProjectBuildings)
+router.get('/:leadId/drawings', ctrl.getProjectDrawings)
+router.post('/:leadId/drawings',
+  [
+    body('drawings').isArray({ min: 1 }),
+    body('drawings.*.buildingId').isMongoId(),
+    body('drawings.*.fileUrl').notEmpty().trim(),
+    body('drawings.*.fileName').notEmpty().trim(),
+  ],
+  validate,
+  ctrl.uploadProjectDrawings
+)
 router.get('/:leadId/bom-files', ctrl.getProjectBomFiles)
 router.post('/:leadId/bom',
   [

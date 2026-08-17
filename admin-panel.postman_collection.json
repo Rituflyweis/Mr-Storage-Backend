@@ -81,6 +81,10 @@
 		{
 			"key": "invoiceId",
 			"value": ""
+		},
+		{
+			"key": "carrierId",
+			"value": ""
 		}
 	],
 	"item": [
@@ -2868,7 +2872,7 @@
 						],
 						"url": "{{baseUrl}}/admin/construction/drawings"
 					},
-					"_postman_note": "Previously excluded comments from the list response (.select(\"-comments\")) \u2014 now includes the full populated comments array on every document, so customer-submitted drawing comments are visible here too, not just on the single-document detail view."
+					"_postman_note": "Now merges Plant Panel-uploaded drawings (Building.drawings) with this panel's own DrawingDocument uploads \u2014 previously admin only saw drawings uploaded through this same endpoint and never anything Plant uploaded. Response items from Plant have \"source\":\"plant\"; own uploads have no \"source\" field. See src/utils/drawingSources.js \u2014 the same merge logic backs Customer, Admin, and (new) Admin>Plant panels."
 				},
 				{
 					"name": "Upload Drawing",
@@ -2911,7 +2915,7 @@
 							"raw": "{\"status\":\"approved\"}"
 						}
 					},
-					"_postman_note": "Now emits socket event \"drawing_status_updated\" ({documentId,leadId,status,approvedAt}) to the /chat namespace (lead:{leadId} room, reaches the Customer Panel) and /admin namespace \u2014 lets the frontend invalidate/refetch its drawings query in real time instead of showing a stale approval status."
+					"_postman_note": "Now merges Plant Panel-uploaded drawings (Building.drawings) with this panel's own DrawingDocument uploads \u2014 previously admin only saw drawings uploaded through this same endpoint and never anything Plant uploaded. Response items from Plant have \"source\":\"plant\"; own uploads have no \"source\" field. See src/utils/drawingSources.js \u2014 the same merge logic backs Customer, Admin, and (new) Admin>Plant panels."
 				},
 				{
 					"name": "All Deliveries (Construction)",
@@ -3331,7 +3335,7 @@
 						],
 						"url": "{{baseUrl}}/admin/construction/drawings/{{docId}}"
 					},
-					"_postman_note": "Preview modal \u2014 includes comment thread"
+					"_postman_note": "Now merges Plant Panel-uploaded drawings (Building.drawings) with this panel's own DrawingDocument uploads \u2014 previously admin only saw drawings uploaded through this same endpoint and never anything Plant uploaded. Response items from Plant have \"source\":\"plant\"; own uploads have no \"source\" field. See src/utils/drawingSources.js \u2014 the same merge logic backs Customer, Admin, and (new) Admin>Plant panels."
 				},
 				{
 					"name": "Add Drawing Comment",
@@ -3353,7 +3357,7 @@
 							"raw": "{\n  \"text\": \"Looks good, please proceed to fabrication\"\n}"
 						}
 					},
-					"_postman_note": "'Send Comment' in the drawing preview modal"
+					"_postman_note": "Now merges Plant Panel-uploaded drawings (Building.drawings) with this panel's own DrawingDocument uploads \u2014 previously admin only saw drawings uploaded through this same endpoint and never anything Plant uploaded. Response items from Plant have \"source\":\"plant\"; own uploads have no \"source\" field. See src/utils/drawingSources.js \u2014 the same merge logic backs Customer, Admin, and (new) Admin>Plant panels."
 				},
 				{
 					"name": "Export Deliveries",
@@ -3631,8 +3635,37 @@
 								"value": "Bearer {{token}}"
 							}
 						],
-						"url": "{{baseUrl}}/admin/plant/savings"
-					}
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/savings?status=Good&startDate=2026-01-01&endDate=2026-12-31&search=warehouse",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"savings"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "Good"
+								},
+								{
+									"key": "startDate",
+									"value": "2026-01-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-12-31"
+								},
+								{
+									"key": "search",
+									"value": "warehouse"
+								}
+							]
+						}
+					},
+					"_postman_note": "Added \"search\" filter (matches projectName/jobId) alongside the existing status/startDate/endDate. Note: actualCost is a randomized placeholder (no real actual-cost tracking source exists yet) \u2014 response now includes a \"note\" field flagging this, savings/loss figures are illustrative only."
 				},
 				{
 					"name": "Freight Loads",
@@ -3645,7 +3678,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseUrl}}/admin/plant/freight-loads?page=1&limit=20",
+							"raw": "{{baseUrl}}/admin/plant/freight-loads?status=submitted&carrierId={{carrierId}}&projectId={{leadId}}&startDate=2026-01-01&endDate=2026-12-31&page=1&limit=20",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -3656,6 +3689,26 @@
 							],
 							"query": [
 								{
+									"key": "status",
+									"value": "submitted"
+								},
+								{
+									"key": "carrierId",
+									"value": "{{carrierId}}"
+								},
+								{
+									"key": "projectId",
+									"value": "{{leadId}}"
+								},
+								{
+									"key": "startDate",
+									"value": "2026-01-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-12-31"
+								},
+								{
 									"key": "page",
 									"value": "1"
 								},
@@ -3665,7 +3718,8 @@
 								}
 							]
 						}
-					}
+					},
+					"_postman_note": "Added carrierId/projectId/customerId/startDate/endDate filters (previously only status+search). Also now excludes bids whose Delivery/Lead was deleted (orphaned rows the frontend couldn't open anyway)."
 				},
 				{
 					"name": "Awarded Loads",
@@ -3678,7 +3732,8 @@
 							}
 						],
 						"url": "{{baseUrl}}/admin/plant/awarded-loads"
-					}
+					},
+					"_postman_note": "Already fully supports status/projectId/customerId/carrierId/startDate/endDate/search filters via getFreightLoadsCommon \u2014 no change needed, confirmed working."
 				},
 				{
 					"name": "Deliveries Calendar",
@@ -3715,7 +3770,8 @@
 								}
 							]
 						}
-					}
+					},
+					"_postman_note": "Fixed a crash: deliveries whose Lead had been deleted produced the string \"null\" (String(null) is truthy, so .filter(Boolean) missed it) which then failed ObjectId casting downstream in fetchShipperVendorsByLeadIds, returning {\"success\":false,\"message\":\"Invalid leadId: null\"} for the whole calendar. Same bug existed in 2 other list endpoints in this file (all-deliveries, awarded loads) \u2014 fixed in all three."
 				},
 				{
 					"name": "All Deliveries",
@@ -3959,6 +4015,210 @@
 						}
 					},
 					"_postman_note": "note is required. Only works on bids in 'submitted' status. Same controller also reachable at /admin/plant/freight-bids/{{bidId}}/request-resubmit."
+				},
+				{
+					"name": "Plant Project Drawings (Admin Scope)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/projects/{{leadId}}/drawings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"projects",
+								"{{leadId}}",
+								"drawings"
+							]
+						}
+					},
+					"_postman_note": "Fixed: this route was missing entirely (404) \u2014 admin/plant/projectOps.routes.js never wired plant/project.controller.js's getProjectDrawings, unlike buildings/bom/shipper which were already mirrored here. Now available with the same admin-scope access (assertPlantProjectAccess) as every other admin/plant/projects/:leadId/* route."
+				},
+				{
+					"name": "BOM Projects \u2014 Filtered by Project",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/bom/projects?projectId={{leadId}}&page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"bom",
+								"projects"
+							],
+							"query": [
+								{
+									"key": "projectId",
+									"value": "{{leadId}}"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"_postman_note": "Added projectId filter (previously page/limit only). Investigated the \"stats incorrect\" report \u2014 GET /admin/plant/bom/stats itself computes correctly from real data; no bug found there."
+				},
+				{
+					"name": "Shipper Files \u2014 Projects (Paginated + Status Filter)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/shipper-files/projects?page=1&limit=20&fileStatus=partial",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"shipper-files",
+								"projects"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								},
+								{
+									"key": "fileStatus",
+									"value": "partial"
+								}
+							]
+						}
+					},
+					"_postman_note": "Fixed: this endpoint ignored page/limit entirely (always returned every project unpaginated) \u2014 now paginated. Added fileStatus filter (none/partial/all). Investigated \"stats incorrect\" \u2014 /admin/plant/shipper-files/stats computation itself is correct against real data; no bug found there."
+				},
+				{
+					"name": "Carrier Detail \u2014 With Assigned Projects",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/carriers/{{carrierId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"carriers",
+								"{{carrierId}}"
+							]
+						}
+					},
+					"_postman_note": "Added top-level \"assignedProjects\" array (projectName, jobId, deliveryCount, lastAwardedAt) \u2014 previously stats.assignedProjects was only a bare count with no way to see which projects. Count is still available at stats.assignedProjects for backward compat."
+				},
+				{
+					"name": "SMDT Costing \u2014 Filtered",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/smdt?isActive=true&category=Panels&isFrameType=false&search=panel&page=1&limit=50",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"smdt"
+							],
+							"query": [
+								{
+									"key": "isActive",
+									"value": "true"
+								},
+								{
+									"key": "category",
+									"value": "Panels"
+								},
+								{
+									"key": "isFrameType",
+									"value": "false"
+								},
+								{
+									"key": "search",
+									"value": "panel"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "50"
+								}
+							]
+						}
+					},
+					"_postman_note": "Filters (category/isFrameType/isActive/search) already existed. Root cause of empty list + zero stats: SMDTCostVersion \"SEED-MBS-2025\" claimed 20 items imported but the SMDTItem collection was completely empty (data never persisted or was wiped). Seeded 20 mock parts under the active version so filters/stats now return real data."
+				},
+				{
+					"name": "SMDT Costing \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/smdt/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"smdt",
+								"stats"
+							]
+						}
+					},
+					"_postman_note": "Now returns real non-zero totals (totalItems, totalItemCost, newlyAdded) after the mock-data seed \u2014 was previously always zero because the underlying SMDTItem collection was empty."
 				}
 			]
 		}

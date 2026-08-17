@@ -3,6 +3,8 @@ const User = require('../../models/User')
 const Task = require('../../models/Task')
 const Delivery = require('../../models/Delivery')
 const DrawingDocument = require('../../models/DrawingDocument')
+const Building = require('../../models/Building')
+const { getMergedDrawings, mapPlantDrawing } = require('../../utils/drawingSources')
 const MaterialRequest = require('../../models/MaterialRequest')
 const WorkLog = require('../../models/WorkLog')
 const FreightBid = require('../../models/FreightBid')
@@ -220,31 +222,32 @@ exports.createCalendarDelivery = asyncHandler(async (req, res) => {
   return created(res, { delivery }, 'Delivery added')
 })
 
+// Merges DrawingDocument (admin/customer uploads) with Building.drawings (Plant Panel uploads) —
+// see src/utils/drawingSources.js. Without this merge, admin only ever saw drawings uploaded
+// through this same panel and never anything Plant uploaded, and vice versa.
 exports.getDrawings = asyncHandler(async (req, res) => {
-  const { search, documentType, status, category, buildingLabel, projectId } = req.query
+  const { documentType, status, category, buildingLabel, projectId } = req.query
 
-  const filter = {}
-  if (documentType) filter.documentType = documentType
-  if (status) filter.status = status
-  if (category) filter.category = category
-  if (buildingLabel) filter.buildingLabel = buildingLabel
-  if (projectId) filter.leadId = projectId
+  const merged = await getMergedDrawings(projectId || undefined)
+  const filtered = merged.filter((d) =>
+    (!documentType || d.documentType === documentType) &&
+    (!status || d.status === status) &&
+    (!category || d.category === category) &&
+    (!buildingLabel || d.buildingLabel === buildingLabel)
+  )
 
-  const docs = await DrawingDocument.find(filter)
-    .populate({ path: 'leadId', select: 'projectName jobId location' })
-    .populate({ path: 'uploadedBy', select: 'name' })
-    .populate({ path: 'comments.commentedBy', select: 'name' })
-    .populate({ path: 'comments.commentedByCustomer', select: 'firstName lastName' })
-    .sort({ createdAt: -1 })
-    .lean()
+  const leadIds = [...new Set(filtered.map((d) => String(d.leadId)))]
+  const leads = await Lead.find({ _id: { $in: leadIds } }).select('projectName jobId location').lean()
+  const leadMap = new Map(leads.map((l) => [String(l._id), l]))
 
   const grouped = {}
-  for (const doc of docs) {
-    const key = doc.leadId?._id?.toString()
-    if (!key) continue
+  for (const doc of filtered) {
+    const key = String(doc.leadId)
+    const lead = leadMap.get(key)
+    if (!lead) continue
     if (!grouped[key]) {
       grouped[key] = {
-        lead: doc.leadId,
+        lead,
         uploadedBy: doc.uploadedBy?.name || '',
         lastUpdate: doc.updatedAt,
         documents: [],
@@ -266,9 +269,14 @@ exports.getDrawingDetail = asyncHandler(async (req, res) => {
     .populate('comments.commentedBy', 'name')
     .populate('comments.commentedByCustomer', 'firstName lastName')
     .lean()
-  if (!doc) return notFound(res, 'Document not found')
+  if (doc) return success(res, { document: doc })
 
-  return success(res, { document: doc })
+  // Not a DrawingDocument — check whether it's a Plant-uploaded (Building.drawings) drawing instead.
+  const buildingWithDrawing = await Building.findOne({ 'drawings._id': req.params.docId }).lean()
+  if (!buildingWithDrawing) return notFound(res, 'Document not found')
+  const drawing = buildingWithDrawing.drawings.find((d) => String(d._id) === req.params.docId)
+  const lead = await Lead.findById(buildingWithDrawing.leadId).select('projectName jobId location').lean()
+  return success(res, { document: mapPlantDrawing(buildingWithDrawing, drawing, buildingWithDrawing.leadId), project: lead })
 })
 
 // POST /drawings/:docId/comments — "Send Comment" in the preview modal
@@ -277,12 +285,28 @@ exports.addDrawingComment = asyncHandler(async (req, res) => {
   if (!text?.trim()) return badRequest(res, 'text is required')
 
   const doc = await DrawingDocument.findById(req.params.docId)
-  if (!doc) return notFound(res, 'Document not found')
+  if (doc) {
+    doc.comments.push({ text: text.trim(), commentedBy: req.user._id, authorName: req.user.name || '' })
+    await doc.save()
+    return created(res, { comment: doc.comments[doc.comments.length - 1] }, 'Comment added')
+  }
 
-  doc.comments.push({ text: text.trim(), commentedBy: req.user._id, authorName: req.user.name || '' })
-  await doc.save()
+  const building = await Building.findOne({ 'drawings._id': req.params.docId })
+  if (!building) return notFound(res, 'Document not found')
+  const drawing = building.drawings.id(req.params.docId)
+  drawing.comments.push({ text: text.trim(), commentedBy: req.user._id, authorName: req.user.name || '' })
+  await building.save()
 
-  return created(res, { comment: doc.comments[doc.comments.length - 1] }, 'Comment added')
+  const comment = drawing.comments[drawing.comments.length - 1]
+  if (global.io) {
+    global.io.of('/chat').to(`lead:${building.leadId}`).emit('drawing_comment_added', {
+      documentId: req.params.docId,
+      leadId: String(building.leadId),
+      comment,
+    })
+  }
+
+  return created(res, { comment }, 'Comment added')
 })
 
 exports.uploadDrawing = asyncHandler(async (req, res) => {
@@ -304,28 +328,42 @@ exports.uploadDrawing = asyncHandler(async (req, res) => {
 
 exports.approveDrawing = asyncHandler(async (req, res) => {
   const doc = await DrawingDocument.findById(req.params.docId)
-  if (!doc) return notFound(res, 'Document not found')
+  if (doc) {
+    doc.status = req.body.status || 'approved'
+    doc.approvedBy = req.user._id
+    doc.approvedAt = new Date()
+    doc.notes = req.body.notes || doc.notes
+    await doc.save()
 
-  doc.status = req.body.status || 'approved'
-  doc.approvedBy = req.user._id
-  doc.approvedAt = new Date()
-  doc.notes = req.body.notes || doc.notes
-  await doc.save()
-
-  // Lets the Customer Panel invalidate/refetch its drawings query in real time instead of the
-  // approval status appearing stale until the next manual refresh.
-  if (global.io) {
-    const payload = {
-      documentId: String(doc._id),
-      leadId: String(doc.leadId),
-      status: doc.status,
-      approvedAt: doc.approvedAt,
+    // Lets the Customer Panel invalidate/refetch its drawings query in real time instead of the
+    // approval status appearing stale until the next manual refresh.
+    if (global.io) {
+      const payload = { documentId: String(doc._id), leadId: String(doc.leadId), status: doc.status, approvedAt: doc.approvedAt }
+      global.io.of('/chat').to(`lead:${doc.leadId}`).emit('drawing_status_updated', payload)
+      global.io.of('/admin').to(`lead:${doc.leadId}`).emit('drawing_status_updated', payload)
     }
-    global.io.of('/chat').to(`lead:${doc.leadId}`).emit('drawing_status_updated', payload)
-    global.io.of('/admin').to(`lead:${doc.leadId}`).emit('drawing_status_updated', payload)
+
+    return success(res, { document: doc })
   }
 
-  return success(res, { document: doc })
+  // Plant-uploaded (Building.drawings) drawing.
+  const building = await Building.findOne({ 'drawings._id': req.params.docId })
+  if (!building) return notFound(res, 'Document not found')
+  const drawing = building.drawings.id(req.params.docId)
+
+  const status = req.body.status || 'approved'
+  drawing.status = status === 'approved' ? 'approved' : 'rejected'
+  drawing.reviewedAt = new Date()
+  if (drawing.status === 'rejected') drawing.rejectionReason = req.body.notes || drawing.rejectionReason
+  await building.save()
+
+  if (global.io) {
+    const payload = { documentId: req.params.docId, leadId: String(building.leadId), status: drawing.status, approvedAt: drawing.reviewedAt }
+    global.io.of('/chat').to(`lead:${building.leadId}`).emit('drawing_status_updated', payload)
+    global.io.of('/admin').to(`lead:${building.leadId}`).emit('drawing_status_updated', payload)
+  }
+
+  return success(res, { document: mapPlantDrawing(building, drawing, building.leadId) })
 })
 
 // Resolves transporter/driver name filters through FreightBid -> FreightCarrier, since

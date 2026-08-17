@@ -1710,50 +1710,7 @@ const buildingLabelsForLead = (lead) => {
   return Array.from({ length: count }, (_, i) => `Building ${BUILDING_LETTERS[i] || i + 1}`)
 }
 
-// Plant's Building.buildingNumber (1, 2, 3...) -> the "Building A"/"Building B" label convention
-// used by DrawingDocument.buildingLabel, so both drawing sources line up under the same building.
-const buildingNumberToLabel = (n) => `Building ${BUILDING_LETTERS[n - 1] || n}`
-
-const PLANT_DRAWING_STATUS_MAP = { pending_review: 'pending', approved: 'approved', rejected: 'rejected' }
-
-// Maps a Building.drawings subdocument onto the same field shape as a DrawingDocument, so both
-// sources can be merged into a single response array/count without changing response structure.
-const mapPlantDrawing = (buildingDoc, drawing, leadId) => ({
-  _id: drawing._id,
-  leadId,
-  buildingLabel: buildingNumberToLabel(buildingDoc.buildingNumber),
-  category: 'drawing',
-  name: drawing.fileName,
-  fileUrl: drawing.fileUrl,
-  fileType: '',
-  fileSize: 0,
-  documentType: 'other',
-  status: PLANT_DRAWING_STATUS_MAP[drawing.status] || drawing.status,
-  uploadedBy: drawing.uploadedBy,
-  approvedBy: null,
-  approvedAt: drawing.status === 'approved' ? drawing.reviewedAt : null,
-  notes: drawing.rejectionReason || '',
-  revisionNote: drawing.rejectionReason || '',
-  revisionRequestedAt: drawing.status === 'rejected' ? drawing.reviewedAt : null,
-  comments: drawing.comments || [],
-  versionNumber: drawing.versionNumber,
-  createdAt: drawing.uploadedAt,
-  updatedAt: drawing.reviewedAt || drawing.uploadedAt,
-})
-
-// Resolves a docId to either a DrawingDocument or a Building.drawings subdocument — lets
-// approve/revision/comment endpoints work regardless of which panel originally uploaded it.
-const resolveDrawingRef = async (leadId, docId) => {
-  const doc = await DrawingDocument.findOne({ _id: docId, leadId })
-  if (doc) return { source: 'document', doc }
-
-  const building = await Building.findOne({ leadId, 'drawings._id': docId })
-  if (building) {
-    const drawing = building.drawings.id(docId)
-    if (drawing) return { source: 'plant', building, drawing }
-  }
-  return null
-}
+const { mapPlantDrawing, resolveDrawingRef } = require('../utils/drawingSources')
 
 // GET /projects/:leadId/buildings — building breakdown ("Select a building" screen)
 exports.getProjectBuildings = asyncHandler(async (req, res) => {

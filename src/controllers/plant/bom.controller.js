@@ -90,7 +90,8 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))
   const skip = (page - 1) * limit
 
-  const leadIds = await getScopedLeadIds(req)
+  let leadIds = await getScopedLeadIds(req)
+  if (req.query.projectId) leadIds = leadIds.filter((id) => String(id) === String(req.query.projectId))
   if (!leadIds.length) {
     return success(res, { projects: [], total: 0, page, limit })
   }
