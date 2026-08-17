@@ -4193,6 +4193,31 @@
 					"_postman_note": "Added alongside the GET route - POST /admin/plant/projects/:leadId/drawings (uploadProjectDrawings) was also wired in projectOps.routes.js but missing from the collection."
 				},
 				{
+					"name": "BOM Files \u2014 Stats (Total/Pending/Ready/Issues)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/bom/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"bom",
+								"stats"
+							]
+						}
+					},
+					"_postman_note": "Fixed: totalBomFilesUploaded/pendingUploads/issuesDetected previously overcounted vs the \"BOM Projects\" list below, because getScopedLeadIds() included POOrder.leadId values with no matching Lead document (stale/orphaned references \u2014 e.g. 9 scoped leadIds but only 5 real leads existed). Root fix in src/utils/plantAccessScope.js now intersects against existing Lead docs, so this stats total lines up with the row count from \"BOM Projects \u2014 Filtered by Project\" (readyForShipper is still counted at project level via ConsolidatedBOM, so it won't equal the other 3 tiles which are building/job-level \u2014 that's a real unit difference, not a bug)."
+				},
+				{
 					"name": "BOM Projects \u2014 Filtered by Project",
 					"request": {
 						"method": "GET",
@@ -4230,6 +4255,31 @@
 						}
 					},
 					"_postman_note": "Added projectId filter (previously page/limit only). Investigated the \"stats incorrect\" report \u2014 GET /admin/plant/bom/stats itself computes correctly from real data; no bug found there."
+				},
+				{
+					"name": "Shipper Quotation \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/plant/shipper-files/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"plant",
+								"shipper-files",
+								"stats"
+							]
+						}
+					},
+					"_postman_note": "Same root-cause fix as BOM Files stats (src/utils/plantAccessScope.js orphan-leadId fix) \u2014 totalFiles/filesReceived/ordersSent/revisionsSent no longer include ShipperRequest rows whose leadId pointed at a deleted/nonexistent Lead. Note totalFiles counts ShipperRequest documents (files) while \"Shipper Files \u2014 Projects\" below counts distinct projects \u2014 a project can have multiple shipper requests, so these two numbers are expected to differ by design, not a bug."
 				},
 				{
 					"name": "Shipper Files \u2014 Projects (Paginated + Status Filter)",
@@ -4356,7 +4406,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseUrl}}/admin/plant/smdt/stats",
+							"raw": "{{baseUrl}}/admin/plant/smdt/stats?category=Panels&isFrameType=false&isActive=true&search=",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -4365,10 +4415,32 @@
 								"plant",
 								"smdt",
 								"stats"
+							],
+							"query": [
+								{
+									"key": "category",
+									"value": "Panels",
+									"disabled": true
+								},
+								{
+									"key": "isFrameType",
+									"value": "false",
+									"disabled": true
+								},
+								{
+									"key": "isActive",
+									"value": "true",
+									"disabled": true
+								},
+								{
+									"key": "search",
+									"value": "",
+									"disabled": true
+								}
 							]
 						}
 					},
-					"_postman_note": "Now returns real non-zero totals (totalItems, totalItemCost, newlyAdded) after the mock-data seed \u2014 was previously always zero because the underlying SMDTItem collection was empty."
+					"_postman_note": "Now filter-aware: pass the same category/isFrameType/isActive/search params as the list endpoint (GET /admin/plant/smdt) and totalItems/totalItemCost/newAdded will reflect just that filtered set, matching the row count you'd see in the list for the same filters (previously stats always reflected the full active-only set regardless of filters). Response field is now \"newAdded\" (kept \"newlyAdded\" too for backward compatibility) \u2014 same definition: items whose createdAt is on/after the active SMDTCostVersion's createdAt."
 				}
 			]
 		}

@@ -6,14 +6,14 @@ const { FREIGHT_BID_STATUSES } = require('../../../config/constants')
 
 // Savings
 router.get('/savings',
-  [query('projectId').optional().isMongoId()],
+  [query('projectId').optional({ checkFalsy: true }).isMongoId()],
   validate,
   ctrl.getSavings
 )
 router.get('/savings/export',
   [
-    query('projectId').optional().isMongoId(),
-    query('status').optional().isIn(['Good', 'Over Budget']),
+    query('projectId').optional({ checkFalsy: true }).isMongoId(),
+    query('status').optional({ checkFalsy: true }).isIn(['Good', 'Over Budget']),
   ],
   validate,
   ctrl.exportSavings
@@ -24,15 +24,15 @@ router.get('/freight-loads/filters', ctrl.getFreightLoadFilters)
 
 router.get('/freight-loads',
   [
-    query('status').optional().isIn(FREIGHT_BID_STATUSES),
-    query('carrierId').optional().isMongoId(),
-    query('projectId').optional().isMongoId(),
-    query('customerId').optional().isMongoId(),
-    query('startDate').optional().isISO8601(),
-    query('endDate').optional().isISO8601(),
+    query('status').optional({ checkFalsy: true }).isIn(FREIGHT_BID_STATUSES),
+    query('carrierId').optional({ checkFalsy: true }).isMongoId(),
+    query('projectId').optional({ checkFalsy: true }).isMongoId(),
+    query('customerId').optional({ checkFalsy: true }).isMongoId(),
+    query('startDate').optional({ checkFalsy: true }).isISO8601(),
+    query('endDate').optional({ checkFalsy: true }).isISO8601(),
     query('search').optional().trim(),
-    query('page').optional().isInt({ min: 1 }),
-    query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('page').optional({ checkFalsy: true }).isInt({ min: 1 }),
+    query('limit').optional({ checkFalsy: true }).isInt({ min: 1, max: 200 }),
   ],
   validate,
   ctrl.getFreightLoads
@@ -40,14 +40,14 @@ router.get('/freight-loads',
 
 router.get('/awarded-loads',
   [
-    query('carrierId').optional().isMongoId(),
-    query('projectId').optional().isMongoId(),
-    query('customerId').optional().isMongoId(),
-    query('startDate').optional().isISO8601(),
-    query('endDate').optional().isISO8601(),
+    query('carrierId').optional({ checkFalsy: true }).isMongoId(),
+    query('projectId').optional({ checkFalsy: true }).isMongoId(),
+    query('customerId').optional({ checkFalsy: true }).isMongoId(),
+    query('startDate').optional({ checkFalsy: true }).isISO8601(),
+    query('endDate').optional({ checkFalsy: true }).isISO8601(),
     query('search').optional().trim(),
-    query('page').optional().isInt({ min: 1 }),
-    query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('page').optional({ checkFalsy: true }).isInt({ min: 1 }),
+    query('limit').optional({ checkFalsy: true }).isInt({ min: 1, max: 200 }),
   ],
   validate,
   ctrl.getAwardedLoads
