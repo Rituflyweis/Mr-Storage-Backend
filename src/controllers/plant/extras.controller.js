@@ -13,7 +13,9 @@ const WIPProfit = require('../../models/WIPProfit')
 const asyncHandler = require('../../utils/asyncHandler')
 const { success, notFound } = require('../../utils/apiResponse')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { FREIGHT_BID_STATUSES } = require('../../config/constants')
+const { FREIGHT_BID_STATUSES, DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+// Granular fulfillment steps still roll up into "inTransit" for this coarse calendar stat.
+const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered')
 
 const computeSavings = async ({ startDate, endDate, status, search, projectId }) => {
   const dateFilter = buildDateFilter({ startDate, endDate })
@@ -336,7 +338,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
       total,
       scheduled: statusMap['scheduled'] || 0,
       confirmed: statusMap['confirmed'] || 0,
-      inTransit: statusMap['in_transit'] || 0,
+      inTransit: IN_TRANSIT_ROLLUP_STATUSES.reduce((sum, s) => sum + (statusMap[s] || 0), 0),
       delivered: statusMap['delivered'] || 0,
       delayed:   statusMap['delayed'] || 0,
       cancelled: statusMap['cancelled'] || 0,
@@ -475,13 +477,13 @@ exports.getNotificationDetails = asyncHandler(async (req, res) => {
         : h.status === 'carrier_selected' ? 'Carrier Selected'
         : h.status === 'scheduled'        ? 'Delivery Scheduled'
         : h.status === 'confirmed'        ? 'Delivery Confirmed'
-        : h.status === 'in_transit'       ? 'In Transit Update'
+        : IN_TRANSIT_ROLLUP_STATUSES.includes(h.status) ? 'In Transit Update'
         : h.status === 'delivered'        ? 'Delivery Confirmed'
         : h.status === 'delayed'          ? 'Delay Alert'
         : 'Status Update'
       const deliveryStatus = h.status === 'delivered' ? 'Delivered'
         : h.status === 'cancelled' ? 'Failed'
-        : ['scheduled', 'confirmed', 'in_transit'].includes(h.status) ? 'Pending'
+        : ['scheduled', 'confirmed', ...IN_TRANSIT_ROLLUP_STATUSES].includes(h.status) ? 'Pending'
         : 'Sent'
       rows.push({
         deliveryId:     d._id,

@@ -206,10 +206,15 @@ const BUNDLE_STATUSES = ['draft', 'confirmed', 'assigned_to_truck', 'staged', 'l
 const PACKING_LIST_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
 const PACKING_LIST_STATUSES = ['draft', 'confirmed', 'ready', 'loading', 'delivery_created', 'dispatched', 'delivered', 'cancelled']
 const TRUCK_TYPES = ['SEMI_53', 'HOTSHOT_40']
+// Fulfillment sub-flow (once a delivery is confirmed/carrier-selected) — the granular steps a
+// plant-panel dropdown walks through in order: material_prepared -> ... -> delivered.
+const DELIVERY_FULFILLMENT_STATUSES = [
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'arrived_at_plant', 'staged', 'dispatched_to_site', 'delivered',
+]
 const DELIVERY_STATUSES = [
-  'draft', 'bidding_sent', 'carrier_selected', 'scheduled',
-  'confirmed', 'in_transit', 'delayed', 'staged', 'delivered',
-  'partial_received', 'received', 'cancelled', 'rescheduled',
+  'draft', 'bidding_sent', 'carrier_selected', 'scheduled', 'confirmed',
+  ...DELIVERY_FULFILLMENT_STATUSES,
+  'partial_received', 'received', 'delayed', 'cancelled', 'rescheduled',
 ]
 
 const SMDT_COST_UNITS = ['FT', 'LB', 'EA']
@@ -277,6 +282,7 @@ module.exports = {
   PACKING_LIST_STATUSES,
   TRUCK_TYPES,
   DELIVERY_STATUSES,
+  DELIVERY_FULFILLMENT_STATUSES,
   SMDT_COST_UNITS,
   SMDT_CATEGORIES,
   BOM_JOB_STATUSES,

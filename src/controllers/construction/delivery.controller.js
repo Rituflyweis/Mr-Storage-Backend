@@ -6,6 +6,9 @@ const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
 const { generatePackingListPdf, generateBillOfLadingPdf } = require('../../utils/exportDelivery')
+const { DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+// Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
+const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
 
 const buildDeliveryCard = async (delivery) => {
   let carrier = null
@@ -78,7 +81,7 @@ exports.getDeliveries = asyncHandler(async (req, res) => {
 
   const now = new Date()
   const stats = {
-    inTransit: await Delivery.countDocuments({ status: 'in_transit' }),
+    inTransit: await Delivery.countDocuments({ status: { $in: IN_TRANSIT_ROLLUP_STATUSES } }),
     staged: await Delivery.countDocuments({ status: 'confirmed' }),
     ready: await Delivery.countDocuments({ status: 'scheduled' }),
     totalToday: await Delivery.countDocuments({
@@ -120,12 +123,12 @@ exports.markPartialReceived = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(req.params.deliveryId)
   if (!delivery) return notFound(res, 'Delivery not found')
 
-  delivery.status = 'in_transit'
-  delivery.statusHistory.push({ status: 'in_transit', changedAt: new Date() })
+  delivery.status = 'partial_received'
+  delivery.statusHistory.push({ status: 'partial_received', changedAt: new Date() })
   if (req.body.notes) delivery.additionalNotes = req.body.notes
   await delivery.save()
 
-  return success(res, { deliveryId: delivery._id, status: 'in_transit' }, 'Marked as partial received')
+  return success(res, { deliveryId: delivery._id, status: 'partial_received' }, 'Marked as partial received')
 })
 
 exports.updateSiteContact = asyncHandler(async (req, res) => {

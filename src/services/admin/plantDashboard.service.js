@@ -8,7 +8,9 @@ const PackingListPlan = require('../../models/PackingListPlan')
 const PackingList = require('../../models/PackingList')
 const Delivery = require('../../models/Delivery')
 const Lead = require('../../models/Lead')
-const { ACTIVE_SHIPPER_REQUEST_STATUSES } = require('../../config/constants')
+const { ACTIVE_SHIPPER_REQUEST_STATUSES, DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+// Granular fulfillment steps still read as "in transit" on this coarse dashboard rollup.
+const DASHBOARD_IN_TRANSIT_STATUSES = new Set([...DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered'), 'delayed'])
 const { buildDateFilter } = require('../../utils/dateRange')
 
 const getLatestBomJobsForLeadIds = async (leadIds) => {
@@ -268,7 +270,7 @@ const buildDeliveriesSummary = async (query = {}) => {
 
   for (const row of deliveries) {
     if (['scheduled', 'confirmed', 'carrier_selected'].includes(row.status)) scheduled += 1
-    if (['in_transit', 'delayed'].includes(row.status)) inTransit += 1
+    if (DASHBOARD_IN_TRANSIT_STATUSES.has(row.status)) inTransit += 1
     if (row.status === 'delivered') delivered += 1
   }
 
@@ -290,7 +292,7 @@ const buildUpcomingShipments = async (query = {}) => {
     ? { status: query.status }
     : {
         status: {
-          $in: ['carrier_selected', 'scheduled', 'confirmed', 'in_transit', 'delayed'],
+          $in: ['carrier_selected', 'scheduled', 'confirmed', ...DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered'), 'delayed'],
         },
       }
 

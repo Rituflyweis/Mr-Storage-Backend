@@ -13,7 +13,9 @@ const { success, created, notFound, badRequest } = require('../../utils/apiRespo
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { generateDeliveriesExcel, generateReportExcel, generateMaterialRequestsExcel } = require('../../utils/exportConstructionAdmin')
-const { DELIVERY_STATUSES } = require('../../config/constants')
+const { DELIVERY_STATUSES, DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+// Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
+const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered')
 
 // The 5-phase "Project Timeline" bucket shown in Figma (Planning/Design/Procurement/
 // Execution/Handover) mapped onto the real Lead.lifecycleStatus enum (sales + plant stages).
@@ -130,7 +132,7 @@ exports.getOverview = asyncHandler(async (req, res) => {
     deliveryOverview: {
       todaysDeliveries: await Delivery.countDocuments({ deliveryDate: { $gte: new Date(now.toDateString()) }, status: { $nin: ['draft', 'cancelled'] } }),
       delivered: deliveryMap['delivered'] || 0,
-      inTransit: deliveryMap['in_transit'] || 0,
+      inTransit: IN_TRANSIT_ROLLUP_STATUSES.reduce((sum, s) => sum + (deliveryMap[s] || 0), 0),
       delayed: deliveryMap['delayed'] || 0,
     },
     materialRequestOverview: {
@@ -452,7 +454,7 @@ exports.getConstructionDeliveries = asyncHandler(async (req, res) => {
       total:      total,
       scheduled:  statusMap['scheduled'] || 0,
       confirmed:  statusMap['confirmed'] || 0,
-      inTransit:  statusMap['in_transit'] || 0,
+      inTransit:  IN_TRANSIT_ROLLUP_STATUSES.reduce((sum, s) => sum + (statusMap[s] || 0), 0),
       delivered:  statusMap['delivered'] || 0,
       delayed:    statusMap['delayed'] || 0,
       cancelled:  statusMap['cancelled'] || 0,

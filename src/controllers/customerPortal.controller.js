@@ -36,6 +36,11 @@ const env = require('../config/env')
 const auditService = require('../services/audit.service')
 const { syncLeadBuildings } = require('../services/leadBuilding.service')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
+// Granular fulfillment steps (material_prepared -> ... -> dispatched_to_site) all read as
+// "in transit" to the customer, same as before this sub-flow existed.
+const CUSTOMER_IN_TRANSIT_STATUSES = new Set([
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'arrived_at_plant', 'dispatched_to_site',
+])
 const { enrichLeadDocument } = require('../utils/leadProjectId')
 
 const s3 = new S3Client({
@@ -220,7 +225,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     : []
 
   const deliveryTracking = {
-    inTransit:            deliveries.filter(d => d.status === 'in_transit').length,
+    inTransit:            deliveries.filter(d => CUSTOMER_IN_TRANSIT_STATUSES.has(d.status)).length,
     staged:               deliveries.filter(d => d.status === 'scheduled').length,
     ready:                deliveries.filter(d => d.status === 'confirmed').length,
     totalToday:           deliveries.filter(d => d.deliveryDate && new Date(d.deliveryDate).toDateString() === nowTs.toDateString()).length,
@@ -1511,7 +1516,7 @@ exports.getProjectStats = asyncHandler(async (req, res) => {
   const [totalDeliveries, deliveredCount, inTransitCount, invoices, followUps, meetings, fullLead, stepDetails] = await Promise.all([
     Delivery.countDocuments({ leadId }),
     Delivery.countDocuments({ leadId, status: 'delivered' }),
-    Delivery.countDocuments({ leadId, status: 'in_transit' }),
+    Delivery.countDocuments({ leadId, status: { $in: [...CUSTOMER_IN_TRANSIT_STATUSES] } }),
     Invoice.find({ leadId }).select('status totalAmount').lean(),
     FollowUp.countDocuments({ leadId }),
     Meeting.countDocuments({ leadId }),

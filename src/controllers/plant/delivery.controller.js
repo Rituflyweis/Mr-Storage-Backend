@@ -30,15 +30,27 @@ const {
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
+// Fulfillment sub-flow, in order, once a delivery is confirmed/carrier-selected:
+// material_prepared -> loaded -> picked_up -> in_transit -> arrived_at_plant -> staged ->
+// dispatched_to_site -> delivered. Each step also allows jumping straight to a later step
+// (dropdown lets plant staff correct a missed step) and to delayed/cancelled at any point.
 const DELIVERY_STATUS_TRANSITIONS = {
   draft: ['scheduled', 'cancelled'],
   bidding_sent: ['scheduled', 'cancelled'],
-  carrier_selected: ['scheduled', 'confirmed', 'in_transit', 'delayed', 'cancelled'],
-  scheduled: ['confirmed', 'in_transit', 'delayed', 'cancelled'],
-  confirmed: ['in_transit', 'delayed', 'cancelled'],
-  in_transit: ['staged', 'delivered', 'delayed', 'cancelled'],
-  delayed: ['scheduled', 'confirmed', 'in_transit', 'delivered', 'cancelled'],
-  staged: ['delivered', 'partial_received', 'received', 'cancelled'],
+  carrier_selected: ['scheduled', 'confirmed', 'material_prepared', 'in_transit', 'delayed', 'cancelled'],
+  scheduled: ['confirmed', 'material_prepared', 'in_transit', 'delayed', 'cancelled'],
+  confirmed: ['material_prepared', 'loaded', 'picked_up', 'in_transit', 'delayed', 'cancelled'],
+  material_prepared: ['loaded', 'picked_up', 'in_transit', 'delayed', 'cancelled'],
+  loaded: ['picked_up', 'in_transit', 'delayed', 'cancelled'],
+  picked_up: ['in_transit', 'delayed', 'cancelled'],
+  in_transit: ['arrived_at_plant', 'staged', 'dispatched_to_site', 'delivered', 'delayed', 'cancelled'],
+  arrived_at_plant: ['staged', 'dispatched_to_site', 'delivered', 'delayed', 'cancelled'],
+  delayed: [
+    'scheduled', 'confirmed', 'material_prepared', 'loaded', 'picked_up', 'in_transit',
+    'arrived_at_plant', 'staged', 'dispatched_to_site', 'delivered', 'cancelled',
+  ],
+  staged: ['dispatched_to_site', 'delivered', 'partial_received', 'received', 'cancelled'],
+  dispatched_to_site: ['delivered', 'partial_received', 'received', 'cancelled'],
   delivered: ['partial_received', 'received'],
   partial_received: ['received'],
 }
@@ -49,8 +61,17 @@ const DELIVERY_POST_AWARD_STATUSES = new Set([
   'carrier_selected',
   'scheduled',
   'confirmed',
+  'material_prepared',
+  'loaded',
+  'picked_up',
   'in_transit',
+  'arrived_at_plant',
+  'dispatched_to_site',
   'delayed',
+])
+// Granular fulfillment steps still roll up into "inTransit" for coarse stat blocks in this file.
+const IN_TRANSIT_ROLLUP_STATUSES = new Set([
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'arrived_at_plant', 'dispatched_to_site',
 ])
 const DELIVERY_POST_AWARD_LOCKED_BODY_KEYS = new Set([
   'weight',
@@ -399,7 +420,13 @@ const SELECTED_DELIVERY_STATUSES = [
   'carrier_selected',
   'scheduled',
   'confirmed',
+  'material_prepared',
+  'loaded',
+  'picked_up',
   'in_transit',
+  'arrived_at_plant',
+  'staged',
+  'dispatched_to_site',
   'delayed',
   'delivered',
 ]
@@ -451,11 +478,13 @@ const buildDeliveryStats = (deliveries) => {
     cancelledCount: 0,
   }
 
+  // 'staged' is folded in here too (in addition to the shared IN_TRANSIT_ROLLUP_STATUSES) so this
+  // bucket sum stays in sync with totalCount — there's no separate stagedCount in this stat block.
   for (const d of deliveries) {
     if (d.status === 'draft') counts.draftCount += 1
     if (d.status === 'scheduled') counts.scheduledCount += 1
     if (d.status === 'confirmed' || d.status === 'carrier_selected') counts.confirmedCount += 1
-    if (d.status === 'in_transit') counts.inTransitCount += 1
+    if (IN_TRANSIT_ROLLUP_STATUSES.has(d.status) || d.status === 'staged') counts.inTransitCount += 1
     if (d.status === 'delivered') counts.deliveredCount += 1
     if (d.status === 'delayed') counts.delayedCount += 1
     if (d.status === 'cancelled') counts.cancelledCount += 1
@@ -1245,7 +1274,7 @@ exports.getFreightLoadStats = asyncHandler(async (req, res) => {
     totalLoads: deliveries.length,
     requestedLoads: deliveries.filter((d) => d.status !== 'cancelled').length,
     bidsPending,
-    inTransit: deliveries.filter((d) => d.status === 'in_transit').length,
+    inTransit: deliveries.filter((d) => IN_TRANSIT_ROLLUP_STATUSES.has(d.status)).length,
     delivered: deliveries.filter((d) => d.status === 'delivered').length,
     totalSpent: Math.round(totalSpent * 100) / 100,
   })
@@ -1421,7 +1450,7 @@ exports.getAwardedLoadStats = asyncHandler(async (req, res) => {
 
   return success(res, {
     totalAwarded: deliveries.length,
-    inTransit: deliveries.filter((d) => d.status === 'in_transit').length,
+    inTransit: deliveries.filter((d) => IN_TRANSIT_ROLLUP_STATUSES.has(d.status)).length,
     delivered: deliveries.filter((d) => d.status === 'delivered').length,
     totalSpent: Math.round(totalSpent * 100) / 100,
   })

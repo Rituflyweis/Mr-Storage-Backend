@@ -2,6 +2,13 @@ const router = require('express').Router()
 const { body, param, query } = require('express-validator')
 const ctrl = require('../../controllers/plant/delivery.controller')
 const validate = require('../../middleware/validate')
+const { DELIVERY_STATUSES } = require('../../config/constants')
+
+// 'draft' / 'bidding_sent' / 'carrier_selected' are set by the dedicated bidding endpoints, not
+// this generic status update, so they're excluded from the dropdown here.
+const MANUALLY_SETTABLE_DELIVERY_STATUSES = DELIVERY_STATUSES.filter(
+  (s) => !['draft', 'bidding_sent', 'carrier_selected'].includes(s)
+)
 
 router.get('/project/:leadId',
   [param('leadId').isMongoId()],
@@ -211,7 +218,7 @@ router.patch('/:deliveryId/reschedule',
 router.patch('/:deliveryId/status',
   [
     param('deliveryId').isMongoId(),
-    body('status').isIn(['scheduled', 'confirmed', 'in_transit', 'delayed', 'delivered', 'cancelled']),
+    body('status').isIn(MANUALLY_SETTABLE_DELIVERY_STATUSES),
   ],
   validate,
   ctrl.updateDeliveryStatus
