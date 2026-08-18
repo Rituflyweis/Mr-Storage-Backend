@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const { INVOICE_STATUSES, INVOICE_VALUE_TYPES, PAYMENT_PROOF_STATUSES } = require('../config/constants')
+const { INVOICE_STATUSES, INVOICE_VALUE_TYPES, PAYMENT_PROOF_STATUSES, PAYMENT_METHODS } = require('../config/constants')
 
 const PaymentProofFileSchema = new mongoose.Schema(
   { url: { type: String, required: true }, name: { type: String, default: '' } },
@@ -69,6 +69,7 @@ const InvoiceSchema = new mongoose.Schema(
     // Mark as paid — stores who did it and when
     paidBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     paidAt:  { type: Date, default: null },
+    paymentMethod: { type: String, enum: PAYMENT_METHODS, default: null },
 
     // Customer-submitted payment receipt review — separate from `status`, since the invoice only
     // flips to 'paid' once admin/sales verifies the proof (see PAYMENT_PROOF_STATUSES).

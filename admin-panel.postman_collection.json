@@ -1153,6 +1153,40 @@
 									]
 								}
 							}
+						},
+						{
+							"name": "Payments Overview \u2014 Export",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/payments-dashboard/export?startDate=2025-03-24&endDate=2025-03-31",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"payments-dashboard",
+										"export"
+									],
+									"query": [
+										{
+											"key": "startDate",
+											"value": "2025-03-24"
+										},
+										{
+											"key": "endDate",
+											"value": "2025-03-31"
+										}
+									]
+								}
+							}
 						}
 					]
 				},
@@ -1246,6 +1280,113 @@
 								],
 								"url": "{{baseUrl}}/admin/financials/tax-filing/{{taxId}}/file"
 							}
+						},
+						{
+							"name": "Tax Filing \u2014 Stats",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/tax-filing/stats?state=Texas",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"tax-filing",
+										"stats"
+									],
+									"query": [
+										{
+											"key": "state",
+											"value": "Texas"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Tax Filing \u2014 Filters (dropdown data)",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/tax-filing/filters",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"tax-filing",
+										"filters"
+									]
+								}
+							}
+						},
+						{
+							"name": "Filter by Project / Client / Search / Date Range",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/tax-filing?projectId={{leadId}}&clientId={{customerId}}&search=Texas&startDate=2026-08-01&endDate=2026-08-31&page=1&limit=10",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"tax-filing"
+									],
+									"query": [
+										{
+											"key": "projectId",
+											"value": "{{leadId}}"
+										},
+										{
+											"key": "clientId",
+											"value": "{{customerId}}"
+										},
+										{
+											"key": "search",
+											"value": "Texas"
+										},
+										{
+											"key": "startDate",
+											"value": "2026-08-01"
+										},
+										{
+											"key": "endDate",
+											"value": "2026-08-31"
+										},
+										{
+											"key": "page",
+											"value": "1"
+										},
+										{
+											"key": "limit",
+											"value": "10"
+										}
+									]
+								}
+							}
 						}
 					]
 				},
@@ -1276,6 +1417,127 @@
 									}
 								],
 								"url": "{{baseUrl}}/admin/financials/state-wise-tax/sync"
+							}
+						},
+						{
+							"name": "State Wise Tax \u2014 Stats",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/state-wise-tax/stats?projectId={{leadId}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"state-wise-tax",
+										"stats"
+									],
+									"query": [
+										{
+											"key": "projectId",
+											"value": "{{leadId}}"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "State Wise Tax \u2014 Filter by Project / Date Range",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/state-wise-tax?projectId={{leadId}}&startDate=2026-08-01&endDate=2026-08-31",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"state-wise-tax"
+									],
+									"query": [
+										{
+											"key": "projectId",
+											"value": "{{leadId}}"
+										},
+										{
+											"key": "startDate",
+											"value": "2026-08-01"
+										},
+										{
+											"key": "endDate",
+											"value": "2026-08-31"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "State Wise Tax \u2014 Export",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/state-wise-tax/export",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"state-wise-tax",
+										"export"
+									]
+								}
+							}
+						},
+						{
+							"name": "Upcoming Filing Deadlines",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/state-wise-tax/upcoming-deadlines?limit=6",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"state-wise-tax",
+										"upcoming-deadlines"
+									],
+									"query": [
+										{
+											"key": "limit",
+											"value": "6"
+										}
+									]
+								}
 							}
 						}
 					]
@@ -1312,6 +1574,105 @@
 											"key": "limit",
 											"value": "10"
 										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Project Wise Tax \u2014 Stats",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/project-wise-tax/stats?projectId={{leadId}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"project-wise-tax",
+										"stats"
+									],
+									"query": [
+										{
+											"key": "projectId",
+											"value": "{{leadId}}"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Project Wise Tax \u2014 Filter by Project / Date Range",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/project-wise-tax?projectId={{leadId}}&startDate=2026-08-01&endDate=2026-08-31&page=1&limit=10",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"project-wise-tax"
+									],
+									"query": [
+										{
+											"key": "projectId",
+											"value": "{{leadId}}"
+										},
+										{
+											"key": "startDate",
+											"value": "2026-08-01"
+										},
+										{
+											"key": "endDate",
+											"value": "2026-08-31"
+										},
+										{
+											"key": "page",
+											"value": "1"
+										},
+										{
+											"key": "limit",
+											"value": "10"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Project Wise Tax \u2014 Export",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/project-wise-tax/export",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"project-wise-tax",
+										"export"
 									]
 								}
 							}
@@ -1445,6 +1806,103 @@
 									"raw": "{\"action\":\"rejected\",\"reviewNotes\":\"Exceeds budget allocation\"}"
 								}
 							}
+						},
+						{
+							"name": "Payment Approvals \u2014 Filters (dropdown data)",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/payment-approvals/filters",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"payment-approvals",
+										"filters"
+									]
+								}
+							}
+						},
+						{
+							"name": "Filter by Requested Date / Requested By / Category",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/payment-approvals?requestedBy={{userId}}&category=vendor_payment&startDate=2026-08-01&endDate=2026-08-31&page=1&limit=10",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"payment-approvals"
+									],
+									"query": [
+										{
+											"key": "requestedBy",
+											"value": "{{userId}}"
+										},
+										{
+											"key": "category",
+											"value": "vendor_payment"
+										},
+										{
+											"key": "startDate",
+											"value": "2026-08-01"
+										},
+										{
+											"key": "endDate",
+											"value": "2026-08-31"
+										},
+										{
+											"key": "page",
+											"value": "1"
+										},
+										{
+											"key": "limit",
+											"value": "10"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Payment Approvals \u2014 Export",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/payment-approvals/export",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"payment-approvals",
+										"export"
+									]
+								}
+							}
 						}
 					]
 				},
@@ -1509,6 +1967,75 @@
 											"key": "status",
 											"value": "overdue"
 										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Filter by Method / Status / Search",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/payment-status?paymentMethod=bank_transfer&status=paid&search=INV&page=1&limit=10",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"payment-status"
+									],
+									"query": [
+										{
+											"key": "paymentMethod",
+											"value": "bank_transfer"
+										},
+										{
+											"key": "status",
+											"value": "paid"
+										},
+										{
+											"key": "search",
+											"value": "INV"
+										},
+										{
+											"key": "page",
+											"value": "1"
+										},
+										{
+											"key": "limit",
+											"value": "10"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Payment Status \u2014 Export",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/financials/payment-status/export",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"financials",
+										"payment-status",
+										"export"
 									]
 								}
 							}

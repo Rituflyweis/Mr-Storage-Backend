@@ -61,6 +61,7 @@ const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
 const PAYMENT_PROOF_STATUSES = ['none', 'pending_review', 'verified', 'rejected']
 /** Line-item markup/tax input mode: percentage (of rate / line subtotal) or flat amount */
 const INVOICE_VALUE_TYPES = ['percentage', 'amount']
+const PAYMENT_METHODS = ['cash', 'bank_transfer', 'credit_card', 'upi', 'cheque', 'other']
 const FOLLOW_UP_STATUSES = ['pending', 'completed']
 const FOLLOW_UP_MODES = ['call', 'email', 'meeting']
 const MEETING_MODES = ['online', 'offline']
@@ -248,6 +249,7 @@ module.exports = {
   INVOICE_STATUSES,
   PAYMENT_PROOF_STATUSES,
   INVOICE_VALUE_TYPES,
+  PAYMENT_METHODS,
   FOLLOW_UP_STATUSES,
   FOLLOW_UP_MODES,
   MEETING_MODES,
