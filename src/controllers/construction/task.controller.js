@@ -45,7 +45,7 @@ exports.getTasks = asyncHandler(async (req, res) => {
 })
 
 exports.createTask = asyncHandler(async (req, res) => {
-  const { title, description, leadId, assignedTo, priority, status, dueDate } = req.body
+  const { title, description, leadId, assignedTo, priority, status, dueDate, attachments } = req.body
   if (!title || !leadId) return badRequest(res, 'title and leadId are required')
 
   const lead = await Lead.findById(leadId).select('_id').lean()
@@ -60,6 +60,7 @@ exports.createTask = asyncHandler(async (req, res) => {
     priority: priority || 'medium',
     status: status || 'todo',
     dueDate: dueDate || null,
+    attachments: Array.isArray(attachments) ? attachments : [],
   })
 
   const populated = await Task.findById(task._id)
@@ -74,7 +75,7 @@ exports.updateTask = asyncHandler(async (req, res) => {
   const task = await Task.findById(req.params.taskId)
   if (!task) return notFound(res, 'Task not found')
 
-  const { title, description, assignedTo, priority, status, dueDate, notes } = req.body
+  const { title, description, assignedTo, priority, status, dueDate, notes, attachments } = req.body
 
   if (title !== undefined) task.title = title
   if (description !== undefined) task.description = description
@@ -82,6 +83,7 @@ exports.updateTask = asyncHandler(async (req, res) => {
   if (priority !== undefined) task.priority = priority
   if (notes !== undefined) task.notes = notes
   if (dueDate !== undefined) task.dueDate = dueDate || null
+  if (attachments !== undefined) task.attachments = Array.isArray(attachments) ? attachments : []
   if (status !== undefined) {
     task.status = status
     if (status === 'done' && !task.completedAt) task.completedAt = new Date()

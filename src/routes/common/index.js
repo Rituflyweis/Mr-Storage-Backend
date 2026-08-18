@@ -8,7 +8,7 @@ const { invoiceCreateValidators } = require('../../utils/invoiceRouteValidators'
 const notifGuard = [verifyToken, roleGuard(['admin', 'sales', 'account', 'plant', 'construction'])]
 const guard = [verifyToken, roleGuard(['admin', 'sales'])]
 const lookupGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant'])]
-const uploadGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant'])]
+const uploadGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant', 'construction'])]
 const smdtGuard = [verifyToken, roleGuard(['admin', 'plant'])]
 
 const lookupValidators = [
@@ -44,5 +44,12 @@ router.use('/uploads', uploadGuard, require('./upload.routes'))
 router.use('/smdt', smdtGuard, require('./smdt.routes'))
 router.use('/activity', require('./pageActivity.routes'))
 router.use('/notifications', ...notifGuard, require('./notification.routes'))
+
+// Staff "My Profile" screen — same role set as notifications (any authenticated staff member)
+const profileCtrl = require('../../controllers/common/profile.controller')
+router.get('/profile', ...notifGuard, profileCtrl.getProfile)
+router.put('/profile', ...notifGuard, profileCtrl.updateProfile)
+router.put('/profile/password', ...notifGuard, profileCtrl.updateProfilePassword)
+router.put('/profile/notification-settings', ...notifGuard, profileCtrl.updateNotificationSettings)
 
 module.exports = router

@@ -321,7 +321,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     note: 'There is no RFI / clarification-request data model in the backend yet, so itemsNeedingClarification is always 0 until that feature exists. revisionReceived is a best-effort proxy (count of drawings with a non-null revisionRequestedAt) — confirm this matches the intended definition.',
   }
 
-  const [ordersList, notificationsFeed, recentMessages] = await Promise.all([
+  const [rawOrders, notificationsFeed, recentMessages] = await Promise.all([
     leadIds.length
       ? MaterialRequest.find({ leadId: { $in: leadIds } }).sort({ createdAt: -1 }).limit(5).lean()
       : [],
@@ -330,6 +330,29 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       ? Message.find({ leadId: { $in: leadIds }, senderType: { $ne: 'customer' } }).sort({ createdAt: -1 }).limit(5).lean()
       : [],
   ])
+
+  // Same shape as GET /projects/:leadId/orders (project name, coil totals, computed stage) so the
+  // dashboard's "Orders List" table isn't a differently-shaped raw MaterialRequest dump.
+  const dashboardQuotations = rawOrders.length
+    ? await OrderQuotation.find({ orderId: { $in: rawOrders.map(o => o._id) } }).sort({ createdAt: -1 }).lean()
+    : []
+  const latestQuotationByOrderForDashboard = new Map()
+  for (const q of dashboardQuotations) {
+    const key = String(q.orderId)
+    if (!latestQuotationByOrderForDashboard.has(key)) latestQuotationByOrderForDashboard.set(key, q)
+  }
+  const ordersList = rawOrders.map(order => {
+    const lead = leads.find(l => String(l._id) === String(order.leadId)) || {}
+    const totalQuantity = order.requestedItems.reduce((sum, i) => sum + (i.quantity || 0), 0)
+    const totalLength = order.requestedItems.reduce((sum, i) => sum + (i.quantity || 0) * (i.lengthFeet || 0), 0)
+    return {
+      ...order,
+      project: { leadId: lead._id || order.leadId, projectName: lead.projectName || '', jobId: lead.jobId || '' },
+      totalQuantity,
+      totalLength,
+      stage: computeOrderStage(order, latestQuotationByOrderForDashboard.get(String(order._id))),
+    }
+  })
 
   return success(res, {
     activeProjects,
@@ -393,6 +416,24 @@ exports.getProjects = asyncHandler(async (req, res) => {
 
   const totalAll = await Lead.countDocuments(baseFilter)
 
+  // "Progress" column on the My Projects table — same ProjectStepDetail.completionPct used by the
+  // dashboard's single active-project card, batched here for the whole list instead of N+1 queries.
+  const projectIds = projects.map(p => p._id)
+  const stepDetails = projectIds.length
+    ? await ProjectStepDetail.find({ leadId: { $in: projectIds } }).sort({ updatedAt: -1 }).select('leadId completionPct').lean()
+    : []
+  const progressByLead = new Map()
+  for (const s of stepDetails) {
+    const key = String(s.leadId)
+    if (!progressByLead.has(key)) progressByLead.set(key, s.completionPct ?? null)
+  }
+
+  const projectsWithProgress = projects.map(p => ({
+    ...enrichLeadDocument(p),
+    progressPct: progressByLead.get(String(p._id)) ?? null,
+    manager: p.assignedSales ? { name: p.assignedSales.name, email: p.assignedSales.email } : null,
+  }))
+
   return success(res, {
     stats: {
       total: totalAll,
@@ -402,7 +443,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
       proposed: proposedCount,
       confirmed: confirmedCount,
     },
-    projects: projects.map(enrichLeadDocument),
+    projects: projectsWithProgress,
     total,
     page: Number(page),
     limit: Number(limit),
@@ -739,11 +780,14 @@ exports.getPresignedUrl = asyncHandler(async (req, res) => {
 })
 
 exports.getPaymentInvoices = asyncHandler(async (req, res) => {
-  const { status, leadId } = req.query
+  const { status, tab, leadId } = req.query
   const customerId = req.customer._id
 
   const invoiceFilter = { customerId }
-  if (status) invoiceFilter.status = status
+  // "Paid"/"Unpaid" tabs on the Invoices screen — unpaid spans every non-paid, non-draft status.
+  if (tab === 'paid') invoiceFilter.status = 'paid'
+  else if (tab === 'unpaid') invoiceFilter.status = { $in: ['sent', 'overdue'] }
+  else if (status) invoiceFilter.status = status
   if (leadId) invoiceFilter.leadId = leadId
 
   const [invoices, leads] = await Promise.all([
@@ -980,6 +1024,9 @@ const mapDeliveryRow = (d, lead, carrier, loadDetails) => {
     },
     confirmationEmailSent: !!d.confirmationEmailSent,
     confirmationEmailSentAt: d.confirmationEmailSentAt || null,
+    // "Delivery Timeline & Flow" checklist screen — ordered log of every status this delivery
+    // has passed through, e.g. scheduled -> material_prepared -> ... -> delivered.
+    statusHistory: (d.statusHistory || []).map(h => ({ status: h.status, changedAt: h.changedAt })),
     reschedule: latest
       ? {
           _id: latest._id,
@@ -2404,7 +2451,10 @@ exports.getProjectOrderQuotations = asyncHandler(async (req, res) => {
 
   const skip = (Number(page) - 1) * Number(limit)
   const [quotations, total] = await Promise.all([
-    OrderQuotation.find(filter).populate('orderId', 'requestId requestDate').sort({ sentAt: -1 }).skip(skip).limit(Number(limit)).lean(),
+    OrderQuotation.find(filter)
+      .populate('orderId', 'requestId requestDate')
+      .populate('createdBy', 'name')
+      .sort({ sentAt: -1 }).skip(skip).limit(Number(limit)).lean(),
     OrderQuotation.countDocuments(filter),
   ])
 
@@ -2417,6 +2467,8 @@ exports.getProjectOrderQuotations = asyncHandler(async (req, res) => {
     quotationReceived: q.sentAt,
     orderValue: q.totalValue,
     status: q.status,
+    sentBy: q.createdBy?.name || '',
+    customerRemark: q.customerRemark || q.rejectionReason || '',
   }))
 
   return success(res, {
@@ -2455,6 +2507,7 @@ exports.approveOrderQuotation = asyncHandler(async (req, res) => {
 
   quotation.status = 'approved'
   quotation.respondedAt = new Date()
+  if (req.body.customerRemark !== undefined) quotation.customerRemark = req.body.customerRemark
   await quotation.save()
 
   await MaterialRequest.findByIdAndUpdate(quotation.orderId, { status: 'approved' })

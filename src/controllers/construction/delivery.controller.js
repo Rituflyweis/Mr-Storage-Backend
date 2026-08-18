@@ -2,7 +2,8 @@ const Delivery = require('../../models/Delivery')
 const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Bundle = require('../../models/Bundle')
-const { success, notFound, badRequest } = require('../../utils/apiResponse')
+const Lead = require('../../models/Lead')
+const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
 const { generatePackingListPdf, generateBillOfLadingPdf } = require('../../utils/exportDelivery')
@@ -14,16 +15,14 @@ const buildDeliveryCard = async (delivery) => {
   let carrier = null
   if (delivery.selectedCarrierBidId) {
     const bid = await FreightBid.findById(delivery.selectedCarrierBidId)
-      .populate('carrierId', 'name phone email')
+      .populate('carrierId', 'carrierName contactName phone email')
       .lean()
     if (bid?.carrierId) {
       carrier = {
-        name: bid.carrierId.name,
+        name: bid.carrierId.carrierName,
+        contactName: bid.carrierId.contactName,
         phone: bid.carrierId.phone,
         email: bid.carrierId.email,
-        truckNumber: bid.truckNumber || '',
-        driverName: bid.driverName || '',
-        driverPhone: bid.driverPhone || '',
       }
     }
   }
@@ -52,6 +51,7 @@ const buildDeliveryCard = async (delivery) => {
     pickupContactPhone: delivery.pickupContactPhone,
     siteContact: delivery.siteContact || null,
     carrier,
+    statusHistory: delivery.statusHistory || [],
     project: {
       leadId: delivery.leadId?._id,
       projectName: delivery.leadId?.projectName,
@@ -105,6 +105,32 @@ exports.getDelivery = asyncHandler(async (req, res) => {
 
   const card = await buildDeliveryCard(delivery)
   return success(res, { delivery: card })
+})
+
+// POST /deliveries — "Add Delivery" screen on the construction mobile app
+exports.createDelivery = asyncHandler(async (req, res) => {
+  const { title, leadId, sectionLocation, deliveryDate, description, notes, attachments } = req.body
+  if (!leadId) return badRequest(res, 'leadId is required')
+  if (!deliveryDate) return badRequest(res, 'deliveryDate is required')
+
+  const lead = await Lead.findById(leadId).select('_id').lean()
+  if (!lead) return notFound(res, 'Project not found')
+
+  const count = await Delivery.countDocuments({})
+  const delivery = await Delivery.create({
+    leadId,
+    deliveryNumber: `DEL-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`,
+    status: 'scheduled',
+    loadDescription: title || '',
+    description: description || '',
+    deliveryLocation: sectionLocation || '',
+    deliveryDate,
+    additionalNotes: notes || '',
+    attachments: Array.isArray(attachments) ? attachments : [],
+    statusHistory: [{ status: 'scheduled', changedAt: new Date() }],
+  })
+
+  return created(res, { delivery }, 'Delivery added')
 })
 
 exports.markReceived = asyncHandler(async (req, res) => {

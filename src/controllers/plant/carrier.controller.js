@@ -10,6 +10,7 @@ const {
 } = require('../../config/constants')
 
 const normalizeAddress = (address = {}) => ({
+  country: address.country?.trim() || '',
   placeNumber: address.placeNumber?.trim() || '',
   streetAddress: address.streetAddress?.trim() || '',
   landmark: address.landmark?.trim() || '',
@@ -64,6 +65,9 @@ const getCarrierBidStatsMap = async (carrierIds) => {
         awardedBidCount: {
           $sum: { $cond: [{ $eq: ['$status', 'selected'] }, 1, 0] },
         },
+        awardedAmount: {
+          $sum: { $cond: [{ $eq: ['$status', 'selected'] }, '$quotedAmount', 0] },
+        },
         submittedBidCount: {
           $sum: { $cond: [{ $ifNull: ['$submittedAt', false] }, 1, 0] },
         },
@@ -77,6 +81,7 @@ const getCarrierBidStatsMap = async (carrierIds) => {
       totalBids: row.totalBids,
       activeBids: row.activeBids,
       awardedBidCount: row.awardedBidCount,
+      awardedAmount: row.awardedAmount || 0,
       bidWinRate: calcBidWinRate(row.awardedBidCount, row.submittedBidCount),
       avgBid: row.avgBid ? Math.round(row.avgBid * 100) / 100 : 0,
     }
@@ -98,6 +103,7 @@ const mapCarrierListRow = (carrier, stats = {}) => ({
   activeBids: stats.activeBids || 0,
   totalBids: stats.totalBids || 0,
   awardedBidCount: stats.awardedBidCount || 0,
+  awardedAmount: stats.awardedAmount || 0,
   bidWinRate: stats.bidWinRate || 0,
   avgBid: stats.avgBid || 0,
 })
@@ -233,6 +239,7 @@ exports.getCarrierDetail = asyncHandler(async (req, res) => {
     totalBids: 0,
     activeBids: 0,
     awardedBidCount: 0,
+    awardedAmount: 0,
     bidWinRate: 0,
     avgBid: 0,
   }
@@ -295,6 +302,7 @@ exports.getCarrierDetail = asyncHandler(async (req, res) => {
       totalBids: stats.totalBids,
       activeBids: stats.activeBids,
       awardedBidCount: stats.awardedBidCount,
+      awardedAmount: stats.awardedAmount,
       bidWinRate: stats.bidWinRate,
       avgBid: stats.avgBid,
       lastAwardedDate,
