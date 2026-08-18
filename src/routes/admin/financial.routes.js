@@ -31,6 +31,7 @@ router.get('/tax-filing/stats',
   ctrl.getTaxFilingStats
 )
 router.get('/tax-filing/filters',      ctrl.getTaxFilingFilters)
+router.get('/tax-filing/export',       taxFilingListQuery, validate, ctrl.exportTaxFiling)
 router.get('/tax-filing/:taxId/prepare', ctrl.prepareFiling)
 router.put('/tax-filing/:taxId/file',  ctrl.completeFiling)
 

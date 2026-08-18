@@ -11,7 +11,7 @@ const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { withProjectIdFields } = require('../../utils/leadProjectId')
-const { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpensesExcel, generatePaymentsDashboardExcel, generateStateWiseTaxExcel, generateProjectWiseTaxExcel, generatePaymentApprovalsExcel, generatePaymentHistoryExcel } = require('../../utils/exportFinancialAdmin')
+const { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpensesExcel, generatePaymentsDashboardExcel, generateStateWiseTaxExcel, generateProjectWiseTaxExcel, generatePaymentApprovalsExcel, generatePaymentHistoryExcel, generateTaxFilingExcel } = require('../../utils/exportFinancialAdmin')
 const { parse: parseCsv } = require('csv-parse/sync')
 
 exports.getOverview = asyncHandler(async (req, res) => {
@@ -290,6 +290,22 @@ exports.getTaxFiling = asyncHandler(async (req, res) => {
   })
 })
 
+// GET /tax-filing/export
+exports.exportTaxFiling = asyncHandler(async (req, res) => {
+  const { state, projectId, clientId, search, startDate, endDate } = req.query
+  const filter = await buildTaxFilingFilter({ state, projectId, clientId, search, startDate, endDate })
+
+  const records = await Tax.find(filter)
+    .populate([{ path: 'leadId', select: 'projectName jobId' }, { path: 'customerId', select: 'firstName lastName' }])
+    .sort({ dueDate: 1 })
+    .lean()
+
+  const buffer = await generateTaxFilingExcel(records)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="tax-filing.xlsx"')
+  return res.send(buffer)
+})
+
 // Shared by any stat card that shows a "X% from last month" trend.
 const pctChange = (current, previous) => {
   if (!previous) return 0
@@ -324,6 +340,8 @@ exports.getTaxFilingStats = asyncHandler(async (req, res) => {
       { $match: baseFilter },
       { $group: {
         _id: null,
+        totalTaxable: { $sum: '$amount' },
+        totalCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
         taxPayableByStates: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
         filed: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
         unfiled: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
@@ -331,15 +349,17 @@ exports.getTaxFilingStats = asyncHandler(async (req, res) => {
     ]),
   ])
 
-  const o = overall[0] || { taxPayableByStates: 0, filed: 0, unfiled: 0 }
+  const o = overall[0] || { totalTaxable: 0, totalCollected: 0, taxPayableByStates: 0, filed: 0, unfiled: 0 }
 
+  // value = all-time total (same scope as the tax-filing list, so the two screens agree);
+  // pctChangeFromLastMonth is a separate month-over-month growth-rate indicator.
   return success(res, {
     totalSalesTaxable: {
-      value: thisMonth.totalTaxable,
+      value: o.totalTaxable,
       pctChangeFromLastMonth: pctChange(thisMonth.totalTaxable, lastMonth.totalTaxable),
     },
     totalSalesTaxCollected: {
-      value: thisMonth.totalCollected,
+      value: o.totalCollected,
       pctChangeFromLastMonth: pctChange(thisMonth.totalCollected, lastMonth.totalCollected),
     },
     taxPayableByStates: {
@@ -476,17 +496,20 @@ exports.getStateWiseTaxStats = asyncHandler(async (req, res) => {
     ? await Tax.findOne({ ...filter, status: 'pending', dueDate: overall.nextFilingDue }).select('state dueDate').lean()
     : null
 
+  // value = all-time total (same scope as the state-wise-tax list, so the two screens agree);
+  // pctChangeFromLastMonth is a separate month-over-month growth-rate indicator, not a
+  // value-scoping choice — it compares only new activity created this month vs last month.
   return success(res, {
     totalTaxCollected: {
-      value: thisMonth.taxCollected,
+      value: overall.totalTaxCollected,
       pctChangeFromLastMonth: pctChange(thisMonth.taxCollected, lastMonth.taxCollected),
     },
     totalPaid: {
-      value: thisMonth.taxCollected,
+      value: overall.totalPaid,
       pctChangeFromLastMonth: pctChange(thisMonth.taxCollected, lastMonth.taxCollected),
     },
     totalPayable: {
-      value: thisMonth.payable,
+      value: overall.totalPayable,
       pctChangeFromLastMonth: pctChange(thisMonth.payable, lastMonth.payable),
     },
     pendingFilingStates: {
@@ -645,17 +668,19 @@ exports.getProjectWiseTaxStats = asyncHandler(async (req, res) => {
     computeProjectWiseTax({ projectId, startDate, endDate }),
   ])
 
+  // value = all-time total (same scope as the project-wise-tax list, so the two screens agree);
+  // pctChangeFromLastMonth is a separate month-over-month growth-rate indicator.
   return success(res, {
     totalTaxCollected: {
-      value: thisMonth.taxCollected,
+      value: overall.totalTaxCollected,
       pctChangeFromLastMonth: pctChange(thisMonth.taxCollected, lastMonth.taxCollected),
     },
     totalPaid: {
-      value: thisMonth.taxCollected,
+      value: overall.totalPaid,
       pctChangeFromLastMonth: pctChange(thisMonth.taxCollected, lastMonth.taxCollected),
     },
     totalPayable: {
-      value: thisMonth.payable,
+      value: overall.totalPayable,
       pctChangeFromLastMonth: pctChange(thisMonth.payable, lastMonth.payable),
     },
     pendingFiling: {

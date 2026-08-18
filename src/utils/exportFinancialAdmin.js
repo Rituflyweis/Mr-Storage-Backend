@@ -267,4 +267,38 @@ const generatePaymentHistoryExcel = async (invoices) => {
   return workbook.xlsx.writeBuffer()
 }
 
-module.exports = { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpensesExcel, generatePaymentsDashboardExcel, generateStateWiseTaxExcel, generateProjectWiseTaxExcel, generatePaymentApprovalsExcel, generatePaymentHistoryExcel }
+const generateTaxFilingExcel = async (records) => {
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Tax Filing')
+
+  sheet.columns = [
+    { header: 'State',        key: 'state',        width: 18 },
+    { header: 'Project',      key: 'projectName',   width: 25 },
+    { header: 'Job ID',       key: 'jobId',           width: 12 },
+    { header: 'Customer',     key: 'customerName',     width: 22 },
+    { header: 'Amount',       key: 'amount',             width: 14 },
+    { header: 'Filing Frequency', key: 'filingFrequency', width: 18 },
+    { header: 'Due Date',     key: 'dueDate',              width: 16 },
+    { header: 'Status',       key: 'status',                 width: 14 },
+    { header: 'Paid At',      key: 'paidAt',                   width: 16 },
+  ]
+
+  for (const row of records) {
+    sheet.addRow({
+      state: row.state || '—',
+      projectName: row.leadId?.projectName || '—',
+      jobId: row.leadId?.jobId || '—',
+      customerName: row.customerId ? `${row.customerId.firstName || ''} ${row.customerId.lastName || ''}`.trim() : '—',
+      amount: row.amount || 0,
+      filingFrequency: row.filingFrequency || '—',
+      dueDate: row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '—',
+      status: row.status || '—',
+      paidAt: row.paidAt ? new Date(row.paidAt).toLocaleDateString() : '—',
+    })
+  }
+
+  sheet.getRow(1).font = { bold: true }
+  return workbook.xlsx.writeBuffer()
+}
+
+module.exports = { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpensesExcel, generatePaymentsDashboardExcel, generateStateWiseTaxExcel, generateProjectWiseTaxExcel, generatePaymentApprovalsExcel, generatePaymentHistoryExcel, generateTaxFilingExcel }
