@@ -31,9 +31,9 @@ const { success, created, notFound, forbidden, badRequest } = require('../../uti
 const asyncHandler = require('../../utils/asyncHandler')
 
 // Fulfillment sub-flow, in order, once a delivery is confirmed/carrier-selected:
-// material_prepared -> loaded -> picked_up -> in_transit -> arrived_at_plant -> staged ->
-// dispatched_to_site -> delivered. Each step also allows jumping straight to a later step
-// (dropdown lets plant staff correct a missed step) and to delayed/cancelled at any point.
+// material_prepared -> loaded -> picked_up -> in_transit -> staged -> dispatched_to_site ->
+// delivered. Each step also allows jumping straight to a later step (dropdown lets plant staff
+// correct a missed step) and to delayed/cancelled at any point.
 const DELIVERY_STATUS_TRANSITIONS = {
   draft: ['scheduled', 'cancelled'],
   bidding_sent: ['scheduled', 'cancelled'],
@@ -43,11 +43,10 @@ const DELIVERY_STATUS_TRANSITIONS = {
   material_prepared: ['loaded', 'picked_up', 'in_transit', 'delayed', 'cancelled'],
   loaded: ['picked_up', 'in_transit', 'delayed', 'cancelled'],
   picked_up: ['in_transit', 'delayed', 'cancelled'],
-  in_transit: ['arrived_at_plant', 'staged', 'dispatched_to_site', 'delivered', 'delayed', 'cancelled'],
-  arrived_at_plant: ['staged', 'dispatched_to_site', 'delivered', 'delayed', 'cancelled'],
+  in_transit: ['staged', 'dispatched_to_site', 'delivered', 'delayed', 'cancelled'],
   delayed: [
     'scheduled', 'confirmed', 'material_prepared', 'loaded', 'picked_up', 'in_transit',
-    'arrived_at_plant', 'staged', 'dispatched_to_site', 'delivered', 'cancelled',
+    'staged', 'dispatched_to_site', 'delivered', 'cancelled',
   ],
   staged: ['dispatched_to_site', 'delivered', 'partial_received', 'received', 'cancelled'],
   dispatched_to_site: ['delivered', 'partial_received', 'received', 'cancelled'],
@@ -65,13 +64,12 @@ const DELIVERY_POST_AWARD_STATUSES = new Set([
   'loaded',
   'picked_up',
   'in_transit',
-  'arrived_at_plant',
   'dispatched_to_site',
   'delayed',
 ])
 // Granular fulfillment steps still roll up into "inTransit" for coarse stat blocks in this file.
 const IN_TRANSIT_ROLLUP_STATUSES = new Set([
-  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'arrived_at_plant', 'dispatched_to_site',
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'dispatched_to_site',
 ])
 const DELIVERY_POST_AWARD_LOCKED_BODY_KEYS = new Set([
   'weight',
@@ -426,7 +424,6 @@ const SELECTED_DELIVERY_STATUSES = [
   'loaded',
   'picked_up',
   'in_transit',
-  'arrived_at_plant',
   'staged',
   'dispatched_to_site',
   'delayed',

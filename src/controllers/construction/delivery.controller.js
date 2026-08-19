@@ -8,6 +8,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
 const { generatePackingListPdf, generateBillOfLadingPdf } = require('../../utils/exportDelivery')
 const { DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+const { resolveLeadByProjectRef } = require('../../utils/projectRef')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
 const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
 
@@ -177,12 +178,25 @@ exports.updateSiteContact = asyncHandler(async (req, res) => {
 })
 
 exports.scanBundle = asyncHandler(async (req, res) => {
-  const { bundleId } = req.body
+  const { bundleId, project } = req.body
   if (!bundleId) return badRequest(res, 'bundleId is required')
 
-  const bundle = await Bundle.findOne({
-    $or: [{ _id: bundleId.length === 24 ? bundleId : null }, { bundleNo: bundleId }],
-  })
+  const isObjectId = /^[a-f0-9]{24}$/i.test(bundleId)
+
+  // Human-readable bundle numbers (e.g. "BND-001") are only unique within a project, so a
+  // project reference is required to scope the lookup — otherwise a scan could silently resolve
+  // to the wrong project's bundle. The internal Mongo _id is already globally unique.
+  let leadId = null
+  if (!isObjectId) {
+    if (!project) return badRequest(res, 'project is required when scanning by bundle number')
+    const lead = await resolveLeadByProjectRef(project)
+    if (!lead) return notFound(res, 'Project not found')
+    leadId = lead._id
+  }
+
+  const bundle = await Bundle.findOne(
+    isObjectId ? { _id: bundleId } : { bundleNo: bundleId, leadId }
+  )
     .populate('bundlePlanId', 'leadId')
     .lean()
 

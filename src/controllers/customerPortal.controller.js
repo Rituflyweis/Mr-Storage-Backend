@@ -39,7 +39,7 @@ const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
 // Granular fulfillment steps (material_prepared -> ... -> dispatched_to_site) all read as
 // "in transit" to the customer, same as before this sub-flow existed.
 const CUSTOMER_IN_TRANSIT_STATUSES = new Set([
-  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'arrived_at_plant', 'dispatched_to_site',
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'dispatched_to_site',
 ])
 const { enrichLeadDocument } = require('../utils/leadProjectId')
 
