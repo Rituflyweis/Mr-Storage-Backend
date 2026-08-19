@@ -19,6 +19,7 @@ const {
 } = require('../../services/plant/loadPlanning.service')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const generatePackingListPlanNumber = require('../../utils/generatePackingListPlanNumber')
 
 const countForTruckType = (packingLists, type) =>
   packingLists.filter((pl) => pl.truckType === type).length
@@ -75,16 +76,6 @@ const getNextBundleNo = async (bundlePlanId) => {
     return Math.max(max, Number(m[1]))
   }, 0)
   return `B-${String(maxN + 1).padStart(3, '0')}`
-}
-
-const getNextPackingListPlanNumber = async () => {
-  const latest = await PackingListPlan.findOne({
-    planNumber: { $regex: /^PLP-\d+$/ },
-  }).sort({ createdAt: -1 }).select('planNumber').lean()
-
-  const current = latest?.planNumber ? Number(String(latest.planNumber).replace('PLP-', '')) : 0
-  const next = Number.isFinite(current) ? current + 1 : 1
-  return `PLP-${String(next).padStart(4, '0')}`
 }
 
 const mapBundleSummaryRow = (bundle) => ({
@@ -524,7 +515,7 @@ exports.generatePackingListPlan = asyncHandler(async (req, res) => {
   }
 
   const planNumber =
-    existingPlan?.planNumber || await getNextPackingListPlanNumber()
+    existingPlan?.planNumber || await generatePackingListPlanNumber()
 
   let packingListPlan
   const wasRegenerated = Boolean(existingPlan)

@@ -13,6 +13,7 @@ const auditService = require('../../services/audit.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
+const generateDeliveryNumber = require('../../utils/generateDeliveryNumber')
 const {
   computeFreightEnvelopeDimensions,
   loadFreightLoadDetailsByLeadId,
@@ -110,26 +111,6 @@ const makeDeliveryStatusHistory = (delivery) => {
 }
 
 const getAssignedLeadIds = (req) => getScopedLeadIds(req)
-
-const getNextDeliveryNumber = async () => {
-  const [latest] = await Delivery.aggregate([
-    { $match: { deliveryNumber: { $regex: /^DEL-\d+$/ } } },
-    {
-      $project: {
-        n: {
-          $toInt: {
-            $arrayElemAt: [{ $split: ['$deliveryNumber', '-'] }, 1],
-          },
-        },
-      },
-    },
-    { $sort: { n: -1 } },
-    { $limit: 1 },
-  ])
-
-  const next = (latest?.n || 0) + 1
-  return `DEL-${String(next).padStart(4, '0')}`
-}
 
 const normalizeCoordinates = (coords = {}) => ({
   lat: coords.lat != null ? Number(coords.lat) : null,
@@ -589,7 +570,7 @@ exports.createDelivery = asyncHandler(async (req, res) => {
   let deliveryNumber
   const maxAttempts = 5
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    deliveryNumber = await getNextDeliveryNumber()
+    deliveryNumber = await generateDeliveryNumber()
     try {
       delivery = await Delivery.create({
         leadId,

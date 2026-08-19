@@ -11,6 +11,8 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { withProjectIdFields } = require('../../utils/leadProjectId')
 const { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpensesExcel } = require('../../utils/exportFinancialAdmin')
 const { parse: parseCsv } = require('csv-parse/sync')
+const generateExpenseId = require('../../utils/generateExpenseId')
+const generatePaymentApprovalId = require('../../utils/generatePaymentApprovalId')
 
 exports.getOverview = asyncHandler(async (req, res) => {
   const base = buildDateFilter(req.query)
@@ -379,8 +381,7 @@ exports.getPaymentApprovals = asyncHandler(async (req, res) => {
 })
 
 exports.createPaymentApproval = asyncHandler(async (req, res) => {
-  const count = await PaymentApproval.countDocuments()
-  const paymentId = `PR-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
+  const paymentId = await generatePaymentApprovalId()
   const approval = await PaymentApproval.create({ ...req.body, paymentId, requestedBy: req.user._id })
   return notFound.call({ status: 201 }, res) || success(res, { approval }, 'Payment request created')
 })
@@ -830,16 +831,14 @@ exports.importExpenses = asyncHandler(async (req, res) => {
   }
 
   const results = { imported: 0, skipped: 0, errors: [] }
-  let count = await Expense.countDocuments()
 
   for (const row of records) {
     try {
       const { category, subcategory, date, amount, description, projectId, buildingLabel, paymentMethod, status } = row
       if (!category || !date || !amount) { results.skipped++; results.errors.push({ row, error: 'category, date, and amount are required' }); continue }
 
-      count += 1
       await Expense.create({
-        expenseId: `EXP${String(count).padStart(5, '0')}`,
+        expenseId: await generateExpenseId(),
         category, subcategory: subcategory || '', date: new Date(date), amount: Number(amount),
         description: description || '', leadId: projectId || null, buildingLabel: buildingLabel || '',
         paymentMethod: paymentMethod || undefined, status: status || 'pending', createdBy: req.user._id,
@@ -857,8 +856,7 @@ exports.importExpenses = asyncHandler(async (req, res) => {
 exports.createExpense = asyncHandler(async (req, res) => {
   const { category, subcategory, date, amount, description, leadId, buildingLabel, department, paymentMethod, status, receiptFile } = req.body
 
-  const count = await Expense.countDocuments()
-  const expenseId = `EXP${String(count + 1).padStart(5, '0')}`
+  const expenseId = await generateExpenseId()
 
   const expense = await Expense.create({
     expenseId, category, subcategory, date, amount, description, leadId: leadId || null,

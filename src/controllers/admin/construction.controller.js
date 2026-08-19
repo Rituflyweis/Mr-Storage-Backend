@@ -13,6 +13,8 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { generateDeliveriesExcel, generateReportExcel, generateMaterialRequestsExcel } = require('../../utils/exportConstructionAdmin')
 const { DELIVERY_STATUSES } = require('../../config/constants')
 const { notifyCustomerDrawingUploadedForLabel } = require('../../services/customerNotification.service')
+const generateDeliveryNumber = require('../../utils/generateDeliveryNumber')
+const generateMaterialRequestId = require('../../utils/generateMaterialRequestId')
 
 // The 5-phase "Project Timeline" bucket shown in Figma (Planning/Design/Procurement/
 // Execution/Handover) mapped onto the real Lead.lifecycleStatus enum (sales + plant stages).
@@ -206,10 +208,9 @@ exports.createCalendarDelivery = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(leadId).select('_id').lean()
   if (!lead) return notFound(res, 'Project not found')
 
-  const count = await Delivery.countDocuments({})
   const delivery = await Delivery.create({
     leadId,
-    deliveryNumber: `DEL-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`,
+    deliveryNumber: await generateDeliveryNumber(),
     status: 'scheduled',
     loadDescription: title || '',
     description: description || '',
@@ -690,8 +691,7 @@ exports.downloadMaterialRequestAttachment = asyncHandler(async (req, res) => {
 exports.createMaterialRequest = asyncHandler(async (req, res) => {
   const { leadId, siteLocation, department, requestedItems, requiredBy, priority, totalAmount } = req.body
 
-  const count = await MaterialRequest.countDocuments()
-  const requestId = `MR-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+  const requestId = await generateMaterialRequestId()
 
   const request = await MaterialRequest.create({
     requestId, leadId, siteLocation, department, requestedBy: req.user._id,

@@ -3,16 +3,8 @@ const OrderQuotation = require('../../models/OrderQuotation')
 const Delivery = require('../../models/Delivery')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-
-const generateQuotationNumber = async () => {
-  const count = await OrderQuotation.countDocuments({})
-  return `INV/${new Date().getFullYear()}/${String(count + 1).padStart(4, '0')}`
-}
-
-const generateRequestId = async () => {
-  const count = await MaterialRequest.countDocuments({})
-  return `MR-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
-}
+const generateMaterialRequestId = require('../../utils/generateMaterialRequestId')
+const generateOrderQuotationNumber = require('../../utils/generateOrderQuotationNumber')
 
 const mapRow = (mr) => ({
   requestId: mr.requestId,
@@ -85,7 +77,7 @@ exports.createMaterialRequest = asyncHandler(async (req, res) => {
   }
 
   const mr = await MaterialRequest.create({
-    requestId: await generateRequestId(),
+    requestId: await generateMaterialRequestId(),
     leadId,
     siteLocation,
     department,
@@ -136,7 +128,7 @@ exports.createOrderQuotation = asyncHandler(async (req, res) => {
   }))
 
   const quotation = await OrderQuotation.create({
-    quotationNumber: await generateQuotationNumber(),
+    quotationNumber: await generateOrderQuotationNumber(),
     orderId: mr._id,
     leadId: mr.leadId._id,
     customerId: mr.leadId.customerId,

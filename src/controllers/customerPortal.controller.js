@@ -33,6 +33,7 @@ const { sendSms } = require('../services/sms/sms.service')
 const { sendDeliveryConfirmationEmail, sendDeliveryCallbackRequestEmail } = require('../services/email/mailer')
 const bcrypt = require('bcryptjs')
 const env = require('../config/env')
+const generateMaterialRequestId = require('../utils/generateMaterialRequestId')
 const auditService = require('../services/audit.service')
 const { syncLeadBuildings } = require('../services/leadBuilding.service')
 const { AUDIT_ACTIONS } = require('../config/constants')
@@ -2234,11 +2235,6 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
 })
 
 // ── Material Orders ───────────────────────────────────────────────────────────
-
-const generateMaterialRequestId = async () => {
-  const count = await MaterialRequest.countDocuments({})
-  return `MR-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
-}
 
 // Order Details status stepper: new_order -> quotation_received -> quotation_approved -> order_confirmed -> completed
 const computeOrderStage = (order, quotation) => {
