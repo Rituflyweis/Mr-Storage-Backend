@@ -1,4 +1,6 @@
+const mongoose = require('mongoose')
 const Bundle = require('../../models/Bundle')
+const { MISMATCH_ITEM_STATUSES } = require('../../models/Bundle')
 const PackingList = require('../../models/PackingList')
 const Lead = require('../../models/Lead')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
@@ -303,17 +305,42 @@ exports.markBundleLoaded = asyncHandler(async (req, res) => {
 })
 
 exports.reportBundleMismatch = asyncHandler(async (req, res) => {
-  const { notes } = req.body
+  const { notes, items } = req.body
   if (!notes) return badRequest(res, 'notes is required')
+  if (items !== undefined && !Array.isArray(items)) return badRequest(res, 'items must be an array')
 
   const bundle = await Bundle.findById(req.params.bundleId)
   if (!bundle) return notFound(res, 'Bundle not found')
 
+  if (items?.length) {
+    for (const item of items) {
+      if (!item.itemId || !mongoose.Types.ObjectId.isValid(item.itemId)) {
+        return badRequest(res, 'Each item requires a valid itemId')
+      }
+      if (item.status && !MISMATCH_ITEM_STATUSES.includes(item.status)) {
+        return badRequest(res, `Invalid status "${item.status}". Use: ${MISMATCH_ITEM_STATUSES.join(', ')}`)
+      }
+    }
+  }
+
   bundle.mismatchNotes = notes
   bundle.mismatchReportedAt = new Date()
+  bundle.mismatchItems = (items || []).map((item) => ({
+    itemId: item.itemId,
+    partCode: item.partCode || '',
+    description: item.description || '',
+    qty: item.qty ?? 0,
+    receivedQty: item.receivedQty ?? 0,
+    status: item.status || 'Not Received',
+  }))
   await bundle.save()
 
-  return success(res, { bundleId: bundle._id, mismatchNotes: bundle.mismatchNotes }, 'Mismatch reported')
+  return success(res, {
+    bundleId: bundle._id,
+    mismatchNotes: bundle.mismatchNotes,
+    mismatchReportedAt: bundle.mismatchReportedAt,
+    mismatchItems: bundle.mismatchItems,
+  }, 'Mismatch reported')
 })
 
 exports.getPackingListDetail = asyncHandler(async (req, res) => {
