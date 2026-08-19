@@ -127,6 +127,8 @@ const makeDeliveryStatusHistory = (delivery) => {
     .map((row) => ({
       status: row.status,
       changedAt: row.changedAt,
+      changedBy: row.changedBy || null,
+      description: row.description || '',
     }))
     .sort((a, b) => new Date(a.changedAt || 0).getTime() - new Date(b.changedAt || 0).getTime())
 }
@@ -622,7 +624,7 @@ exports.createDelivery = asyncHandler(async (req, res) => {
         leadId,
         deliveryNumber,
         status: 'draft',
-        statusHistory: [{ status: 'draft', changedAt: new Date() }],
+        statusHistory: [{ status: 'draft', changedAt: new Date(), changedBy: req.user._id, description: 'Delivery created and scheduled' }],
         ...buildDeliveryFieldsFromBody(req.body),
       })
       break
@@ -878,7 +880,7 @@ exports.sendDeliveryBids = asyncHandler(async (req, res) => {
   delivery.status = 'bidding_sent'
   delivery.statusHistory = [
     ...makeDeliveryStatusHistory(delivery),
-    { status: 'bidding_sent', changedAt: new Date() },
+    { status: 'bidding_sent', changedAt: new Date(), changedBy: req.user._id, description: 'Freight bid request sent to carriers' },
   ]
   await delivery.save()
 
@@ -1154,7 +1156,15 @@ const buildDeliveryDetailPayload = async (delivery, plantUserId) => {
         : null,
 
       siteCoordinationNotes: delivery.additionalNotes || '',
+      siteInstructions: delivery.specialRequirements || '',
       equipmentRequirement: delivery.loadingEquipment || [],
+
+      documents: {
+        documentUrl: delivery.documentUrl || '',
+        attachments: delivery.attachments || [],
+      },
+      confirmationEmailSent: !!delivery.confirmationEmailSent,
+      confirmationEmailSentAt: delivery.confirmationEmailSentAt || null,
 
       deliveryTypeAndSize: {
         bundleCount: bundlePlan?.totalBundles ?? null,
@@ -1830,7 +1840,7 @@ exports.updateDeliveryStatus = asyncHandler(async (req, res) => {
   delivery.status = status
   delivery.statusHistory = [
     ...makeDeliveryStatusHistory(delivery),
-    { status, changedAt: new Date() },
+    { status, changedAt: new Date(), changedBy: req.user._id, description: `Status updated to ${status} by ${req.user.name || 'plant staff'}` },
   ]
   await delivery.save()
 

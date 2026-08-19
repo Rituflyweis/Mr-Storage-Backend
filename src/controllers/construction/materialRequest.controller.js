@@ -1,6 +1,8 @@
 const MaterialRequest = require('../../models/MaterialRequest')
+const { MR_STATUSES, MR_PRIORITIES } = require('../../models/MaterialRequest')
 const OrderQuotation = require('../../models/OrderQuotation')
 const Delivery = require('../../models/Delivery')
+const Lead = require('../../models/Lead')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -33,13 +35,15 @@ const mapRow = (mr) => ({
 })
 
 exports.getMaterialRequests = asyncHandler(async (req, res) => {
-  const { leadId, department, status, requestedBy, dateFrom, dateTo, page = 1, limit = 20 } = req.query
+  const { leadId, department, status, requestedBy, priority, siteLocation, dateFrom, dateTo, page = 1, limit = 20 } = req.query
 
   const filter = {}
   if (leadId) filter.leadId = leadId
   if (department) filter.department = department
   if (status) filter.status = status
   if (requestedBy) filter.requestedBy = requestedBy
+  if (priority) filter.priority = priority
+  if (siteLocation) filter.siteLocation = siteLocation
   if (dateFrom || dateTo) {
     filter.requestDate = {}
     if (dateFrom) filter.requestDate.$gte = new Date(dateFrom)
@@ -66,6 +70,27 @@ exports.getMaterialRequests = asyncHandler(async (req, res) => {
   }
 
   return success(res, { materialRequests: rows.map(mapRow), total, stats })
+})
+
+// GET /material-requests/filters — populates the Apply Filters screen's dropdowns
+exports.getMaterialRequestFilters = asyncHandler(async (req, res) => {
+  const [leadIds, siteLocations, departments] = await Promise.all([
+    MaterialRequest.distinct('leadId'),
+    MaterialRequest.distinct('siteLocation', { siteLocation: { $nin: ['', null] } }),
+    MaterialRequest.distinct('department', { department: { $nin: ['', null] } }),
+  ])
+
+  const projects = leadIds.length
+    ? await Lead.find({ _id: { $in: leadIds } }).select('projectName jobId').sort({ projectName: 1 }).lean()
+    : []
+
+  return success(res, {
+    statuses: MR_STATUSES,
+    priorities: MR_PRIORITIES,
+    departments,
+    siteLocations,
+    projects: projects.map((p) => ({ leadId: p._id, projectName: p.projectName, jobId: p.jobId })),
+  })
 })
 
 exports.getMaterialRequest = asyncHandler(async (req, res) => {

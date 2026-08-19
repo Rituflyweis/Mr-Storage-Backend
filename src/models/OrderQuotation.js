@@ -34,6 +34,7 @@ const OrderQuotationSchema = new mongoose.Schema(
     sentAt:       { type: Date, default: Date.now },
     respondedAt:  { type: Date, default: null },
     rejectionReason: { type: String, default: '' },
+    customerRemark: { type: String, default: '', trim: true },
     createdBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true }

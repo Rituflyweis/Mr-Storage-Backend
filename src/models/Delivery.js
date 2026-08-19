@@ -34,6 +34,8 @@ const DeliverySchema = new mongoose.Schema(
           {
             status: { type: String, enum: DELIVERY_STATUSES, required: true },
             changedAt: { type: Date, default: Date.now },
+            changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+            description: { type: String, default: '' },
           },
           { _id: true }
         ),
@@ -52,6 +54,7 @@ const DeliverySchema = new mongoose.Schema(
     loadingEquipment: { type: [String], default: [] },
     bidDeadline: { type: Date, default: null },
     documentUrl: { type: String, default: '' },
+    attachments: { type: [String], default: [] },
     pickupLocation: { type: String, default: '' },
     pickupLocationData: { type: LocationSchema, default: () => ({}) },
     deliveryLocation: { type: String, default: '' },

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const { INVOICE_STATUSES, INVOICE_VALUE_TYPES, PAYMENT_PROOF_STATUSES, PAYMENT_METHODS } = require('../config/constants')
+const { INVOICE_STATUSES, INVOICE_VALUE_TYPES, PAYMENT_PROOF_STATUSES, PAYMENT_METHODS, INVOICE_TYPES, INVOICE_CATEGORIES } = require('../config/constants')
 
 const PaymentProofFileSchema = new mongoose.Schema(
   { url: { type: String, required: true }, name: { type: String, default: '' } },
@@ -41,7 +41,14 @@ const LineItemSchema = new mongoose.Schema(
 const InvoiceSchema = new mongoose.Schema(
   {
     leadId:            { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', required: true },
-    customerId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
+    // Only required for customer-billing invoices — vendor/freight_carrier invoices are money the
+    // company owes out, not a customer receivable, so they have no customer on them.
+    customerId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
+    invoiceType:       { type: String, enum: INVOICE_TYPES, default: 'customer' },
+    category:          { type: String, enum: INVOICE_CATEGORIES, default: null },
+    vendorId:          { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', default: null },
+    carrierId:         { type: mongoose.Schema.Types.ObjectId, ref: 'FreightCarrier', default: null },
+    payeeName:         { type: String, default: '', trim: true },
     quotationId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation', default: null },
     createdBy:         { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     invoiceNumber:     { type: String, unique: true },
