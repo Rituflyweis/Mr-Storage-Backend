@@ -2529,6 +2529,251 @@
 						}
 					],
 					"_postman_note": "Backs the Customer Panel \"Upload Transaction Receipt\" flow \u2014 customer uploads proof (stays pending), admin/sales verifies or rejects here. Uses {{token}} (admin/sales), not the customer token."
+				},
+				{
+					"name": "Vendor Invoices \u2014 Filter by Project / Date Range",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/invoices/vendor?status=All&projectId={{leadId}}&startDate=2026-08-01&endDate=2026-08-31",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"invoices",
+								"vendor"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "All"
+								},
+								{
+									"key": "projectId",
+									"value": "{{leadId}}"
+								},
+								{
+									"key": "startDate",
+									"value": "2026-08-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-08-31"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Vendor Invoices \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/invoices/vendor/export?status=All&projectId={{leadId}}&startDate=2026-08-01&endDate=2026-08-31",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"invoices",
+								"vendor",
+								"export"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "All"
+								},
+								{
+									"key": "projectId",
+									"value": "{{leadId}}"
+								},
+								{
+									"key": "startDate",
+									"value": "2026-08-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-08-31"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Freight Carrier Invoices \u2014 Filter by Project / Date Range",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/invoices/freight-carrier?status=All&projectId={{leadId}}&startDate=2026-08-01&endDate=2026-08-31",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"invoices",
+								"freight-carrier"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "All"
+								},
+								{
+									"key": "projectId",
+									"value": "{{leadId}}"
+								},
+								{
+									"key": "startDate",
+									"value": "2026-08-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-08-31"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Freight Carrier Invoices \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/invoices/freight-carrier/export?status=All&projectId={{leadId}}&startDate=2026-08-01&endDate=2026-08-31",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"invoices",
+								"freight-carrier",
+								"export"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "All"
+								},
+								{
+									"key": "projectId",
+									"value": "{{leadId}}"
+								},
+								{
+									"key": "startDate",
+									"value": "2026-08-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-08-31"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Individual Invoice \u2014 View Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/invoices/{{invoiceId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"invoices",
+								"{{invoiceId}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "Individual Invoice \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/invoices/{{invoiceId}}/export",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"invoices",
+								"{{invoiceId}}",
+								"export"
+							]
+						}
+					}
+				},
+				{
+					"name": "Individual Invoice \u2014 Mark as Paid",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/invoices/{{invoiceId}}/mark-paid",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"admin",
+								"invoices",
+								"{{invoiceId}}",
+								"mark-paid"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"paymentMethod\": \"bank_transfer\"\n}"
+						}
+					}
 				}
 			]
 		},

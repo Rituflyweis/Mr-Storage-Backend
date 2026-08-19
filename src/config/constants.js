@@ -212,7 +212,7 @@ const TRUCK_TYPES = ['SEMI_53', 'HOTSHOT_40']
 // Fulfillment sub-flow (once a delivery is confirmed/carrier-selected) — the granular steps a
 // plant-panel dropdown walks through in order: material_prepared -> ... -> delivered.
 const DELIVERY_FULFILLMENT_STATUSES = [
-  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'arrived_at_plant', 'staged', 'dispatched_to_site', 'delivered',
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'staged', 'dispatched_to_site', 'delivered',
 ]
 const DELIVERY_STATUSES = [
   'draft', 'bidding_sent', 'carrier_selected', 'scheduled', 'confirmed',
