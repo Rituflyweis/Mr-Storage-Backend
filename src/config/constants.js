@@ -62,6 +62,9 @@ const PAYMENT_PROOF_STATUSES = ['none', 'pending_review', 'verified', 'rejected'
 /** Line-item markup/tax input mode: percentage (of rate / line subtotal) or flat amount */
 const INVOICE_VALUE_TYPES = ['percentage', 'amount']
 const PAYMENT_METHODS = ['cash', 'bank_transfer', 'credit_card', 'upi', 'cheque', 'other']
+/** Who the invoice bills — the customer (revenue) vs money the company owes a vendor/carrier (expense). */
+const INVOICE_TYPES = ['customer', 'vendor', 'freight_carrier']
+const INVOICE_CATEGORIES = ['product', 'service', 'other']
 const FOLLOW_UP_STATUSES = ['pending', 'completed']
 const FOLLOW_UP_MODES = ['call', 'email', 'meeting']
 const MEETING_MODES = ['online', 'offline']
@@ -255,6 +258,8 @@ module.exports = {
   PAYMENT_PROOF_STATUSES,
   INVOICE_VALUE_TYPES,
   PAYMENT_METHODS,
+  INVOICE_TYPES,
+  INVOICE_CATEGORIES,
   FOLLOW_UP_STATUSES,
   FOLLOW_UP_MODES,
   MEETING_MODES,
