@@ -198,7 +198,6 @@ const extractPrelimWithClaude = async (buffer, { layoutText = '', fileName = '' 
   return {
     extracted,
     filledCount: Object.keys(extracted).length,
-    extractionMethod: 'claude',
   }
 }
 

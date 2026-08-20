@@ -24,8 +24,6 @@ async function main() {
   const data = await extractDrawingPdfBuffer(buffer, { fileName: 'pdf_quote_example.pdf' })
 
   console.log('filledCount:', data.filledCount)
-  console.log('extractionMethod:', data.extractionMethod)
-  console.log('claudeUsed:', data.claudeUsed)
   console.log('sample fields:', {
     width: data.extracted?.width,
     length: data.extracted?.length,
@@ -37,11 +35,6 @@ async function main() {
 
   if (!data.filledCount || data.filledCount < 5) {
     console.error('FAIL: expected at least 5 extracted fields')
-    process.exit(1)
-  }
-
-  if (!data.claudeUsed) {
-    console.error('FAIL: expected Claude fallback for sparse PDF sample')
     process.exit(1)
   }
 

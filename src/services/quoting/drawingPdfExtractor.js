@@ -262,18 +262,15 @@ const shouldUseClaudeFallback = (filledCount, textItemCount) => {
   return filledCount < CLAUDE_FALLBACK_MIN_FIELDS || textItemCount < CLAUDE_FALLBACK_MIN_TEXT_ITEMS
 }
 
-const buildNote = ({ textItemCount, filledCount, extractionMethod, claudeError }) => {
-  if (claudeError) {
-    return `Regex extraction only — Claude fallback failed: ${claudeError}. Review raw text and enter manually if needed.`
+const buildNote = ({ textItemCount, filledCount, fallbackFailed }) => {
+  if (fallbackFailed && filledCount === 0) {
+    return 'No fields auto-extracted — review raw text and enter manually.'
   }
-  if (textItemCount === 0 && extractionMethod === 'claude') {
-    return 'No selectable PDF text found — fields extracted via Claude vision from page 1. Please review before applying.'
+  if (fallbackFailed) {
+    return 'Partial extraction from page 1 — review all fields before applying.'
   }
-  if (extractionMethod === 'hybrid') {
-    return 'Hybrid extraction (regex + Claude) from page 1 — please review all fields before applying.'
-  }
-  if (extractionMethod === 'claude') {
-    return 'Fields extracted via Claude from page 1 — please review before applying.'
+  if (textItemCount === 0 && filledCount > 0) {
+    return 'Fields extracted from page 1 — please review before applying.'
   }
   if (filledCount === 0) {
     return 'Text found but no fields auto-extracted — review raw text and enter manually.'
@@ -308,19 +305,16 @@ const extractDrawingPdfBuffer = async (buffer, { fileName = '' } = {}) => {
   const regexResult = extractFromPrelim(layoutText, flatText, tokens)
   let extracted = regexResult.extracted
   let filledCount = regexResult.filledCount
-  let extractionMethod = 'regex'
-  let claudeError = null
+  let fallbackFailed = false
 
   if (shouldUseClaudeFallback(filledCount, items.length)) {
     try {
       const claudeResult = await extractPrelimWithClaude(buffer, { layoutText, fileName })
       extracted = mergeExtractedFields(extracted, claudeResult.extracted)
       filledCount = Object.keys(extracted).length
-      extractionMethod =
-        regexResult.filledCount > 0 && claudeResult.filledCount > 0 ? 'hybrid' : 'claude'
     } catch (err) {
-      claudeError = err.message
-      console.error('[drawingPdfExtractor] Claude fallback failed:', err.message)
+      fallbackFailed = true
+      console.error('[drawingPdfExtractor] Enhanced extraction failed:', err.message)
     }
   }
 
@@ -329,11 +323,9 @@ const extractDrawingPdfBuffer = async (buffer, { fileName = '' } = {}) => {
     extracted,
     filledCount,
     textItemCount: items.length,
-    extractionMethod,
-    claudeUsed: extractionMethod === 'claude' || extractionMethod === 'hybrid',
     rawTextPreview: layoutText.substring(0, 4000),
     layoutTextPreview: layoutText.substring(0, 2000),
-    note: buildNote({ textItemCount: items.length, filledCount, extractionMethod, claudeError }),
+    note: buildNote({ textItemCount: items.length, filledCount, fallbackFailed }),
   }
 }
 
