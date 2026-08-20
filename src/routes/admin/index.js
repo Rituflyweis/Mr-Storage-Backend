@@ -22,5 +22,7 @@ router.use('/roles',         require('./role.routes'))
 router.use('/invoices',      require('./invoice.routes'))
 router.use('/construction',  require('./construction.routes'))
 router.use('/chat',          require('./chat.routes'))
+router.use('/estimates',     require('../sales/estimateQuote.routes'))
+router.use('/pricing-rules', require('../common/pricingRules.routes'))
 
 module.exports = router

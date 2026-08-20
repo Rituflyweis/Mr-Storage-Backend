@@ -7,12 +7,19 @@ const CostSellSchema = new mongoose.Schema(
 
 const CustomTabRuleSchema = new mongoose.Schema(
   {
+    // Legacy fields (admin API)
     matchAgainst: { type: String, enum: ['Part #', 'Description', 'Tab Name'], default: 'Part #' },
     valueToMatch: { type: String, default: '' },
     category:     { type: String, default: '' },
-    pricingMethod: { type: String, enum: ['per_lb', 'per_sf', 'flat'], default: 'per_lb' },
+    pricingMethod: { type: String, enum: ['per_lb', 'per_sf', 'per_lf', 'flat', 'flat_each', 'flat_total'], default: 'per_lb' },
     rate:         { type: Number, default: 0 },
     label:        { type: String, default: '' },
+    // HTML quoting tool fields
+    matchType:    { type: String, enum: ['tab_name', 'part_number', 'description'], default: 'part_number' },
+    match:        { type: String, default: '' },
+    cat:          { type: String, default: 'trim' },
+    method:       { type: String, enum: ['per_lb', 'per_sf', 'per_lf', 'flat_each', 'flat_total'], default: 'per_lb' },
+    note:         { type: String, default: '' },
   },
   { _id: true }
 )
