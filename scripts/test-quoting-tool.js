@@ -19,6 +19,7 @@ async function main() {
   const pdfBuf = fs.readFileSync(PDF)
   const pdf = await extractDrawingPdfBuffer(pdfBuf, { fileName: 'pdf_quote_example.pdf' })
   console.log('text items:', pdf.textItemCount, '| fields extracted:', pdf.filledCount)
+  console.log('extraction method:', pdf.extractionMethod, '| claude used:', pdf.claudeUsed)
   console.log('extracted:', JSON.stringify(pdf.extracted, null, 2))
   console.log('note:', pdf.note)
 

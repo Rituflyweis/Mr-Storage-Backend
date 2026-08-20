@@ -85,7 +85,7 @@ Update rates. Supports **HTML-style custom rules**:
 
 ### `POST /api/sales/estimates/extract-drawing`
 
-Uses **pdf.js** (page 1, layout-aware) — same approach as HTML tool.
+Uses **pdf.js** (page 1, layout-aware) with **Claude fallback** when regex finds fewer than 5 fields or PDF text is sparse (< 20 text items). Claude reads the PDF document directly (works for image-only prelims like watermarked drawings).
 
 **Request**
 ```json
@@ -118,13 +118,21 @@ Uses **pdf.js** (page 1, layout-aware) — same approach as HTML tool.
       "dead": "2.50 psf",
       "collateral": "5.00 psf"
     },
+    "extractionMethod": "hybrid",
+    "claudeUsed": true,
     "rawTextPreview": "...(line-by-line page 1 text)...",
-    "note": "Best-effort extraction — review before applying."
+    "note": "Hybrid extraction (regex + Claude) from page 1 — please review all fields before applying."
   }
 }
 ```
 
-> **Note on `pdf_quote_example.pdf`:** That sample is mostly vector/image — only 2 text items extract (`PRELIMINARY ONLY`). Same as HTML: user enters fields manually. Real ATI prelim PDFs with text layers extract fully.
+| Field | Values |
+|-------|--------|
+| `extractionMethod` | `regex` \| `claude` \| `hybrid` |
+| `claudeUsed` | `true` when Claude was invoked (sparse text or low field count) |
+| `extracted.*` | Keys match HTML `ex-*` fields: `customer`, `project`, `width`, `length`, `eave`, `sqft`, `dead`, `wind`, `snow`, `roofpanel`, `wall`, `shearlong`, etc. |
+
+> **Claude fallback:** Requires `ANTHROPIC_API_KEY` on the server. Image-only PDFs (e.g. `pdf_quote_example.pdf` with only a watermark text layer) are handled by sending the PDF to Claude as a document.
 
 ---
 
