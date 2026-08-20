@@ -6015,6 +6015,40 @@
 					}
 				},
 				{
+					"name": "Tasks \u2014 Add Project Step Attachment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/projects/{{leadId}}/steps/{{stepKey}}/attachments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"projects",
+								"{{leadId}}",
+								"steps",
+								"{{stepKey}}",
+								"attachments"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"url\": \"https://cdn.example.com/attachments/step-photo.jpg\",\n\t\"name\": \"step-photo.jpg\"\n}"
+						}
+					}
+				},
+				{
 					"name": "Daily Work Log \u2014 List",
 					"request": {
 						"method": "GET",
@@ -6336,7 +6370,7 @@
 						},
 						"body": {
 							"mode": "raw",
-							"raw": "{\n\t\"bundleNo\": \"BND-001\"\n}"
+							"raw": "{\n\t\"bundleId\": \"B-012\",\n\t\"project\": \"PRO-002\"\n}"
 						}
 					}
 				},
@@ -6463,7 +6497,7 @@
 						},
 						"body": {
 							"mode": "raw",
-							"raw": "{\n\t\"notes\": \"Weight mismatch\"\n}"
+							"raw": "{\n\t\"notes\": \"Quantity received does not match packing list\",\n\t\"items\": [\n\t\t{\n\t\t\t\"itemId\": \"64f8a1b2c3d4e5f6a7b8c9d0\",\n\t\t\t\"partCode\": \"CO-ORD-001\",\n\t\t\t\"description\": \"Black 26 ga\",\n\t\t\t\"qty\": 20,\n\t\t\t\"receivedQty\": 20,\n\t\t\t\"status\": \"Received\"\n\t\t},\n\t\t{\n\t\t\t\"itemId\": \"64f8a1b2c3d4e5f6a7b8c9d1\",\n\t\t\t\"partCode\": \"CO-ORD-002\",\n\t\t\t\"description\": \"Black 24 ga\",\n\t\t\t\"qty\": 20,\n\t\t\t\"receivedQty\": 18,\n\t\t\t\"status\": \"Partially Received\"\n\t\t},\n\t\t{\n\t\t\t\"itemId\": \"64f8a1b2c3d4e5f6a7b8c9d2\",\n\t\t\t\"partCode\": \"CO-ORD-003\",\n\t\t\t\"description\": \"Blue 26 ga\",\n\t\t\t\"qty\": 10,\n\t\t\t\"receivedQty\": 0,\n\t\t\t\"status\": \"Not Received\"\n\t\t}\n\t]\n}"
 						}
 					}
 				},

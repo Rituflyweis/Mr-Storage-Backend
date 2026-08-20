@@ -1485,7 +1485,9 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
     ]
   }
   baseFilter.leadId = baseFilter.leadId || { $in: leadIds }
-  baseFilter.status = { $in: CALENDAR_DELIVERY_STATUSES }
+  // Only fall back to the default calendar status set when the caller didn't ask for a specific
+  // one — this used to unconditionally overwrite req.query.status, silently ignoring it.
+  if (!baseFilter.status) baseFilter.status = { $in: CALENDAR_DELIVERY_STATUSES }
   if (baseFilter.leadId?.$in) {
     baseFilter.leadId = { $in: baseFilter.leadId.$in.filter((id) => leadIds.some((a) => String(a) === String(id))) }
   } else if (!leadIds.some((a) => String(a) === String(baseFilter.leadId))) {
