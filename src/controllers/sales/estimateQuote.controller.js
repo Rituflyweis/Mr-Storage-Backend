@@ -189,9 +189,13 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
   const parsed = parseShipperBuffer(buffer, { sf: options.sf, customTabRules })
   const cover = parseShipperCoverSheet(parsed.workbook)
 
+  const autoSf =
+    parsed.totalWeightLbs > 0 ? Math.round(parsed.totalWeightLbs / 9) : 0
+  // Fresh shipper upload: derive SF from weight unless client explicitly locked manual SF
   const sf =
-    options.sf ||
-    (parsed.totalWeightLbs > 0 ? Math.round(parsed.totalWeightLbs / 9) : 0)
+    req.body.useManualSquareFootage && options.sf > 0
+      ? options.sf
+      : autoSf || options.sf || 0
 
   const payload = await buildPricingPayload(req.user._id, {
     categories: parsed.categories,

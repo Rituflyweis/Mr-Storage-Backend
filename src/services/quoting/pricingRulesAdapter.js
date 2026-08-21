@@ -114,12 +114,16 @@ const buildPricingRates = (rulesDoc) => {
   const sheet = rulesDoc.sheetingRatesPerSf || {}
   pr.sheet = sheet.standardScrewDown ?? pr.sheet
   pr.ss = sheet.standingSeam ?? pr.ss
+  // Repair legacy docs that copied steel $/lb defaults into sheeting/freight fields
+  if (pr.sheet > 2) pr.sheet = DEFAULT_PR.sheet
+  if (pr.ss > 3) pr.ss = DEFAULT_PR.ss
 
   const freight = rulesDoc.freight || {}
   pr.freight = freight.ratePerLb ?? pr.freight
   pr.truck = freight.lbsPerTruck ?? pr.truck
   pr.acc = freight.accessoriesAllowancePerSf ?? pr.acc
   pr.delta = freight.vendorDeltaPerLb ?? pr.delta
+  if (pr.freight > 1) pr.freight = DEFAULT_PR.freight
 
   const markup = rulesDoc.markup || {}
   pr.pembMu = markup.pembMultiplier ?? pr.pembMu

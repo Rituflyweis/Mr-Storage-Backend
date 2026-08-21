@@ -32,19 +32,19 @@ const PricingRulesSchema = new mongoose.Schema(
     steelRatesPerLb: {
       primaryFrames:  { type: Number, default: 1.71 },
       secondarySteel: { type: Number, default: 0.88 },
-      hssBeams:       { type: Number, default: 0.88 },
+      hssBeams:       { type: Number, default: 2.05 },
       angles:         { type: Number, default: 1.04 },
       openingsJambs:  { type: Number, default: 1.2 },
       platesClips:    { type: Number, default: 1.2 },
     },
 
     sheetingRatesPerSf: {
-      standardScrewDown: { type: Number, default: 1.71 },
-      standingSeam:      { type: Number, default: 1.04 },
+      standardScrewDown: { type: Number, default: 1.3 },
+      standingSeam:      { type: Number, default: 1.7 },
     },
 
     freight: {
-      ratePerLb:                { type: Number, default: 1.71 },
+      ratePerLb:                { type: Number, default: 0.13 },
       lbsPerTruck:               { type: Number, default: 40000 },
       accessoriesAllowancePerSf: { type: Number, default: 0.1 },
       vendorDeltaPerLb:          { type: Number, default: 0.1 },
