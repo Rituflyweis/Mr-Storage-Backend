@@ -9,7 +9,6 @@ const { success, notFound, badRequest, forbidden } = require('../../utils/apiRes
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const ExcelJS = require('exceljs')
-const puppeteer = require('puppeteer')
 const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
 
 const computeDueDate = (inv) => {

@@ -1,5 +1,5 @@
 const PDFDocument = require('pdfkit')
-const puppeteer = require('puppeteer')
+const { launchBrowser } = require('../../utils/puppeteerLaunch')
 
 const PAGE_MARGIN = 48
 const HEADER_COLOR = '#1a2e4a'
@@ -15,15 +15,7 @@ const stripHtml = (value) =>
     .trim()
 
 const generateInvoicePdfWithPuppeteer = async (html) => {
-  const launchOptions = {
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  }
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH
-  }
-
-  const browser = await puppeteer.launch(launchOptions)
+  const browser = await launchBrowser()
 
   try {
     const page = await browser.newPage()

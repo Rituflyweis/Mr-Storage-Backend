@@ -309,18 +309,11 @@ const generateAssembledHtml = (payload = {}) => {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${QUOTE_STYLES}</style></head><body>${parts.join('')}</body></html>`
 }
 
+const { launchBrowser } = require('../../utils/puppeteerLaunch')
+
 const generateQuotePdf = async (payload = {}) => {
   const html = generateAssembledHtml(payload)
-  const puppeteer = require('puppeteer')
-  const launchOptions = {
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  }
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH
-  }
-
-  const browser = await puppeteer.launch(launchOptions)
+  const browser = await launchBrowser()
   try {
     const page = await browser.newPage()
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 60000 })

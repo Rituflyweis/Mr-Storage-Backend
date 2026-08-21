@@ -6,7 +6,8 @@
     "start": "node server.js",
     "dev": "vercel dev",
     "seed": "node scripts/seed.js",
-    "create-user": "node scripts/createUser.js"
+    "create-user": "node scripts/createUser.js",
+    "postinstall": "npx puppeteer browsers install chrome || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -34,6 +35,7 @@
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.0",
     "puppeteer": "^24.43.1",
+    "@sparticuz/chromium": "^133.0.0",
     "socket.io": "^4.7.0",
     "uuid": "^9.0.0",
     "xlsx": "^0.18.5"
