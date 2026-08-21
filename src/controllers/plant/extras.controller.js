@@ -11,7 +11,7 @@ const PackingList = require('../../models/PackingList')
 const Expense = require('../../models/Expense')
 const WIPProfit = require('../../models/WIPProfit')
 const asyncHandler = require('../../utils/asyncHandler')
-const { success, notFound } = require('../../utils/apiResponse')
+const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { FREIGHT_BID_STATUSES, DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse calendar stat.
@@ -123,14 +123,11 @@ exports.exportSavings = asyncHandler(async (req, res) => {
 })
 
 exports.getFreightLoads = asyncHandler(async (req, res) => {
-  const { status, search, carrierId, projectId, customerId, startDate, endDate, page = 1, limit = 20 } = req.query
+  const { status, search, carrierId, projectId, customerId, materialType, siteLocation, startDate, endDate, page = 1, limit = 20 } = req.query
 
   const filter = {}
   if (status) filter.status = status
   if (carrierId) filter.carrierId = carrierId
-  if (search) filter.$or = [
-    { token: { $regex: search, $options: 'i' } },
-  ]
   const dateFilter = buildDateFilter({ startDate, endDate })
   if (dateFilter.createdAt) filter.createdAt = dateFilter.createdAt
 
@@ -141,7 +138,7 @@ exports.getFreightLoads = asyncHandler(async (req, res) => {
     FreightBid.find(filter)
       .populate({
         path: 'deliveryId',
-        select: 'leadId material pickupLocation dropoffLocation scheduledDate requestedAt',
+        select: 'leadId materialType pickupLocation deliveryLocation deliveryDate createdAt status',
         populate: { path: 'leadId', select: 'projectName jobId customerId' },
       })
       .populate({ path: 'carrierId', select: 'carrierName phone' })
@@ -156,17 +153,31 @@ exports.getFreightLoads = asyncHandler(async (req, res) => {
   let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
   if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
   if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
+  if (materialType) bids = bids.filter((b) => b.deliveryId?.materialType === materialType)
+  if (siteLocation) bids = bids.filter((b) => b.deliveryId?.deliveryLocation === siteLocation)
+  // `token` alone isn't human-searchable — search also matches project name/job ID and carrier name.
+  if (search?.trim()) {
+    const term = search.trim().toLowerCase()
+    bids = bids.filter((b) =>
+      b.token?.toLowerCase().includes(term) ||
+      b.deliveryId?.leadId?.projectName?.toLowerCase().includes(term) ||
+      b.deliveryId?.leadId?.jobId?.toLowerCase().includes(term) ||
+      b.carrierId?.carrierName?.toLowerCase().includes(term)
+    )
+  }
 
-  const filteredTotal = (projectId || customerId) ? bids.length : total - (rawBids.length - bids.length)
+  const filteredTotal = (projectId || customerId || search || materialType || siteLocation) ? bids.length : total - (rawBids.length - bids.length)
   const paged = bids.slice((parseInt(page) - 1) * parseInt(limit), (parseInt(page) - 1) * parseInt(limit) + parseInt(limit))
 
   const statMap = Object.fromEntries(statsAgg.map(s => [s._id, { count: s.count, amount: s.amount }]))
+  const inTransit = bids.filter((b) => IN_TRANSIT_ROLLUP_STATUSES.includes(b.deliveryId?.status)).length
+  const delivered = bids.filter((b) => b.deliveryId?.status === 'delivered').length
 
   return success(res, {
     stats: {
       totalAwarded:    statMap['selected']?.count || 0,
-      inTransit:       0,
-      delivered:       0,
+      inTransit,
+      delivered,
       totalSpent:      statMap['selected']?.amount || 0,
       requestedLoads:  statMap['sent']?.count || 0,
       bidsPending:     statMap['submitted']?.count || 0,
@@ -183,17 +194,14 @@ exports.getAwardedLoads = asyncHandler(async (req, res) => {
 
   const filter = { status: 'selected' }
   if (carrierId) filter.carrierId = carrierId
-  if (search) filter.$or = [
-    { token: { $regex: search, $options: 'i' } },
-  ]
   const dateFilter = buildDateFilter({ startDate, endDate })
   if (dateFilter.createdAt) filter.createdAt = dateFilter.createdAt
 
-  const [rawBids, total, statsAgg] = await Promise.all([
+  const [rawBids, total, statsAgg, requestedLoads, bidsPending] = await Promise.all([
     FreightBid.find(filter)
       .populate({
         path: 'deliveryId',
-        select: 'leadId material pickupLocation dropoffLocation scheduledDate status',
+        select: 'leadId materialType pickupLocation deliveryLocation deliveryDate status',
         populate: { path: 'leadId', select: 'projectName jobId customerId' },
       })
       .populate({ path: 'carrierId', select: 'carrierName phone contactName' })
@@ -208,28 +216,145 @@ exports.getAwardedLoads = asyncHandler(async (req, res) => {
         totalSpent:   { $sum: '$quotedAmount' },
       }},
     ]),
+    // Same-shaped stat cards as Freight Loads, for parity between the two screens.
+    FreightBid.countDocuments({ status: 'sent' }),
+    FreightBid.countDocuments({ status: 'submitted' }),
   ])
 
   let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
   if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
   if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
+  if (search?.trim()) {
+    const term = search.trim().toLowerCase()
+    bids = bids.filter((b) =>
+      b.token?.toLowerCase().includes(term) ||
+      b.deliveryId?.leadId?.projectName?.toLowerCase().includes(term) ||
+      b.deliveryId?.leadId?.jobId?.toLowerCase().includes(term) ||
+      b.carrierId?.carrierName?.toLowerCase().includes(term)
+    )
+  }
 
-  const filteredTotal = (projectId || customerId) ? bids.length : total - (rawBids.length - bids.length)
+  const filteredTotal = (projectId || customerId || search) ? bids.length : total - (rawBids.length - bids.length)
   const paged = bids.slice((parseInt(page) - 1) * parseInt(limit), (parseInt(page) - 1) * parseInt(limit) + parseInt(limit))
+
+  const inTransit = bids.filter((b) => IN_TRANSIT_ROLLUP_STATUSES.includes(b.deliveryId?.status)).length
+  const delivered = bids.filter((b) => b.deliveryId?.status === 'delivered').length
 
   const s = statsAgg[0] || {}
   return success(res, {
     stats: {
       totalAwarded: s.totalAwarded || 0,
-      inTransit:    0,
-      delivered:    0,
+      inTransit,
+      delivered,
       totalSpent:   s.totalSpent || 0,
+      requestedLoads,
+      bidsPending,
     },
     loads: paged,
     total: filteredTotal,
     page: parseInt(page),
     limit: parseInt(limit),
   })
+})
+
+const generateFreightLoadsExcel = async (bids, sheetName) => {
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet(sheetName)
+  sheet.columns = [
+    { header: 'Token',        key: 'token',        width: 14 },
+    { header: 'Project',      key: 'projectName',   width: 25 },
+    { header: 'Job ID',       key: 'jobId',           width: 12 },
+    { header: 'Carrier',      key: 'carrierName',      width: 22 },
+    { header: 'Material Type', key: 'materialType',      width: 16 },
+    { header: 'Site Location', key: 'siteLocation',        width: 22 },
+    { header: 'Amount',       key: 'amount',                width: 14 },
+    { header: 'Status',       key: 'status',                  width: 14 },
+    { header: 'Date',         key: 'date',                      width: 16 },
+  ]
+  for (const b of bids) {
+    sheet.addRow({
+      token: b.token || '—',
+      projectName: b.deliveryId?.leadId?.projectName || '—',
+      jobId: b.deliveryId?.leadId?.jobId || '—',
+      carrierName: b.carrierId?.carrierName || '—',
+      materialType: b.deliveryId?.materialType || '—',
+      siteLocation: b.deliveryId?.deliveryLocation || '—',
+      amount: b.quotedAmount || 0,
+      status: b.status || '—',
+      date: b.createdAt ? new Date(b.createdAt).toLocaleDateString() : '—',
+    })
+  }
+  sheet.getRow(1).font = { bold: true }
+  return workbook.xlsx.writeBuffer()
+}
+
+// GET /freight-loads/export
+exports.exportFreightLoads = asyncHandler(async (req, res) => {
+  const { status, carrierId, projectId, customerId, materialType, siteLocation, search, startDate, endDate } = req.query
+  const filter = {}
+  if (status) filter.status = status
+  if (carrierId) filter.carrierId = carrierId
+  const dateFilter = buildDateFilter({ startDate, endDate })
+  if (dateFilter.createdAt) filter.createdAt = dateFilter.createdAt
+
+  const rawBids = await FreightBid.find(filter)
+    .populate({ path: 'deliveryId', select: 'leadId materialType deliveryLocation', populate: { path: 'leadId', select: 'projectName jobId customerId' } })
+    .populate({ path: 'carrierId', select: 'carrierName' })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
+  if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
+  if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
+  if (materialType) bids = bids.filter((b) => b.deliveryId?.materialType === materialType)
+  if (siteLocation) bids = bids.filter((b) => b.deliveryId?.deliveryLocation === siteLocation)
+  if (search?.trim()) {
+    const term = search.trim().toLowerCase()
+    bids = bids.filter((b) =>
+      b.token?.toLowerCase().includes(term) ||
+      b.deliveryId?.leadId?.projectName?.toLowerCase().includes(term) ||
+      b.deliveryId?.leadId?.jobId?.toLowerCase().includes(term) ||
+      b.carrierId?.carrierName?.toLowerCase().includes(term)
+    )
+  }
+
+  const buffer = await generateFreightLoadsExcel(bids, 'Freight Loads')
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="freight-loads.xlsx"')
+  return res.send(buffer)
+})
+
+// GET /awarded-loads/export
+exports.exportAwardedLoads = asyncHandler(async (req, res) => {
+  const { carrierId, projectId, customerId, search, startDate, endDate } = req.query
+  const filter = { status: 'selected' }
+  if (carrierId) filter.carrierId = carrierId
+  const dateFilter = buildDateFilter({ startDate, endDate })
+  if (dateFilter.createdAt) filter.createdAt = dateFilter.createdAt
+
+  const rawBids = await FreightBid.find(filter)
+    .populate({ path: 'deliveryId', select: 'leadId materialType deliveryLocation', populate: { path: 'leadId', select: 'projectName jobId customerId' } })
+    .populate({ path: 'carrierId', select: 'carrierName' })
+    .sort({ selectedAt: -1 })
+    .lean()
+
+  let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
+  if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
+  if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
+  if (search?.trim()) {
+    const term = search.trim().toLowerCase()
+    bids = bids.filter((b) =>
+      b.token?.toLowerCase().includes(term) ||
+      b.deliveryId?.leadId?.projectName?.toLowerCase().includes(term) ||
+      b.deliveryId?.leadId?.jobId?.toLowerCase().includes(term) ||
+      b.carrierId?.carrierName?.toLowerCase().includes(term)
+    )
+  }
+
+  const buffer = await generateFreightLoadsExcel(bids, 'Awarded Loads')
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="awarded-loads.xlsx"')
+  return res.send(buffer)
 })
 
 exports.getFreightLoadFilters = asyncHandler(async (req, res) => {
@@ -243,9 +368,12 @@ exports.getFreightLoadFilters = asyncHandler(async (req, res) => {
       ? FreightCarrier.find({ _id: { $in: carrierIds } }).select('carrierName').sort({ carrierName: 1 }).lean()
       : [],
     deliveryIds.length
-      ? Delivery.find({ _id: { $in: deliveryIds } }).select('leadId').lean()
+      ? Delivery.find({ _id: { $in: deliveryIds } }).select('leadId materialType deliveryLocation').lean()
       : [],
   ])
+
+  const materialTypes = [...new Set(deliveries.map((d) => d.materialType).filter(Boolean))].sort()
+  const siteLocations = [...new Set(deliveries.map((d) => d.deliveryLocation).filter(Boolean))].sort()
 
   const leadIds = [...new Set(deliveries.map((d) => String(d.leadId)).filter(Boolean))]
   const leads = leadIds.length
@@ -262,6 +390,12 @@ exports.getFreightLoadFilters = asyncHandler(async (req, res) => {
     carriers: carriers.map((c) => ({ _id: c._id, carrierName: c.carrierName })),
     projects: leads.map((l) => ({ _id: l._id, projectName: l.projectName, jobId: l.jobId })),
     customers: customers.map((c) => ({ _id: c._id, name: `${c.firstName} ${c.lastName || ''}`.trim() })),
+    materialTypes,
+    siteLocations,
+    // No schema/data support exists for these Figma filter dimensions yet — vendor filtering
+    // would need a per-load vendor join, and priority/internalOwner/channel/colorBy have no
+    // backing fields on Delivery at all. Flagging rather than fabricating.
+    note: 'vendor, priority, internalOwner, and channel filters are not yet supported — no backing data exists for them.',
   })
 })
 
@@ -350,10 +484,21 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   })
 })
 
+const buildQRLabelsFilter = async ({ projectId, search }) => {
+  const filter = {}
+  if (projectId) filter.leadId = projectId
+  if (search?.trim()) {
+    const matchingLeads = await Lead.find({
+      $or: [{ projectName: { $regex: search.trim(), $options: 'i' } }, { jobId: { $regex: search.trim(), $options: 'i' } }],
+    }).select('_id').lean()
+    filter.leadId = { $in: matchingLeads.map(l => l._id) }
+  }
+  return filter
+}
+
 exports.getQRLabels = asyncHandler(async (req, res) => {
   const { projectId, search, page = 1, limit = 10 } = req.query
-
-  const filter = projectId ? { leadId: projectId } : {}
+  const filter = await buildQRLabelsFilter({ projectId, search })
 
   const plans = await BundlePlan.find(filter)
     .populate({ path: 'leadId', select: 'projectName jobId' })
@@ -375,30 +520,83 @@ exports.getQRLabels = asyncHandler(async (req, res) => {
   return success(res, { labels: rows, total, page: parseInt(page), limit: parseInt(limit) })
 })
 
+// GET /qr-labels/export
+exports.exportQRLabelsExcel = asyncHandler(async (req, res) => {
+  const { projectId, search } = req.query
+  const filter = await buildQRLabelsFilter({ projectId, search })
+
+  const plans = await BundlePlan.find(filter)
+    .populate({ path: 'leadId', select: 'projectName jobId' })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('QR Labels')
+  sheet.columns = [
+    { header: 'Project ID', key: 'projectId', width: 14 },
+    { header: 'Project Name', key: 'projectName', width: 25 },
+    { header: 'QR Generated Date', key: 'qrGeneratedDate', width: 18 },
+    { header: 'Total QR Labels', key: 'totalQRLabels', width: 16 },
+  ]
+  for (const p of plans) {
+    sheet.addRow({
+      projectId: p.leadId?.jobId || '—',
+      projectName: p.leadId?.projectName || '—',
+      qrGeneratedDate: p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—',
+      totalQRLabels: p.totalBundles || 0,
+    })
+  }
+  sheet.getRow(1).font = { bold: true }
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="qr-labels.xlsx"')
+  return res.send(buffer)
+})
+
+// These three handlers used to write/read fields (partCode, unitCost, unit, description-as-name)
+// that don't exist anywhere on the SMDTItem schema — createItemCost always threw a
+// ValidationError (missing required costVersionId/category/partName/partNameNormalized/
+// costUnit/mbsCost) and getItemCostList's stats/search silently matched nothing. Rewritten to
+// use the real fields, matching the working implementation in common/smdt.controller.js.
+const { getActiveCostVersion, cleanStr, normalizeCode } = require('../../services/plant/smdt.service')
+const { SMDT_CATEGORIES } = require('../../config/constants')
+
 exports.getItemCostList = asyncHandler(async (req, res) => {
   const { search, page = 1, limit = 20 } = req.query
 
-  const filter = {}
+  const activeVersion = await getActiveCostVersion()
+  if (!activeVersion) {
+    return success(res, {
+      stats: { totalItemCost: 0, totalItems: 0, newAdded: 0 },
+      items: [], total: 0, page: parseInt(page), limit: parseInt(limit),
+    })
+  }
+
+  const filter = { costVersionId: activeVersion._id, isActive: true }
   if (search) filter.$or = [
-    { partCode: { $regex: search, $options: 'i' } },
+    { partName: { $regex: search, $options: 'i' } },
     { description: { $regex: search, $options: 'i' } },
   ]
 
   const [items, total, statsAgg] = await Promise.all([
     SMDTItem.find(filter)
-      .sort({ partCode: 1 })
+      .sort({ partName: 1 })
       .skip((parseInt(page) - 1) * parseInt(limit))
       .limit(parseInt(limit))
       .lean(),
     SMDTItem.countDocuments(filter),
     SMDTItem.aggregate([
-      { $group: { _id: null, totalCost: { $sum: '$unitCost' }, count: { $sum: 1 } } },
+      { $match: filter },
+      { $group: { _id: null, totalCost: { $sum: '$mbsCost' }, count: { $sum: 1 } } },
     ]),
   ])
 
   const s = statsAgg[0] || {}
-
-  const newAdded = await SMDTItem.countDocuments({ createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } })
+  const newAdded = await SMDTItem.countDocuments({
+    costVersionId: activeVersion._id,
+    createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+  })
 
   return success(res, {
     stats: { totalItemCost: s.totalCost || 0, totalItems: s.count || 0, newAdded },
@@ -410,29 +608,109 @@ exports.getItemCostList = asyncHandler(async (req, res) => {
 })
 
 exports.createItemCost = asyncHandler(async (req, res) => {
-  const { partName, partColor, costUnit, mbsCost, currentMarketCost, description } = req.body
+  const activeVersion = await getActiveCostVersion()
+  if (!activeVersion) return badRequest(res, 'No active SMDT cost version. Upload Excel first.')
+
+  const { category, partName, partColor, costUnit, mbsCost, currentMarketCost, description } = req.body
+  if (!SMDT_CATEGORIES.includes(category)) {
+    return badRequest(res, `Invalid category. Use one of: ${SMDT_CATEGORIES.join(', ')}`)
+  }
+
+  const isFrameType = category === 'frames'
+  const cleanedPartName = cleanStr(partName)
+  if (!cleanedPartName) return badRequest(res, 'partName is required')
+
+  const cleanedColor = isFrameType ? null : (cleanStr(partColor) || '--')
+  const partNameNormalized = normalizeCode(cleanedPartName)
+  const partColorNormalized = isFrameType ? null : normalizeCode(cleanedColor)
+
+  const duplicate = await SMDTItem.findOne({
+    costVersionId: activeVersion._id, category, partNameNormalized, partColorNormalized,
+  }).lean()
+  if (duplicate) return badRequest(res, 'An item with this category, part name, and color already exists')
 
   const item = await SMDTItem.create({
-    partCode: `PART-${Date.now()}`,
-    description: partName || description || '',
-    unitCost: mbsCost || 0,
-    unit: costUnit || 'FT',
+    costVersionId: activeVersion._id,
+    category,
+    partName: cleanedPartName,
+    partNameNormalized,
+    partColor: cleanedColor,
+    partColorNormalized,
+    costUnit,
+    mbsCost,
+    currentMarketCost: currentMarketCost ?? null,
+    isFrameType,
+    isActive: true,
+    description: description || '',
+    addedBy: req.user._id,
+    lastImportedAt: null,
   })
 
-  return success(res, { item })
+  return created(res, { item }, 'Item cost added')
 })
 
 exports.updateItemCost = asyncHandler(async (req, res) => {
   const item = await SMDTItem.findById(req.params.itemId)
   if (!item) return notFound(res, 'Item not found')
 
-  const { partName, partColor, costUnit, mbsCost, currentMarketCost, description } = req.body
-  if (partName || description) item.description = partName || description
-  if (mbsCost !== undefined) item.unitCost = mbsCost
-  if (costUnit) item.unit = costUnit
+  const { partName, partColor, costUnit, mbsCost, currentMarketCost, description, isActive } = req.body
+  if (partName !== undefined) {
+    item.partName = cleanStr(partName)
+    item.partNameNormalized = normalizeCode(item.partName)
+  }
+  if (partColor !== undefined && !item.isFrameType) {
+    item.partColor = cleanStr(partColor) || '--'
+    item.partColorNormalized = normalizeCode(item.partColor)
+  }
+  if (costUnit !== undefined) item.costUnit = costUnit
+  if (mbsCost !== undefined) item.mbsCost = mbsCost
+  if (currentMarketCost !== undefined) item.currentMarketCost = currentMarketCost
+  if (description !== undefined) item.description = description
+  if (isActive !== undefined) item.isActive = isActive
+  item.lastUpdatedBy = req.user._id
 
   await item.save()
-  return success(res, { item })
+  return success(res, { item }, 'Item cost updated')
+})
+
+// GET /costing/export
+exports.exportItemCostListExcel = asyncHandler(async (req, res) => {
+  const { search } = req.query
+  const activeVersion = await getActiveCostVersion()
+  const filter = activeVersion ? { costVersionId: activeVersion._id, isActive: true } : { _id: null }
+  if (search) filter.$or = [
+    { partName: { $regex: search, $options: 'i' } },
+    { description: { $regex: search, $options: 'i' } },
+  ]
+
+  const items = await SMDTItem.find(filter).sort({ partName: 1 }).lean()
+
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Item Cost List')
+  sheet.columns = [
+    { header: 'Part Name', key: 'partName', width: 25 },
+    { header: 'Part Colour', key: 'partColor', width: 16 },
+    { header: 'Cost Unit', key: 'costUnit', width: 12 },
+    { header: 'MBS Cost', key: 'mbsCost', width: 14 },
+    { header: 'Current Market Cost', key: 'currentMarketCost', width: 18 },
+    { header: 'Description', key: 'description', width: 30 },
+  ]
+  for (const item of items) {
+    sheet.addRow({
+      partName: item.partName || '—',
+      partColor: item.partColor || '—',
+      costUnit: item.costUnit || '—',
+      mbsCost: item.mbsCost || 0,
+      currentMarketCost: item.currentMarketCost ?? '—',
+      description: item.description || '',
+    })
+  }
+  sheet.getRow(1).font = { bold: true }
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="item-cost-list.xlsx"')
+  return res.send(buffer)
 })
 
 // GET /notification-details

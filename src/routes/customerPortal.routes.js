@@ -131,6 +131,7 @@ router.post('/chat/:channel/messages',       ctrl.sendChatMessage)
 
 // Notifications
 router.get('/notifications',              ctrl.getCustomerNotifications)
+router.get('/notifications/unread-count', ctrl.getCustomerUnreadNotificationCount)
 router.put('/notifications/read-all',     ctrl.markAllCustomerNotificationsRead)
 router.put('/notifications/:id/read',     ctrl.markCustomerNotificationRead)
 

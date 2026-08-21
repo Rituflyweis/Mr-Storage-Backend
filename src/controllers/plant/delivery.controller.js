@@ -11,6 +11,7 @@ const POOrder = require('../../models/POOrder')
 const ShipperRequest = require('../../models/ShipperRequest')
 const Vendor = require('../../models/Vendor')
 const auditService = require('../../services/audit.service')
+const notificationService = require('../../services/notification.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
@@ -1485,7 +1486,9 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
     ]
   }
   baseFilter.leadId = baseFilter.leadId || { $in: leadIds }
-  baseFilter.status = { $in: CALENDAR_DELIVERY_STATUSES }
+  // Only fall back to the default calendar status set when the caller didn't ask for a specific
+  // one — this used to unconditionally overwrite req.query.status, silently ignoring it.
+  if (!baseFilter.status) baseFilter.status = { $in: CALENDAR_DELIVERY_STATUSES }
   if (baseFilter.leadId?.$in) {
     baseFilter.leadId = { $in: baseFilter.leadId.$in.filter((id) => leadIds.some((a) => String(a) === String(id))) }
   } else if (!leadIds.some((a) => String(a) === String(baseFilter.leadId))) {
@@ -1840,6 +1843,25 @@ exports.updateDeliveryStatus = asyncHandler(async (req, res) => {
     { status, changedAt: new Date(), changedBy: req.user._id, description: `Status updated to ${status} by ${req.user.name || 'plant staff'}` },
   ]
   await delivery.save()
+
+  // Customer-visible milestones only — the granular in-between steps (material_prepared, loaded,
+  // picked_up) are internal plant workflow, not something a customer needs pinged about.
+  const CUSTOMER_FACING_STATUSES = { in_transit: 'medium', delivered: 'high', delayed: 'high', cancelled: 'high' }
+  if (CUSTOMER_FACING_STATUSES[status]) {
+    const lead = await Lead.findById(delivery.leadId).select('customerId projectName').lean()
+    if (lead?.customerId) {
+      await notificationService.notify({
+        customerId: lead.customerId,
+        leadId: delivery.leadId,
+        title: `Delivery ${status.replace('_', ' ')}`,
+        body: `${delivery.deliveryNumber || 'Your delivery'} for ${lead.projectName || 'your project'} is now ${status.replace('_', ' ')}.`,
+        type: 'delivery',
+        priority: CUSTOMER_FACING_STATUSES[status],
+        refId: delivery._id,
+        refModel: 'Delivery',
+      })
+    }
+  }
 
   return success(res, { delivery }, 'Delivery status updated')
 })

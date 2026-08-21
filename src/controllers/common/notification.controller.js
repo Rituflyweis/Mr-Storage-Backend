@@ -34,6 +34,12 @@ exports.getNotifications = asyncHandler(async (req, res) => {
   })
 })
 
+// GET /notifications/unread-count — lightweight endpoint for a badge icon poll
+exports.getUnreadCount = asyncHandler(async (req, res) => {
+  const count = await Notification.countDocuments({ userId: req.user._id, isRead: false })
+  return success(res, { count })
+})
+
 exports.markRead = asyncHandler(async (req, res) => {
   const { id } = req.params
   const n = await Notification.findOne({ _id: id, userId: req.user._id })

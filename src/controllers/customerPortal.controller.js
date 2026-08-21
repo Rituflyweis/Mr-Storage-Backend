@@ -34,6 +34,7 @@ const { sendDeliveryConfirmationEmail, sendDeliveryCallbackRequestEmail } = requ
 const bcrypt = require('bcryptjs')
 const env = require('../config/env')
 const auditService = require('../services/audit.service')
+const notificationService = require('../services/notification.service')
 const { syncLeadBuildings } = require('../services/leadBuilding.service')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
 // Granular fulfillment steps (material_prepared -> ... -> dispatched_to_site) all read as
@@ -2132,6 +2133,15 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
     metadata: { docId: req.params.docId, name: result.name },
   })
 
+  await notificationService.notifyLeadOwner(lead._id, {
+    title: 'Drawing approved',
+    body: `${result.name || 'A drawing'} was approved by the customer.`,
+    type: 'drawing',
+    priority: 'medium',
+    refId: result._id,
+    refModel: 'DrawingDocument',
+  })
+
   return success(res, { message: 'Drawing approved', drawing: result })
 })
 
@@ -2171,6 +2181,15 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
     customerId: req.customer._id,
     performedBy: req.customer._id,
     metadata: { docId: req.params.docId, name: result.name, note: note.trim() },
+  })
+
+  await notificationService.notifyLeadOwner(lead._id, {
+    title: 'Drawing revision requested',
+    body: `Customer requested a revision on ${result.name || 'a drawing'}: "${note.trim()}"`,
+    type: 'drawing',
+    priority: 'high',
+    refId: result._id,
+    refModel: 'DrawingDocument',
   })
 
   return success(res, { message: 'Revision requested', drawing: result })
@@ -2677,6 +2696,12 @@ exports.getCustomerNotifications = asyncHandler(async (req, res) => {
 })
 
 // PUT /notifications/:id/read
+// GET /notifications/unread-count — lightweight endpoint for a badge icon poll
+exports.getCustomerUnreadNotificationCount = asyncHandler(async (req, res) => {
+  const count = await Notification.countDocuments({ customerId: req.customer._id, isRead: false })
+  return success(res, { count })
+})
+
 exports.markCustomerNotificationRead = asyncHandler(async (req, res) => {
   const notification = await Notification.findOne({ _id: req.params.id, customerId: req.customer._id })
   if (!notification) return notFound(res, 'Notification not found')

@@ -11,6 +11,8 @@ const {
 const { TRUCK_TYPES } = require('../../services/plant/loadPlanning.service')
 const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const { generatePackingListDetailPdf } = require('../../utils/exportDelivery')
+const { generatePackingListExcel } = require('../../utils/exportPackingLists')
 
 const truckConfigByType = {
   SEMI_53: TRUCK_TYPES.SEMI_53,
@@ -112,13 +114,25 @@ exports.getPackingListPlanProjects = asyncHandler(async (req, res) => {
     })
   }
 
-  const projects = [...projectMap.values()].sort((a, b) => {
+  let projects = [...projectMap.values()].sort((a, b) => {
     const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
     const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
     return bTime - aTime
   })
 
-  return success(res, { projects, total: projects.length })
+  const { search, page = 1, limit = 20 } = req.query
+  if (search?.trim()) {
+    const term = search.trim().toLowerCase()
+    projects = projects.filter((p) =>
+      p.projectName?.toLowerCase().includes(term) || p.jobId?.toLowerCase().includes(term)
+    )
+  }
+  const total = projects.length
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1)
+  const parsedLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 20))
+  const paged = projects.slice((parsedPage - 1) * parsedLimit, (parsedPage - 1) * parsedLimit + parsedLimit)
+
+  return success(res, { projects: paged, total, page: parsedPage, limit: parsedLimit })
 })
 
 exports.getPackingList = asyncHandler(async (req, res) => {
@@ -248,4 +262,79 @@ exports.updatePackingList = asyncHandler(async (req, res) => {
     packingList: saved,
     packingListPlanSummary: summary,
   })
+})
+
+// GET /:packingListId/download-pdf — same generator construction uses, now reachable on plant too.
+exports.downloadPackingListPdf = asyncHandler(async (req, res) => {
+  const pl = await PackingList.findById(req.params.packingListId)
+    .populate({
+      path: 'packingListPlanId',
+      select: 'leadId',
+      populate: { path: 'leadId', select: 'projectName jobId location' },
+    })
+    .populate('bundleIds', 'bundleNo bundleType totalQty totalWeight status')
+    .lean()
+  if (!pl) return notFound(res, 'Packing list not found')
+
+  const access = await assertPlantProjectAccess(pl.packingListPlanId?.leadId?._id, req)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const mapped = {
+    packingListNo: pl.packingListNo,
+    truck: pl.truckLabel || pl.truckType,
+    destination: pl.packingListPlanId?.leadId?.location || '',
+    totalBundles: pl.totalBundles,
+    totalWeight: pl.totalWeight,
+    maxLengthFeet: pl.maxLengthFeet,
+    status: pl.status,
+    project: pl.packingListPlanId?.leadId
+      ? { projectName: pl.packingListPlanId.leadId.projectName, jobId: pl.packingListPlanId.leadId.jobId }
+      : null,
+  }
+
+  const buffer = await generatePackingListDetailPdf(mapped, pl.bundleIds || [])
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="packing-list-${pl.packingListNo || pl._id}.pdf"`)
+  return res.send(buffer)
+})
+
+// GET /export — Export Excel (list-level) on the plant Packing List screen
+exports.exportPackingListsExcel = asyncHandler(async (req, res) => {
+  const { status } = req.query
+  const leadIds = await getScopedLeadIds(req)
+  if (!leadIds.length) return res.status(200).end()
+
+  const plans = await PackingListPlan.find({ leadId: { $in: leadIds } }).select('_id').lean()
+  const planIds = plans.map((p) => p._id)
+
+  const filter = { packingListPlanId: { $in: planIds } }
+  if (status) filter.status = status
+
+  const lists = await PackingList.find(filter)
+    .select('packingListNo truckType truckLabel totalBundles totalWeight status packingListPlanId')
+    .populate({
+      path: 'packingListPlanId',
+      select: 'leadId',
+      populate: { path: 'leadId', select: 'projectName jobId location' },
+    })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const rows = lists.map((pl) => ({
+    packingListNo: pl.packingListNo,
+    truck: pl.truckLabel || pl.truckType,
+    totalBundles: pl.totalBundles,
+    totalWeight: pl.totalWeight,
+    destination: pl.packingListPlanId?.leadId?.location || '',
+    status: pl.status,
+    project: pl.packingListPlanId?.leadId ? { projectName: pl.packingListPlanId.leadId.projectName } : null,
+  }))
+
+  const buffer = await generatePackingListExcel(rows)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="packing-lists.xlsx"')
+  return res.send(buffer)
 })

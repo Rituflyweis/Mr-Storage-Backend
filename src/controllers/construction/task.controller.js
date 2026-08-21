@@ -6,6 +6,7 @@ const Milestone = require('../../models/Milestone')
 const ProjectStepDetail = require('../../models/ProjectStepDetail')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const notificationService = require('../../services/notification.service')
 
 exports.getTasks = asyncHandler(async (req, res) => {
   const { leadId, status, priority, assignedTo, page = 1, limit = 50 } = req.query
@@ -68,6 +69,19 @@ exports.createTask = asyncHandler(async (req, res) => {
     .populate('assignedTo', 'name email')
     .lean()
 
+  if (task.assignedTo) {
+    await notificationService.notify({
+      userId: task.assignedTo,
+      leadId: task.leadId,
+      title: 'New task assigned',
+      body: `"${task.title}" on ${populated.leadId?.projectName || 'a project'}${task.dueDate ? ` — due ${new Date(task.dueDate).toLocaleDateString()}` : ''}`,
+      type: 'task',
+      priority: task.priority === 'high' ? 'high' : 'medium',
+      refId: task._id,
+      refModel: 'Task',
+    })
+  }
+
   return success(res, { task: populated }, 'Task created')
 })
 
@@ -76,6 +90,7 @@ exports.updateTask = asyncHandler(async (req, res) => {
   if (!task) return notFound(res, 'Task not found')
 
   const { title, description, assignedTo, priority, status, dueDate, notes, attachments } = req.body
+  const previousAssignedTo = task.assignedTo ? String(task.assignedTo) : null
 
   if (title !== undefined) task.title = title
   if (description !== undefined) task.description = description
@@ -96,6 +111,20 @@ exports.updateTask = asyncHandler(async (req, res) => {
     .populate('leadId', 'projectName jobId')
     .populate('assignedTo', 'name email')
     .lean()
+
+  const nowAssignedTo = task.assignedTo ? String(task.assignedTo) : null
+  if (nowAssignedTo && nowAssignedTo !== previousAssignedTo) {
+    await notificationService.notify({
+      userId: task.assignedTo,
+      leadId: task.leadId,
+      title: 'Task reassigned to you',
+      body: `"${task.title}" on ${populated.leadId?.projectName || 'a project'}`,
+      type: 'task',
+      priority: task.priority === 'high' ? 'high' : 'medium',
+      refId: task._id,
+      refModel: 'Task',
+    })
+  }
 
   return success(res, { task: populated }, 'Task updated')
 })
