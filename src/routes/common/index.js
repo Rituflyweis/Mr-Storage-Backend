@@ -44,6 +44,7 @@ router.use('/uploads', uploadGuard, require('./upload.routes'))
 router.use('/smdt', smdtGuard, require('./smdt.routes'))
 router.use('/activity', require('./pageActivity.routes'))
 router.use('/notifications', ...notifGuard, require('./notification.routes'))
+router.use('/team-chat', ...notifGuard, require('./teamChat.routes'))
 
 // Staff "My Profile" screen — same role set as notifications (any authenticated staff member)
 const profileCtrl = require('../../controllers/common/profile.controller')

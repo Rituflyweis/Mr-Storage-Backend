@@ -5,6 +5,7 @@ const Delivery = require('../../models/Delivery')
 const Lead = require('../../models/Lead')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const notificationService = require('../../services/notification.service')
 
 const generateQuotationNumber = async () => {
   const count = await OrderQuotation.countDocuments({})
@@ -137,6 +138,19 @@ exports.updateMaterialRequestStatus = asyncHandler(async (req, res) => {
   mr.reviewedAt = new Date()
   if (reviewNotes) mr.reviewNotes = reviewNotes
   await mr.save()
+
+  if (mr.requestedBy && ['approved', 'rejected', 'fulfilled'].includes(status)) {
+    await notificationService.notify({
+      userId: mr.requestedBy,
+      leadId: mr.leadId,
+      title: `Material request ${status}`,
+      body: `Request ${mr.requestId || mr._id} was ${status}${reviewNotes ? `: ${reviewNotes}` : '.'}`,
+      type: 'material_request',
+      priority: status === 'rejected' ? 'high' : 'medium',
+      refId: mr._id,
+      refModel: 'MaterialRequest',
+    })
+  }
 
   return success(res, { requestId: mr._id, status: mr.status }, 'Material request updated')
 })

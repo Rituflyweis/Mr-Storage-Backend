@@ -4411,6 +4411,194 @@
 							"raw": "{\"content\":\"Hi there!\"}"
 						}
 					}
+				},
+				{
+					"name": "Internal Communication (Direct + Group)",
+					"item": [
+						{
+							"name": "Get Users (search for DM)",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/users?search="
+							}
+						},
+						{
+							"name": "Get Conversations (Direct + Group)",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/conversations"
+							}
+						},
+						{
+							"name": "Get Unread Count",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/unread-count"
+							}
+						},
+						{
+							"name": "Direct \u2014 Get Messages",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/direct/{{userId}}/messages?page=1&limit=30"
+							}
+						},
+						{
+							"name": "Get Presigned URL (for chat attachment)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": "{{baseUrl}}/upload/presigned-url",
+								"body": {
+									"mode": "raw",
+									"raw": "{\n\t\"fileName\": \"site-photo.jpg\",\n\t\"fileType\": \"image/jpeg\",\n\t\"folder\": \"chat-attachments\"\n}"
+								}
+							}
+						},
+						{
+							"name": "Direct \u2014 Send Message",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/direct/{{userId}}/messages",
+								"body": {
+									"mode": "raw",
+									"raw": "{\n\t\"content\": \"Hey, checking in on this\",\n\t\"attachments\": [\n\t\t{\n\t\t\t\"url\": \"{{baseUrl}}/.../chat-attachments/example.jpg\",\n\t\t\t\"name\": \"site-photo.jpg\",\n\t\t\t\"type\": \"image/jpeg\"\n\t\t}\n\t]\n}"
+								}
+							}
+						},
+						{
+							"name": "Group \u2014 Create",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/groups",
+								"body": {
+									"mode": "raw",
+									"raw": "{\n\t\"name\": \"Project Alpha Team\",\n\t\"memberIds\": [\n\t\t\"{{userId}}\"\n\t]\n}"
+								}
+							}
+						},
+						{
+							"name": "Group \u2014 Get Detail",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/groups/{{groupId}}"
+							}
+						},
+						{
+							"name": "Group \u2014 Update Members (add/remove)",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/groups/{{groupId}}/members",
+								"body": {
+									"mode": "raw",
+									"raw": "{\n\t\"addMemberIds\": [],\n\t\"removeMemberIds\": []\n}"
+								}
+							}
+						},
+						{
+							"name": "Group \u2014 Get Messages",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/groups/{{groupId}}/messages?page=1&limit=30"
+							}
+						},
+						{
+							"name": "Group \u2014 Send Message",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": "{{baseUrl}}/team-chat/groups/{{groupId}}/messages",
+								"body": {
+									"mode": "raw",
+									"raw": "{\n\t\"content\": \"Team, please review the latest drawings\",\n\t\"attachments\": [\n\t\t{\n\t\t\t\"url\": \"{{baseUrl}}/.../chat-attachments/example.jpg\",\n\t\t\t\"name\": \"site-photo.jpg\",\n\t\t\t\"type\": \"image/jpeg\"\n\t\t}\n\t]\n}"
+								}
+							}
+						}
+					]
 				}
 			]
 		},

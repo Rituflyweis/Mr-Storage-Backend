@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs')
 const ACCOUNTS = [
   { role: 'admin', email: 'claude.qa.admin@internal-test.mrstorage.dev', name: 'Claude QA Admin' },
   { role: 'plant', email: 'claude.qa.plant@internal-test.mrstorage.dev', name: 'Claude QA Plant' },
+  { role: 'sales', email: 'claude.qa.sales@internal-test.mrstorage.dev', name: 'Claude QA Sales' },
 ]
 const PASSWORD = 'ClaudeQA@2026'
 
