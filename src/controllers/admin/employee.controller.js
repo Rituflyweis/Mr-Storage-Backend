@@ -10,6 +10,35 @@ const Delivery = require('../../models/Delivery')
 const MaterialRequest = require('../../models/MaterialRequest')
 const POOrder = require('../../models/POOrder')
 const SMDTItem = require('../../models/SMDTItem')
+const DrawingDocument = require('../../models/DrawingDocument')
+const BOMJob = require('../../models/BOMJob')
+const Building = require('../../models/Building')
+const { buildDeliveryCard } = require('../construction/delivery.controller')
+
+// Shared by plant + construction detail — table shape for the "Assigned Projects" tab.
+const buildAssignedProjectsTable = async (leadIds) => {
+  const [leads, buildingCounts] = await Promise.all([
+    Lead.find({ _id: { $in: leadIds } })
+      .populate({ path: 'customerId', select: 'firstName lastName' })
+      .sort({ createdAt: -1 })
+      .lean(),
+    Building.aggregate([
+      { $match: { leadId: { $in: leadIds } } },
+      { $group: { _id: '$leadId', count: { $sum: 1 } } },
+    ]),
+  ])
+  const buildingCountMap = new Map(buildingCounts.map((b) => [String(b._id), b.count]))
+
+  return leads.map((lead) => ({
+    leadId: lead._id,
+    projectName: lead.projectName || '',
+    jobId: lead.jobId || '',
+    customerName: lead.customerId ? `${lead.customerId.firstName || ''} ${lead.customerId.lastName || ''}`.trim() : '',
+    buildingsCount: buildingCountMap.get(String(lead._id)) || 0,
+    status: lead.lifecycleStatus,
+    projectValue: lead.quoteValue ?? 0,
+  }))
+}
 const roundRobinService = require('../../services/roundRobin.service')
 const auditService = require('../../services/audit.service')
 const mailer = require('../../services/email/mailer')
@@ -253,57 +282,69 @@ const getSalesDetail = async (employee) => {
   }
 }
 
+// "Assigned Projects" tab shows delivery cards for construction (not a project table) —
+// scoped to the leads this employee has a task on, since Delivery has no assignedTo of
+// its own. Reuses the exact card shape the construction panel itself renders.
 const getConstructionDetail = async (employee) => {
-  const [tasksTotal, tasksDone, tasksInProgress, recentTasks, materialRequestsRaised, deliveriesUpdated] =
+  const taskLeadIds = await Task.distinct('leadId', { assignedTo: employee._id })
+
+  const [tasksTotal, tasksDone, tasksInProgress, deliveriesRaw, deliveriesHandled, invoicesRaised] =
     await Promise.all([
       Task.countDocuments({ assignedTo: employee._id }),
       Task.countDocuments({ assignedTo: employee._id, status: 'done' }),
       Task.countDocuments({ assignedTo: employee._id, status: 'in_progress' }),
-      Task.find({ assignedTo: employee._id })
-        .populate({ path: 'leadId', select: 'projectName jobId' })
+      Delivery.find({ leadId: { $in: taskLeadIds } })
+        .populate({ path: 'leadId', select: 'projectName jobId location' })
         .sort({ updatedAt: -1 })
         .limit(20)
         .lean(),
-      MaterialRequest.countDocuments({ requestedBy: employee._id }),
       Delivery.countDocuments({ 'statusHistory.changedBy': employee._id }),
+      Invoice.countDocuments({ createdBy: employee._id }),
     ])
+
+  const assignedDeliveries = await Promise.all(deliveriesRaw.map(buildDeliveryCard))
 
   return {
     section: 'construction',
-    recentTasks,
+    assignedDeliveries,
     stats: {
+      totalProjects: taskLeadIds.length,
       tasksTotal,
       tasksDone,
       tasksInProgress,
       tasksCompletionRate: tasksTotal > 0 ? Math.round((tasksDone / tasksTotal) * 100) : 0,
-      materialRequestsRaised,
-      deliveriesUpdated,
+      deliveriesHandled,
+      invoicesRaised,
     },
   }
 }
 
+// "Assigned Projects" tab is a project table for plant (Project Name / Customer /
+// Buildings / Status / Project Value) — scoped to leads reachable via this employee's
+// assigned PO orders. Performance mirrors the Drawings + BOM screens plant actually works in.
 const getPlantDetail = async (employee) => {
-  const [poOrdersAssigned, poOrdersCompleted, recentPOOrders, deliveriesUpdated, smdtItemsManaged] =
+  const poLeadIds = await POOrder.distinct('leadId', { assignedTo: employee._id })
+
+  const [assignedProjects, drawingsUploaded, drawingsApproved, bomPending, bomApproved, bomRejected] =
     await Promise.all([
-      POOrder.countDocuments({ assignedTo: employee._id }),
-      POOrder.countDocuments({ assignedTo: employee._id, status: 'approved' }),
-      POOrder.find({ assignedTo: employee._id })
-        .populate({ path: 'leadId', select: 'projectName jobId' })
-        .sort({ updatedAt: -1 })
-        .limit(20)
-        .lean(),
-      Delivery.countDocuments({ 'statusHistory.changedBy': employee._id }),
-      SMDTItem.countDocuments({ $or: [{ addedBy: employee._id }, { lastUpdatedBy: employee._id }] }),
+      buildAssignedProjectsTable(poLeadIds),
+      DrawingDocument.countDocuments({ uploadedBy: employee._id }),
+      DrawingDocument.countDocuments({ uploadedBy: employee._id, status: 'approved' }),
+      BOMJob.countDocuments({ uploadedBy: employee._id, status: { $in: ['queued', 'processing'] } }),
+      BOMJob.countDocuments({ uploadedBy: employee._id, status: 'completed' }),
+      BOMJob.countDocuments({ uploadedBy: employee._id, status: 'failed' }),
     ])
 
   return {
     section: 'plant',
-    recentPOOrders,
+    assignedProjects,
     stats: {
-      poOrdersAssigned,
-      poOrdersCompleted,
-      deliveriesUpdated,
-      smdtItemsManaged,
+      totalProjects: poLeadIds.length,
+      drawingsUploaded,
+      drawingApprovalRate: drawingsUploaded > 0 ? Math.round((drawingsApproved / drawingsUploaded) * 100) : 0,
+      bomSubmissionPending: bomPending,
+      bomSubmissionApproved: bomApproved,
+      bomSubmissionRejected: bomRejected,
     },
   }
 }

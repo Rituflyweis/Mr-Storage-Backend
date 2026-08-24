@@ -279,3 +279,7 @@ exports.downloadDeliveryBillOfLading = asyncHandler(async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="delivery-${delivery.deliveryNumber || delivery._id}-bill-of-lading.pdf"`)
   return res.send(buffer)
 })
+
+// Reused by admin/employee.controller.js to render a construction employee's assigned
+// deliveries with the same card shape as the construction panel itself.
+module.exports.buildDeliveryCard = buildDeliveryCard
