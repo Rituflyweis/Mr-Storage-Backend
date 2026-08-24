@@ -1,6 +1,9 @@
+const mongoose = require('mongoose')
 const TeamMessage = require('../../models/TeamMessage')
 const { buildDirectKey } = require('../../models/TeamMessage')
 const TeamGroup = require('../../models/TeamGroup')
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id)
 
 const roomFor = (channelType, channelId, myId) => {
   if (channelType === 'department') return `team_dept:${channelId}`
@@ -24,11 +27,16 @@ const teamChatHandler = (socket, adminNS) => {
 
   socket.on('join_team_channel', async ({ channelType, channelId }) => {
     if (!CHANNEL_TYPES.includes(channelType) || !channelId) return
-    if (channelType === 'group') {
-      const group = await TeamGroup.findById(channelId).select('members').lean()
-      if (!group || !group.members.some((m) => String(m) === String(myId))) return
+    try {
+      if (channelType === 'group') {
+        if (!isValidObjectId(channelId)) return
+        const group = await TeamGroup.findById(channelId).select('members').lean()
+        if (!group || !group.members.some((m) => String(m) === String(myId))) return
+      }
+      socket.join(roomFor(channelType, channelId, myId))
+    } catch (err) {
+      console.error('[TeamChatHandler] join_team_channel error:', err.message)
     }
-    socket.join(roomFor(channelType, channelId, myId))
   })
 
   socket.on('leave_team_channel', ({ channelType, channelId }) => {
@@ -64,6 +72,10 @@ const teamChatHandler = (socket, adminNS) => {
       if (channelType === 'department') {
         doc.department = channelId
       } else if (channelType === 'group') {
+        if (!isValidObjectId(channelId)) {
+          socket.emit('team_chat_error', { message: 'Invalid group id' })
+          return
+        }
         const group = await TeamGroup.findById(channelId).select('members isActive').lean()
         if (!group || !group.isActive || !group.members.some((m) => String(m) === String(myId))) {
           socket.emit('team_chat_error', { message: 'Not a member of this group' })
