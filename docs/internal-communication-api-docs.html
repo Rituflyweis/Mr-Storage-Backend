@@ -1,0 +1,746 @@
+<title>Internal Chat Socket Reference</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg: #faf8f4;
+    --surface: #ffffff;
+    --surface-2: #f2efe8;
+    --ink: #201d18;
+    --ink-soft: #57534a;
+    --ink-faint: #8a8478;
+    --line: #e4dfd3;
+    --accent: #0c6b6b;
+    --accent-ink: #ffffff;
+    --accent-soft: #e2f0ee;
+    --accent-soft-ink: #0c6b6b;
+    --code-bg: #1c2321;
+    --code-ink: #dce8e4;
+    --code-key: #7fd4c1;
+    --code-str: #e8c07d;
+    --code-num: #e39a9a;
+    --code-punc: #8a9a97;
+    --code-comment: #6b7a76;
+    --pill-get: #1d6f52; --pill-get-bg: #e1f2e8;
+    --pill-post: #a1590c; --pill-post-bg: #fbead4;
+    --pill-put: #1d5f9b; --pill-put-bg: #e2eefb;
+    --shadow: 0 1px 2px rgba(32,29,24,.04), 0 8px 24px -12px rgba(32,29,24,.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg: #14181a;
+      --surface: #1a1f22;
+      --surface-2: #20262a;
+      --ink: #ece8e0;
+      --ink-soft: #a8a49a;
+      --ink-faint: #706c62;
+      --line: #2b3235;
+      --accent: #4fd8bf;
+      --accent-ink: #0b1615;
+      --accent-soft: #1e3532;
+      --accent-soft-ink: #7fe6d1;
+      --code-bg: #101513;
+      --code-ink: #d7e6e1;
+      --pill-get-bg: #1a3327; --pill-get: #6bd6a0;
+      --pill-post-bg: #3a2a13; --pill-post: #e8ac5c;
+      --pill-put-bg: #17293a; --pill-put: #79b6ec;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: #14181a;
+    --surface: #1a1f22;
+    --surface-2: #20262a;
+    --ink: #ece8e0;
+    --ink-soft: #a8a49a;
+    --ink-faint: #706c62;
+    --line: #2b3235;
+    --accent: #4fd8bf;
+    --accent-ink: #0b1615;
+    --accent-soft: #1e3532;
+    --accent-soft-ink: #7fe6d1;
+    --code-bg: #101513;
+    --code-ink: #d7e6e1;
+    --pill-get-bg: #1a3327; --pill-get: #6bd6a0;
+    --pill-post-bg: #3a2a13; --pill-post: #e8ac5c;
+    --pill-put-bg: #17293a; --pill-put: #79b6ec;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Source Serif 4", Georgia, "Times New Roman", serif;
+    font-size:17px; line-height:1.65;
+  }
+  ::selection{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  h1,h2,h3,h4{
+    font-family:"Sora", "Segoe UI", system-ui, sans-serif;
+    font-weight:700; color:var(--ink); text-wrap:balance; line-height:1.2;
+    letter-spacing:-.01em;
+  }
+  code, pre, kbd, .mono{
+    font-family:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
+  a{ color:var(--accent); text-decoration-color:color-mix(in srgb, var(--accent) 40%, transparent); text-underline-offset:2px; }
+  a:hover{ text-decoration-color:var(--accent); }
+  a:focus-visible, button:focus-visible, summary:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+
+  /* ---------- Shell layout ---------- */
+  .shell{ display:flex; min-height:100vh; max-width:1280px; margin:0 auto; }
+
+  .sidebar{
+    width:264px; flex:none; padding:40px 20px 40px 32px;
+    position:sticky; top:0; align-self:flex-start; height:100vh; overflow-y:auto;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .brand-mark{
+    width:30px; height:30px; border-radius:8px; flex:none;
+    background:linear-gradient(155deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--bg)));
+    position:relative;
+  }
+  .brand-mark::before, .brand-mark::after{
+    content:""; position:absolute; border-radius:50%; background:var(--accent-ink);
+  }
+  .brand-mark::before{ width:5px; height:5px; top:8px; left:8px; opacity:.55; }
+  .brand-mark::after{ width:5px; height:5px; bottom:8px; right:8px; opacity:.9; }
+  .brand-name{ font-family:"Sora",sans-serif; font-weight:700; font-size:14.5px; letter-spacing:-.01em; }
+  .brand-sub{ font-family:"Sora",sans-serif; font-size:11px; color:var(--ink-faint); margin:0 0 28px 40px; letter-spacing:.03em; text-transform:uppercase; }
+
+  .nav-group{ margin-bottom:22px; }
+  .nav-label{
+    font-family:"Sora",sans-serif; font-size:10.5px; font-weight:600; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--ink-faint); margin:0 0 8px 2px;
+  }
+  .nav-group ul{ list-style:none; margin:0; padding:0; }
+  .nav-group li a{
+    display:block; padding:5px 8px; margin:1px 0; border-radius:6px;
+    font-family:"Sora",sans-serif; font-size:13.5px; color:var(--ink-soft);
+    text-decoration:none; transition:background .12s, color .12s;
+  }
+  .nav-group li a:hover{ background:var(--surface-2); color:var(--ink); }
+  .nav-group li a.active{ background:var(--accent-soft); color:var(--accent-soft-ink); font-weight:500; }
+
+  .content{ flex:1; min-width:0; padding:52px 56px 120px; }
+  .doc{ max-width:700px; }
+
+  .kicker{
+    font-family:"Sora",sans-serif; font-size:12px; font-weight:600; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 12px;
+  }
+  h1.title{ font-size:clamp(2rem, 4vw, 2.6rem); margin:0 0 14px; }
+  .lede{ font-size:1.14rem; color:var(--ink-soft); margin:0 0 8px; max-width:62ch; }
+  .meta-row{
+    display:flex; gap:18px; flex-wrap:wrap; margin:22px 0 40px;
+    font-family:"Sora",sans-serif; font-size:12.5px; color:var(--ink-faint);
+  }
+  .meta-row span b{ color:var(--ink-soft); font-weight:600; }
+
+  section{ margin:64px 0; scroll-margin-top:28px; }
+  section h2{ font-size:1.5rem; margin:0 0 6px; padding-bottom:14px; border-bottom:1px solid var(--line); }
+  section h2 .num{ color:var(--accent); font-family:"JetBrains Mono",monospace; font-weight:500; font-size:.85em; margin-right:10px; }
+  section > .section-intro{ color:var(--ink-soft); margin:16px 0 26px; max-width:64ch; }
+  h3{ font-size:1.12rem; margin:34px 0 10px; }
+  h4{ font-size:.98rem; margin:22px 0 8px; font-family:"Sora",sans-serif; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.04em; font-size:.78rem; font-weight:600;}
+
+  p{ margin:0 0 14px; max-width:66ch; }
+  ul.plain, ol.plain{ margin:0 0 16px; padding-left:1.3em; }
+  ul.plain li, ol.plain li{ margin:0 0 8px; max-width:62ch; }
+
+  /* ---------- callouts ---------- */
+  .callout{
+    display:flex; gap:12px; padding:14px 16px; border-radius:10px; margin:20px 0 26px;
+    background:var(--surface); border:1px solid var(--line); box-shadow:var(--shadow);
+    font-family:"Sora",sans-serif; font-size:13.5px; color:var(--ink-soft); line-height:1.55;
+  }
+  .callout .icon{ flex:none; width:20px; height:20px; margin-top:1px; }
+  .callout.note{ border-left:3px solid var(--accent); }
+  .callout.note .icon{ color:var(--accent); }
+  .callout b{ color:var(--ink); }
+
+  /* ---------- event cards ---------- */
+  .event-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:20px 22px; margin:18px 0; box-shadow:var(--shadow);
+  }
+  .event-head{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+  .dir-pill{
+    font-family:"Sora",sans-serif; font-size:10.5px; font-weight:600; letter-spacing:.05em;
+    padding:3px 9px; border-radius:99px; text-transform:uppercase; flex:none;
+  }
+  .dir-pill.emit{ background:var(--pill-post-bg); color:var(--pill-post); }
+  .dir-pill.listen{ background:var(--pill-get-bg); color:var(--pill-get); }
+  .event-name{ font-family:"JetBrains Mono",monospace; font-weight:600; font-size:15px; color:var(--ink); }
+  .event-desc{ color:var(--ink-soft); font-size:14.5px; margin:8px 0 2px; }
+
+  /* ---------- code blocks ---------- */
+  pre{
+    background:var(--code-bg); color:var(--code-ink); border-radius:10px;
+    padding:16px 18px; overflow-x:auto; font-size:13px; line-height:1.65; margin:10px 0 18px;
+    box-shadow:var(--shadow);
+  }
+  pre code{ font-family:inherit; }
+  code.inline{
+    background:var(--surface-2); color:var(--ink); padding:1px 6px; border-radius:5px;
+    font-size:.86em; border:1px solid var(--line);
+  }
+  .k{ color:var(--code-key); } .s{ color:var(--code-str); } .n{ color:var(--code-num); }
+  .p{ color:var(--code-punc); } .c{ color:var(--code-comment); font-style:italic; }
+
+  /* ---------- room table ---------- */
+  .table-wrap{ overflow-x:auto; margin:18px 0 26px; border:1px solid var(--line); border-radius:10px; }
+  table{ width:100%; border-collapse:collapse; font-size:14px; background:var(--surface); }
+  th, td{ text-align:left; padding:11px 16px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th{ font-family:"Sora",sans-serif; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); background:var(--surface-2); font-weight:600; }
+  tr:last-child td{ border-bottom:none; }
+  td code{ font-size:.87em; }
+  td.tight{ white-space:nowrap; font-family:"JetBrains Mono",monospace; font-size:12.5px; color:var(--accent-soft-ink); background:var(--accent-soft); border-radius:5px; }
+
+  /* ---------- REST endpoint rows ---------- */
+  .endpoint{
+    display:flex; align-items:center; gap:12px; padding:13px 16px; border-bottom:1px solid var(--line);
+    background:var(--surface);
+  }
+  .endpoint:first-child{ border-radius:10px 10px 0 0; }
+  .endpoint:last-child{ border-bottom:none; border-radius:0 0 10px 10px; }
+  .endpoint-group{ border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:14px 0 24px; box-shadow:var(--shadow); }
+  .method{
+    font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:600; letter-spacing:.03em;
+    padding:3px 8px; border-radius:5px; flex:none; min-width:44px; text-align:center;
+  }
+  .method.get{ background:var(--pill-get-bg); color:var(--pill-get); }
+  .method.post{ background:var(--pill-post-bg); color:var(--pill-post); }
+  .method.put{ background:var(--pill-put-bg); color:var(--pill-put); }
+  .method.delete{ background:color-mix(in srgb, #b3413e 18%, transparent); color:#c0524e; }
+  .endpoint-path{ font-family:"JetBrains Mono",monospace; font-size:13.5px; color:var(--ink); flex:none; }
+  .endpoint-desc{ font-family:"Sora",sans-serif; font-size:12.5px; color:var(--ink-faint); margin-left:auto; text-align:right; }
+  @media (max-width:640px){
+    .endpoint{ flex-wrap:wrap; }
+    .endpoint-desc{ margin-left:0; text-align:left; width:100%; }
+  }
+  .env-table td:first-child{ font-family:"JetBrains Mono",monospace; color:var(--accent-soft-ink); }
+
+  /* ---------- flow steps ---------- */
+  .flow{ counter-reset:flow; margin:22px 0 30px; }
+  .flow-step{ display:flex; gap:16px; padding:0 0 22px; position:relative; }
+  .flow-step:not(:last-child)::before{
+    content:""; position:absolute; left:13px; top:30px; bottom:0; width:1px; background:var(--line);
+  }
+  .flow-num{
+    counter-increment:flow; flex:none; width:27px; height:27px; border-radius:50%;
+    background:var(--accent); color:var(--accent-ink); font-family:"Sora",sans-serif; font-weight:700;
+    font-size:12.5px; display:flex; align-items:center; justify-content:center; z-index:1;
+  }
+  .flow-num::after{ content:counter(flow); }
+  .flow-body{ padding-top:2px; }
+  .flow-body b{ font-family:"Sora",sans-serif; font-size:14.5px; color:var(--ink); }
+  .flow-body p{ margin:4px 0 0; font-size:14.5px; color:var(--ink-soft); }
+
+  .divider-quote{
+    border-left:3px solid var(--accent); margin:28px 0; padding:2px 0 2px 18px;
+    font-size:15.5px; color:var(--ink-soft); font-style:italic;
+  }
+
+  footer{ margin-top:80px; padding-top:24px; border-top:1px solid var(--line); font-family:"Sora",sans-serif; font-size:12.5px; color:var(--ink-faint); }
+
+  /* mobile */
+  .menu-btn{ display:none; }
+  @media (max-width: 920px){
+    .shell{ flex-direction:column; }
+    .sidebar{
+      position:sticky; top:0; height:auto; width:100%; padding:14px 20px;
+      background:var(--bg); border-bottom:1px solid var(--line); z-index:20;
+    }
+    .sidebar-inner{ display:none; }
+    .sidebar.open .sidebar-inner{ display:block; padding-top:16px; }
+    .menu-btn{
+      display:flex; align-items:center; justify-content:space-between; width:100%;
+      background:none; border:none; cursor:pointer; padding:6px 0;
+    }
+    .content{ padding:32px 22px 100px; }
+  }
+</style>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="sidebarInner">
+      <span class="brand">
+        <span class="brand-mark"></span>
+        <span class="brand-name">Mr Storage · Internal Chat</span>
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-inner" id="sidebarInner">
+      <div class="brand" style="display:none"></div>
+      <p class="brand-sub">API + Socket Reference · v2</p>
+
+      <nav>
+        <div class="nav-group">
+          <p class="nav-label">Start here</p>
+          <ul>
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#setup">Frontend connection setup</a></li>
+          </ul>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">REST API</p>
+          <ul>
+            <li><a href="#rest-team-chat">Direct &amp; group chat endpoints</a></li>
+            <li><a href="#rest-notifications">Notification endpoints</a></li>
+            <li><a href="#rest-upload">Attachment upload</a></li>
+          </ul>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Sockets</p>
+          <ul>
+            <li><a href="#connect">Connect &amp; authenticate</a></li>
+            <li><a href="#rooms">Rooms</a></li>
+          </ul>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Client → Server</p>
+          <ul>
+            <li><a href="#ev-join">join_team_channel</a></li>
+            <li><a href="#ev-leave">leave_team_channel</a></li>
+            <li><a href="#ev-typing">team_typing_start / stop</a></li>
+            <li><a href="#ev-message">team_message</a></li>
+          </ul>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Server → Client</p>
+          <ul>
+            <li><a href="#ev-new-message">new_team_message</a></li>
+            <li><a href="#ev-dm-notice">new_team_dm_notice</a></li>
+            <li><a href="#ev-group-notice">new_team_group_message_notice</a></li>
+            <li><a href="#ev-read">team_messages_read</a></li>
+            <li><a href="#ev-group-updated">group_members_updated</a></li>
+            <li><a href="#ev-new-group">new_team_group</a></li>
+            <li><a href="#ev-error">team_chat_error</a></li>
+          </ul>
+        </div>
+        <div class="nav-group">
+          <p class="nav-label">Reference</p>
+          <ul>
+            <li><a href="#rest-socket">REST vs. socket writes</a></li>
+            <li><a href="#flow">End-to-end flow</a></li>
+            <li><a href="#errors">Error handling</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="doc">
+
+      <p class="kicker">Internal Communication · API + Real-Time Layer</p>
+      <h1 class="title">Backend Integration Guide</h1>
+      <p class="lede">Everything the frontend needs to wire up Direct and Group chat plus Notifications for internal staff — every REST endpoint, the socket connection, rooms, and every event the server emits or listens for.</p>
+
+      <div class="meta-row">
+        <span>Base URL <b>{baseUrl}/api</b></span>
+        <span>Socket namespace <b>/admin</b></span>
+        <span>Transport <b>Socket.IO v4</b></span>
+        <span>Auth <b>JWT access token</b></span>
+        <span>Scope <b>Admin · Sales · Plant · Construction · Account</b></span>
+      </div>
+
+      <section id="overview">
+        <h2><span class="num">01</span>Overview</h2>
+        <p class="section-intro">
+          Two systems live under one auth model: <b>Notifications</b> (system-wide event alerts, REST-only for now)
+          and <b>Internal Communication</b> (Direct + Group chat, REST + real-time sockets). Chat has two write
+          paths — <b>REST</b> and <b>socket</b> — that stay in sync. A message sent either way is persisted the
+          same way and broadcast over the socket to every connected participant, so the frontend can pick whichever
+          path fits the moment: REST for the initial send-with-attachment flow, sockets for instant typing and delivery.
+        </p>
+        <div class="callout note">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+          <span>All internal chat traffic — direct messages, group messages, typing, read receipts, membership changes — flows through the single <code class="inline">/admin</code> namespace. There is no separate namespace per chat type. Notifications do not currently push over the socket — poll <code class="inline">/notifications/unread-count</code> or refetch the list on a relevant screen event.</span>
+        </div>
+      </section>
+
+      <section id="setup">
+        <h2><span class="num">02</span>Frontend connection setup</h2>
+        <p class="section-intro">Same access token drives both REST calls and the socket handshake — log in once, use it everywhere.</p>
+
+        <h4>Environment</h4>
+        <div class="table-wrap">
+          <table class="env-table">
+            <thead><tr><th>Variable</th><th>Example</th></tr></thead>
+            <tbody>
+              <tr><td>API_BASE_URL</td><td><code class="inline">https://api.mrstorage.dev/api</code></td></tr>
+              <tr><td>SOCKET_URL</td><td><code class="inline">https://api.mrstorage.dev</code> (namespace <code class="inline">/admin</code> appended by the client)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>1 — Authenticate</h4>
+        <pre><span class="k">const</span> { data } <span class="p">=</span> <span class="k">await</span> axios<span class="p">.</span>post<span class="p">(</span><span class="s">`${API_BASE_URL}/auth/login`</span><span class="p">,</span> {
+  email<span class="p">:</span> <span class="s">"user@mrstorage.dev"</span><span class="p">,</span>
+  password<span class="p">:</span> <span class="s">"••••••••"</span><span class="p">,</span>
+}<span class="p">);</span>
+<span class="k">const</span> { accessToken, refreshToken } <span class="p">=</span> data<span class="p">.</span>data<span class="p">;</span>
+<span class="c">// accessToken expires in 15 min — POST /auth/refresh with refreshToken to renew</span></pre>
+
+        <h4>2 — REST calls</h4>
+        <pre><span class="k">const</span> api <span class="p">=</span> axios<span class="p">.</span>create<span class="p">({</span>
+  baseURL<span class="p">:</span> API_BASE_URL<span class="p">,</span>
+  headers<span class="p">:</span> { Authorization<span class="p">:</span> <span class="s">`Bearer ${accessToken}`</span> }<span class="p">,</span>
+}<span class="p">);</span></pre>
+
+        <h4>3 — Socket connection</h4>
+        <pre><span class="k">import</span> { io } <span class="k">from</span> <span class="s">"socket.io-client"</span><span class="p">;</span>
+
+<span class="k">const</span> socket <span class="p">=</span> io<span class="p">(</span><span class="s">`${SOCKET_URL}/admin`</span><span class="p">,</span> {
+  auth<span class="p">:</span> { token<span class="p">:</span> accessToken }<span class="p">,</span>
+  transports<span class="p">:</span> [<span class="s">"websocket"</span>]<span class="p">,</span>
+}<span class="p">);</span></pre>
+
+        <p>Full response envelope for every REST endpoint below:</p>
+        <pre>{ <span class="s">"success"</span><span class="p">:</span> <span class="k">true</span><span class="p">,</span> <span class="s">"message"</span><span class="p">:</span> <span class="s">"..."</span><span class="p">,</span> <span class="s">"data"</span><span class="p">:</span> { <span class="p">…</span> } }
+<span class="c">// errors: { "success": false, "message": "...", "errors": null | [...] }</span></pre>
+      </section>
+
+      <section id="rest-team-chat">
+        <h2><span class="num">03</span>Direct &amp; group chat endpoints</h2>
+        <p class="section-intro">All under <code class="inline">{baseUrl}/api/team-chat</code>. Header <code class="inline">Authorization: Bearer {accessToken}</code> required on every call.</p>
+
+        <h4>Direct chat</h4>
+        <div class="endpoint-group">
+          <div class="endpoint"><span class="method get">GET</span><span class="endpoint-path">/team-chat/users?search=</span><span class="endpoint-desc">List / search staff to start a conversation</span></div>
+          <div class="endpoint"><span class="method get">GET</span><span class="endpoint-path">/team-chat/conversations</span><span class="endpoint-desc">Combined direct + group list, sorted by recency</span></div>
+          <div class="endpoint"><span class="method get">GET</span><span class="endpoint-path">/team-chat/unread-count</span><span class="endpoint-desc">Unread badge (direct + group + total)</span></div>
+          <div class="endpoint"><span class="method get">GET</span><span class="endpoint-path">/team-chat/direct/:userId/messages</span><span class="endpoint-desc">History, paginated — auto-marks read</span></div>
+          <div class="endpoint"><span class="method post">POST</span><span class="endpoint-path">/team-chat/direct/:userId/messages</span><span class="endpoint-desc">Send a message (content and/or attachments)</span></div>
+        </div>
+
+        <h4>Group chat</h4>
+        <div class="endpoint-group">
+          <div class="endpoint"><span class="method post">POST</span><span class="endpoint-path">/team-chat/groups</span><span class="endpoint-desc">Create a group with members</span></div>
+          <div class="endpoint"><span class="method get">GET</span><span class="endpoint-path">/team-chat/groups/:groupId</span><span class="endpoint-desc">Detail + populated member list</span></div>
+          <div class="endpoint"><span class="method put">PUT</span><span class="endpoint-path">/team-chat/groups/:groupId/members</span><span class="endpoint-desc">Add / remove members — admin-only</span></div>
+          <div class="endpoint"><span class="method get">GET</span><span class="endpoint-path">/team-chat/groups/:groupId/messages</span><span class="endpoint-desc">History, paginated — auto-marks read</span></div>
+          <div class="endpoint"><span class="method post">POST</span><span class="endpoint-path">/team-chat/groups/:groupId/messages</span><span class="endpoint-desc">Send a message (content and/or attachments)</span></div>
+        </div>
+
+        <h4>Request / response examples</h4>
+        <pre><span class="c">// POST /team-chat/direct/:userId/messages</span>
+{ <span class="s">"content"</span><span class="p">:</span> <span class="s">"Delivery is staged, dispatching at 3pm."</span><span class="p">,</span> <span class="s">"attachments"</span><span class="p">:</span> [] }
+
+<span class="c">// → 201, data.message</span>
+{
+  <span class="s">"_id"</span><span class="p">:</span> <span class="s">"66f0c1..."</span><span class="p">,</span> <span class="s">"channelType"</span><span class="p">:</span> <span class="s">"direct"</span><span class="p">,</span>
+  <span class="s">"directKey"</span><span class="p">:</span> <span class="s">"66e1a2_66f0c1"</span><span class="p">,</span> <span class="s">"participants"</span><span class="p">:</span> [<span class="s">"66e1a2..."</span><span class="p">,</span> <span class="s">"66f0c1..."</span>]<span class="p">,</span>
+  <span class="s">"senderId"</span><span class="p">:</span> <span class="s">"66e1a2..."</span><span class="p">,</span> <span class="s">"senderName"</span><span class="p">:</span> <span class="s">"Aisha Khan"</span><span class="p">,</span> <span class="s">"senderRole"</span><span class="p">:</span> <span class="s">"plant"</span><span class="p">,</span>
+  <span class="s">"content"</span><span class="p">:</span> <span class="s">"Delivery is staged, dispatching at 3pm."</span><span class="p">,</span> <span class="s">"attachments"</span><span class="p">:</span> []<span class="p">,</span>
+  <span class="s">"readBy"</span><span class="p">:</span> [<span class="s">"66e1a2..."</span>]<span class="p">,</span> <span class="s">"createdAt"</span><span class="p">:</span> <span class="s">"2026-08-21T14:04:32.714Z"</span>
+}
+
+<span class="c">// POST /team-chat/groups</span>
+{ <span class="s">"name"</span><span class="p">:</span> <span class="s">"Project Alpha Team"</span><span class="p">,</span> <span class="s">"memberIds"</span><span class="p">:</span> [<span class="s">"66f0c1..."</span><span class="p">,</span> <span class="s">"66f0c2..."</span>] }
+
+<span class="c">// PUT /team-chat/groups/:groupId/members</span>
+{ <span class="s">"addMemberIds"</span><span class="p">:</span> [<span class="s">"66f0c3..."</span>]<span class="p">,</span> <span class="s">"removeMemberIds"</span><span class="p">:</span> [<span class="s">"66f0c2..."</span>] }</pre>
+
+        <div class="callout note">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+          <span>Message send requires <code class="inline">content</code> or at least one <code class="inline">attachments</code> entry — never both empty. Attachments: max 10 per message, each needs a non-empty <code class="inline">url</code>, or the request returns <code class="inline">400</code>.</span>
+        </div>
+      </section>
+
+      <section id="rest-notifications">
+        <h2><span class="num">04</span>Notification endpoints</h2>
+        <p class="section-intro">All under <code class="inline">{baseUrl}/api/notifications</code>. Notifications are category-wise via <code class="inline">type</code>, carry a <code class="inline">priority</code>, and include <code class="inline">refId</code> + <code class="inline">refModel</code> for deep-linking on click.</p>
+
+        <div class="endpoint-group">
+          <div class="endpoint"><span class="method get">GET</span><span class="endpoint-path">/notifications</span><span class="endpoint-desc">List, paginated + filterable</span></div>
+          <div class="endpoint"><span class="method get">GET</span><span class="endpoint-path">/notifications/unread-count</span><span class="endpoint-desc">Badge count</span></div>
+          <div class="endpoint"><span class="method put">PUT</span><span class="endpoint-path">/notifications/:id/read</span><span class="endpoint-desc">Mark one read</span></div>
+          <div class="endpoint"><span class="method put">PUT</span><span class="endpoint-path">/notifications/read-all</span><span class="endpoint-desc">Mark every unread notification read</span></div>
+          <div class="endpoint"><span class="method delete">DELETE</span><span class="endpoint-path">/notifications/:id</span><span class="endpoint-desc">Delete one</span></div>
+        </div>
+
+        <h4>Query params — GET /notifications</h4>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Param</th><th>Values</th></tr></thead>
+            <tbody>
+              <tr><td><code>type</code></td><td>task · delivery · drawing · payment · meeting · material_request · lead · quotation · invoice · freight_bid · chat · system · escalation · followup</td></tr>
+              <tr><td><code>priority</code></td><td>high · medium · low</td></tr>
+              <tr><td><code>read</code></td><td>true · false</td></tr>
+              <tr><td><code>page</code> / <code>limit</code></td><td>default 1 / 20, max limit 100</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Response — GET /notifications</h4>
+        <pre>{
+  <span class="s">"notifications"</span><span class="p">:</span> [{
+    <span class="s">"_id"</span><span class="p">:</span> <span class="s">"66f0c1..."</span><span class="p">,</span> <span class="s">"type"</span><span class="p">:</span> <span class="s">"delivery"</span><span class="p">,</span> <span class="s">"priority"</span><span class="p">:</span> <span class="s">"high"</span><span class="p">,</span>
+    <span class="s">"title"</span><span class="p">:</span> <span class="s">"Delivery delayed"</span><span class="p">,</span> <span class="s">"body"</span><span class="p">:</span> <span class="s">"DEL-2026-0043 rescheduled to tomorrow."</span><span class="p">,</span>
+    <span class="s">"refId"</span><span class="p">:</span> <span class="s">"66d2a1..."</span><span class="p">,</span> <span class="s">"refModel"</span><span class="p">:</span> <span class="s">"Delivery"</span><span class="p">,</span>
+    <span class="s">"isRead"</span><span class="p">:</span> <span class="k">false</span><span class="p">,</span> <span class="s">"createdAt"</span><span class="p">:</span> <span class="s">"2026-08-21T09:12:00.000Z"</span>
+  }]<span class="p">,</span>
+  <span class="s">"total"</span><span class="p">:</span> <span class="n">37</span><span class="p">,</span>
+  <span class="s">"stats"</span><span class="p">:</span> { <span class="s">"total"</span><span class="p">:</span> <span class="n">37</span><span class="p">,</span> <span class="s">"unread"</span><span class="p">:</span> <span class="n">5</span><span class="p">,</span> <span class="s">"highPriority"</span><span class="p">:</span> <span class="n">2</span><span class="p">,</span> <span class="s">"today"</span><span class="p">:</span> <span class="n">3</span> }<span class="p">,</span>
+  <span class="s">"page"</span><span class="p">:</span> <span class="n">1</span><span class="p">,</span> <span class="s">"limit"</span><span class="p">:</span> <span class="n">20</span>
+}</pre>
+        <p><code class="inline">refModel</code> tells the frontend which screen to route to on tap — e.g. <code class="inline">"Delivery"</code> → delivery detail screen using <code class="inline">refId</code>, <code class="inline">"Task"</code> → task detail, <code class="inline">"Meeting"</code> → meeting detail.</p>
+      </section>
+
+      <section id="rest-upload">
+        <h2><span class="num">05</span>Attachment upload</h2>
+        <p class="section-intro">Chat attachments reuse the existing presigned-URL flow — the socket/REST message events carry only the resulting file URL, never file bytes.</p>
+        <div class="endpoint-group">
+          <div class="endpoint"><span class="method post">POST</span><span class="endpoint-path">/upload/presigned-url</span><span class="endpoint-desc">Get a signed S3 PUT URL</span></div>
+        </div>
+        <pre><span class="c">// 1. Request a signed URL</span>
+<span class="k">const</span> { data } <span class="p">=</span> <span class="k">await</span> api<span class="p">.</span>post<span class="p">(</span><span class="s">"/upload/presigned-url"</span><span class="p">,</span> {
+  fileName<span class="p">:</span> <span class="s">"site-photo.jpg"</span><span class="p">,</span> fileType<span class="p">:</span> <span class="s">"image/jpeg"</span><span class="p">,</span> folder<span class="p">:</span> <span class="s">"chat-attachments"</span><span class="p">,</span>
+}<span class="p">);</span>
+<span class="k">const</span> { uploadUrl, fileUrl } <span class="p">=</span> data<span class="p">.</span>data<span class="p">;</span>
+
+<span class="c">// 2. PUT the file directly to S3</span>
+<span class="k">await</span> axios<span class="p">.</span>put<span class="p">(</span>uploadUrl, fileBuffer, { headers<span class="p">:</span> { <span class="s">"Content-Type"</span><span class="p">:</span> <span class="s">"image/jpeg"</span> } }<span class="p">);</span>
+
+<span class="c">// 3. Send the message referencing fileUrl</span>
+<span class="k">await</span> api<span class="p">.</span>post<span class="p">(</span><span class="s">`/team-chat/direct/${userId}/messages`</span><span class="p">,</span> {
+  attachments<span class="p">:</span> [{ url<span class="p">:</span> fileUrl, name<span class="p">:</span> <span class="s">"site-photo.jpg"</span><span class="p">,</span> type<span class="p">:</span> <span class="s">"image/jpeg"</span> }]<span class="p">,</span>
+}<span class="p">);</span></pre>
+      </section>
+
+      <section id="connect">
+        <h2><span class="num">06</span>Connect &amp; authenticate <span style="font-family:'Sora',sans-serif; font-size:.6em; font-weight:500; color:var(--ink-faint); text-transform:none; letter-spacing:0;">(socket detail)</span></h2>
+        <p class="section-intro">Open one socket per session against the <code class="inline">/admin</code> namespace and pass the same JWT access token used for REST calls in the handshake <code class="inline">auth</code> payload.</p>
+
+        <pre><span class="k">import</span> { io } <span class="k">from</span> <span class="s">"socket.io-client"</span><span class="p">;</span>
+
+<span class="k">const</span> socket <span class="p">=</span> io<span class="p">(</span><span class="s">"https://api.mrstorage.dev/admin"</span><span class="p">,</span> {
+  auth<span class="p">:</span> { token<span class="p">:</span> accessToken }<span class="p">,</span>
+  transports<span class="p">:</span> [<span class="s">"websocket"</span>]<span class="p">,</span>
+}<span class="p">);</span>
+
+socket<span class="p">.</span>on<span class="p">(</span><span class="s">"connect"</span><span class="p">,</span> <span class="p">()</span> <span class="p">=></span> <span class="p">{</span>
+  <span class="c">// Server auto-joins this socket to room `user:{yourUserId}`</span>
+  <span class="c">// — every direct-message notice and group-membership event lands here.</span>
+<span class="p">});</span>
+
+socket<span class="p">.</span>on<span class="p">(</span><span class="s">"connect_error"</span><span class="p">,</span> <span class="p">(</span>err<span class="p">)</span> <span class="p">=></span> <span class="p">{</span>
+  <span class="c">// "Authentication required" — no token sent</span>
+  <span class="c">// "Invalid token"          — expired / malformed token, refresh and retry</span>
+<span class="p">});</span></pre>
+
+        <p>On connect the server automatically:</p>
+        <ul class="plain">
+          <li>Joins the socket to its personal room, <code class="inline">user:{userId}</code> — this is where DM notices and group-membership pushes are delivered, independent of which chat room the client has joined.</li>
+          <li>Joins <code class="inline">admin_room</code> additionally if the connecting user's role is <code class="inline">admin</code>.</li>
+        </ul>
+        <p>No chat history is replayed on connect — fetch it via <code class="inline">GET /api/team-chat/direct/:userId/messages</code> or <code class="inline">GET /api/team-chat/groups/:groupId/messages</code>, then let the socket carry new messages from that point on.</p>
+      </section>
+
+      <section id="rooms">
+        <h2><span class="num">07</span>Rooms</h2>
+        <p class="section-intro">A conversation only receives live events once the client explicitly joins its room with <a href="#ev-join"><code class="inline">join_team_channel</code></a>. Room names are derived server-side — the client never constructs them.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Channel type</th><th>Room name</th><th>Who's in it</th></tr></thead>
+            <tbody>
+              <tr><td class="tight">direct</td><td><code>team_direct:{sortedUserIdA_userIdB}</code></td><td>Both participants, once each has joined</td></tr>
+              <tr><td class="tight">group</td><td><code>team_group:{groupId}</code></td><td>Group members who have joined; membership is checked server-side on join</td></tr>
+              <tr><td class="tight">personal</td><td><code>user:{userId}</code></td><td>Auto-joined on connect — carries DM notices, group notices, and membership-change pushes regardless of which room is open</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout note">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+          <span>The direct-room key is order-independent — joining a conversation with user <code class="inline">B</code> from user <code class="inline">A</code>'s socket and joining with user <code class="inline">A</code> from <code class="inline">B</code>'s socket land in the same room.</span>
+        </div>
+      </section>
+
+      <section id="ev-join">
+        <h2><span class="num">08</span>Client → Server events</h2>
+        <p class="section-intro">Emitted by the client to control which rooms it's listening on and to send messages.</p>
+
+        <div class="event-card">
+          <div class="event-head"><span class="dir-pill emit">emit</span><span class="event-name">join_team_channel</span></div>
+          <p class="event-desc">Joins the room for a direct or group conversation. Call this when a chat screen opens.</p>
+          <pre>socket<span class="p">.</span>emit<span class="p">(</span><span class="s">"join_team_channel"</span><span class="p">,</span> {
+  channelType<span class="p">:</span> <span class="s">"direct"</span><span class="p">,</span>  <span class="c">// "direct" | "group"</span>
+  channelId<span class="p">:</span>   <span class="s">"66f0c1..."</span><span class="p">,</span>  <span class="c">// the other user's id, or the group's id</span>
+}<span class="p">);</span></pre>
+          <p class="event-desc">For <code class="inline">group</code>, the server verifies the connecting user is still a member before allowing the join — a silent no-op otherwise, so a removed member never receives further group traffic.</p>
+        </div>
+
+        <div class="event-card" id="ev-leave">
+          <div class="event-head"><span class="dir-pill emit">emit</span><span class="event-name">leave_team_channel</span></div>
+          <p class="event-desc">Leaves a room. Call this when a chat screen closes, using the same payload shape as <code class="inline">join_team_channel</code>.</p>
+        </div>
+
+        <div class="event-card" id="ev-typing">
+          <div class="event-head"><span class="dir-pill emit">emit</span><span class="event-name">team_typing_start</span> <span style="color:var(--ink-faint); font-family:'JetBrains Mono',monospace; font-size:13px;">/ team_typing_stop</span></div>
+          <p class="event-desc">Broadcasts a typing indicator to everyone else in the room (the sender does not receive their own event back).</p>
+          <pre>socket<span class="p">.</span>emit<span class="p">(</span><span class="s">"team_typing_start"</span><span class="p">,</span> { channelType<span class="p">:</span> <span class="s">"group"</span><span class="p">,</span> channelId<span class="p">:</span> groupId }<span class="p">);</span>
+<span class="c">// other members receive → "team_typing" { isTyping: true, name: "Aisha Khan" }</span></pre>
+        </div>
+
+        <div class="event-card" id="ev-message">
+          <div class="event-head"><span class="dir-pill emit">emit</span><span class="event-name">team_message</span></div>
+          <p class="event-desc">Sends a message into a direct or group conversation. Text, attachments, or both — at least one is required.</p>
+          <pre>socket<span class="p">.</span>emit<span class="p">(</span><span class="s">"team_message"</span><span class="p">,</span> {
+  channelType<span class="p">:</span>  <span class="s">"direct"</span><span class="p">,</span>          <span class="c">// "direct" | "group"</span>
+  channelId<span class="p">:</span>    <span class="s">"66f0c1..."</span><span class="p">,</span>
+  content<span class="p">:</span>      <span class="s">"Delivery is staged, dispatching at 3pm."</span><span class="p">,</span>
+  attachments<span class="p">:</span>  [                        <span class="c">// optional, max 10</span>
+    { url<span class="p">:</span> <span class="s">"https://…s3…/chat-attachments/photo.jpg"</span><span class="p">,</span> name<span class="p">:</span> <span class="s">"site-photo.jpg"</span><span class="p">,</span> type<span class="p">:</span> <span class="s">"image/jpeg"</span> }
+  ]<span class="p">,</span>
+}<span class="p">);</span></pre>
+          <p class="event-desc">Upload attachments first via <code class="inline">POST /api/upload/presigned-url</code>, PUT the file to the returned S3 URL, then reference the resulting <code class="inline">fileUrl</code> here — the socket event carries only the URL, never the file bytes.</p>
+        </div>
+      </section>
+
+      <section id="ev-new-message">
+        <h2><span class="num">09</span>Server → Client events</h2>
+        <p class="section-intro">Emitted by the server. Bind these once per socket connection, not per room — the payload tells you which conversation each event belongs to.</p>
+
+        <div class="event-card">
+          <div class="event-head"><span class="dir-pill listen">on</span><span class="event-name">new_team_message</span></div>
+          <p class="event-desc">Fires to everyone in the room whenever a message is created — whether it came in over this event or over the REST send endpoint. This is the single source of truth for rendering new messages.</p>
+          <pre>socket<span class="p">.</span>on<span class="p">(</span><span class="s">"new_team_message"</span><span class="p">,</span> <span class="p">(</span>message<span class="p">)</span> <span class="p">=></span> <span class="p">{</span>
+  <span class="c">// {
+  //   _id, channelType, groupId, directKey, participants,
+  //   senderId, senderName, senderRole,
+  //   content, attachments, readBy,
+  //   createdAt, updatedAt
+  // }</span>
+<span class="p">});</span></pre>
+        </div>
+
+        <div class="event-card" id="ev-dm-notice">
+          <div class="event-head"><span class="dir-pill listen">on</span><span class="event-name">new_team_dm_notice</span></div>
+          <p class="event-desc">Delivered to the recipient's personal room (<code class="inline">user:{id}</code>) on every direct message — fires even if they haven't joined that direct room yet, so it's the right hook for a global "new DM" badge or toast.</p>
+          <pre>socket<span class="p">.</span>on<span class="p">(</span><span class="s">"new_team_dm_notice"</span><span class="p">,</span> <span class="p">(</span>{ fromUserId, fromName, content }<span class="p">)</span> <span class="p">=></span> { <span class="p">/* … */</span> }<span class="p">);</span></pre>
+        </div>
+
+        <div class="event-card" id="ev-group-notice">
+          <div class="event-head"><span class="dir-pill listen">on</span><span class="event-name">new_team_group_message_notice</span></div>
+          <p class="event-desc">Same idea as the DM notice, for group messages — delivered to every other member's personal room, independent of whether they have the group open.</p>
+          <pre>socket<span class="p">.</span>on<span class="p">(</span><span class="s">"new_team_group_message_notice"</span><span class="p">,</span> <span class="p">(</span>{ groupId, fromName, content }<span class="p">)</span> <span class="p">=></span> { <span class="p">/* … */</span> }<span class="p">);</span></pre>
+        </div>
+
+        <div class="event-card" id="ev-read">
+          <div class="event-head"><span class="dir-pill listen">on</span><span class="event-name">team_messages_read</span></div>
+          <p class="event-desc">Fires to the room when a participant fetches messages via REST — the server marks everything unread-by-them as read and broadcasts this so the sender's UI can flip single-tick to double-tick in real time.</p>
+          <pre>socket<span class="p">.</span>on<span class="p">(</span><span class="s">"team_messages_read"</span><span class="p">,</span> <span class="p">(</span>{ by, channelType, channelId }<span class="p">)</span> <span class="p">=></span> { <span class="p">/* … */</span> }<span class="p">);</span></pre>
+        </div>
+
+        <div class="event-card" id="ev-group-updated">
+          <div class="event-head"><span class="dir-pill listen">on</span><span class="event-name">group_members_updated</span></div>
+          <p class="event-desc">Broadcast to the group's room whenever an admin adds or removes members via <code class="inline">PUT /api/team-chat/groups/:groupId/members</code>. A member who was just removed will have left the room server-side and won't receive this — handle their case client-side via a 403 on their next action, or a REST re-check.</p>
+          <pre>socket<span class="p">.</span>on<span class="p">(</span><span class="s">"group_members_updated"</span><span class="p">,</span> <span class="p">(</span>{ groupId, members }<span class="p">)</span> <span class="p">=></span> { <span class="p">/* members: full populated array */</span> }<span class="p">);</span></pre>
+        </div>
+
+        <div class="event-card" id="ev-new-group">
+          <div class="event-head"><span class="dir-pill listen">on</span><span class="event-name">new_team_group</span></div>
+          <p class="event-desc">Sent to a user's personal room when they're added to a group — either at creation or via a later member update. Use it to insert the new group into the conversation list without a refetch.</p>
+          <pre>socket<span class="p">.</span>on<span class="p">(</span><span class="s">"new_team_group"</span><span class="p">,</span> <span class="p">(</span>{ group }<span class="p">)</span> <span class="p">=></span> { <span class="p">/* full group document */</span> }<span class="p">);</span></pre>
+        </div>
+
+        <div class="event-card" id="ev-error">
+          <div class="event-head"><span class="dir-pill listen">on</span><span class="event-name">team_chat_error</span></div>
+          <p class="event-desc">Fires back to the sending socket only, when a <code class="inline">team_message</code> emit fails server-side (e.g. sender is no longer a group member).</p>
+          <pre>socket<span class="p">.</span>on<span class="p">(</span><span class="s">"team_chat_error"</span><span class="p">,</span> <span class="p">(</span>{ message }<span class="p">)</span> <span class="p">=></span> { <span class="p">/* show inline, do not retry blindly */</span> }<span class="p">);</span></pre>
+        </div>
+      </section>
+
+      <section id="rest-socket">
+        <h2><span class="num">10</span>REST vs. socket writes</h2>
+        <p class="section-intro">Both paths write the same document and trigger the same <code class="inline">new_team_message</code> broadcast — pick based on what the moment needs.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th></th><th>REST</th><th>Socket</th></tr></thead>
+            <tbody>
+              <tr><td>Endpoint / event</td><td><code>POST /team-chat/direct/:userId/messages</code></td><td><code>team_message</code></td></tr>
+              <tr><td>Best for</td><td>First send in a session, attachment-heavy sends, anywhere you want an HTTP response with the saved message</td><td>Fast follow-up sends once a socket is already open and the room already joined</td></tr>
+              <tr><td>Delivery to others</td><td>Broadcast over socket after saving</td><td>Broadcast over socket immediately after saving</td></tr>
+              <tr><td>Validation</td><td>400 JSON error body</td><td><code>team_chat_error</code> event back to sender</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="flow">
+        <h2><span class="num">11</span>End-to-end flow — opening a group chat</h2>
+        <div class="flow">
+          <div class="flow-step">
+            <span class="flow-num"></span>
+            <div class="flow-body"><b>Connect once</b><p>Open the socket on app load / login, authenticated with the current access token. Keep it alive across screens.</p></div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-num"></span>
+            <div class="flow-body"><b>Load history</b><p><code class="inline">GET /api/team-chat/groups/:groupId/messages</code> — this also marks unread messages as read and triggers <code class="inline">team_messages_read</code> to the room.</p></div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-num"></span>
+            <div class="flow-body"><b>Join the room</b><p><code class="inline">socket.emit("join_team_channel", { channelType: "group", channelId })</code> — do this on screen focus.</p></div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-num"></span>
+            <div class="flow-body"><b>Listen</b><p>Bind <code class="inline">new_team_message</code>, <code class="inline">team_typing</code>, and <code class="inline">group_members_updated</code> for this session.</p></div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-num"></span>
+            <div class="flow-body"><b>Send</b><p><code class="inline">socket.emit("team_message", …)</code> for quick sends, or the REST endpoint when attaching files.</p></div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-num"></span>
+            <div class="flow-body"><b>Leave on unmount</b><p><code class="inline">socket.emit("leave_team_channel", …)</code> when the screen closes — the socket itself stays connected for other rooms and DM notices.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="errors">
+        <h2><span class="num">12</span>Error handling</h2>
+        <ul class="plain">
+          <li><b>Connection refused</b> — <code class="inline">connect_error</code> fires with <code class="inline">"Authentication required"</code> (no token) or <code class="inline">"Invalid token"</code> (expired/malformed). Refresh the access token and reconnect; do not retry with the same token.</li>
+          <li><b>Silent no-op on join</b> — joining a group room you're not a member of does nothing and emits nothing back. If a client expects to be in a group but never receives room traffic, re-fetch <code class="inline">GET /team-chat/groups/:groupId</code> to confirm membership rather than assuming a dropped connection.</li>
+          <li><b>Message rejected</b> — <code class="inline">team_chat_error</code> arrives only on the sending socket, never broadcast. Typical cause: sender was removed from the group between opening the screen and sending.</li>
+        </ul>
+        <div class="divider-quote">Every event above was exercised against live socket connections between multiple concurrent users — direct and group sends, read receipts, and membership-change broadcasts — before this was written up.</div>
+      </section>
+
+      <footer>Mr Storage Backend · Internal Communication Socket Reference · /admin namespace</footer>
+    </div>
+  </main>
+</div>
+
+<script>
+  var menuBtn = document.getElementById('menuBtn');
+  var sidebar = document.getElementById('sidebar');
+  if (menuBtn) {
+    menuBtn.addEventListener('click', function () {
+      var open = sidebar.classList.toggle('open');
+      menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+  try {
+    var links = document.querySelectorAll('.nav-group a');
+    var sections = Array.prototype.slice.call(document.querySelectorAll('section[id]'));
+    var byId = {};
+    links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          links.forEach(function (a) { a.classList.remove('active'); });
+          var link = byId[entry.target.id];
+          if (link) link.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-15% 0px -70% 0px' });
+    sections.forEach(function (s) { observer.observe(s); });
+  } catch (e) {}
+</script>
