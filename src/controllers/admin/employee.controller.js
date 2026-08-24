@@ -140,11 +140,33 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
     .limit(parseInt(limit))
     .lean()
 
+  // The directory's work-volume column means something different per role — a lead count
+  // is meaningless for a plant/construction/account employee — so compute the metric that
+  // actually applies to each row instead of blanket-counting leads for everyone.
   const withCounts = await Promise.all(
-    employees.map(async (emp) => ({
-      ...emp,
-      assignedLeadCount: await Lead.countDocuments({ assignedSales: emp._id }),
-    }))
+    employees.map(async (emp) => {
+      let workCount = 0
+      let workLabel = ''
+      if (emp.role === 'sales') {
+        workCount = await Lead.countDocuments({ assignedSales: emp._id })
+        workLabel = 'Leads'
+      } else if (emp.role === 'construction') {
+        workCount = await Task.countDocuments({ assignedTo: emp._id })
+        workLabel = 'Tasks'
+      } else if (emp.role === 'plant') {
+        workCount = await POOrder.countDocuments({ assignedTo: emp._id })
+        workLabel = 'PO Orders'
+      } else if (emp.role === 'account') {
+        workCount = await Invoice.countDocuments({ createdBy: emp._id })
+        workLabel = 'Invoices'
+      }
+      return {
+        ...emp,
+        assignedLeadCount: emp.role === 'sales' ? workCount : 0, // kept for backward compatibility
+        workCount,
+        workLabel,
+      }
+    })
   )
 
   const total = await User.countDocuments(filter)
