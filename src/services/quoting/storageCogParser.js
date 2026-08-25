@@ -297,33 +297,33 @@ const parseStorageCogBuffer = (buffer) => {
     : []
 
   const vendorMeta = extractVendorCogMeta(cogData)
-  const markupPct = vendorMeta.markupPct
+  const isVendorFormat = vendorMeta.isVendorFormat
+  // v5 hardcodes 25% sell markup on upload and ignores vendor PSF markup % (e.g. 14%)
+  const sellMarkupPct = isVendorFormat ? 25 : vendorMeta.markupPct
 
   const project = extractStorageProject(storData, cogData, quoteData)
-  const buildings = extractStorageBuildings(cogData, storData, markupPct)
-  const doors = extractStorageDoors(cogData).map((d) => ({ ...d, markup: markupPct }))
+  const buildings = extractStorageBuildings(cogData, storData, sellMarkupPct)
+  const doors = extractStorageDoors(cogData).map((d) => ({
+    ...d,
+    markup: isVendorFormat ? 25 : vendorMeta.markupPct,
+  }))
 
-  let extras = extractStorageExtras(cogData)
-  if (vendorMeta.isVendorFormat) {
-    extras = extractVendorColumnExtras(cogData, markupPct)
-    if (vendorMeta.shipping > 0) {
-      extras.push({
-        item: 'Shipping + Engineering Drawings',
-        cogs: vendorMeta.shipping,
-        markup: markupPct,
-        sale: Math.round(vendorMeta.shipping * (1 + markupPct / 100)),
-        note: 'From vendor COGS sheet',
-        include: true,
-      })
-    }
-  }
+  // v5 only reads extras from column-A block (insulation/concrete rows).
+  // Vendor COG column extras (insulation/gutters/standing seam) are not auto-included.
+  const extras = extractStorageExtras(cogData)
 
   const shipRow = cogData[12] || []
-  const shippingDefault = vendorMeta.shipping || parseFloat(shipRow[12]) || 12000
+  const shippingDefault = parseFloat(shipRow[12]) || 12000
 
   const totalSqft = buildings.reduce((a, b) => a + (b.sqft || 0), 0)
-  const buildingSell = buildings.reduce((a, b) => a + Math.round((b.cogs || 0) * (1 + (b.markup || markupPct) / 100)), 0)
-  const doorSell = doors.reduce((a, d) => a + Math.round(d.unitCost * d.qty * (1 + (d.markup || markupPct) / 100)), 0)
+  const buildingSell = buildings.reduce(
+    (a, b) => a + Math.round((b.cogs || 0) * (1 + (b.markup || sellMarkupPct) / 100)),
+    0
+  )
+  const doorSell = doors.reduce(
+    (a, d) => a + Math.round(d.unitCost * d.qty * (1 + (d.markup || sellMarkupPct) / 100)),
+    0
+  )
   const extrasSell = extras.reduce((a, x) => a + (x.include ? x.sale : 0), 0)
 
   return {
@@ -331,14 +331,14 @@ const parseStorageCogBuffer = (buffer) => {
     cogSheetName: cogName,
     storageSheetName: storName,
     quoteSheetName: quoteName,
-    format: vendorMeta.isVendorFormat ? 'vendor_cog' : 'storage_cog',
+    format: isVendorFormat ? 'vendor_cog' : 'storage_cog',
     vendorMeta,
     project,
     buildings,
     doors,
     extras,
     shippingDefault,
-    globalMarkupPct: markupPct,
+    globalMarkupPct: sellMarkupPct,
     summary: {
       buildingCount: buildings.length,
       doorTypesWithQty: doors.filter((d) => d.qty > 0).length,

@@ -1907,14 +1907,9 @@
           state.storageData = {
             buildings: data.buildings || [],
             doors: data.doors || [],
-            extras: (data.extras || []).filter(
-              (x) =>
-                data.format !== "vendor_cog" ||
-                !String(x.item || "")
-                  .toLowerCase()
-                  .includes("shipping"),
-            ),
-            shipping: 0,
+            extras: data.extras || [],
+            shipping: data.shippingDefault ?? 12000,
+            installSellPerSf: state.storageInstallSellPerSf,
             drawings: 0,
             project: data.project || {},
             format: data.format,

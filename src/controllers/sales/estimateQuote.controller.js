@@ -243,8 +243,9 @@ exports.extractStorageCog = asyncHandler(async (req, res) => {
       buildings: data.buildings,
       doors: data.doors,
       extras: data.extras,
-      // Vendor COG sheets include shipping as a marked-up extra line
-      shipping: data.format === 'vendor_cog' ? 0 : data.shippingDefault,
+      shipping: data.shippingDefault ?? 12000,
+      installSellPerSf: req.body.installSellPerSf ?? 3.25,
+      installCostPerSf: req.body.installCostPerSf ?? 2.5,
     },
     normalizeFullQuoteExtras(req.body)
   )
