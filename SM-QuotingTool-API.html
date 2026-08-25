@@ -628,8 +628,8 @@
       <input
         type="text"
         id="api-base"
-        placeholder="http://localhost:5001"
-        value="http://localhost:5001"
+        placeholder="https://mr-storage-backend-025k.onrender.com"
+        value="https://mr-storage-backend-025k.onrender.com"
       />
       <span>JWT Token</span>
       <input
@@ -709,7 +709,7 @@
           </div>
           <div class="sbl">Scope</div>
           <div class="scope-row">
-            <button class="sc-btn" id="sc-supply" onclick="setScope('supply')">
+            <button class="sc-btn active" id="sc-supply" onclick="setScope('supply')">
               Supply
             </button>
             <button
@@ -720,7 +720,7 @@
               Install
             </button>
             <button
-              class="sc-btn active"
+              class="sc-btn"
               id="sc-both"
               onclick="setScope('both')"
             >
@@ -734,8 +734,8 @@
           </select>
           <div class="sbl">Install Difficulty</div>
           <select class="sb-sel" id="sb-install" onchange="onControlChange()">
-            <option value="easy">Easy</option>
-            <option value="medium" selected>Medium</option>
+            <option value="easy" selected>Easy</option>
+            <option value="medium">Medium</option>
             <option value="hard">Hard</option>
             <option value="tall">Tall</option>
           </select>
@@ -972,6 +972,9 @@
             <button class="tab-btn" onclick="showTab('quote-tab', this)">
               Quote
             </button>
+            <button class="tab-btn" onclick="showTab('sow-tab', this)">
+              Statement of Work
+            </button>
             <button class="tab-btn" onclick="showTab('margin-tab', this)">
               Margin
             </button>
@@ -979,7 +982,10 @@
               COGS
             </button>
             <button class="tab-btn" onclick="showTab('addons-tab', this)">
-              Concrete / Tax
+              Concrete / Insulation
+            </button>
+            <button class="tab-btn" onclick="showTab('contract-tab', this)">
+              Contract
             </button>
           </div>
 
@@ -990,7 +996,7 @@
                   <div class="card-title">Weight + Price by Category</div>
                   <div class="card-sub" id="breakdown-sub"></div>
                 </div>
-                <button class="btn btn-sm" onclick="showPage('rules')">
+                <button class="btn btn-sm" onclick="showPage('pricing')">
                   Edit pricing rules
                 </button>
               </div>
@@ -1015,7 +1021,7 @@
                 >
                 <div style="display: flex; gap: 4px; margin-top: 4px">
                   <button
-                    class="btn btn-sm sc-btn-inline"
+                    class="btn btn-sm sc-btn-inline active"
                     data-s="supply"
                     onclick="setScope('supply')"
                   >
@@ -1029,7 +1035,7 @@
                     Install
                   </button>
                   <button
-                    class="btn btn-sm sc-btn-inline active"
+                    class="btn btn-sm sc-btn-inline"
                     data-s="both"
                     onclick="setScope('both')"
                   >
@@ -1106,12 +1112,55 @@
             </div>
             <div id="quote-html" class="preview-frame">
               <p style="color: var(--muted)">
-                Generate a quote first, then open Preview for full document.
+                Upload shipper and open this tab — quote loads from backend preview.
+              </p>
+            </div>
+            <div class="field" style="margin-top: 12px">
+              <label>Additional Information (printed on quote)</label>
+              <textarea
+                id="quote-additional-info"
+                rows="3"
+                placeholder="Optional notes for customer quote..."
+                style="width: 100%; padding: 8px"
+                oninput="state.additionalInfo = this.value"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="tab-content" id="tab-sow-tab">
+            <div class="btn-row no-print" style="margin-bottom: 10px">
+              <button class="btn btn-sm" onclick="loadPreview()">Refresh SOW</button>
+              <button class="btn btn-sm" onclick="showPage('preview')">
+                Open Full Preview
+              </button>
+            </div>
+            <div id="sow-html" class="preview-frame">
+              <p style="color: var(--muted)">
+                Upload shipper and open this tab — SOW loads from backend preview.
+              </p>
+            </div>
+          </div>
+
+          <div class="tab-content" id="tab-contract-tab">
+            <div class="btn-row no-print" style="margin-bottom: 10px">
+              <button class="btn btn-sm" onclick="loadPreview()">Refresh Contract</button>
+              <button class="btn btn-sm" onclick="downloadPdf()">Download PDF</button>
+            </div>
+            <div id="contract-html" class="preview-frame">
+              <p style="color: var(--muted)">
+                Contract preview loads from backend after quote is generated.
               </p>
             </div>
           </div>
 
           <div class="tab-content" id="tab-margin-tab">
+            <div class="card" style="margin-bottom: 14px">
+              <div class="card-hdr">
+                <div class="card-title">Current Quote Summary</div>
+                <div class="card-sub">From latest shipper compute — adjust below to override</div>
+              </div>
+              <div id="margin-summary" class="metrics" style="padding: 0 16px 16px"></div>
+            </div>
             <div class="card">
               <div class="card-hdr">
                 <div class="card-title">Margin & Profit Adjuster</div>
@@ -1157,60 +1206,290 @@
                 <div id="margin-preview" class="metrics"></div>
                 <div class="btn-row">
                   <button class="btn btn-primary" onclick="applyMargin()">
-                    Apply to Quote
+                    Apply to Quote & SOW
                   </button>
-                  <button class="btn" onclick="resetMargin()">Reset</button>
+                  <button class="btn" onclick="resetMargin()">
+                    Reset to Shipper Numbers
+                  </button>
                 </div>
               </div>
             </div>
           </div>
 
           <div class="tab-content" id="tab-cogs-tab">
-            <div class="card">
+            <div class="card" style="margin-bottom: 14px">
               <div class="card-hdr">
-                <div class="card-title">COGS Adjustment</div>
-                <div class="card-sub">
-                  Material margin uses cogsOverride.marginPct
+                <div>
+                  <div class="card-title">
+                    COGS — Building Cost & Sell Adjustment
+                  </div>
+                  <div class="card-sub">
+                    Starts from computed shipper numbers — adjust cost for
+                    special specs, then set target margin
+                  </div>
                 </div>
               </div>
-              <div class="grid-2" style="padding: 16px">
-                <div class="field">
-                  <label>Adjusted Material COGS $</label>
-                  <input
-                    type="number"
-                    id="cogs-cost"
-                    step="500"
-                    oninput="previewCogs()"
-                  />
+
+              <div
+                style="
+                  background: #f0f4fa;
+                  border-bottom: 1px solid var(--border);
+                  padding: 12px 16px;
+                  display: flex;
+                  gap: 24px;
+                  flex-wrap: wrap;
+                  align-items: center;
+                "
+              >
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: #1a3a5c;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                  "
+                >
+                  From Shipper:
                 </div>
-                <div class="field">
-                  <label>Target Material Margin %</label>
-                  <input
-                    type="number"
-                    id="cogs-margin"
-                    value="20"
-                    step="0.5"
-                    oninput="previewCogs()"
-                  />
+                <div>
+                  <span style="font-size: 10px; color: var(--muted)">COGS</span><br /><span
+                    id="cogs-from-cost"
+                    style="font-size: 15px; font-weight: 700"
+                    >—</span
+                  >
                 </div>
-                <div class="field">
-                  <label>Fixed Material Sell $</label>
-                  <input
-                    type="number"
-                    id="cogs-sell"
-                    step="500"
-                    placeholder="optional"
-                    oninput="previewCogs()"
-                  />
+                <div>
+                  <span style="font-size: 10px; color: var(--muted)"
+                    >Computed Sell</span
+                  ><br /><span
+                    id="cogs-from-sell"
+                    style="font-size: 15px; font-weight: 700; color: #2176c7"
+                    >—</span
+                  >
+                </div>
+                <div>
+                  <span style="font-size: 10px; color: var(--muted)"
+                    >Computed Margin</span
+                  ><br /><span
+                    id="cogs-from-margin"
+                    style="font-size: 15px; font-weight: 700; color: #15803d"
+                    >—</span
+                  >
+                </div>
+                <div>
+                  <span style="font-size: 10px; color: var(--muted)">$/SF</span
+                  ><br /><span id="cogs-from-sf" style="font-size: 15px; font-weight: 700"
+                    >—</span
+                  >
                 </div>
               </div>
-              <div style="padding: 0 16px 16px">
-                <div id="cogs-preview" class="metrics"></div>
+
+              <div
+                style="
+                  padding: 16px;
+                  display: grid;
+                  grid-template-columns: 1fr 1fr;
+                  gap: 20px;
+                "
+              >
+                <div>
+                  <div
+                    style="
+                      font-size: 11px;
+                      font-weight: 700;
+                      color: var(--muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      margin-bottom: 12px;
+                      padding-bottom: 6px;
+                      border-bottom: 2px solid #f59e0b;
+                    "
+                  >
+                    Step 1 — Adjust Building COGS ($)
+                  </div>
+                  <div style="margin-bottom: 10px">
+                    <div style="font-size: 10px; color: var(--muted); margin-bottom: 4px">
+                      New Cost Total ($)
+                    </div>
+                    <input
+                      type="number"
+                      id="cogs-cost-dollar"
+                      step="500"
+                      min="0"
+                      placeholder="e.g. 525000"
+                      style="
+                        width: 100%;
+                        padding: 8px 10px;
+                        border-radius: 5px;
+                        border: 2px solid #f59e0b;
+                        background: #fff;
+                        font-size: 15px;
+                        font-family: monospace;
+                        font-weight: 700;
+                      "
+                      oninput="cogsOnCostInput()"
+                    />
+                  </div>
+                  <div style="margin-bottom: 6px">
+                    <div style="font-size: 10px; color: var(--muted); margin-bottom: 4px">
+                      — or adjust by % —
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px">
+                      <input
+                        type="range"
+                        id="cogs-cost-pct-slider"
+                        min="-30"
+                        max="50"
+                        step="1"
+                        value="0"
+                        style="flex: 1; accent-color: #f59e0b"
+                        oninput="cogsOnCostPctSlider(this.value)"
+                      />
+                      <span
+                        id="cogs-cost-pct-label"
+                        style="
+                          font-size: 12px;
+                          font-weight: 700;
+                          color: #b45309;
+                          min-width: 44px;
+                          text-align: right;
+                        "
+                        >0%</span
+                      >
+                    </div>
+                    <div style="font-size: 10px; color: var(--hint); margin-top: 3px">
+                      Slide right = add cost, slide left = reduce cost
+                    </div>
+                  </div>
+                  <div
+                    id="cogs-cost-result"
+                    style="
+                      background: #fff8ed;
+                      border: 1px solid #fcd34d;
+                      border-radius: 5px;
+                      padding: 8px 10px;
+                      margin-top: 8px;
+                      font-size: 12px;
+                      color: #92400e;
+                    "
+                  ></div>
+                </div>
+
+                <div>
+                  <div
+                    style="
+                      font-size: 11px;
+                      font-weight: 700;
+                      color: var(--muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      margin-bottom: 12px;
+                      padding-bottom: 6px;
+                      border-bottom: 2px solid #2176c7;
+                    "
+                  >
+                    Step 2 — Set Target Margin
+                  </div>
+                  <div style="margin-bottom: 10px">
+                    <div style="font-size: 10px; color: var(--muted); margin-bottom: 4px">
+                      Material Margin %
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px">
+                      <input
+                        type="range"
+                        id="cogs-margin-slider"
+                        min="0"
+                        max="60"
+                        step="0.5"
+                        value="20"
+                        style="flex: 1; accent-color: #2176c7"
+                        oninput="cogsOnMarginSlider(this.value)"
+                      />
+                      <input
+                        type="number"
+                        id="cogs-margin-val"
+                        step="0.5"
+                        min="0"
+                        max="100"
+                        value="20"
+                        style="
+                          width: 60px;
+                          padding: 5px 6px;
+                          border-radius: 4px;
+                          border: 1px solid var(--border2);
+                          background: var(--surface2);
+                          font-size: 13px;
+                          font-family: monospace;
+                          font-weight: 700;
+                          text-align: right;
+                        "
+                        oninput="cogsOnMarginInput(this.value)"
+                      />
+                      <span style="font-size: 12px; color: var(--muted)">%</span>
+                    </div>
+                  </div>
+                  <div style="margin-bottom: 10px">
+                    <div style="font-size: 10px; color: var(--muted); margin-bottom: 4px">
+                      — or type a fixed sell price ($) —
+                    </div>
+                    <input
+                      type="number"
+                      id="cogs-sell-dollar"
+                      step="500"
+                      min="0"
+                      placeholder="Leave blank to use margin"
+                      style="
+                        width: 100%;
+                        padding: 8px 10px;
+                        border-radius: 5px;
+                        border: 2px solid #2176c7;
+                        background: #fff;
+                        font-size: 15px;
+                        font-family: monospace;
+                        font-weight: 700;
+                      "
+                      oninput="cogsOnSellInput()"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style="
+                  background: #f8f9fb;
+                  border-top: 1px solid var(--border);
+                  padding: 14px 16px;
+                "
+              >
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: var(--muted);
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    margin-bottom: 10px;
+                  "
+                >
+                  Live Result
+                </div>
+                <div
+                  id="cogs-summary"
+                  class="metrics"
+                  style="margin-bottom: 12px"
+                >
+                  <div style="color: var(--muted); font-size: 12px">
+                    Generate a quote first to use COGS override.
+                  </div>
+                </div>
                 <div class="btn-row">
                   <button class="btn btn-primary" onclick="applyCogs()">
-                    Apply COGS
+                    Apply to Quote & SOW
                   </button>
-                  <button class="btn" onclick="resetCogs()">Reset</button>
+                  <button class="btn" onclick="resetCogs()">
+                    Reset to Shipper Numbers
+                  </button>
                 </div>
               </div>
             </div>
@@ -1585,7 +1864,8 @@
       const API = {
         get base() {
           return (
-            localStorage.getItem("qt_api_base") || "http://localhost:5001"
+            localStorage.getItem("qt_api_base") ||
+            "https://mr-storage-backend-025k.onrender.com"
           ).replace(/\/$/, "");
         },
         get token() {
@@ -1597,9 +1877,9 @@
 
       const state = {
         jobType: "PEMB",
-        scope: "both",
+        scope: "supply",
         roof: "screw-down",
-        install: "medium",
+        install: "easy",
         blendPct: 50,
         squareFootage: 0,
         manualSquareFootage: false,
@@ -1618,6 +1898,7 @@
         cityStateZip: "",
         buildingSize: "",
         jobNumber: "",
+        additionalInfo: "",
         marginOverride: {
           applied: false,
           laborSF: null,
@@ -1629,6 +1910,7 @@
           costDollar: null,
           marginPct: 20,
           sellDollar: null,
+          costPctAdj: 0,
         },
         salesTax: { rate: 0, include: true },
         concrete: { include: false, costSF: 7.25, marginPct: 25 },
@@ -1645,6 +1927,7 @@
       };
 
       let computeTimer = null;
+      let previewTimer = null;
 
       // ─── API Layer ──────────────────────────────────────────────────
       async function apiFetch(method, path, body) {
@@ -1761,6 +2044,9 @@
           renderMetrics();
           renderBreakdown();
           updateLaborMarginDisplay();
+          updateCogsSummary();
+          updateMarginSummary();
+          debouncedLoadPreview();
         } catch (e) {
           toast("Compute failed: " + e.message, "error");
         } finally {
@@ -1817,6 +2103,9 @@
           renderMetrics();
           renderBreakdown();
           updateLaborMarginDisplay();
+          updateCogsSummary();
+          updateMarginSummary();
+          debouncedLoadPreview();
           toast("Shipper parsed successfully", "success");
         } catch (e) {
           toast("Shipper upload failed: " + e.message, "error");
@@ -1995,7 +2284,7 @@
           renderStorage();
           renderStorageQuote();
         } catch (e) {
-          console.error("Storage compute failed:", e);
+          toast("Storage compute failed: " + e.message, "error");
         }
       }
 
@@ -2271,6 +2560,263 @@
           .querySelectorAll(".tab-btn")
           .forEach((b) => b.classList.remove("active"));
         if (btn) btn.classList.add("active");
+        if (id === "cogs-tab") updateCogsSummary();
+        if (id === "margin-tab") {
+          updateMarginSummary();
+          previewMargin();
+        }
+        if (id === "quote-tab" || id === "sow-tab" || id === "contract-tab") {
+          debouncedLoadPreview();
+        }
+      }
+
+      function updateMarginSummary() {
+        const el = document.getElementById("margin-summary");
+        if (!el) return;
+        const p = state.pricing;
+        if (!p) {
+          el.innerHTML =
+            '<div style="color:var(--muted);font-size:12px;padding:8px 0">Upload shipper to see pricing summary.</div>';
+          return;
+        }
+        const fq = state.fullQuote;
+        const grand = fq?.grandTotal ?? p.totSell;
+        el.innerHTML = `
+      <div class="metric good"><div class="metric-label">Total Sell</div><div class="metric-val">${fmt(grand)}</div><div class="metric-sub">$${p.sfPrice}/SF · ${Number(p.sf || 0).toLocaleString()} SF</div></div>
+      <div class="metric info"><div class="metric-label">Material Sell</div><div class="metric-val">${fmt(p.matSell)}</div><div class="metric-sub">${p.blendLabel || ""}</div></div>
+      <div class="metric"><div class="metric-label">Install Sell</div><div class="metric-val">${fmt(p.instSell)}</div><div class="metric-sub">Cost ${fmt(p.instCost)}</div></div>
+      <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(fq?.grandProfit ?? p.profit)}</div><div class="metric-sub">${fmtPct(fq?.grandMargin ?? p.profPct)} margin</div></div>`;
+      }
+
+      function debouncedLoadPreview() {
+        if (!API.token || !hasQuoteForDocuments()) return;
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(() => loadPreview(true), 400);
+      }
+
+      function cogsGetComputed() {
+        const p = state.pricing;
+        if (!p) return null;
+        const cost = (p.matCost || 0) + (p.freight || 0);
+        const sell = p.matSell || 0;
+        const margin = sell > 0 ? ((sell - cost) / sell) * 100 : 0;
+        return { cost, sell, margin, sf: p.sf || 1 };
+      }
+
+      function cogsReadForm() {
+        const costEl = document.getElementById("cogs-cost-dollar");
+        const marginEl = document.getElementById("cogs-margin-val");
+        const sellEl = document.getElementById("cogs-sell-dollar");
+        const pctLabel = document.getElementById("cogs-cost-pct-label");
+        return {
+          costDollar: costEl?.value ? +costEl.value : null,
+          marginPct: marginEl?.value ? +marginEl.value : 20,
+          sellDollar: sellEl?.value ? +sellEl.value : null,
+          costPctAdj: pctLabel?.textContent
+            ? parseFloat(pctLabel.textContent.replace(/[^-\d.]/g, "")) || 0
+            : 0,
+        };
+      }
+
+      function cogsOnCostInput() {
+        const val = parseFloat(document.getElementById("cogs-cost-dollar")?.value);
+        state.cogsOverride.costDollar = Number.isFinite(val) ? val : null;
+        const comp = cogsGetComputed();
+        if (comp && state.cogsOverride.costDollar) {
+          const pct =
+            ((state.cogsOverride.costDollar - comp.cost) / comp.cost) * 100;
+          const slider = document.getElementById("cogs-cost-pct-slider");
+          const label = document.getElementById("cogs-cost-pct-label");
+          if (slider)
+            slider.value = Math.min(50, Math.max(-30, Math.round(pct)));
+          if (label)
+            label.textContent =
+              (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+          state.cogsOverride.costPctAdj = pct;
+        }
+        updateCogsSummary();
+      }
+
+      function cogsOnCostPctSlider(pct) {
+        pct = parseFloat(pct) || 0;
+        state.cogsOverride.costPctAdj = pct;
+        const label = document.getElementById("cogs-cost-pct-label");
+        if (label) label.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+        const comp = cogsGetComputed();
+        if (comp) {
+          const newCost = Math.round(comp.cost * (1 + pct / 100));
+          state.cogsOverride.costDollar = newCost;
+          const costEl = document.getElementById("cogs-cost-dollar");
+          if (costEl) costEl.value = newCost;
+          const resultEl = document.getElementById("cogs-cost-result");
+          if (resultEl) {
+            const diff = newCost - comp.cost;
+            resultEl.textContent =
+              fmt(comp.cost) +
+              " → " +
+              fmt(newCost) +
+              " (" +
+              (diff >= 0 ? "+" : "") +
+              fmt(Math.abs(diff)) +
+              ")";
+          }
+        }
+        updateCogsSummary();
+      }
+
+      function cogsOnMarginSlider(val) {
+        val = parseFloat(val) || 0;
+        state.cogsOverride.marginPct = val;
+        const marginVal = document.getElementById("cogs-margin-val");
+        if (marginVal) marginVal.value = val.toFixed(1);
+        state.cogsOverride.sellDollar = null;
+        const sellEl = document.getElementById("cogs-sell-dollar");
+        if (sellEl) sellEl.value = "";
+        updateCogsSummary();
+      }
+
+      function cogsOnMarginInput(val) {
+        val = parseFloat(val) || 0;
+        state.cogsOverride.marginPct = val;
+        const slider = document.getElementById("cogs-margin-slider");
+        if (slider) slider.value = Math.min(60, Math.max(0, val));
+        state.cogsOverride.sellDollar = null;
+        const sellEl = document.getElementById("cogs-sell-dollar");
+        if (sellEl) sellEl.value = "";
+        updateCogsSummary();
+      }
+
+      function cogsOnSellInput() {
+        const val = parseFloat(document.getElementById("cogs-sell-dollar")?.value);
+        state.cogsOverride.sellDollar = Number.isFinite(val) ? val : null;
+        if (state.cogsOverride.sellDollar) {
+          const comp = cogsGetComputed();
+          const costBase = state.cogsOverride.costDollar || (comp ? comp.cost : 0);
+          if (costBase > 0) {
+            const impliedMargin =
+              ((state.cogsOverride.sellDollar - costBase) /
+                state.cogsOverride.sellDollar) *
+              100;
+            const slider = document.getElementById("cogs-margin-slider");
+            const marginVal = document.getElementById("cogs-margin-val");
+            const clamped = Math.min(60, Math.max(0, impliedMargin));
+            if (slider) slider.value = clamped;
+            if (marginVal) marginVal.value = clamped.toFixed(1);
+            state.cogsOverride.marginPct = clamped;
+          }
+        }
+        updateCogsSummary();
+      }
+
+      function updateCogsSummary() {
+        const comp = cogsGetComputed();
+        const summaryEl = document.getElementById("cogs-summary");
+        if (!summaryEl) return;
+
+        if (!comp) {
+          summaryEl.innerHTML =
+            '<div style="color:var(--muted);font-size:12px;">Generate a quote first to use COGS override.</div>';
+          return;
+        }
+
+        const p = state.pricing;
+        const form = cogsReadForm();
+        const fc = document.getElementById("cogs-from-cost");
+        const fs = document.getElementById("cogs-from-sell");
+        const fm = document.getElementById("cogs-from-margin");
+        const ff = document.getElementById("cogs-from-sf");
+        if (fc) fc.textContent = fmt(comp.cost);
+        if (fs) fs.textContent = fmt(comp.sell);
+        if (fm) fm.textContent = comp.margin.toFixed(1) + "%";
+        if (ff)
+          ff.textContent =
+            "$" +
+            (comp.cost / comp.sf).toFixed(2) +
+            " cost / $" +
+            (comp.sell / comp.sf).toFixed(2) +
+            " sell";
+
+        const adjCost = form.costDollar || comp.cost;
+        let adjSell;
+        if (form.sellDollar) {
+          adjSell = form.sellDollar;
+        } else {
+          const m = form.marginPct / 100;
+          adjSell = m >= 1 ? adjCost * 2 : adjCost / (1 - m);
+        }
+
+        const scopeKey = String(p.scope || state.scope || "both").toLowerCase();
+        const instSell = p.instSell || 0;
+        const instCost = p.instCost || 0;
+        const grandSell =
+          scopeKey === "supply"
+            ? adjSell
+            : scopeKey === "install"
+              ? instSell
+              : adjSell + instSell;
+        const grandCost =
+          scopeKey === "supply"
+            ? adjCost
+            : scopeKey === "install"
+              ? instCost
+              : adjCost + instCost;
+        const profit = grandSell - grandCost;
+        const matProfit = adjSell - adjCost;
+        const matMargin = adjSell > 0 ? (matProfit / adjSell) * 100 : 0;
+        const totalMargin = grandSell > 0 ? (profit / grandSell) * 100 : 0;
+        const sfPrice = comp.sf > 0 ? (grandSell / comp.sf).toFixed(2) : "0";
+        const costDiff = adjCost - comp.cost;
+        const sellDiff = adjSell - comp.sell;
+        const profColor = profit >= 0 ? "#15803d" : "#dc2626";
+        const matColor =
+          matMargin >= 20 ? "#15803d" : matMargin >= 10 ? "#b45309" : "#dc2626";
+        const installNote =
+          scopeKey === "supply"
+            ? "supply only"
+            : scopeKey === "install"
+              ? "install only"
+              : "incl. install";
+
+        summaryEl.innerHTML =
+          '<div class="metric info"><div class="metric-label">Adjusted COGS</div><div class="metric-val">' +
+          fmt(adjCost) +
+          '</div><div class="metric-sub">' +
+          (costDiff >= 0 ? "+" : "") +
+          fmt(Math.abs(costDiff)) +
+          " vs shipper</div></div>" +
+          '<div class="metric" style="border-top:2px solid ' +
+          matColor +
+          '"><div class="metric-label">Material Sell</div><div class="metric-val" style="color:' +
+          matColor +
+          '">' +
+          fmt(adjSell) +
+          '</div><div class="metric-sub">' +
+          matMargin.toFixed(1) +
+          "% mat margin · " +
+          (sellDiff >= 0 ? "+" : "") +
+          fmt(Math.abs(sellDiff)) +
+          "</div></div>" +
+          '<div class="metric good"><div class="metric-label">Total Sell</div><div class="metric-val">' +
+          fmt(grandSell) +
+          '</div><div class="metric-sub">$' +
+          sfPrice +
+          "/SF · " +
+          installNote +
+          "</div></div>" +
+          '<div class="metric" style="border-top:2px solid ' +
+          profColor +
+          '"><div class="metric-label">Total Profit</div><div class="metric-val" style="color:' +
+          profColor +
+          '">' +
+          fmt(profit) +
+          '</div><div class="metric-sub">' +
+          totalMargin.toFixed(1) +
+          "% overall margin</div></div>";
+
+        state.cogsOverride._pendingSell = Math.round(grandSell);
+        state.cogsOverride._pendingProfit = Math.round(profit);
+        state.cogsOverride._pendingMargin = totalMargin.toFixed(1);
+        state.cogsOverride._pendingSFPrice = sfPrice;
       }
 
       // ─── Margin / COGS ──────────────────────────────────────────────
@@ -2320,7 +2866,8 @@
             : null,
         };
         await runCompute();
-        toast("Margin override applied", "success");
+        debouncedLoadPreview();
+        toast("Margin override applied to quote", "success");
       }
 
       function resetMargin() {
@@ -2337,47 +2884,28 @@
         runCompute();
       }
 
-      async function previewCogs() {
-        if (!state.pricing) return;
-        try {
-          const data = await apiFetch("POST", API.estimates + "/cogs/preview", {
-            pricingResult: state.pricing,
-            cogsOverride: {
-              costDollar: document.getElementById("cogs-cost").value
-                ? +document.getElementById("cogs-cost").value
-                : null,
-              marginPct: +document.getElementById("cogs-margin").value || 20,
-              sellDollar: document.getElementById("cogs-sell").value
-                ? +document.getElementById("cogs-sell").value
-                : null,
-              applied: false,
-            },
-          });
-          const a = data.preview?.adjusted;
-          if (!a) return;
-          document.getElementById("cogs-preview").innerHTML = `
-      <div class="metric"><div class="metric-label">Mat COGS</div><div class="metric-val">${fmt(a.cost)}</div></div>
-      <div class="metric info"><div class="metric-label">Mat Sell</div><div class="metric-val">${fmt(a.sell)}</div><div class="metric-sub">${a.matMargin}% mat margin</div></div>
-      <div class="metric good"><div class="metric-label">Grand Sell</div><div class="metric-val">${fmt(a.grandSell)}</div><div class="metric-sub">${a.totalMargin}% total</div></div>
-    `;
-        } catch (e) {
-          toast("COGS preview: " + e.message, "error");
-        }
-      }
-
       async function applyCogs() {
+        if (!state.pricing)
+          return toast("Generate a quote first", "warn");
+        const form = cogsReadForm();
+        if (
+          !form.costDollar &&
+          !form.sellDollar &&
+          form.marginPct === 20 &&
+          form.costPctAdj === 0
+        ) {
+          return toast("Adjust the cost or margin first before applying.", "warn");
+        }
         state.cogsOverride = {
           applied: true,
-          costDollar: document.getElementById("cogs-cost").value
-            ? +document.getElementById("cogs-cost").value
-            : null,
-          marginPct: +document.getElementById("cogs-margin").value || 20,
-          sellDollar: document.getElementById("cogs-sell").value
-            ? +document.getElementById("cogs-sell").value
-            : null,
+          costDollar: form.costDollar,
+          marginPct: form.marginPct,
+          sellDollar: form.sellDollar,
+          costPctAdj: form.costPctAdj,
         };
         await runCompute();
-        toast("COGS override applied", "success");
+        debouncedLoadPreview();
+        toast("COGS override applied to quote", "success");
       }
 
       function resetCogs() {
@@ -2386,9 +2914,23 @@
           costDollar: null,
           marginPct: 20,
           sellDollar: null,
+          costPctAdj: 0,
         };
-        document.getElementById("cogs-preview").innerHTML = "";
+        const resetVal = (id, val) => {
+          const el = document.getElementById(id);
+          if (el) el.value = val;
+        };
+        resetVal("cogs-cost-dollar", "");
+        resetVal("cogs-cost-pct-slider", "0");
+        resetVal("cogs-margin-slider", "20");
+        resetVal("cogs-margin-val", "20");
+        resetVal("cogs-sell-dollar", "");
+        const pctLabel = document.getElementById("cogs-cost-pct-label");
+        if (pctLabel) pctLabel.textContent = "0%";
+        const resultEl = document.getElementById("cogs-cost-result");
+        if (resultEl) resultEl.textContent = "";
         runCompute();
+        toast("COGS reset to shipper numbers", "success");
       }
 
       async function lookupTax() {
@@ -2411,11 +2953,10 @@
 
       // ─── Preview & PDF ──────────────────────────────────────────────
       function hasQuoteForDocuments() {
-        return Boolean(
-          state.pricing ||
-            state.storagePricing ||
-            state.jobType === "Storage",
-        );
+        if (state.jobType === "Storage" || state.storagePricing) {
+          return Boolean(state.storagePricing?.grandTotal);
+        }
+        return Boolean(state.pricing?.totSell);
       }
 
       function documentPayload() {
@@ -2442,6 +2983,7 @@
             state.storageData?.totalSqft ||
             0,
           jobNumber: state.jobNumber,
+          additionalInfo: state.additionalInfo,
           extractedDrawingFields: state.extractedDrawingFields,
           sections: ["quote", "sow", "contract"],
         };
@@ -2460,23 +3002,37 @@
         };
       }
 
-      async function loadPreview() {
-        if (!hasQuoteForDocuments())
-          return toast("Generate a quote first", "warn");
+      async function loadPreview(silent) {
+        if (!hasQuoteForDocuments()) {
+          if (!silent) toast("Generate a quote first", "warn");
+          return;
+        }
         try {
           const data = await apiFetch(
             "POST",
             API.estimates + "/documents/preview",
             documentPayload(),
           );
-          document.getElementById("assembled-preview").innerHTML =
+          const assembled =
             data.assembledHtml ||
             data.quoteHtml ||
             "<p>No preview returned</p>";
-          document.getElementById("quote-html").innerHTML =
-            data.quoteHtml || "";
+          const ap = document.getElementById("assembled-preview");
+          if (ap) ap.innerHTML = assembled;
+          const qh = document.getElementById("quote-html");
+          if (qh) qh.innerHTML = data.quoteHtml || assembled;
+          const sh = document.getElementById("sow-html");
+          if (sh)
+            sh.innerHTML =
+              data.sowHtml ||
+              "<p style='color:var(--muted)'>No SOW returned</p>";
+          const ch = document.getElementById("contract-html");
+          if (ch)
+            ch.innerHTML =
+              data.contractHtml ||
+              "<p style='color:var(--muted)'>No contract returned</p>";
         } catch (e) {
-          toast("Preview failed: " + e.message, "error");
+          if (!silent) toast("Preview failed: " + e.message, "error");
         }
       }
 
@@ -2520,6 +3076,7 @@
           concreteAddon: state.concrete,
           insulationAddon: state.insulation,
           salesTax: state.fullQuote?.salesTax || state.salesTax,
+          additionalInfo: state.additionalInfo,
           cogsOverride: state.cogsOverride,
           marginOverride: state.marginOverride,
           status: "draft",
@@ -2619,15 +3176,52 @@
           state.fullQuote = e.fullQuoteResult;
           state.extractedDrawingFields = e.extractedDrawingFields;
           state.sourceFileName = e.sourceFileName || "";
-          state.scope = (e.scope || "both").toLowerCase();
+          state.scope = (e.scope || "supply").toLowerCase();
+          state.cogsOverride = e.cogsOverride || {
+            applied: false,
+            costDollar: null,
+            marginPct: 20,
+            sellDollar: null,
+            costPctAdj: 0,
+          };
+          state.marginOverride = e.marginOverride || {
+            applied: false,
+            laborSF: null,
+            pct: null,
+            sellFixed: null,
+          };
+          state.concrete = e.concreteAddon || state.concrete;
+          state.insulation = e.insulationAddon || state.insulation;
+          state.additionalInfo = e.additionalInfo || "";
           state.storageData = e.storageData;
           state.storagePricing = e.storagePricingResult;
+          setScope(state.scope);
           document.getElementById("f-company").value = state.leadCompanyName;
           document.getElementById("f-email").value = state.customerEmail;
           document.getElementById("f-street").value = state.streetAddress;
           document.getElementById("f-city").value = state.cityStateZip;
           document.getElementById("f-size").value = state.buildingSize;
           document.getElementById("live-sf").value = state.squareFootage;
+          const addInfo = document.getElementById("quote-additional-info");
+          if (addInfo) addInfo.value = state.additionalInfo;
+          if (e.cogsOverride?.costDollar) {
+            const costEl = document.getElementById("cogs-cost-dollar");
+            if (costEl) costEl.value = e.cogsOverride.costDollar;
+          }
+          if (e.cogsOverride?.marginPct != null) {
+            const mv = document.getElementById("cogs-margin-val");
+            const ms = document.getElementById("cogs-margin-slider");
+            if (mv) mv.value = e.cogsOverride.marginPct;
+            if (ms) ms.value = e.cogsOverride.marginPct;
+          }
+          if (e.marginOverride?.laborSF != null)
+            document.getElementById("margin-labor").value =
+              e.marginOverride.laborSF;
+          if (e.marginOverride?.pct != null)
+            document.getElementById("margin-pct").value = e.marginOverride.pct;
+          if (e.marginOverride?.sellFixed != null)
+            document.getElementById("margin-sell-fixed").value =
+              e.marginOverride.sellFixed;
           if (e.jobType === "Storage") {
             showPage("storage");
             renderStorage();
@@ -2635,6 +3229,9 @@
             showPage("quote");
             renderMetrics();
             renderBreakdown();
+            updateCogsSummary();
+            updateMarginSummary();
+            debouncedLoadPreview();
           }
           toast("Loaded: " + (e.leadCompanyName || id.slice(-6)), "success");
         } catch (e) {

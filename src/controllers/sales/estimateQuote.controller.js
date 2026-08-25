@@ -17,6 +17,7 @@ const {
   generateAssembledHtml,
   generateQuoteHtml,
   generateSowHtml,
+  generateContractHtml,
   generateQuotePdf,
 } = require('../../services/quoting/quoteDocumentGenerator')
 
@@ -343,6 +344,7 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
   return success(res, {
     quoteHtml: sections.includes('quote') ? generateQuoteHtml(payload) : null,
     sowHtml: sections.includes('sow') ? generateSowHtml(payload) : null,
+    contractHtml: sections.includes('contract') ? generateContractHtml(payload) : null,
     assembledHtml: generateAssembledHtml({ ...payload, sections }),
   })
 })

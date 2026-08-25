@@ -283,7 +283,7 @@ const toUint8Array = (buffer) => {
   return new Uint8Array(buffer)
 }
 
-const extractDrawingPdfBuffer = async (buffer, { fileName = '' } = {}) => {
+const extractDrawingPdfBuffer = async (buffer, { fileName = '', disableClaude = false } = {}) => {
   const data = toUint8Array(buffer)
   const pdf = await getDocument({ data, useSystemFonts: true }).promise
   const page = await pdf.getPage(1)
@@ -307,7 +307,7 @@ const extractDrawingPdfBuffer = async (buffer, { fileName = '' } = {}) => {
   let filledCount = regexResult.filledCount
   let fallbackFailed = false
 
-  if (shouldUseClaudeFallback(filledCount, items.length)) {
+  if (!disableClaude && shouldUseClaudeFallback(filledCount, items.length)) {
     try {
       const claudeResult = await extractPrelimWithClaude(buffer, { layoutText, fileName })
       extracted = mergeExtractedFields(extracted, claudeResult.extracted)

@@ -1198,8 +1198,6 @@ input.ri{background:var(--surface3);border:1px solid var(--border2);color:var(--
       <button class="tab-btn" onclick="showStorageTab('s-concrete-tab',4)">🪨 Concrete</button>
       <button class="tab-btn" onclick="showStorageTab('s-insulation-tab',5)">🧱 Insulation</button>
       <button class="tab-btn" onclick="showStorageTab('s-drawings-tab',6)">📐 Drawings</button>
-      <button class="tab-btn" onclick="showStorageTab('s-contract-tab',7)">📄 Contract</button>Concrete</button>
-      <button class="tab-btn" onclick="showStorageTab('s-insulation-tab',5)">🧱 Insulation</button>
       <button class="tab-btn" onclick="showStorageTab('s-contract-tab',7)">📄 Contract</button>
     </div>
 
@@ -1367,8 +1365,6 @@ input.ri{background:var(--surface3);border:1px solid var(--border2);color:var(--
     </div>
 
     <!-- TAB: QUOTE -->
-    </div>
-
 <div class="tab-content" id="tab-s-quote-tab">
       <div id="s-quote-content"></div>
       <div class="btn-row no-print">
@@ -4769,6 +4765,10 @@ function applyCOGS() {
   currentData.res.sfPrice = cogsOverride._pendingSFPrice;
   currentData.res.profit = cogsOverride._pendingProfit;
   currentData.res.profPct = cogsOverride._pendingMargin;
+  var instCost = currentData.res.instCost || 0;
+  var scopeKey = String(currentData.res.scope || currentScope || 'both').toLowerCase();
+  currentData.res.totCost =
+    scopeKey === 'supply' ? adjCost : scopeKey === 'install' ? instCost : adjCost + instCost;
 
   renderBreakdown(currentData.res, currentData.filename);
   renderQuote(currentData.res);
