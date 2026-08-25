@@ -90,6 +90,7 @@ const buildPricingPayload = async (userId, { categories, options, fullExtras }) 
 }
 
 const estimateToDocumentPayload = (estimate) => ({
+  jobType: estimate.jobType,
   leadCompanyName: estimate.leadCompanyName,
   customerEmail: estimate.customerEmail,
   streetAddress: estimate.streetAddress,
@@ -99,6 +100,9 @@ const estimateToDocumentPayload = (estimate) => ({
   quoteDate: estimate.quoteDate,
   additionalInfo: estimate.additionalInfo,
   pricingResult: estimate.pricingResult,
+  storageData: estimate.storageData,
+  storagePricingResult: estimate.storagePricingResult,
+  grandTotal: estimate.totalSell,
   fullQuote: estimate.fullQuoteResult || {
     pricing: estimate.pricingResult,
     concrete: estimate.concreteAddon,
@@ -119,6 +123,15 @@ const estimateToDocumentPayload = (estimate) => ({
     email: estimate.customerEmail,
   },
 })
+
+const hasDocumentPricing = (payload = {}) =>
+  Boolean(
+    payload.pricingResult ||
+      payload.fullQuote?.pricing ||
+      payload.storagePricingResult ||
+      payload.storagePricing ||
+      payload.jobType === 'Storage'
+  )
 
 const applyEstimateTotals = (estimate, payload) => {
   const { pricing, fullQuote } = payload
@@ -321,8 +334,8 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     payload = estimateToDocumentPayload(estimate)
   }
 
-  if (!payload?.pricingResult && !payload?.fullQuote?.pricing) {
-    return badRequest(res, 'pricingResult or fullQuote required')
+  if (!hasDocumentPricing(payload)) {
+    return badRequest(res, 'pricingResult, storagePricingResult, or fullQuote required')
   }
 
   const sections = req.body.sections || ['quote', 'sow', 'contract', 'drawings']
@@ -344,8 +357,8 @@ exports.generateQuotePdf = asyncHandler(async (req, res) => {
     payload = estimateToDocumentPayload(estimate)
   }
 
-  if (!payload?.pricingResult && !payload?.fullQuote?.pricing) {
-    return badRequest(res, 'pricingResult or estimateId required')
+  if (!hasDocumentPricing(payload)) {
+    return badRequest(res, 'pricingResult, storagePricingResult, or estimateId required')
   }
 
   try {

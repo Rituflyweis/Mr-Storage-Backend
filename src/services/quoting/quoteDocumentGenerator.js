@@ -51,14 +51,48 @@ const scopeDesc = (scope) => {
   return 'Pre-Engineered Metal Building Supply, Delivery & Installation'
 }
 
+const isStoragePayload = (payload = {}) =>
+  payload.jobType === 'Storage' ||
+  payload.storagePricingResult ||
+  payload.storagePricing ||
+  payload.storageData?.buildings?.length
+
 const buildQuoteContext = (payload = {}) => {
   const customer = payload.customer || {}
+  const storagePricing = payload.storagePricingResult || payload.storagePricing
+  const isStorage = isStoragePayload(payload)
+
+  if (isStorage && storagePricing) {
+    const sf = storagePricing.totalSqft || payload.squareFootage || 0
+    const grandTotal = storagePricing.grandTotal ?? payload.grandTotal ?? payload.totalSell ?? 0
+    return {
+      cust: customer.name || payload.leadCompanyName || 'Customer',
+      addr: customer.address || payload.streetAddress || '',
+      loc: customer.location || payload.cityStateZip || 'TBD',
+      email: customer.email || payload.customerEmail || '',
+      size: payload.buildingSize || `${Number(sf).toLocaleString()} SF`,
+      today: fmtDate(payload.quoteDate ? new Date(payload.quoteDate) : new Date()),
+      exp: fmtDate(new Date(Date.now() + 15 * 864e5)),
+      res: { jobType: 'Storage', sf, scope: 'both' },
+      storagePricing,
+      storageData: payload.storageData || {},
+      concrete: storagePricing.concrete || payload.concrete || {},
+      insulation: storagePricing.insulation || payload.insulation || {},
+      salesTax: storagePricing.salesTax || payload.salesTax || {},
+      grandTotal,
+      grandSF: sf > 0 ? (grandTotal / sf).toFixed(2) : storagePricing.pricePerSf || '0',
+      sf,
+      additionalInfo: payload.additionalInfo || '',
+      isStorage: true,
+    }
+  }
+
   const full = payload.fullQuote || {}
   const res = full.pricing || payload.pricingResult || payload.pricing || {}
   const concrete = full.concrete || payload.concrete || {}
   const insulation = full.insulation || payload.insulation || {}
   const salesTax = full.salesTax || payload.salesTax || {}
-  const grandTotal = full.grandTotal ?? payload.grandTotal ?? res.totSell ?? 0
+  const grandTotal = full.grandTotal ?? payload.grandTotal ?? payload.totalSell ?? res.totSell ?? 0
   const sf = res.sf || payload.squareFootage || 0
   const grandSF = sf > 0 ? (grandTotal / sf).toFixed(2) : res.sfPrice
 
@@ -78,10 +112,93 @@ const buildQuoteContext = (payload = {}) => {
     grandSF,
     sf,
     additionalInfo: payload.additionalInfo || '',
+    isStorage: false,
   }
 }
 
+const generateStorageQuoteHtml = (payload = {}) => {
+  const ctx = buildQuoteContext(payload)
+  const sp = ctx.storagePricing || {}
+  const buildings = sp.buildings || ctx.storageData?.buildings || []
+  const { grandTotal, grandSF, sf } = ctx
+  const custFull = ctx.addr
+    ? `${ctx.cust}<br><span style="font-weight:400;font-size:11px;color:#64748b;">${ctx.addr}<br>${ctx.loc}</span>`
+    : ctx.cust
+
+  const bldRows = buildings
+    .map((b) => {
+      const sell = b.sell ?? Math.round((b.cogs || 0) * (1 + (b.markup || 0) / 100))
+      return `<tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:6px 8px;font-weight:600;">${b.name || 'Building'}</td>
+        <td style="padding:6px 8px;text-align:center;">${b.width || 0}' × ${b.length || 0}' × ${b.loEave || 0}' eave</td>
+        <td style="padding:6px 8px;text-align:center;">${b.slope || ''}</td>
+        <td style="padding:6px 8px;text-align:center;">${Number(b.sqft || 0).toLocaleString()} SF</td>
+        <td style="padding:6px 8px;text-align:center;">Screw-Down</td>
+        <td style="padding:6px 8px;text-align:right;font-weight:700;color:#1e3a8a;">${fmtMoney(sell)}</td>
+      </tr>`
+    })
+    .join('')
+
+  return `<div class="quote-output" id="quote-printable">
+    <div class="q-logo-bar">
+      <div>${getLogoHtml()}<div class="q-logo-sub">METAL AND DOORS · 1851 Madison Ave Suite 300, Council Bluffs, IA 51503<br>(888) 968-1222 · travis@storagematerials.com · www.storagematerials.com</div></div>
+      <div class="q-header-right"><div class="q-co-name">ESTIMATE</div><div class="q-co-detail">Date: ${ctx.today}<br>Expiration: ${ctx.exp}<br>Business/Tax #: 99-4515145</div></div>
+    </div>
+    <div class="q-doc-info">
+      <div class="q-field"><label>Prepared For</label><p>${custFull}</p></div>
+      <div class="q-field"><label>Location</label><p>${ctx.loc}</p></div>
+      <div class="q-field"><label>Project</label><p>${buildings.length} self-storage building${buildings.length !== 1 ? 's' : ''} · ${Number(sf).toLocaleString()} total SF</p></div>
+      <div class="q-field"><label>Scope</label><p>Supply, Delivery & Erection</p></div>
+    </div>
+    <div class="q-price-box">
+      <div class="q-price-label">Total Project Investment</div>
+      <div class="q-price-val">${fmtMoney(grandTotal)}</div>
+      <div class="q-price-sf">$${grandSF}/SF · ${Number(sf).toLocaleString()} SF · See Statement of Work for full scope</div>
+    </div>
+    <div class="q-section" style="margin-top:16px;">
+      <div class="q-section-title">Building Breakdown</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="background:#f8f9fb;"><th style="padding:6px 8px;text-align:left;">Building</th><th style="padding:6px 8px;text-align:center;">Dimensions</th><th style="padding:6px 8px;text-align:center;">Slope</th><th style="padding:6px 8px;text-align:center;">SF</th><th style="padding:6px 8px;text-align:center;">Roof Type</th><th style="padding:6px 8px;text-align:right;">Price</th></tr></thead>
+        <tbody>${bldRows}</tbody>
+        <tfoot><tr style="font-weight:700;border-top:2px solid #1e3a8a;"><td colspan="5" style="padding:8px;">Building Subtotal</td><td style="padding:8px;text-align:right;color:#1e3a8a;">${fmtMoney(sp.buildingSell)}</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="q-two-col" style="margin-top:16px;">
+      <div class="q-section">
+        <div class="q-section-title">Pricing Summary</div>
+        <div class="q-breakdown"><table>
+          <tr class="q-sub-row"><td>Buildings (${buildings.length})</td><td style="text-align:right">${fmtMoney(sp.buildingSell)}</td></tr>
+          ${sp.doorSell ? `<tr class="q-sub-row"><td>Doors &amp; Hardware</td><td style="text-align:right">${fmtMoney(sp.doorSell)}</td></tr>` : ''}
+          ${sp.installSell ? `<tr class="q-sub-row"><td>Erection / Installation</td><td style="text-align:right">${fmtMoney(sp.installSell)}</td></tr>` : ''}
+          ${sp.extrasSell ? `<tr class="q-sub-row"><td>Options &amp; Add-ons</td><td style="text-align:right">${fmtMoney(sp.extrasSell)}</td></tr>` : ''}
+          ${sp.shipping ? `<tr class="q-sub-row"><td>Shipping &amp; Freight</td><td style="text-align:right">${fmtMoney(sp.shipping)}</td></tr>` : ''}
+          ${sp.drawings ? `<tr class="q-sub-row"><td>Engineering Drawings</td><td style="text-align:right">${fmtMoney(sp.drawings)}</td></tr>` : ''}
+          ${sp.salesTax?.amount ? `<tr class="q-sub-row" style="color:#b45309;"><td>Sales Tax (${sp.salesTax.rate}%)</td><td style="text-align:right">${fmtMoney(sp.salesTax.amount)}</td></tr>` : ''}
+          <tr class="q-total-row"><td>Total</td><td style="text-align:right">${fmtMoney(grandTotal)}</td></tr>
+        </table></div>
+      </div>
+      <div class="q-section">
+        <div class="q-section-title">Scope Included</div>
+        <ul class="q-list">
+          <li>All ${buildings.length} self-storage metal building system${buildings.length !== 1 ? 's' : ''}</li>
+          <li>Primary &amp; secondary structural framing per engineered drawings</li>
+          <li>26 GA R-Loc wall panels per specifications</li>
+          <li>Delivery &amp; unloading of materials at site</li>
+          <li>Full erection of metal building system</li>
+        </ul>
+      </div>
+    </div>
+    <div class="q-sign">
+      <div class="q-sign-block"><strong>Steel Investments DBA Storage Materials</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
+      <div class="q-sign-block"><strong>${ctx.cust}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
+    </div>
+    <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business!!! Reach out with any questions · (888) 968-1222 · travis@storagematerials.com</p>
+  </div>`
+}
+
 const generateQuoteHtml = (payload = {}) => {
+  if (isStoragePayload(payload)) return generateStorageQuoteHtml(payload)
+
   const ctx = buildQuoteContext(payload)
   const { res, concrete, insulation, salesTax, grandTotal, grandSF, sf } = ctx
   const concInclude = concrete.include && concrete.appliedSell > 0
@@ -153,6 +270,38 @@ const generateQuoteHtml = (payload = {}) => {
 }
 
 const generateSowHtml = (payload = {}) => {
+  if (isStoragePayload(payload)) {
+    const ctx = buildQuoteContext(payload)
+    const sp = ctx.storagePricing || {}
+    const buildings = sp.buildings || ctx.storageData?.buildings || []
+    const bldSow = buildings
+      .map(
+        (b) =>
+          `<div style="margin-top:14px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:6px;background:#fafbfc;">
+            <div style="font-size:13px;font-weight:700;color:#1e3a8a;margin-bottom:8px;">${b.name || 'Building'} · ${b.width || 0}' × ${b.length || 0}' × ${b.loEave || 0}' eave · ${Number(b.sqft || 0).toLocaleString()} SF</div>
+            <ul class="q-list" style="margin:0;"><li>Wall panels: ${b.wallPanel || '26ga R-Loc'}</li><li>Roof panels: ${b.roofPanel || '26ga Galvalume (Screw-Down)'}</li><li>Primary rigid frame structural system per engineered drawings</li></ul>
+          </div>`
+      )
+      .join('')
+
+    return `<div class="quote-output" id="sow-printable">
+      <div class="q-logo-bar"><div>${getLogoHtml()}<div class="q-logo-sub">METAL AND DOORS · Council Bluffs, IA · (888) 968-1222</div></div>
+      <div class="q-header-right"><div class="q-co-name">STATEMENT OF WORK</div><div class="q-co-detail">Date: ${ctx.today}</div></div></div>
+      <div class="q-doc-info">
+        <div class="q-field"><label>Project Name</label><p>${ctx.cust} Project</p></div>
+        <div class="q-field"><label>Customer</label><p>${ctx.cust}</p></div>
+        <div class="q-field"><label>Location</label><p>${ctx.loc}</p></div>
+        <div class="q-field"><label>Building Size</label><p>${Number(ctx.sf).toLocaleString()} SF Storage</p></div>
+      </div>
+      <div class="q-section"><div class="q-section-title">Building Scope</div>${bldSow || '<p style="font-size:12px;color:#64748b;">See quote for building details.</p>'}</div>
+      <div class="q-price-box" style="margin-top:20px;">
+        <div class="q-price-label">Total Project Investment</div>
+        <div class="q-price-val">${fmtMoney(ctx.grandTotal)}</div>
+        <div class="q-price-sf">$${ctx.grandSF}/SF · Supply, Delivery &amp; Erection</div>
+      </div>
+    </div>`
+  }
+
   const ctx = buildQuoteContext(payload)
   const { res, concrete, insulation, grandTotal } = ctx
   const isSupply = String(res.scope || '').toLowerCase() === 'supply'
@@ -334,6 +483,7 @@ module.exports = {
   generateSowHtml,
   generateContractHtml,
   generateDrawingsHtml,
+  generateStorageQuoteHtml,
   generateAssembledHtml,
   generateQuotePdf,
 }
