@@ -963,6 +963,66 @@
             </div>
           </div>
 
+          <div
+            class="card no-print"
+            id="pdf-specs-card"
+            style="display: none; margin-bottom: 14px"
+          >
+            <div class="card-hdr">
+              <div>
+                <div class="card-title">Extracted Drawing Specs</div>
+                <div class="card-sub">
+                  Review and edit before applying to quote fields
+                </div>
+              </div>
+            </div>
+            <div style="padding: 10px 14px; border-bottom: 1px solid var(--border)">
+              <div
+                style="
+                  font-size: 10px;
+                  font-weight: 700;
+                  color: #1a3a5c;
+                  text-transform: uppercase;
+                  letter-spacing: 0.05em;
+                  margin-bottom: 8px;
+                "
+              >
+                Building Type &amp; Panels
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 10px">
+                <div style="flex: 1; min-width: 140px">
+                  <div style="font-size: 10px; color: var(--muted); margin-bottom: 3px">
+                    Frame Type
+                  </div>
+                  <input type="text" id="ex-frame" style="width: 100%; padding: 6px 8px" />
+                </div>
+                <div style="flex: 1; min-width: 140px">
+                  <div style="font-size: 10px; color: var(--muted); margin-bottom: 3px">
+                    Roof Panel / Color
+                  </div>
+                  <input type="text" id="ex-roofpanel" style="width: 100%; padding: 6px 8px" />
+                </div>
+                <div style="flex: 1; min-width: 140px">
+                  <div style="font-size: 10px; color: var(--muted); margin-bottom: 3px">
+                    Wall Panel
+                  </div>
+                  <input type="text" id="ex-wall" style="width: 100%; padding: 6px 8px" />
+                </div>
+                <div style="flex: 1; min-width: 140px">
+                  <div style="font-size: 10px; color: var(--muted); margin-bottom: 3px">
+                    Additional Notes
+                  </div>
+                  <input type="text" id="ex-notes" style="width: 100%; padding: 6px 8px" />
+                </div>
+              </div>
+            </div>
+            <div style="padding: 10px 14px">
+              <button class="btn btn-primary btn-sm" onclick="applyExtractedDrawing()">
+                Apply to Quote Fields
+              </button>
+            </div>
+          </div>
+
           <div id="metrics-row" class="metrics"></div>
 
           <div class="tabs no-print">
@@ -2112,6 +2172,65 @@
         }
       }
 
+      function applyExtractedDrawingFields(ex) {
+        const keys = [
+          "customer",
+          "project",
+          "location",
+          "width",
+          "length",
+          "eave",
+          "sqft",
+          "wind",
+          "snow",
+          "dead",
+          "code",
+          "frame",
+          "roofpanel",
+          "wall",
+          "notes",
+        ];
+        keys.forEach((k) => {
+          const el = document.getElementById("ex-" + k);
+          if (el && ex[k]) {
+            el.value = ex[k];
+            el.style.background = "#f0fff4";
+          }
+        });
+        const card = document.getElementById("pdf-specs-card");
+        if (card) card.style.display = "block";
+      }
+
+      function applyExtractedDrawing() {
+        const ex = state.extractedDrawingFields || {};
+        if (ex.customer) {
+          document.getElementById("f-company").value = ex.customer;
+          state.leadCompanyName = ex.customer;
+        }
+        if (ex.location) {
+          document.getElementById("f-city").value = ex.location;
+          state.cityStateZip = ex.location;
+        }
+        if (ex.sqft) {
+          state.squareFootage = +ex.sqft || state.squareFootage;
+          document.getElementById("live-sf").value = state.squareFootage;
+        }
+        if (ex.width && ex.length) {
+          const sz =
+            ex.width.replace(/'/g, "") + "x" + ex.length.replace(/'/g, "");
+          document.getElementById("f-size").value = sz;
+          state.buildingSize = sz;
+        }
+        ["frame", "roofpanel", "wall", "notes"].forEach((k) => {
+          const el = document.getElementById("ex-" + k);
+          if (el?.value) ex[k] = el.value;
+        });
+        state.extractedDrawingFields = ex;
+        debouncedCompute();
+        debouncedLoadPreview();
+        toast("Drawing specs applied", "success");
+      }
+
       async function uploadDrawing(file) {
         if (!file) return;
         if (!API.token) return toast("Set JWT token first", "warn");
@@ -2127,6 +2246,7 @@
             file.name + " — " + (data.filledCount || 0) + " fields";
           document.getElementById("pdf-drop").classList.add("has-file");
           const ex = data.extracted || {};
+          applyExtractedDrawingFields(ex);
           if (ex.customer) {
             document.getElementById("f-company").value = ex.customer;
             state.leadCompanyName = ex.customer;
@@ -3213,6 +3333,9 @@
             const ms = document.getElementById("cogs-margin-slider");
             if (mv) mv.value = e.cogsOverride.marginPct;
             if (ms) ms.value = e.cogsOverride.marginPct;
+          }
+          if (e.extractedDrawingFields) {
+            applyExtractedDrawingFields(e.extractedDrawingFields);
           }
           if (e.marginOverride?.laborSF != null)
             document.getElementById("margin-labor").value =

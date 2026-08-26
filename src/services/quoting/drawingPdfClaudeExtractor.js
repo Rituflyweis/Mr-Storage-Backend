@@ -122,6 +122,11 @@ const normalizeExtractedFields = (raw = {}) => {
     out.risk = `Category ${out.risk.toUpperCase()}`
   }
 
+  if (!out.frame) {
+    const altFrame = cleanFieldValue(raw.frameType || raw.frame_type || raw.frametype)
+    if (altFrame) out.frame = altFrame
+  }
+
   return out
 }
 
@@ -153,6 +158,7 @@ Formatting rules:
 - shearlong, sheartrans: include " kips" suffix
 - slope: "1:12" format
 - code: e.g. "IBC 2018" or "IBC 18" as shown
+- frame: building frame type as shown, e.g. "Clear Span Rigid Frame", "Multi-Span", "Single Slope", "Rigid Frame"
 - roofpanel / wall: panel type and color text as shown
 - notes: any important spec notes not captured elsewhere
 - Do NOT invent values. Use only what is visible in the PDF.

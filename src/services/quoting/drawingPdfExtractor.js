@@ -226,8 +226,21 @@ const extractFromPrelim = (layoutText, flatText, tokens) => {
   const transV = findNum(/TRANSVERSE/i)
   if (transV) set('sheartrans', `${transV} kips`)
 
-  const frameM = t.match(/(?:CLEAR\s*SPAN|MULTI.SPAN|SINGLE\s*SLOPE|LEAN.TO|RIGID\s*FRAME)/i)
-  if (frameM) set('frame', frameM[0].trim())
+  const frameLabel =
+    afterLabel(/^FRAME\s*TYPE$/i) ||
+    afterLabel(/^BUILDING\s*TYPE$/i) ||
+    afterLabel(/^FRAME$/i)
+  if (frameLabel && frameLabel.length > 2) set('frame', frameLabel)
+
+  const frameLineM =
+    lt.match(/FRAME\s*TYPE[:\s_]+([^\n]+)/i) ||
+    lt.match(/BUILDING\s*TYPE[:\s_]+([^\n]+)/i)
+  if (frameLineM && !extracted.frame) set('frame', frameLineM[1].trim())
+
+  const frameM = t.match(
+    /(?:CLEAR\s*SPAN(?:\s*RIGID\s*FRAME)?|MULTI[\s-]*SPAN|SINGLE\s*SLOPE|LEAN[\s-]*TO|RIGID\s*FRAME)/i
+  )
+  if (frameM && !extracted.frame) set('frame', frameM[0].trim())
 
   const galvM = t.match(/Galvalume[^\s,\n]*/i)
   if (galvM) set('roofpanel', galvM[0].trim())

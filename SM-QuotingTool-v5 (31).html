@@ -5176,8 +5176,16 @@ function extractFromPrelim(layoutText, flatText, tokens, filename) {
   // BUILDING TYPE & PANELS
   // ============================================================
   // Frame type
-  var frameM = rx(/(?:CLEAR\s*SPAN|MULTI.SPAN|SINGLE\s*SLOPE|LEAN.TO|RIGID\s*FRAME)/i);
-  if(frameM) set('frame', frameM[0].trim());
+  var frameVal = afterLabel(/^FRAME\s*TYPE$/i) || afterLabel(/^BUILDING\s*TYPE$/i) || afterLabel(/^FRAME$/i);
+  if(!frameVal) {
+    var frameLineM = lt.match(/FRAME\s*TYPE[:\s_]+([^\n]+)/i) || lt.match(/BUILDING\s*TYPE[:\s_]+([^\n]+)/i);
+    if(frameLineM) frameVal = frameLineM[1].trim();
+  }
+  if(!frameVal) {
+    var frameM = rx(/(?:CLEAR\s*SPAN(?:\s*RIGID\s*FRAME)?|MULTI[\s-]*SPAN|SINGLE\s*SLOPE|LEAN[\s-]*TO|RIGID\s*FRAME)/i);
+    if(frameM) frameVal = frameM[0].trim();
+  }
+  if(frameVal) set('frame', frameVal);
 
   // Roof panel/color — look for Galvalume or color spec
   var galvM = rx(/Galvalume[^\s,\n]*/i);

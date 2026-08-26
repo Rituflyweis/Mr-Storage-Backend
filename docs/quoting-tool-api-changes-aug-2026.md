@@ -443,12 +443,39 @@ Apply via `/compute` with `"cogsOverride": { "applied": true, ... }`.
 
 ## 9. `POST /api/sales/estimates/extract-drawing`
 
-**No request/response shape change.** Behavior notes:
+**No request shape change.** Response includes **`frame`** (building frame type) alongside panel fields.
 
-| Scenario | Response |
-|----------|----------|
-| Image PDF (`pdf_quote_example.pdf`) | `textItemCount: 2`, `filledCount: 0` — manual entry (matches v5) |
-| With `ANTHROPIC_API_KEY` on server | Claude fallback may fill ~37 fields when regex finds &lt; 5 |
+### Response — building type & panels (example)
+
+```json
+{
+  "success": true,
+  "data": {
+    "filledCount": 37,
+    "textItemCount": 2,
+    "extracted": {
+      "width": "90'",
+      "length": "225'",
+      "sqft": "20250",
+      "wind": "110 mph",
+      "code": "IBC 18",
+      "frame": "Rigid Frame",
+      "roofpanel": "26 Ga. RL - Galvalume Plus 25-yr",
+      "wall": "Need SMP Lifetime Color",
+      "notes": "Mapped Spectral Response Acc shown..."
+    }
+  }
+}
+```
+
+| `extracted` key | UI field (v5 / API HTML) | Notes |
+|-----------------|--------------------------|-------|
+| `frame` | Frame Type (`ex-frame`) | Clear Span, Rigid Frame, Multi-Span, etc. |
+| `roofpanel` | Roof Panel / Color | |
+| `wall` | Wall Panel | |
+| `notes` | Additional Notes | |
+
+Persist on save as **`extractedDrawingFields.frame`** (maps to SOW `frameType` in v5).
 
 ---
 
