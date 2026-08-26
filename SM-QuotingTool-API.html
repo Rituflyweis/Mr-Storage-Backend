@@ -3267,7 +3267,7 @@
       <div class="history-item" onclick="loadEstimate('${e._id}')">
         <div class="hi-name">${e.leadCompanyName || "Untitled"} <span style="font-size:11px;color:var(--muted)">${e.jobType || ""} · ${e.status || ""}</span></div>
         <div class="hi-meta">${new Date(e.updatedAt || e.createdAt).toLocaleDateString()} · ${e.sourceFileName || ""}</div>
-        <div class="hi-price">${fmt(e.totalSell)}</div>
+        <div class="hi-price">${fmt(e.grandTotal ?? e.totalSell)}</div>
       </div>
     `,
                 )

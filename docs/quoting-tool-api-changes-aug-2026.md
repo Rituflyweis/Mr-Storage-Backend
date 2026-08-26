@@ -479,7 +479,48 @@ Persist on save as **`extractedDrawingFields.frame`** (maps to SOW `frameType` i
 
 ---
 
-## Quick test commands
+## 10. `GET /api/sales/estimates` (list / history)
+
+**What changed:** Each estimate now includes **`grandTotal`** — the full quote total the customer sees (building + concrete + insulation + tax). Use this on the history page instead of **`totalSell`**.
+
+### Response — per estimate row
+
+```json
+{
+  "success": true,
+  "data": {
+    "estimates": [
+      {
+        "_id": "...",
+        "leadCompanyName": "ABC Storage",
+        "jobType": "PEMB",
+        "status": "draft",
+        "totalSell": 51693,
+        "grandTotal": 51693,
+        "buildingSubtotal": 34848,
+        "profit": 12000,
+        "marginPercent": 23.2
+      }
+    ],
+    "total": 12,
+    "page": 1,
+    "limit": 40
+  }
+}
+```
+
+| Field | Meaning | Use on history UI |
+|-------|---------|-------------------|
+| **`grandTotal`** | Full quote total incl. concrete, insulation, tax | **Display this** |
+| `buildingSubtotal` | Material + install (PEMB) or storage subtotal before tax | Optional subtitle |
+| `totalSell` | Same as `grandTotal` after save (legacy field) | Prefer `grandTotal` |
+
+**Before:** `totalSell` could equal `pricingResult.totSell` only (~$22k supply) while the quote PDF showed ~$51k with concrete + tax.  
+**After:** `grandTotal` is computed from `fullQuoteResult.grandTotal` or `storagePricingResult.grandTotal`, including all components.
+
+`GET /api/sales/estimates/history/summary` **`totalValue`** also uses `grandTotal` now.
+
+---
 
 ```bash
 # Parity check (shipper + Ben Olson + PDF)

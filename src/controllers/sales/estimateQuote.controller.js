@@ -78,6 +78,7 @@ const buildPricingPayload = async (userId, { categories, options, fullExtras }) 
   } else {
     const { priceJob } = require('../../services/quoting/pricingEngine')
     pricing = priceJob(categories, engineOptions)
+    fullQuote = computeFullPembQuote(pricing, { ...extras, sf: engineOptions.sf })
   }
 
   const weightByCategory = categoriesToWeightByCategory(categories, pr)
@@ -90,7 +91,9 @@ const buildPricingPayload = async (userId, { categories, options, fullExtras }) 
   }
 }
 
-const estimateToDocumentPayload = (estimate) => ({
+const estimateToDocumentPayload = (estimate) => {
+  const grandTotal = resolveEstimateGrandTotal(estimate)
+  return {
   jobType: estimate.jobType,
   leadCompanyName: estimate.leadCompanyName,
   customerEmail: estimate.customerEmail,
@@ -103,13 +106,13 @@ const estimateToDocumentPayload = (estimate) => ({
   pricingResult: estimate.pricingResult,
   storageData: estimate.storageData,
   storagePricingResult: estimate.storagePricingResult,
-  grandTotal: estimate.totalSell,
+  grandTotal,
   fullQuote: estimate.fullQuoteResult || {
     pricing: estimate.pricingResult,
     concrete: estimate.concreteAddon,
     insulation: estimate.insulationAddon,
     salesTax: estimate.salesTax,
-    grandTotal: estimate.totalSell,
+    grandTotal,
     pricePerSf: estimate.pricePerSf,
   },
   concrete: estimate.concreteAddon,
@@ -123,7 +126,8 @@ const estimateToDocumentPayload = (estimate) => ({
     location: estimate.cityStateZip,
     email: estimate.customerEmail,
   },
-})
+}
+}
 
 const hasDocumentPricing = (payload = {}) =>
   Boolean(
@@ -134,8 +138,64 @@ const hasDocumentPricing = (payload = {}) =>
       payload.jobType === 'Storage'
   )
 
+const applyStorageEstimateTotals = (estimate, storagePricing) => {
+  if (!storagePricing) return
+  estimate.storagePricingResult = storagePricing
+  estimate.totalSell = Math.round(storagePricing.grandTotal ?? 0)
+  estimate.pricePerSf = storagePricing.pricePerSf ? Number(storagePricing.pricePerSf) : null
+  estimate.profit = storagePricing.profit ?? 0
+  estimate.marginPercent = Number(storagePricing.marginPercent) || 0
+}
+
+/** Quote total shown to customer (building + concrete + insulation + tax). */
+const resolveEstimateGrandTotal = (estimate = {}) => {
+  if (estimate.jobType === 'Storage' && estimate.storagePricingResult?.grandTotal != null) {
+    return Math.round(estimate.storagePricingResult.grandTotal)
+  }
+  if (estimate.fullQuoteResult?.grandTotal != null) {
+    return Math.round(estimate.fullQuoteResult.grandTotal)
+  }
+  if (estimate.pricingResult) {
+    const full = computeFullPembQuote(estimate.pricingResult, {
+      concrete: estimate.concreteAddon,
+      insulation: estimate.insulationAddon,
+      salesTax: estimate.salesTax,
+      cogsOverride: estimate.cogsOverride,
+      marginOverride: estimate.marginOverride,
+      sf: estimate.squareFootage,
+    })
+    return Math.round(full.grandTotal ?? estimate.pricingResult.totSell ?? 0)
+  }
+  return Math.round(estimate.totalSell ?? 0)
+}
+
+/** Building subtotal before concrete, insulation, and tax. */
+const resolveEstimateBuildingSubtotal = (estimate = {}) => {
+  if (estimate.jobType === 'Storage' && estimate.storagePricingResult) {
+    const sp = estimate.storagePricingResult
+    return Math.round(
+      (sp.buildingSell || 0) +
+        (sp.doorSell || 0) +
+        (sp.extrasSell || 0) +
+        (sp.installSell || 0) +
+        (sp.shipping || 0) +
+        (sp.drawings || 0)
+    )
+  }
+  if (estimate.fullQuoteResult?.buildingSubtotal != null) {
+    return Math.round(estimate.fullQuoteResult.buildingSubtotal)
+  }
+  return Math.round(estimate.pricingResult?.totSell ?? estimate.totalSell ?? 0)
+}
+
+const withEstimateListTotals = (estimate) => ({
+  ...estimate,
+  grandTotal: resolveEstimateGrandTotal(estimate),
+  buildingSubtotal: resolveEstimateBuildingSubtotal(estimate),
+})
+
 const applyEstimateTotals = (estimate, payload) => {
-  const { pricing, fullQuote } = payload
+  const { pricing, fullQuote: incomingFullQuote } = payload
   if (!pricing) return
 
   estimate.pricingResult = pricing
@@ -150,19 +210,25 @@ const applyEstimateTotals = (estimate, payload) => {
   estimate.marginPercent = Number(pricing.profPct) || 0
   estimate.vendorBlendSavings = pricing.vendorBlendSavings ?? 0
 
-  if (fullQuote) {
-    estimate.fullQuoteResult = fullQuote
-    estimate.concreteAddon = fullQuote.concrete
-    estimate.insulationAddon = fullQuote.insulation
-    estimate.salesTax = fullQuote.salesTax
-    estimate.totalSell = fullQuote.grandTotal ?? pricing.totSell ?? 0
-    estimate.pricePerSf = fullQuote.pricePerSf ? Number(fullQuote.pricePerSf) : null
-    estimate.profit = fullQuote.totalProfit ?? estimate.profit
-    estimate.marginPercent = fullQuote.grandMargin ?? estimate.marginPercent
-  } else {
-    estimate.totalSell = pricing.totSell ?? 0
-    estimate.pricePerSf = pricing.sfPrice ? Number(pricing.sfPrice) : null
-  }
+  const fullQuote =
+    incomingFullQuote ||
+    computeFullPembQuote(pricing, {
+      concrete: estimate.concreteAddon,
+      insulation: estimate.insulationAddon,
+      salesTax: estimate.salesTax,
+      cogsOverride: estimate.cogsOverride,
+      marginOverride: estimate.marginOverride,
+      sf: estimate.squareFootage,
+    })
+
+  estimate.fullQuoteResult = fullQuote
+  estimate.concreteAddon = fullQuote.concrete
+  estimate.insulationAddon = fullQuote.insulation
+  estimate.salesTax = fullQuote.salesTax
+  estimate.totalSell = fullQuote.grandTotal ?? pricing.totSell ?? 0
+  estimate.pricePerSf = fullQuote.pricePerSf ? Number(fullQuote.pricePerSf) : null
+  estimate.profit = fullQuote.totalProfit ?? estimate.profit
+  estimate.marginPercent = fullQuote.grandMargin ?? estimate.marginPercent
 }
 
 const checkLeadAccess = async (leadId, user) => {
@@ -401,8 +467,11 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
     pricing = built.pricing
     weightByCategory = built.weightByCategory
     fullQuote = built.fullQuote
-  } else if (pricing && (fullExtras.concrete || fullExtras.insulation || fullExtras.salesTax)) {
-    fullQuote = computeFullPembQuote(pricing, { ...fullExtras, sf: options.sf })
+  } else if (pricing) {
+    fullQuote =
+      req.body.fullQuoteResult ||
+      req.body.fullQuote ||
+      computeFullPembQuote(pricing, { ...fullExtras, sf: options.sf })
   }
 
   const estimateData = {
@@ -447,10 +516,14 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
   }
 
   const estimate = await EstimateQuote.create(estimateData)
-  applyEstimateTotals(estimate, { pricing, fullQuote })
+  if (estimate.jobType === 'Storage' && estimate.storagePricingResult) {
+    applyStorageEstimateTotals(estimate, estimate.storagePricingResult)
+  } else {
+    applyEstimateTotals(estimate, { pricing, fullQuote })
+  }
   await estimate.save()
 
-  return created(res, { estimate })
+  return created(res, { estimate: withEstimateListTotals(estimate.toObject()) })
 })
 
 exports.getEstimateQuote = asyncHandler(async (req, res) => {
@@ -458,7 +531,7 @@ exports.getEstimateQuote = asyncHandler(async (req, res) => {
   if (!estimate) return notFound(res, 'Estimate not found')
   const access = assertEstimateAccess(estimate, req.user)
   if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-  return success(res, { estimate })
+  return success(res, { estimate: withEstimateListTotals(estimate) })
 })
 
 exports.updateEstimateQuote = asyncHandler(async (req, res) => {
@@ -500,22 +573,29 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     estimate.parsedCategories = cats
     estimate.weightByCategory = payload.weightByCategory
     applyEstimateTotals(estimate, payload)
-  } else if (req.body.storageData) {
-    estimate.storagePricingResult = computeStoragePricing(req.body.storageData, {
-      ...fullExtras,
-      shipping: req.body.shipping,
-      drawings: req.body.drawings,
-      installSellPerSf: req.body.installSellPerSf,
-      installCostPerSf: req.body.installCostPerSf,
-    })
-    estimate.totalSell = estimate.storagePricingResult.grandTotal
-    estimate.pricePerSf = Number(estimate.storagePricingResult.pricePerSf) || null
-    estimate.profit = estimate.storagePricingResult.profit
-    estimate.marginPercent = estimate.storagePricingResult.marginPercent
+  } else if (req.body.storageData || req.body.storagePricingResult) {
+    const storagePricing =
+      req.body.storagePricingResult ||
+      computeStoragePricing(req.body.storageData || estimate.storageData, {
+        ...fullExtras,
+        shipping: req.body.shipping,
+        drawings: req.body.drawings,
+        installSellPerSf: req.body.installSellPerSf,
+        installCostPerSf: req.body.installCostPerSf,
+      })
+    applyStorageEstimateTotals(estimate, storagePricing)
+  } else if (req.body.pricingResult) {
+    const fullQuote =
+      req.body.fullQuoteResult ||
+      computeFullPembQuote(req.body.pricingResult, {
+        ...fullExtras,
+        sf: options.sf,
+      })
+    applyEstimateTotals(estimate, { pricing: req.body.pricingResult, fullQuote })
   }
 
   await estimate.save()
-  return success(res, { estimate })
+  return success(res, { estimate: withEstimateListTotals(estimate.toObject()) })
 })
 
 exports.deleteEstimateQuote = asyncHandler(async (req, res) => {
@@ -545,15 +625,20 @@ exports.listEstimateQuotes = asyncHandler(async (req, res) => {
     EstimateQuote.countDocuments(filter),
   ])
 
-  return success(res, { estimates, total, page: parsedPage, limit: parsedLimit })
+  return success(res, {
+    estimates: estimates.map(withEstimateListTotals),
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
 })
 
 const rangeStats = async (userId, from) => {
   const filter = { ...(from ? { createdAt: { $gte: from } } : {}) }
   if (userId) filter.createdBy = userId
-  const rows = await EstimateQuote.find(filter, { totalSell: 1, profit: 1, marginPercent: 1 }).lean()
+  const rows = await EstimateQuote.find(filter).lean()
   const totalQuotes = rows.length
-  const totalValue = rows.reduce((s, r) => s + (r.totalSell || 0), 0)
+  const totalValue = rows.reduce((s, r) => s + resolveEstimateGrandTotal(r), 0)
   const totalProfit = rows.reduce((s, r) => s + (r.profit || 0), 0)
   const avgMargin = totalQuotes > 0 ? rows.reduce((s, r) => s + (r.marginPercent || 0), 0) / totalQuotes : 0
   return {
