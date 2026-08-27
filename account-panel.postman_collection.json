@@ -1919,6 +1919,487 @@
 					}
 				}
 			]
+		},
+		{
+			"name": "Financial - Advanced (Margin, Budget, Tax Filing) [NEW]",
+			"item": [
+				{
+					"name": "Margin Analysis",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/margin-analysis"
+					}
+				},
+				{
+					"name": "Margin Trend Over Time",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/margin-analysis/trend"
+					}
+				},
+				{
+					"name": "Margin by Projects",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/margin-analysis/by-project"
+					}
+				},
+				{
+					"name": "Budget vs Actual",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/budget-vs-actual?leadId={{leadId}}"
+					}
+				},
+				{
+					"name": "Tax Filing \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/tax-filing"
+					}
+				},
+				{
+					"name": "Tax Filing \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/tax-filing/stats"
+					}
+				},
+				{
+					"name": "Tax Filing \u2014 Filters",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/tax-filing/filters"
+					}
+				},
+				{
+					"name": "Tax Filing \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/tax-filing/export"
+					}
+				},
+				{
+					"name": "Tax Filing \u2014 Prepare",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/tax-filing/{{taxId}}/prepare"
+					}
+				},
+				{
+					"name": "Tax Filing \u2014 Complete Filing",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/tax-filing/{{taxId}}/file"
+					}
+				},
+				{
+					"name": "State Wise Tax \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/state-wise-tax"
+					}
+				},
+				{
+					"name": "State Wise Tax \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/state-wise-tax/stats"
+					}
+				},
+				{
+					"name": "State Wise Tax \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/state-wise-tax/export"
+					}
+				},
+				{
+					"name": "State Wise Tax \u2014 Upcoming Deadlines",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/state-wise-tax/upcoming-deadlines"
+					}
+				},
+				{
+					"name": "Project Wise Tax \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/project-wise-tax"
+					}
+				},
+				{
+					"name": "Project Wise Tax \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/project-wise-tax/stats"
+					}
+				},
+				{
+					"name": "Project Wise Tax \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/project-wise-tax/export"
+					}
+				},
+				{
+					"name": "Payment Approvals \u2014 List (advanced filters)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/payment-approvals"
+					}
+				},
+				{
+					"name": "Payment Approvals \u2014 Filters",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/payment-approvals/filters"
+					}
+				},
+				{
+					"name": "Payment Approvals \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/payment-approvals/export"
+					}
+				},
+				{
+					"name": "Payment Status \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/payment-status"
+					}
+				},
+				{
+					"name": "Payment Status \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/payment-status/export"
+					}
+				},
+				{
+					"name": "WIP Profits \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/wip-profits"
+					}
+				},
+				{
+					"name": "WIP Profits \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/wip-profits/export"
+					}
+				},
+				{
+					"name": "WIP Profits \u2014 Add Payment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/wip-profits/{{leadId}}/payments",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"paymentType\": \"progress\",\n\t\"amount\": 15000,\n\t\"paymentDate\": \"2026-08-27\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Expenses \u2014 List (advanced)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/expenses"
+					}
+				},
+				{
+					"name": "Expenses \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/expenses/export"
+					}
+				},
+				{
+					"name": "Expenses \u2014 By Category",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/expenses/by-category"
+					}
+				},
+				{
+					"name": "Expenses \u2014 Monthly Summary",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/expenses/summary/monthly"
+					}
+				},
+				{
+					"name": "Expenses \u2014 Budget vs Actual Trend",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/expenses/budget-vs-actual-trend"
+					}
+				},
+				{
+					"name": "Profit & Loss \u2014 Statement",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/profit-loss"
+					}
+				},
+				{
+					"name": "Profit & Loss \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/profit-loss/export"
+					}
+				},
+				{
+					"name": "Profit & Loss \u2014 By Project",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/profit-loss/projects"
+					}
+				},
+				{
+					"name": "Freight Cost Tracking \u2014 Overview",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/freight-cost-tracking"
+					}
+				},
+				{
+					"name": "Freight Cost Tracking \u2014 Carrier Analysis",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/freight-cost-tracking/carrier-analysis"
+					}
+				},
+				{
+					"name": "Freight Cost Tracking \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/account/financial-extra/freight-cost-tracking/export"
+					}
+				}
+			]
 		}
 	]
 }

@@ -77,5 +77,6 @@ router.put('/costing/:itemId',    [param('itemId').isMongoId()], validate, ctrl.
 
 // Notification Details (delivery notification history)
 router.get('/notification-details', ctrl.getNotificationDetails)
+router.get('/notification-details/export', ctrl.exportNotificationDetailsExcel)
 
 module.exports = router

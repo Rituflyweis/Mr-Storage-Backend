@@ -709,7 +709,31 @@
 							}
 						],
 						"url": "{{baseUrl}}/admin/employees/stats"
-					}
+					},
+					"response": [
+						{
+							"name": "With real top performer",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/admin/employees/stats"
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"total\": 8,\n\t\t\"active\": 8,\n\t\t\"byRole\": [\n\t\t\t{\n\t\t\t\t\"_id\": \"plant\",\n\t\t\t\t\"count\": 2\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"account\",\n\t\t\t\t\"count\": 1\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"construction\",\n\t\t\t\t\"count\": 2\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"sales\",\n\t\t\t\t\"count\": 3\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"admin\",\n\t\t\t\t\"count\": 3\n\t\t\t}\n\t\t],\n\t\t\"topPerformer\": {\n\t\t\t\"closedLeads\": 3,\n\t\t\t\"employeeId\": \"69e61375e2dc3d6e7468ca3d\",\n\t\t\t\"name\": \"Sales One (Updated)\"\n\t\t}\n\t}\n}"
+						}
+					]
 				},
 				{
 					"name": "Get All Employees",
@@ -737,7 +761,46 @@
 								}
 							]
 						}
-					}
+					},
+					"response": [
+						{
+							"name": "Mixed roles \u2014 workLabel/workCount per row",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/employees?page=1",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"employees"
+									],
+									"query": [
+										{
+											"key": "page",
+											"value": "1"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"total\": 11,\n\t\t\"employees\": [\n\t\t\t{\n\t\t\t\t\"_id\": \"69e6...\",\n\t\t\t\t\"name\": \"Sales One (Updated)\",\n\t\t\t\t\"role\": \"sales\",\n\t\t\t\t\"workLabel\": \"Leads\",\n\t\t\t\t\"workCount\": 12,\n\t\t\t\t\"assignedLeadCount\": 12\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"6a15...\",\n\t\t\t\t\"name\": \"test 123\",\n\t\t\t\t\"role\": \"plant\",\n\t\t\t\t\"workLabel\": \"PO Orders\",\n\t\t\t\t\"workCount\": 14,\n\t\t\t\t\"assignedLeadCount\": 0\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"6a71...\",\n\t\t\t\t\"name\": \"Construction User\",\n\t\t\t\t\"role\": \"construction\",\n\t\t\t\t\"workLabel\": \"Tasks\",\n\t\t\t\t\"workCount\": 0,\n\t\t\t\t\"assignedLeadCount\": 0\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"6a8c...\",\n\t\t\t\t\"name\": \"Claude QA Account\",\n\t\t\t\t\"role\": \"account\",\n\t\t\t\t\"workLabel\": \"Invoices\",\n\t\t\t\t\"workCount\": 0,\n\t\t\t\t\"assignedLeadCount\": 0\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"6a7f...\",\n\t\t\t\t\"name\": \"Claude QA Admin\",\n\t\t\t\t\"role\": \"admin\",\n\t\t\t\t\"workLabel\": \"\",\n\t\t\t\t\"workCount\": 0,\n\t\t\t\t\"assignedLeadCount\": 0\n\t\t\t}\n\t\t]\n\t}\n}"
+						}
+					]
 				},
 				{
 					"name": "Filter by Role (Sales)",
@@ -765,7 +828,46 @@
 								}
 							]
 						}
-					}
+					},
+					"response": [
+						{
+							"name": "Only sales employees returned",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/employees?role=sales",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"employees"
+									],
+									"query": [
+										{
+											"key": "role",
+											"value": "sales"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"total\": 3,\n\t\t\"employees\": [\n\t\t\t{\n\t\t\t\t\"_id\": \"6a88...\",\n\t\t\t\t\"name\": \"Claude QA Sales\",\n\t\t\t\t\"role\": \"sales\",\n\t\t\t\t\"workLabel\": \"Leads\",\n\t\t\t\t\"workCount\": 0\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"6a6b...\",\n\t\t\t\t\"name\": \"Ayesha Malhotra\",\n\t\t\t\t\"role\": \"sales\",\n\t\t\t\t\"workLabel\": \"Leads\",\n\t\t\t\t\"workCount\": 0\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"69e6...\",\n\t\t\t\t\"name\": \"Sales One (Updated)\",\n\t\t\t\t\"role\": \"sales\",\n\t\t\t\t\"workLabel\": \"Leads\",\n\t\t\t\t\"workCount\": 12\n\t\t\t}\n\t\t]\n\t}\n}"
+						}
+					]
 				},
 				{
 					"name": "Filter by Role (Plant)",
@@ -793,7 +895,46 @@
 								}
 							]
 						}
-					}
+					},
+					"response": [
+						{
+							"name": "Only plant employees returned",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/admin/employees?role=plant",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"admin",
+										"employees"
+									],
+									"query": [
+										{
+											"key": "role",
+											"value": "plant"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"total\": 2,\n\t\t\"employees\": [\n\t\t\t{\n\t\t\t\t\"_id\": \"6a7f...\",\n\t\t\t\t\"name\": \"Claude QA Plant\",\n\t\t\t\t\"role\": \"plant\",\n\t\t\t\t\"workLabel\": \"PO Orders\",\n\t\t\t\t\"workCount\": 0\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"_id\": \"6a15...\",\n\t\t\t\t\"name\": \"test 123\",\n\t\t\t\t\"role\": \"plant\",\n\t\t\t\t\"workLabel\": \"PO Orders\",\n\t\t\t\t\"workCount\": 14\n\t\t\t}\n\t\t]\n\t}\n}"
+						}
+					]
 				},
 				{
 					"name": "Sales Employee Performance",
@@ -806,7 +947,31 @@
 							}
 						],
 						"url": "{{baseUrl}}/admin/employees/performance"
-					}
+					},
+					"response": [
+						{
+							"name": "Revenue distribution \u2014 real data",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/admin/employees/performance"
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"totalRevenue\": 1146850,\n\t\t\"totalDeals\": 3,\n\t\t\"topPerformer\": {\n\t\t\t\"employee\": {\n\t\t\t\t\"_id\": \"69e6...\",\n\t\t\t\t\"name\": \"Sales One (Updated)\",\n\t\t\t\t\"email\": \"sales1@example.com\"\n\t\t\t},\n\t\t\t\"totalLeads\": 12,\n\t\t\t\"closedLeads\": 3,\n\t\t\t\"conversionRate\": 25,\n\t\t\t\"revenue\": 1146850,\n\t\t\t\"revenueSharePercent\": 100\n\t\t},\n\t\t\"performance\": [\n\t\t\t{\n\t\t\t\t\"employee\": {\n\t\t\t\t\t\"_id\": \"69e6...\",\n\t\t\t\t\t\"name\": \"Sales One (Updated)\",\n\t\t\t\t\t\"email\": \"sales1@example.com\"\n\t\t\t\t},\n\t\t\t\t\"totalLeads\": 12,\n\t\t\t\t\"closedLeads\": 3,\n\t\t\t\t\"conversionRate\": 25,\n\t\t\t\t\"revenue\": 1146850,\n\t\t\t\t\"revenueSharePercent\": 100\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"employee\": {\n\t\t\t\t\t\"_id\": \"6a6b...\",\n\t\t\t\t\t\"name\": \"Ayesha Malhotra\",\n\t\t\t\t\t\"email\": \"ayesha@flyweis.technology\"\n\t\t\t\t},\n\t\t\t\t\"totalLeads\": 0,\n\t\t\t\t\"closedLeads\": 0,\n\t\t\t\t\"conversionRate\": 0,\n\t\t\t\t\"revenue\": 0,\n\t\t\t\t\"revenueSharePercent\": 0\n\t\t\t}\n\t\t]\n\t}\n}"
+						}
+					]
 				},
 				{
 					"name": "Audit Log",
@@ -853,7 +1018,119 @@
 							}
 						],
 						"url": "{{baseUrl}}/admin/employees/{{userId}}"
-					}
+					},
+					"response": [
+						{
+							"name": "Sales \u2014 role-specific response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/admin/employees/{{userId}}"
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"employee\": {\n\t\t\t\"_id\": \"69e6...\",\n\t\t\t\"name\": \"Sarah Johnson\",\n\t\t\t\"email\": \"sarah@company.com\",\n\t\t\t\"role\": \"sales\",\n\t\t\t\"isActive\": true\n\t\t},\n\t\t\"section\": \"sales\",\n\t\t\"stats\": {\n\t\t\t\"totalLeads\": 12,\n\t\t\t\"activeLeadsCount\": 9,\n\t\t\t\"closedLeadsCount\": 3,\n\t\t\t\"conversionRate\": 25,\n\t\t\t\"followUpsTotal\": 7,\n\t\t\t\"followUpsCompleted\": 0,\n\t\t\t\"followUpsCompletedPercentage\": 0,\n\t\t\t\"quotationsCreated\": 0,\n\t\t\t\"escalationsRaised\": 1,\n\t\t\t\"revenueGenerated\": 1146850\n\t\t},\n\t\t\"activeLeads\": [\n\t\t\t{\n\t\t\t\t\"leadId\": \"...\",\n\t\t\t\t\"clientName\": \"John Doe\",\n\t\t\t\t\"jobId\": \"Q-2025-1047\",\n\t\t\t\t\"lifecycleStatus\": \"quotation_sent\",\n\t\t\t\t\"quoteValue\": 12500\n\t\t\t}\n\t\t],\n\t\t\"closedLeads\": [\n\t\t\t{\n\t\t\t\t\"leadId\": \"...\",\n\t\t\t\t\"clientName\": \"John Doe\",\n\t\t\t\t\"lifecycleStatus\": \"payment_done\",\n\t\t\t\t\"quoteValue\": 12500\n\t\t\t}\n\t\t]\n\t}\n}"
+						},
+						{
+							"name": "Plant \u2014 role-specific response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/admin/employees/{{userId}}"
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"employee\": {\n\t\t\t\"_id\": \"6a15a8b8...\",\n\t\t\t\"name\": \"test 123\",\n\t\t\t\"email\": \"test123@gmail.com\",\n\t\t\t\"role\": \"plant\",\n\t\t\t\"isActive\": true\n\t\t},\n\t\t\"section\": \"plant\",\n\t\t\"stats\": {\n\t\t\t\"totalProjects\": 14,\n\t\t\t\"drawingsUploaded\": 0,\n\t\t\t\"drawingApprovalRate\": 0,\n\t\t\t\"bomSubmissionPending\": 0,\n\t\t\t\"bomSubmissionApproved\": 14,\n\t\t\t\"bomSubmissionRejected\": 0\n\t\t},\n\t\t\"assignedProjects\": [\n\t\t\t{\n\t\t\t\t\"leadId\": \"6a8b74b7...\",\n\t\t\t\t\"projectName\": \"Garage\",\n\t\t\t\t\"jobId\": \"PRO-015\",\n\t\t\t\t\"customerName\": \"Parul LLC\",\n\t\t\t\t\"buildingsCount\": 2,\n\t\t\t\t\"status\": \"released_to_plant\",\n\t\t\t\t\"projectValue\": 700000\n\t\t\t}\n\t\t]\n\t}\n}"
+						},
+						{
+							"name": "Construction \u2014 role-specific response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/admin/employees/{{userId}}"
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"employee\": {\n\t\t\t\"_id\": \"6a71b8a2...\",\n\t\t\t\"name\": \"Construction User\",\n\t\t\t\"email\": \"construction1@example.com\",\n\t\t\t\"role\": \"construction\",\n\t\t\t\"isActive\": true\n\t\t},\n\t\t\"section\": \"construction\",\n\t\t\"stats\": {\n\t\t\t\"totalProjects\": 1,\n\t\t\t\"tasksTotal\": 5,\n\t\t\t\"tasksDone\": 3,\n\t\t\t\"tasksInProgress\": 1,\n\t\t\t\"tasksCompletionRate\": 60,\n\t\t\t\"deliveriesHandled\": 2,\n\t\t\t\"invoicesRaised\": 0\n\t\t},\n\t\t\"assignedDeliveries\": [\n\t\t\t{\n\t\t\t\t\"deliveryId\": \"...\",\n\t\t\t\t\"deliveryNumber\": \"DEL-2001\",\n\t\t\t\t\"status\": \"in_transit\",\n\t\t\t\t\"materialType\": \"Primary Frame Steel\",\n\t\t\t\t\"loadWeight\": 45000,\n\t\t\t\t\"schedule\": {\n\t\t\t\t\t\"pickupDate\": \"2026-03-24\",\n\t\t\t\t\t\"deliveryDate\": \"2026-03-24\"\n\t\t\t\t},\n\t\t\t\t\"pickupLocation\": \"Yard-A\",\n\t\t\t\t\"deliveryLocation\": \"Construction Site A\",\n\t\t\t\t\"carrier\": {\n\t\t\t\t\t\"name\": \"FastFreight Logistics\",\n\t\t\t\t\t\"contactName\": \"John Miller\",\n\t\t\t\t\t\"phone\": \"+1 555-812-9921\"\n\t\t\t\t},\n\t\t\t\t\"notes\": \"Fragile \\u2014 handle with care\",\n\t\t\t\t\"project\": {\n\t\t\t\t\t\"leadId\": \"...\",\n\t\t\t\t\t\"projectName\": \"ABC Logistics Warehouse\",\n\t\t\t\t\t\"jobId\": \"...\"\n\t\t\t\t}\n\t\t\t}\n\t\t]\n\t}\n}"
+						},
+						{
+							"name": "Account \u2014 role-specific response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/admin/employees/{{userId}}"
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"employee\": {\n\t\t\t\"_id\": \"6a8c2271...\",\n\t\t\t\"name\": \"Claude QA Account\",\n\t\t\t\"email\": \"claude.qa.account@internal-test.mrstorage.dev\",\n\t\t\t\"role\": \"account\",\n\t\t\t\"isActive\": true\n\t\t},\n\t\t\"section\": \"account\",\n\t\t\"stats\": {\n\t\t\t\"invoicesCreated\": 0,\n\t\t\t\"invoicesMarkedPaid\": 0,\n\t\t\t\"revenueCollected\": 0\n\t\t},\n\t\t\"recentInvoices\": []\n\t}\n}"
+						},
+						{
+							"name": "Admin \u2014 role-specific response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": "{{baseUrl}}/admin/employees/{{userId}}"
+							},
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n\t\"success\": true,\n\t\"message\": \"Success\",\n\t\"data\": {\n\t\t\"employee\": {\n\t\t\t\"_id\": \"6a7f35a5...\",\n\t\t\t\"name\": \"Claude QA Admin\",\n\t\t\t\"email\": \"claude.qa.admin@internal-test.mrstorage.dev\",\n\t\t\t\"role\": \"admin\",\n\t\t\t\"isActive\": true\n\t\t},\n\t\t\"section\": \"admin\",\n\t\t\"stats\": {}\n\t}\n}"
+						}
+					]
 				},
 				{
 					"name": "Update Employee",

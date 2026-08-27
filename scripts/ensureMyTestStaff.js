@@ -9,6 +9,7 @@ const ACCOUNTS = [
   { role: 'plant', email: 'claude.qa.plant@internal-test.mrstorage.dev', name: 'Claude QA Plant' },
   { role: 'sales', email: 'claude.qa.sales@internal-test.mrstorage.dev', name: 'Claude QA Sales' },
   { role: 'account', email: 'claude.qa.account@internal-test.mrstorage.dev', name: 'Claude QA Account' },
+  { role: 'construction', email: 'claude.qa.construction@internal-test.mrstorage.dev', name: 'Claude QA Construction' },
 ]
 const PASSWORD = 'ClaudeQA@2026'
 

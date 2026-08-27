@@ -713,22 +713,23 @@ exports.exportItemCostListExcel = asyncHandler(async (req, res) => {
   return res.send(buffer)
 })
 
-// GET /notification-details
-// Delivery-level notification history: who was notified, via what channel, when.
-exports.getNotificationDetails = asyncHandler(async (req, res) => {
-  const page  = Math.max(1, Number(req.query.page)  || 1)
-  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20))
-  const skip  = (page - 1) * limit
-  const { startDate, endDate, search } = req.query
+// Shared by getNotificationDetails + exportNotificationDetailsExcel — builds the full,
+// filtered, unpaginated row set. Rows are synthesized from Delivery.statusHistory (there's
+// no separately persisted "notification sent" log), so "channel" is inferred from the status
+// transition rather than read from a real send record.
+const buildNotificationDetailRows = async (req) => {
+  const { startDate, endDate, search, leadId, status, channel: channelFilter, deliveryId } = req.query
   const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 
-  const leadIds = await getScopedLeadIds(req)
-  if (!leadIds.length) {
-    return success(res, { notifications: [], total: 0, page, limit, stats: { total: 0, sent: 0, delivered: 0, pending: 0, failed: 0 } })
-  }
+  const scopedLeadIds = await getScopedLeadIds(req)
+  if (!scopedLeadIds.length) return []
+
+  const leadIds = leadId ? scopedLeadIds.filter((id) => String(id) === String(leadId)) : scopedLeadIds
+  if (!leadIds.length) return []
 
   const dateFilter = buildDateFilter({ startDate, endDate }, 'createdAt')
   const deliveryFilter = { leadId: { $in: leadIds }, ...dateFilter }
+  if (deliveryId) deliveryFilter._id = deliveryId
 
   if (search) {
     deliveryFilter.$or = [
@@ -738,16 +739,19 @@ exports.getNotificationDetails = asyncHandler(async (req, res) => {
   }
 
   const deliveries = await Delivery.find(deliveryFilter)
-    .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName email' } })
+    .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName email phone' } })
     .sort({ createdAt: -1 })
     .lean()
 
-  // Build notification rows from delivery status history
   const rows = []
+  let seq = 0
   for (const d of deliveries) {
     const customer = d.leadId?.customerId
     const custName = customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : 'Unknown'
     const custEmail = customer?.email || ''
+    const custPhone = customer?.phone ? `${customer.phone.countryCode || ''} ${customer.phone.number || ''}`.trim() : ''
+    const siteContactName = d.siteContact?.contactName || d.receivingPoc || ''
+    const siteContactPhone = d.siteContact?.phone || d.pickupContactPhone || ''
 
     for (const h of (d.statusHistory || [{ status: d.status, changedAt: d.createdAt }])) {
       const channel = ['scheduled', 'confirmed'].includes(h.status) ? 'Email' : 'SMS'
@@ -763,21 +767,58 @@ exports.getNotificationDetails = asyncHandler(async (req, res) => {
         : h.status === 'cancelled' ? 'Failed'
         : ['scheduled', 'confirmed', ...IN_TRANSIT_ROLLUP_STATUSES].includes(h.status) ? 'Pending'
         : 'Sent'
+
+      // Email notices go to the customer of record; SMS reminders go to whoever is
+      // physically handling the delivery on-site (site contact / pickup contact).
+      const isEmail = channel === 'Email'
+      const recipientType = isEmail ? 'Customer' : 'Internal Staff'
+      const recipient = isEmail ? (custName || 'Unknown') : (siteContactName || custName || 'Unknown')
+      const recipientContact = isEmail ? custEmail : (siteContactPhone || custPhone)
+
+      seq += 1
       rows.push({
+        notificationId: `NOT-${String(seq).padStart(3, '0')}`,
         deliveryId:     d._id,
         deliveryNumber: d.deliveryNumber,
         notificationType: notifType,
         channel,
-        recipient:      custName,
-        recipientEmail: custEmail,
+        recipient,
+        recipientContact,
+        recipientType,
         deliveryStatus,
         sentAt:         h.changedAt || d.createdAt,
         project:        d.leadId?.projectName || d.leadId?.jobId || '',
+        leadId:         d.leadId?._id || null,
+        materialType:   d.materialType || '',
+        deliveryDate:   d.deliveryDate || null,
+        timeWindowStart: d.timeWindowStart || '',
+        timeWindowEnd:   d.timeWindowEnd || '',
       })
     }
   }
 
-  rows.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))
+  const statusFilter = status ? String(status).toLowerCase() : null
+  const channelFilterNorm = channelFilter ? String(channelFilter).toLowerCase() : null
+  const filtered = rows.filter((r) => {
+    if (statusFilter && r.deliveryStatus.toLowerCase() !== statusFilter) return false
+    if (channelFilterNorm && r.channel.toLowerCase() !== channelFilterNorm) return false
+    return true
+  })
+
+  filtered.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))
+  return filtered
+}
+
+// GET /notification-details
+// Delivery-level notification history: who was notified, via what channel, when.
+// Filters: startDate, endDate, search, leadId (project), status (Sent/Delivered/Pending/Failed),
+// channel (Email/SMS), deliveryId.
+exports.getNotificationDetails = asyncHandler(async (req, res) => {
+  const page  = Math.max(1, Number(req.query.page)  || 1)
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20))
+  const skip  = (page - 1) * limit
+
+  const rows = await buildNotificationDetailRows(req)
   const total = rows.length
   const paginated = rows.slice(skip, skip + limit)
 
@@ -790,4 +831,33 @@ exports.getNotificationDetails = asyncHandler(async (req, res) => {
   }
 
   return success(res, { notifications: paginated, total, page, limit, stats })
+})
+
+// GET /notification-details/export
+exports.exportNotificationDetailsExcel = asyncHandler(async (req, res) => {
+  const rows = await buildNotificationDetailRows(req)
+
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Notification History')
+  sheet.columns = [
+    { header: 'Notification ID', key: 'notificationId', width: 16 },
+    { header: 'Type', key: 'notificationType', width: 22 },
+    { header: 'Channel', key: 'channel', width: 10 },
+    { header: 'Delivery #', key: 'deliveryNumber', width: 14 },
+    { header: 'Project', key: 'project', width: 22 },
+    { header: 'Recipient', key: 'recipient', width: 20 },
+    { header: 'Recipient Contact', key: 'recipientContact', width: 24 },
+    { header: 'Recipient Type', key: 'recipientType', width: 14 },
+    { header: 'Delivery Status', key: 'deliveryStatus', width: 14 },
+    { header: 'Sent Date', key: 'sentAt', width: 20 },
+  ]
+  for (const r of rows) {
+    sheet.addRow({ ...r, sentAt: r.sentAt ? new Date(r.sentAt).toLocaleString() : '' })
+  }
+  sheet.getRow(1).font = { bold: true }
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="notification-history.xlsx"')
+  return res.send(buffer)
 })

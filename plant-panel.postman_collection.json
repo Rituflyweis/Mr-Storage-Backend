@@ -1,0 +1,2067 @@
+{
+	"info": {
+		"name": "Plant Panel - The Steel",
+		"_postman_id": "plant-panel-steelpro",
+		"description": "All Plant Panel APIs for The Steel / Mr-Storage Backend",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5001/api",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "leadId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "jobId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "buildingId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "requestId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "vendorId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "carrierId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "bundlePlanId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "bundleId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "packingListPlanId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "packingListId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "deliveryId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "bidId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "itemId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "groupId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "notificationId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Auth (Shared)",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"claude.qa.plant@internal-test.mrstorage.dev\",\n  \"password\": \"ClaudeQA@2026\"\n}"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const r = pm.response.json();\nif (r.data?.accessToken) pm.collectionVariables.set('token', r.data.accessToken);"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Dashboard",
+			"item": [
+				{
+					"name": "Get Dashboard",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/dashboard"
+					}
+				}
+			]
+		},
+		{
+			"name": "Projects",
+			"item": [
+				{
+					"name": "Projects \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/stats"
+					}
+				},
+				{
+					"name": "Projects \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects"
+					}
+				},
+				{
+					"name": "Project \u2014 Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/detail"
+					}
+				},
+				{
+					"name": "Project \u2014 Update Lifecycle",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/lifecycle",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"lifecycleStatus\": \"bom_review\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Project \u2014 Notes (Get)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/notes"
+					}
+				},
+				{
+					"name": "Project \u2014 Notes (Add)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/notes",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"note\": \"Checked in with fabrication team.\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Project \u2014 Invoices",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/invoices"
+					}
+				},
+				{
+					"name": "Project \u2014 Buildings",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/buildings"
+					}
+				},
+				{
+					"name": "Project \u2014 Upload Drawings",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/drawings",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"drawings\": [\n\t\t{\n\t\t\t\"url\": \"https://example.com/drawing.pdf\",\n\t\t\t\"name\": \"Foundation Plan\"\n\t\t}\n\t]\n}"
+						}
+					}
+				},
+				{
+					"name": "Project \u2014 Get Drawings",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/drawings"
+					}
+				},
+				{
+					"name": "Project \u2014 Upload BOM",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/bom"
+					}
+				},
+				{
+					"name": "Project \u2014 BOM Files",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/bom-files"
+					}
+				},
+				{
+					"name": "Project \u2014 Generate Consolidated BOM",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/consolidated-bom/generate"
+					}
+				},
+				{
+					"name": "Project \u2014 Get Consolidated BOM",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/consolidated-bom"
+					}
+				},
+				{
+					"name": "Project \u2014 Send Consolidated BOM",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/consolidated-bom/send"
+					}
+				},
+				{
+					"name": "Project \u2014 Confirmed Delivery",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/delivery"
+					}
+				},
+				{
+					"name": "Project \u2014 Shipper Files",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/shipper-files"
+					}
+				},
+				{
+					"name": "Project \u2014 Bundle Plan",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/bundle-plan"
+					}
+				},
+				{
+					"name": "Project \u2014 Load Planning (Get)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/load-planning"
+					}
+				},
+				{
+					"name": "Project \u2014 Load Planning (Update)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/load-planning"
+					}
+				},
+				{
+					"name": "Project \u2014 Load Planning Coverage",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/load-planning/coverage"
+					}
+				},
+				{
+					"name": "Project \u2014 Confirm Bundles",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/load-planning/confirm-bundles"
+					}
+				},
+				{
+					"name": "Project \u2014 Generate Truck Plan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/load-planning/generate-truck-plan"
+					}
+				},
+				{
+					"name": "Project \u2014 Get Truck Plan",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/load-planning/truck-plan"
+					}
+				},
+				{
+					"name": "Project \u2014 Confirm Truck Plan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/load-planning/truck-plan/confirm"
+					}
+				},
+				{
+					"name": "Project \u2014 Update Truck in Plan",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/load-planning/trucks/{{packingListId}}"
+					}
+				},
+				{
+					"name": "Project \u2014 Freight Autofill",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/freight-autofill"
+					}
+				},
+				{
+					"name": "Project \u2014 Send Freight Bids",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/freight/send-bids"
+					}
+				},
+				{
+					"name": "Project \u2014 Get Freight Bids",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/projects/{{leadId}}/freight/bids"
+					}
+				}
+			]
+		},
+		{
+			"name": "BOM",
+			"item": [
+				{
+					"name": "BOM \u2014 Job Status Callback",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bom/jobs/status"
+					}
+				},
+				{
+					"name": "BOM \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bom/stats"
+					}
+				},
+				{
+					"name": "BOM \u2014 Projects",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bom/projects"
+					}
+				},
+				{
+					"name": "BOM \u2014 Consolidated URL",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bom/projects/{{leadId}}/consolidated-url"
+					}
+				},
+				{
+					"name": "BOM \u2014 Job Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bom/job/{{jobId}}/status"
+					}
+				},
+				{
+					"name": "BOM \u2014 Job Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bom/{{jobId}}"
+					}
+				},
+				{
+					"name": "BOM \u2014 Update Item Price",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bom/items/{{itemId}}/price",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"price\": 45.5\n}"
+						}
+					}
+				},
+				{
+					"name": "BOM \u2014 Confirm Building",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bom/buildings/{{buildingId}}/confirm"
+					}
+				}
+			]
+		},
+		{
+			"name": "Shipper Files",
+			"item": [
+				{
+					"name": "Shipper \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/stats"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Projects",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/projects"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Project Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/projects/{{leadId}}/stats"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Project Requests",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/projects/{{leadId}}/requests"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Document",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/{{requestId}}/document"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Compare Jobs Status",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/compare-jobs/status"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Compare Job Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/compare-jobs/{{jobId}}/status"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Compare",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/{{requestId}}/compare"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Approve",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/{{requestId}}/approve"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Request Resubmit",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/{{requestId}}/request-resubmit"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Comparison Summary",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/{{requestId}}/comparison-summary"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Comparison Results",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/{{requestId}}/comparison-results"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Comparison Report Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/{{requestId}}/comparison-report/export"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Comparison Report Send",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/{{requestId}}/comparison-report/send"
+					}
+				},
+				{
+					"name": "Shipper \u2014 Generate Bundle Plan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/shipper-files/{{requestId}}/bundle-plan/generate"
+					}
+				}
+			]
+		},
+		{
+			"name": "Vendors",
+			"item": [
+				{
+					"name": "Vendors \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/vendors"
+					}
+				},
+				{
+					"name": "Vendors \u2014 Create",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/vendors",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"name\": \"Steel Supply Co\",\n\t\"email\": \"contact@steelsupply.com\",\n\t\"phone\": \"+1-555-0100\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Vendors \u2014 Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/vendors/{{vendorId}}"
+					}
+				},
+				{
+					"name": "Vendors \u2014 Update",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/vendors/{{vendorId}}"
+					}
+				},
+				{
+					"name": "Vendors \u2014 Toggle Status",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/vendors/{{vendorId}}/toggle-status"
+					}
+				}
+			]
+		},
+		{
+			"name": "Carriers",
+			"item": [
+				{
+					"name": "Carriers \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/carriers"
+					}
+				},
+				{
+					"name": "Carriers \u2014 Create",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/carriers",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"carrierName\": \"FastFreight Logistics\",\n\t\"contactName\": \"John Miller\",\n\t\"phone\": \"+1-555-0200\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Carriers \u2014 Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/carriers/{{carrierId}}"
+					}
+				},
+				{
+					"name": "Carriers \u2014 Update",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/carriers/{{carrierId}}"
+					}
+				},
+				{
+					"name": "Carriers \u2014 Toggle Status",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/carriers/{{carrierId}}/toggle-status"
+					}
+				}
+			]
+		},
+		{
+			"name": "Load Planning",
+			"item": [
+				{
+					"name": "Load Planning \u2014 Projects (search + pagination)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/load-planning/projects?search=&page=1&limit=20"
+					}
+				}
+			]
+		},
+		{
+			"name": "Bundle Plans",
+			"item": [
+				{
+					"name": "Bundle Plan \u2014 Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundle-plans/{{bundlePlanId}}"
+					}
+				},
+				{
+					"name": "Bundle Plan \u2014 Update",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundle-plans/{{bundlePlanId}}"
+					}
+				},
+				{
+					"name": "Bundle Plan \u2014 Coverage",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundle-plans/{{bundlePlanId}}/coverage"
+					}
+				},
+				{
+					"name": "Bundle Plan \u2014 Confirm",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundle-plans/{{bundlePlanId}}/confirm"
+					}
+				},
+				{
+					"name": "Bundle Plan \u2014 Add Bundles",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundle-plans/{{bundlePlanId}}/bundles"
+					}
+				},
+				{
+					"name": "Bundle Plan \u2014 Generate Packing List Plan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundle-plans/{{bundlePlanId}}/packing-list-plan/generate"
+					}
+				},
+				{
+					"name": "Bundle Plan \u2014 Freight Autofill",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundle-plans/{{bundlePlanId}}/freight-autofill"
+					}
+				}
+			]
+		},
+		{
+			"name": "Bundles",
+			"item": [
+				{
+					"name": "Bundle \u2014 Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundles/{{bundleId}}"
+					}
+				},
+				{
+					"name": "Bundle \u2014 Update",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundles/{{bundleId}}"
+					}
+				},
+				{
+					"name": "Bundle \u2014 Delete",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundles/{{bundleId}}"
+					}
+				},
+				{
+					"name": "Bundle \u2014 Public Detail (no auth)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/bundles/{{bundleId}}"
+					}
+				}
+			]
+		},
+		{
+			"name": "Packing List Plans",
+			"item": [
+				{
+					"name": "Packing List Plan \u2014 Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/packing-list-plans/{{packingListPlanId}}"
+					}
+				},
+				{
+					"name": "Packing List Plan \u2014 Confirm",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/packing-list-plans/{{packingListPlanId}}/confirm"
+					}
+				},
+				{
+					"name": "Packing List Plan \u2014 Public Detail (no auth)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/packing-list-plans/{{packingListPlanId}}"
+					}
+				}
+			]
+		},
+		{
+			"name": "Packing Lists",
+			"item": [
+				{
+					"name": "Packing Lists \u2014 Projects",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/packing-lists/projects"
+					}
+				},
+				{
+					"name": "Packing Lists \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/packing-lists/export"
+					}
+				},
+				{
+					"name": "Packing Lists \u2014 Download PDF",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/packing-lists/{{packingListId}}/download-pdf"
+					}
+				},
+				{
+					"name": "Packing Lists \u2014 Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/packing-lists/{{packingListId}}"
+					}
+				},
+				{
+					"name": "Packing Lists \u2014 Update",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/packing-lists/{{packingListId}}"
+					}
+				}
+			]
+		},
+		{
+			"name": "Deliveries",
+			"item": [
+				{
+					"name": "Deliveries \u2014 By Project",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/project/{{leadId}}"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/{{deliveryId}}/detail"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Freight Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/freight/stats"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Freight List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/freight"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Awarded Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/awarded/stats"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Awarded List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/awarded"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Calendar",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/calendar"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/stats"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Create",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"leadId\": \"{{leadId}}\",\n\t\"materialType\": \"Steel Beams\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Update",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/{{deliveryId}}"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Send Bids",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/{{deliveryId}}/send-bids"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Get Bids",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/{{deliveryId}}/bids"
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Reschedule",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/{{deliveryId}}/reschedule",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"date\": \"2026-09-01\",\n\t\"reason\": \"Carrier unavailable\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Deliveries \u2014 Update Status",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries/{{deliveryId}}/status",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"status\": \"in_transit\"\n}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Freight Bids",
+			"item": [
+				{
+					"name": "Freight Bid \u2014 Select/Award",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/freight-bids/{{bidId}}/select"
+					}
+				},
+				{
+					"name": "Freight Bid \u2014 Request Resubmit",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/freight-bids/{{bidId}}/request-resubmit"
+					}
+				}
+			]
+		},
+		{
+			"name": "Extras (Savings, Loads, QR Labels, Costing)",
+			"item": [
+				{
+					"name": "Savings \u2014 Overview",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/savings"
+					}
+				},
+				{
+					"name": "Savings \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/savings/export"
+					}
+				},
+				{
+					"name": "Freight Loads \u2014 Filters",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/freight-loads/filters"
+					}
+				},
+				{
+					"name": "Freight Loads \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/freight-loads"
+					}
+				},
+				{
+					"name": "Freight Loads \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/freight-loads/export"
+					}
+				},
+				{
+					"name": "Awarded Loads \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/awarded-loads"
+					}
+				},
+				{
+					"name": "Awarded Loads \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/awarded-loads/export"
+					}
+				},
+				{
+					"name": "Deliveries Calendar (all)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/deliveries-calendar"
+					}
+				},
+				{
+					"name": "All Deliveries",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/all-deliveries"
+					}
+				},
+				{
+					"name": "QR Labels \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/qr-labels?search="
+					}
+				},
+				{
+					"name": "QR Labels \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/qr-labels/export"
+					}
+				},
+				{
+					"name": "Item Costing \u2014 List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/costing"
+					}
+				},
+				{
+					"name": "Item Costing \u2014 Export",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/costing/export"
+					}
+				},
+				{
+					"name": "Item Costing \u2014 Add",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/costing",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"partName\": \"Steel Angle 2x2\",\n\t\"mbsCost\": 12.5,\n\t\"costUnit\": \"FT\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Item Costing \u2014 Update",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/plant/costing/{{itemId}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"mbsCost\": 13.0\n}"
+						}
+					}
+				},
+				{
+					"name": "Notification Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/notification-details"
+					}
+				}
+			]
+		},
+		{
+			"name": "Notifications",
+			"item": [
+				{
+					"name": "Get All Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/notifications?page=1&limit=20"
+					}
+				},
+				{
+					"name": "Get Unread Count",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/notifications/unread-count"
+					}
+				},
+				{
+					"name": "Mark One Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/notifications/{{notificationId}}/read"
+					}
+				},
+				{
+					"name": "Mark All Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/notifications/read-all"
+					}
+				},
+				{
+					"name": "Delete Notification",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/notifications/{{notificationId}}"
+					}
+				}
+			]
+		},
+		{
+			"name": "Internal Communication (Direct + Group)",
+			"item": [
+				{
+					"name": "Get Users (search for DM)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/users?search="
+					}
+				},
+				{
+					"name": "Get Conversations (Direct + Group)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/conversations"
+					}
+				},
+				{
+					"name": "Get Unread Count",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/unread-count"
+					}
+				},
+				{
+					"name": "Direct \u2014 Get Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/direct/{{userId}}/messages?page=1&limit=30"
+					}
+				},
+				{
+					"name": "Get Presigned URL (for chat attachment)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/upload/presigned-url",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"fileName\": \"site-photo.jpg\",\n\t\"fileType\": \"image/jpeg\",\n\t\"folder\": \"chat-attachments\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Direct \u2014 Send Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/direct/{{userId}}/messages",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"content\": \"Hey, checking in on this\",\n\t\"attachments\": []\n}"
+						}
+					}
+				},
+				{
+					"name": "Group \u2014 Create",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"name\": \"Project Alpha Team\",\n\t\"memberIds\": [\n\t\t\"{{userId}}\"\n\t]\n}"
+						}
+					}
+				},
+				{
+					"name": "Group \u2014 Get Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups/{{groupId}}"
+					}
+				},
+				{
+					"name": "Group \u2014 Update Members (add/remove)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups/{{groupId}}/members",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"addMemberIds\": [],\n\t\"removeMemberIds\": []\n}"
+						}
+					}
+				},
+				{
+					"name": "Group \u2014 Get Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups/{{groupId}}/messages?page=1&limit=30"
+					}
+				},
+				{
+					"name": "Group \u2014 Send Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups/{{groupId}}/messages",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"content\": \"Team, please review the latest drawings\",\n\t\"attachments\": []\n}"
+						}
+					}
+				}
+			]
+		}
+	]
+}
