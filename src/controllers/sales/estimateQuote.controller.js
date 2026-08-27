@@ -63,11 +63,11 @@ const normalizeQuoteOptions = (body = {}) => {
 }
 
 const normalizeFullQuoteExtras = (body = {}) => ({
-  concrete: body.concrete || body.concreteAddon || null,
-  insulation: body.insulation || body.insulationAddon || null,
-  salesTax: body.salesTax || null,
-  cogsOverride: body.cogsOverride || null,
-  marginOverride: body.marginOverride || null,
+  concrete: body.concrete || body.concreteAddon || undefined,
+  insulation: body.insulation || body.insulationAddon || undefined,
+  salesTax: body.salesTax || undefined,
+  cogsOverride: body.cogsOverride || undefined,
+  marginOverride: body.marginOverride || undefined,
 })
 
 const buildPricingPayload = async (userId, { categories, options, fullExtras }) => {

@@ -68,8 +68,9 @@ const lookupSalesTaxByZip = async (zipInput) => {
 }
 
 const computePembSalesTax = (pricingResult, insulationAddon, taxOptions = {}) => {
-  const rate = Number(taxOptions.rate ?? 0)
-  const include = taxOptions.include !== false
+  const tax = taxOptions || {}
+  const rate = Number(tax.rate ?? 0)
+  const include = tax.include !== false
   if (!rate || !include) {
     return { rate: 0, amount: 0, taxableBase: 0, include: false }
   }
@@ -88,8 +89,9 @@ const computePembSalesTax = (pricingResult, insulationAddon, taxOptions = {}) =>
 }
 
 const computeStorageSalesTax = (storagePricing, taxOptions = {}) => {
-  const rate = Number(taxOptions.rate ?? 0)
-  const include = taxOptions.include !== false
+  const tax = taxOptions || {}
+  const rate = Number(tax.rate ?? 0)
+  const include = tax.include !== false
   if (!rate || !include) {
     return { rate: 0, amount: 0, taxableBase: 0, include: false }
   }
