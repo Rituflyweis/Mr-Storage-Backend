@@ -158,6 +158,58 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
   }
 }
 
+/** Pricing-summary rows for storage quote HTML — line items always reconcile to grandTotal. */
+const getStoragePricingSummaryLines = (sp = {}, options = {}) => {
+  const grandTotal = Math.round(options.grandTotal ?? sp.grandTotal ?? 0)
+  const buildings = sp.buildings || []
+  const concrete = sp.concrete || {}
+  const insulation = sp.insulation || {}
+  const concSell = concrete.include ? Math.round(concrete.appliedSell || 0) : 0
+  const insulSell = insulation.include ? Math.round(insulation.appliedSell || 0) : 0
+  const taxRate = sp.salesTax?.rate || 0
+  const taxAmt = Math.round(sp.salesTax?.amount || 0)
+
+  let installSell = Math.round(sp.installSell ?? sp.breakdown?.install?.sell ?? 0)
+
+  const rows = []
+  const push = (label, amount, key, extra = {}) => {
+    const amt = Math.round(Number(amount) || 0)
+    if (key === 'buildings' || amt > 0) rows.push({ label, amount: amt, key, ...extra })
+  }
+
+  push(`Buildings (${buildings.length || sp.buildingCount || 1})`, sp.buildingSell || 0, 'buildings')
+  push('Doors & Hardware', sp.doorSell || 0, 'doors')
+  push('Erection / Installation', installSell, 'install')
+  push('Options & Add-ons', sp.extrasSell || 0, 'extras')
+  push('Shipping & Freight', sp.shipping || 0, 'shipping')
+  push('Engineering Drawings', sp.drawings || 0, 'drawings')
+  if (concSell) {
+    const concLabel =
+      concrete.thickness && concrete.psi
+        ? `Concrete (${concrete.thickness}" · ${concrete.psi} PSI)`
+        : 'Concrete'
+    push(concLabel, concSell, 'concrete')
+  }
+  if (insulSell) push('Insulation', insulSell, 'insulation')
+  if (taxAmt) push(`Sales Tax (${taxRate}%)`, taxAmt, 'tax', { taxStyle: true })
+
+  let lineSum = rows.reduce((a, r) => a + r.amount, 0)
+  if (grandTotal > lineSum) {
+    const gap = grandTotal - lineSum
+    let installRow = rows.find((r) => r.key === 'install')
+    if (!installRow) {
+      installRow = { label: 'Erection / Installation', amount: 0, key: 'install' }
+      const shipIdx = rows.findIndex((r) => r.key === 'shipping')
+      rows.splice(shipIdx >= 0 ? shipIdx : rows.length, 0, installRow)
+    }
+    installRow.amount += gap
+    lineSum += gap
+  }
+
+  return { rows, grandTotal, lineSum, balanced: lineSum === grandTotal }
+}
+
 module.exports = {
   computeStoragePricing,
+  getStoragePricingSummaryLines,
 }

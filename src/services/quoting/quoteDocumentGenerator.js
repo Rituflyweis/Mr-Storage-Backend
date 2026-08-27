@@ -1,6 +1,7 @@
 /** Quote / SOW / contract HTML + PDF generation — port of HTML renderQuote / renderSOW / renderAssembled */
 
 const CONTRACT_TEXT = require('./contractText')
+const { getStoragePricingSummaryLines } = require('./storagePricingEngine')
 
 const QUOTE_STYLES = `
 .quote-output{background:#fff;color:#111;border-radius:8px;padding:32px;margin-bottom:14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
@@ -139,6 +140,14 @@ const generateStorageQuoteHtml = (payload = {}) => {
     })
     .join('')
 
+  const summary = getStoragePricingSummaryLines(sp, { grandTotal })
+  const summaryRows = summary.rows
+    .map(
+      (row) =>
+        `<tr class="q-sub-row"${row.taxStyle ? ' style="color:#b45309;"' : ''}><td>${row.label}</td><td style="text-align:right">${fmtMoney(row.amount)}</td></tr>`
+    )
+    .join('')
+
   return `<div class="quote-output" id="quote-printable">
     <div class="q-logo-bar">
       <div>${getLogoHtml()}<div class="q-logo-sub">METAL AND DOORS · 1851 Madison Ave Suite 300, Council Bluffs, IA 51503<br>(888) 968-1222 · travis@storagematerials.com · www.storagematerials.com</div></div>
@@ -167,15 +176,14 @@ const generateStorageQuoteHtml = (payload = {}) => {
       <div class="q-section">
         <div class="q-section-title">Pricing Summary</div>
         <div class="q-breakdown"><table>
-          <tr class="q-sub-row"><td>Buildings (${buildings.length})</td><td style="text-align:right">${fmtMoney(sp.buildingSell)}</td></tr>
-          ${sp.doorSell ? `<tr class="q-sub-row"><td>Doors &amp; Hardware</td><td style="text-align:right">${fmtMoney(sp.doorSell)}</td></tr>` : ''}
-          ${sp.installSell ? `<tr class="q-sub-row"><td>Erection / Installation</td><td style="text-align:right">${fmtMoney(sp.installSell)}</td></tr>` : ''}
-          ${sp.extrasSell ? `<tr class="q-sub-row"><td>Options &amp; Add-ons</td><td style="text-align:right">${fmtMoney(sp.extrasSell)}</td></tr>` : ''}
-          ${sp.shipping ? `<tr class="q-sub-row"><td>Shipping &amp; Freight</td><td style="text-align:right">${fmtMoney(sp.shipping)}</td></tr>` : ''}
-          ${sp.drawings ? `<tr class="q-sub-row"><td>Engineering Drawings</td><td style="text-align:right">${fmtMoney(sp.drawings)}</td></tr>` : ''}
-          ${sp.salesTax?.amount ? `<tr class="q-sub-row" style="color:#b45309;"><td>Sales Tax (${sp.salesTax.rate}%)</td><td style="text-align:right">${fmtMoney(sp.salesTax.amount)}</td></tr>` : ''}
+          ${summaryRows}
           <tr class="q-total-row"><td>Total</td><td style="text-align:right">${fmtMoney(grandTotal)}</td></tr>
         </table></div>
+        <p style="font-size:11px;color:#64748b;margin-top:8px;">${
+          sp.salesTax?.rate
+            ? `Sales tax of ${sp.salesTax.rate}% applied to materials, doors & insulation. Labor/erection not taxed.`
+            : 'Sales tax not included — add rate if applicable. Labor/erection is not taxable.'
+        } Freight ${sp.shipping ? 'is itemized above' : 'is included in building pricing'}.</p>
       </div>
       <div class="q-section">
         <div class="q-section-title">Scope Included</div>

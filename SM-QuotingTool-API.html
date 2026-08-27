@@ -1833,6 +1833,44 @@
                     oninput="onStorageControlChange()"
                   />
                 </div>
+                <div>
+                  <label style="font-size: 10px; color: var(--muted)"
+                    >Sales tax rate %</label
+                  >
+                  <input
+                    type="number"
+                    id="storage-tax-rate"
+                    value="0"
+                    step="0.25"
+                    min="0"
+                    max="15"
+                    style="width: 100%; padding: 7px; margin-top: 4px"
+                    oninput="onStorageControlChange()"
+                  />
+                </div>
+                <div>
+                  <label style="font-size: 10px; color: var(--muted)"
+                    >Include sales tax</label
+                  >
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 8px;
+                      margin-top: 8px;
+                      font-size: 13px;
+                      cursor: pointer;
+                    "
+                  >
+                    <input
+                      type="checkbox"
+                      id="storage-tax-include"
+                      checked
+                      onchange="onStorageControlChange()"
+                    />
+                    Tax on materials &amp; doors
+                  </label>
+                </div>
               </div>
             </div>
             <div id="storage-metrics" class="metrics"></div>
@@ -1845,6 +1883,9 @@
               </button>
               <button class="tab-btn" onclick="showStorageTab('quote', this)">
                 Quote
+              </button>
+              <button class="tab-btn" onclick="showStorageTab('drawings', this)">
+                Drawings
               </button>
             </div>
             <div class="tab-content active" id="storage-tab-buildings">
@@ -1861,6 +1902,71 @@
                     Upload a COG sheet, then open this tab to see the quote.
                   </p>
                 </div>
+              </div>
+            </div>
+            <div class="tab-content" id="storage-tab-drawings">
+              <div class="card" style="margin-bottom: 14px">
+                <div class="card-hdr">
+                  <div>
+                    <div class="card-title">Building Drawings &amp; Plans</div>
+                    <div class="card-sub">
+                      Add layout plans or elevations to include in the quote
+                      package — checked drawings appear at the end of the PDF
+                    </div>
+                  </div>
+                  <label class="btn btn-sm" style="cursor: pointer">
+                    + Add Drawings
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      multiple
+                      hidden
+                      onchange="storageHandleDrawingInput(event)"
+                    />
+                  </label>
+                </div>
+                <div style="padding: 14px">
+                  <div
+                    id="storage-drawing-grid"
+                    style="
+                      display: grid;
+                      grid-template-columns: repeat(
+                        auto-fill,
+                        minmax(180px, 1fr)
+                      );
+                      gap: 12px;
+                      margin-bottom: 14px;
+                    "
+                  ></div>
+                  <div
+                    id="storage-drawing-empty"
+                    style="
+                      text-align: center;
+                      padding: 32px;
+                      color: var(--muted);
+                      font-size: 13px;
+                      border: 2px dashed var(--border2);
+                      border-radius: 8px;
+                    "
+                  >
+                    No drawings added yet. Click "+ Add Drawings" to attach
+                    layout plans.<br /><span style="font-size: 11px"
+                      >Images or PDFs · Checked drawings append to the full
+                      quote package</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="btn-row no-print">
+                <button
+                  class="btn btn-success"
+                  onclick="showPage('preview'); loadPreview();"
+                >
+                  Preview Full Package
+                </button>
+                <button class="btn btn-primary" onclick="downloadPdf()">
+                  Download PDF
+                </button>
               </div>
             </div>
           </div>
@@ -1979,10 +2085,11 @@
         storagePricing: null,
         storageCustomer: "",
         storageLocation: "",
+        storageDrawingFiles: [],
         storageInstallSellPerSf: 3.25,
         storageInstallCostPerSf: 2.5,
         storageShipping: 0,
-        storageDrawings: 0,
+        storageDrawingsFee: 0,
         pricingRules: null,
       };
 
@@ -2368,15 +2475,80 @@
           +document.getElementById("storage-install-cost-val")?.value || 0;
         state.storageShipping =
           +document.getElementById("storage-shipping-val")?.value || 0;
-        state.storageDrawings =
+        state.storageDrawingsFee =
           +document.getElementById("storage-drawings-val")?.value || 0;
+        state.salesTax.rate =
+          +document.getElementById("storage-tax-rate")?.value || 0;
+        state.salesTax.include =
+          document.getElementById("storage-tax-include")?.checked !== false;
         if (state.storageData) {
           state.storageData.shipping = state.storageShipping;
-          state.storageData.drawings = state.storageDrawings;
+          state.storageData.drawings = state.storageDrawingsFee;
           state.storageData.installSellPerSf = state.storageInstallSellPerSf;
           state.storageData.installCostPerSf = state.storageInstallCostPerSf;
         }
         debouncedStorageCompute();
+      }
+
+      function storagePricingSummaryLines(sp, grandTotalOverride) {
+        const spx = sp || {};
+        const grandTotal = Math.round(
+          grandTotalOverride ?? spx.grandTotal ?? 0,
+        );
+        const buildings = spx.buildings || [];
+        const concrete = spx.concrete || {};
+        const insulation = spx.insulation || {};
+        const concSell = concrete.include
+          ? Math.round(concrete.appliedSell || 0)
+          : 0;
+        const insulSell = insulation.include
+          ? Math.round(insulation.appliedSell || 0)
+          : 0;
+        const taxRate = spx.salesTax?.rate || 0;
+        const taxAmt = Math.round(spx.salesTax?.amount || 0);
+        let installSell = Math.round(
+          spx.installSell ?? spx.breakdown?.install?.sell ?? 0,
+        );
+        if (!installSell && state.storageInstallSellPerSf && spx.totalSqft) {
+          installSell = Math.round(state.storageInstallSellPerSf * spx.totalSqft);
+        }
+        const rows = [];
+        const push = (label, amount, key, extra = {}) => {
+          const amt = Math.round(Number(amount) || 0);
+          if (key === "buildings" || amt > 0)
+            rows.push({ label, amount: amt, key, ...extra });
+        };
+        push(
+          `Buildings (${buildings.length})`,
+          spx.buildingSell || 0,
+          "buildings",
+        );
+        push("Doors & Hardware", spx.doorSell || 0, "doors");
+        push("Erection / Installation", installSell, "install");
+        push("Options & Add-ons", spx.extrasSell || 0, "extras");
+        push("Shipping & Freight", spx.shipping || 0, "shipping");
+        push("Engineering Drawings", spx.drawings || 0, "drawings");
+        if (concSell) push("Concrete", concSell, "concrete");
+        if (insulSell) push("Insulation", insulSell, "insulation");
+        if (taxAmt)
+          push(`Sales Tax (${taxRate}%)`, taxAmt, "tax", { taxStyle: true });
+        let lineSum = rows.reduce((a, r) => a + r.amount, 0);
+        if (grandTotal > lineSum) {
+          const gap = grandTotal - lineSum;
+          let installRow = rows.find((r) => r.key === "install");
+          if (!installRow) {
+            installRow = {
+              label: "Erection / Installation",
+              amount: 0,
+              key: "install",
+            };
+            const shipIdx = rows.findIndex((r) => r.key === "shipping");
+            rows.splice(shipIdx >= 0 ? shipIdx : rows.length, 0, installRow);
+          }
+          installRow.amount += gap;
+          lineSum += gap;
+        }
+        return { rows, grandTotal, lineSum };
       }
 
       let storageComputeTimer = null;
@@ -2396,11 +2568,16 @@
               installSellPerSf: state.storageInstallSellPerSf,
               installCostPerSf: state.storageInstallCostPerSf,
               shipping: state.storageShipping,
-              drawings: state.storageDrawings,
+              drawings: state.storageDrawingsFee,
               salesTax: state.salesTax,
             },
           );
           state.storagePricing = data.storagePricing;
+          if (state.storagePricing?.salesTax?.rate != null) {
+            const taxEl = document.getElementById("storage-tax-rate");
+            if (taxEl) taxEl.value = state.storagePricing.salesTax.rate;
+            state.salesTax.rate = state.storagePricing.salesTax.rate;
+          }
           renderStorage();
           renderStorageQuote();
         } catch (e) {
@@ -2410,14 +2587,76 @@
 
       function showStorageTab(tab, btn) {
         document
-          .querySelectorAll("#page-storage .tab-btn")
+          .querySelectorAll("#storage-results-area .tab-btn")
           .forEach((b) => b.classList.remove("active"));
         document
-          .querySelectorAll("#page-storage .tab-content")
+          .querySelectorAll("#storage-results-area .tab-content")
           .forEach((c) => c.classList.remove("active"));
         if (btn) btn.classList.add("active");
         document.getElementById("storage-tab-" + tab)?.classList.add("active");
         if (tab === "quote") renderStorageQuote();
+        if (tab === "drawings") storageRenderDrawingGrid();
+      }
+
+      function storageDrawingAttachmentsForApi() {
+        return (state.storageDrawingFiles || [])
+          .filter((d) => d.includeInPackage !== false && d.data)
+          .map((d) => ({
+            name: d.name,
+            fileBase64: d.data,
+            includeInQuote: true,
+          }));
+      }
+
+      function storageHandleDrawingInput(e) {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        let pending = files.length;
+        files.forEach((file) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            state.storageDrawingFiles.push({
+              name: file.name,
+              data: ev.target.result,
+              includeInPackage: true,
+            });
+            pending -= 1;
+            if (pending === 0) storageRenderDrawingGrid();
+          };
+          reader.readAsDataURL(file);
+        });
+        e.target.value = "";
+      }
+
+      function storageRenderDrawingGrid() {
+        const grid = document.getElementById("storage-drawing-grid");
+        const empty = document.getElementById("storage-drawing-empty");
+        if (!grid) return;
+        if (!state.storageDrawingFiles.length) {
+          grid.innerHTML = "";
+          if (empty) empty.style.display = "block";
+          return;
+        }
+        if (empty) empty.style.display = "none";
+        grid.innerHTML = state.storageDrawingFiles
+          .map((d, i) => {
+            const isImage = String(d.data || "").startsWith("data:image");
+            const preview = isImage
+              ? `<img src="${d.data}" alt="${d.name}" style="width:100%;height:140px;object-fit:cover;display:block;">`
+              : `<div style="width:100%;height:140px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#64748b;font-size:12px;padding:12px;text-align:center;">PDF<br>${d.name}</div>`;
+            return (
+              `<div style="position:relative;border:2px solid ${d.includeInPackage ? "#2176c7" : "#e2e8f0"};border-radius:6px;overflow:hidden;">` +
+              preview +
+              `<div style="padding:6px 8px;background:#f8f9fb;">` +
+              `<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px;">${d.name}</div>` +
+              `<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;">` +
+              `<input type="checkbox" ${d.includeInPackage ? "checked" : ""} onchange="state.storageDrawingFiles[${i}].includeInPackage=this.checked;storageRenderDrawingGrid();" style="accent-color:#2176c7;">Include in package` +
+              `</label></div>` +
+              `<button onclick="state.storageDrawingFiles.splice(${i},1);storageRenderDrawingGrid();" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;">✕</button>` +
+              `</div>`
+            );
+          })
+          .join("");
       }
 
       // ─── Render ─────────────────────────────────────────────────────
@@ -2500,6 +2739,19 @@
           });
           html += "</tbody></table></div>";
         }
+        if (sp) {
+          const summary = storagePricingSummaryLines(sp);
+          html +=
+            '<div style="padding:14px 0 0"><strong>Pricing Summary</strong></div><div class="table-wrap"><table><tbody>';
+          summary.rows.forEach((row) => {
+            html += `<tr><td>${row.label}</td><td class="td-r">${fmt(row.amount)}</td></tr>`;
+          });
+          html += `<tr class="total-row"><td>Total</td><td class="td-r">${fmt(summary.grandTotal)}</td></tr>`;
+          if (summary.lineSum !== summary.grandTotal) {
+            html += `<tr><td colspan="2" style="color:var(--red);font-size:11px;padding-top:8px">Line items (${fmt(summary.lineSum)}) do not match grand total — recalculate or adjust controls.</td></tr>`;
+          }
+          html += "</tbody></table></div>";
+        }
         document.getElementById("storage-breakdown").innerHTML = html;
       }
 
@@ -2527,9 +2779,17 @@
           { year: "numeric", month: "long", day: "numeric" },
         );
         const sf = sp.totalSqft || 0;
-        const grand = sp.grandTotal || 0;
-        const sfPrice = sp.pricePerSf || (sf > 0 ? (grand / sf).toFixed(2) : "—");
+        const summary = storagePricingSummaryLines(sp);
+        const grand = summary.grandTotal || 0;
+        const sfPrice =
+          sp.pricePerSf || (sf > 0 ? (grand / sf).toFixed(2) : "—");
         const buildings = sp.buildings || sd.buildings || [];
+        const summaryRows = summary.rows
+          .map(
+            (row) =>
+              `<tr class="q-sub-row"${row.taxStyle ? ' style="color:#b45309"' : ""}><td>${row.label}</td><td style="text-align:right">${fmt(row.amount)}</td></tr>`,
+          )
+          .join("");
         const bldRows = buildings
           .map((b) => {
             const sell =
@@ -2538,8 +2798,6 @@
             return `<tr><td style="padding:6px 8px;font-weight:600">${b.name}</td><td style="padding:6px 8px;text-align:center">${b.width}' × ${b.length}' × ${b.loEave || 0}' eave</td><td style="padding:6px 8px;text-align:center">${b.slope || ""}</td><td style="padding:6px 8px;text-align:center">${(b.sqft || 0).toLocaleString()} SF</td><td style="padding:6px 8px;text-align:center">Screw-Down</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:#1e3a8a">${fmt(sell)}</td></tr>`;
           })
           .join("");
-        const extrasSell = sp.extrasSell || 0;
-        const doorSell = sp.doorSell || 0;
         el.innerHTML = `<div class="quote-output">
     <div class="q-logo-bar"><div><div style="font-size:18px;font-weight:800;color:#1e3a8a">STORAGE MATERIALS</div>
     <div class="q-logo-sub">METAL AND DOORS · Council Bluffs, IA · (888) 968-1222</div></div>
@@ -2556,15 +2814,9 @@
     <tbody>${bldRows}</tbody>
     <tfoot><tr style="font-weight:700;border-top:2px solid #1e3a8a"><td colspan="5" style="padding:8px">Building Subtotal</td><td style="padding:8px;text-align:right;color:#1e3a8a">${fmt(sp.buildingSell)}</td></tr></tfoot></table></div>
     <div class="q-two-col" style="margin-top:16px"><div class="q-section"><div class="q-section-title">Pricing Summary</div><div class="q-breakdown"><table>
-    <tr class="q-sub-row"><td>Buildings (${buildings.length})</td><td style="text-align:right">${fmt(sp.buildingSell)}</td></tr>
-    ${doorSell ? `<tr class="q-sub-row"><td>Doors & Hardware</td><td style="text-align:right">${fmt(doorSell)}</td></tr>` : ""}
-    ${sp.installSell ? `<tr class="q-sub-row"><td>Erection / Installation</td><td style="text-align:right">${fmt(sp.installSell)}</td></tr>` : ""}
-    ${extrasSell ? `<tr class="q-sub-row"><td>Options & Add-ons</td><td style="text-align:right">${fmt(extrasSell)}</td></tr>` : ""}
-    ${sp.shipping ? `<tr class="q-sub-row"><td>Shipping & Freight</td><td style="text-align:right">${fmt(sp.shipping)}</td></tr>` : ""}
-    ${sp.drawings ? `<tr class="q-sub-row"><td>Engineering Drawings</td><td style="text-align:right">${fmt(sp.drawings)}</td></tr>` : ""}
-    ${sp.salesTax?.amount ? `<tr class="q-sub-row"><td>Sales Tax (${sp.salesTax.rate}%)</td><td style="text-align:right">${fmt(sp.salesTax.amount)}</td></tr>` : ""}
+    ${summaryRows}
     <tr class="q-total-row"><td>Total</td><td style="text-align:right">${fmt(grand)}</td></tr>
-    </table></div></div>
+    </table></div><p style="font-size:11px;color:#64748b;margin-top:8px">${sp.salesTax?.rate ? `Sales tax of ${sp.salesTax.rate}% on materials & doors. Labor/erection not taxed.` : "Sales tax not included — set rate above if applicable."} Freight ${sp.shipping ? "itemized above" : "included in building pricing"}.</p></div>
     <div class="q-section"><div class="q-section-title">Scope Included</div><ul class="q-list"><li>All ${buildings.length} self-storage metal building system${buildings.length !== 1 ? "s" : ""}</li><li>Primary & secondary structural framing per engineered drawings</li><li>26 GA R-Loc wall panels per specifications</li><li>Delivery & unloading of materials at site</li><li>Full erection of metal building system</li></ul></div></div>
     </div>`;
       }
@@ -3105,7 +3357,8 @@
           jobNumber: state.jobNumber,
           additionalInfo: state.additionalInfo,
           extractedDrawingFields: state.extractedDrawingFields,
-          sections: ["quote", "sow", "contract"],
+          drawingAttachments: storageDrawingAttachmentsForApi(),
+          sections: ["quote", "sow", "contract", "drawings"],
         };
         if (isStorage) {
           return {
@@ -3226,6 +3479,7 @@
             storageData: state.storageData,
             storagePricingResult: state.storagePricing,
             leadCompanyName: state.storageData.project?.customer || "",
+            drawingAttachments: storageDrawingAttachmentsForApi(),
             status: "draft",
           };
           const data = state.estimateId
@@ -3346,8 +3600,45 @@
             document.getElementById("margin-sell-fixed").value =
               e.marginOverride.sellFixed;
           if (e.jobType === "Storage") {
+            state.storageDrawingFiles = (e.drawingAttachments || []).map((d) => ({
+              name: d.name || "Drawing",
+              data: d.fileBase64 || d.data,
+              includeInPackage: d.includeInQuote !== false,
+            }));
+            const sp = e.storagePricingResult || {};
+            if (sp.installSellPerSf != null) {
+              state.storageInstallSellPerSf = sp.installSellPerSf;
+              const el = document.getElementById("storage-install-val");
+              if (el) el.value = sp.installSellPerSf;
+            }
+            if (sp.installCostPerSf != null) {
+              state.storageInstallCostPerSf = sp.installCostPerSf;
+              const el = document.getElementById("storage-install-cost-val");
+              if (el) el.value = sp.installCostPerSf;
+            }
+            if (sp.shipping != null) {
+              state.storageShipping = sp.shipping;
+              const el = document.getElementById("storage-shipping-val");
+              if (el) el.value = sp.shipping;
+            }
+            if (sp.drawings != null) {
+              state.storageDrawingsFee = sp.drawings;
+              const el = document.getElementById("storage-drawings-val");
+              if (el) el.value = sp.drawings;
+            }
+            const taxRate =
+              sp.salesTax?.rate ?? e.salesTax?.rate ?? state.salesTax.rate;
+            state.salesTax.rate = taxRate;
+            state.salesTax.include = sp.salesTax?.include !== false;
+            const taxEl = document.getElementById("storage-tax-rate");
+            if (taxEl) taxEl.value = taxRate;
+            const taxInc = document.getElementById("storage-tax-include");
+            if (taxInc) taxInc.checked = state.salesTax.include;
             showPage("storage");
-            renderStorage();
+            document.getElementById("storage-results-area").style.display =
+              "block";
+            await runComputeStorage();
+            storageRenderDrawingGrid();
           } else {
             showPage("quote");
             renderMetrics();

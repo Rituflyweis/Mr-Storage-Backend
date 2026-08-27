@@ -522,6 +522,53 @@ Persist on save as **`extractedDrawingFields.frame`** (maps to SOW `frameType` i
 
 ---
 
+## 11. Storage COG — drawing attachments (quote package)
+
+**What changed:** Storage quotes can attach layout plans / elevations as images or PDFs. Checked files append to the full PDF package (quote + SOW + contract + drawings). This is separate from the numeric **Engineering Drawings $** line on the quote (pass-through fee).
+
+### Persist on save — `POST/PUT /api/sales/estimates`
+
+```json
+{
+  "jobType": "Storage",
+  "storageData": { "...": "..." },
+  "storagePricingResult": { "grandTotal": 148330 },
+  "drawingAttachments": [
+    {
+      "name": "layout-plan.png",
+      "fileBase64": "data:image/png;base64,...",
+      "includeInQuote": true
+    }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `drawingAttachments` | array | Optional. Each item needs `name`, `fileBase64` (data URL or raw base64), `includeInQuote` (default true) |
+| `drawings` | alias | Accepted on create/update as alias for `drawingAttachments` |
+
+### Preview / PDF — `POST .../documents/preview` and `POST .../documents/pdf`
+
+Include the same `drawingAttachments` array and add **`drawings`** to `sections`:
+
+```json
+{
+  "jobType": "Storage",
+  "storagePricingResult": { "grandTotal": 148330 },
+  "drawingAttachments": [ { "name": "...", "fileBase64": "...", "includeInQuote": true } ],
+  "sections": ["quote", "sow", "contract", "drawings"]
+}
+```
+
+**Images** render inline in the drawings appendix. **PDF** files are stored but may not preview in-browser (same as v5 HTML tool).
+
+**Pricing summary:** Storage quote PDF/preview line items must sum to **`grandTotal`**. Always include **Erection / Installation** (`installSell` = erection sell $/SF × total SF). If a saved estimate is missing `installSell`, the backend derives it from `grandTotal` minus other lines.
+
+Reference UI: **`SM-QuotingTool-API.html`** → Storage COG Sheet → **Drawings** tab.
+
+---
+
 ```bash
 # Parity check (shipper + Ben Olson + PDF)
 node scripts/compare-v5-api-all-fixtures.js
@@ -536,5 +583,6 @@ node scripts/compare-v5-api-all-fixtures.js
 - [ ] On SF edit: `/compute` with `useManualSquareFootage: true`
 - [ ] COGS apply: `/compute` with `cogsOverride.applied: true`
 - [ ] Storage PDF/preview: always send **`storagePricingResult`**
+- [ ] Storage drawings: send **`drawingAttachments`** + `sections` including **`drawings`**
 - [ ] Use **`contractHtml`** from preview for Contract tab
 - [ ] Open **`SM-QuotingTool-API.html`** against production URL as living reference
