@@ -33,6 +33,20 @@ const decodeBase64File = (fileBase64) => {
   return Buffer.from(raw, 'base64')
 }
 
+const toNumber = (value, fallback = 0) => {
+  if (value == null) return fallback
+  if (typeof value === 'bigint') return Number(value)
+  if (typeof value === 'object' && typeof value.toNumber === 'function') return value.toNumber()
+  if (typeof value === 'object' && value._bsontype === 'Decimal128') {
+    return parseFloat(String(value)) || fallback
+  }
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+const isPlainObject = (value) =>
+  value != null && typeof value === 'object' && !Array.isArray(value)
+
 const normalizeQuoteOptions = (body = {}) => {
   const scopeRaw = String(body.scope || 'both').toLowerCase()
   const scope = ['supply', 'install', 'both'].includes(scopeRaw) ? scopeRaw : 'both'
@@ -149,50 +163,82 @@ const applyStorageEstimateTotals = (estimate, storagePricing) => {
 
 /** Quote total shown to customer (building + concrete + insulation + tax). */
 const resolveEstimateGrandTotal = (estimate = {}) => {
-  if (estimate.jobType === 'Storage' && estimate.storagePricingResult?.grandTotal != null) {
-    return Math.round(estimate.storagePricingResult.grandTotal)
+  try {
+    if (estimate.jobType === 'Storage' && estimate.storagePricingResult?.grandTotal != null) {
+      return Math.round(toNumber(estimate.storagePricingResult.grandTotal))
+    }
+    if (estimate.fullQuoteResult?.grandTotal != null) {
+      return Math.round(toNumber(estimate.fullQuoteResult.grandTotal))
+    }
+    if (isPlainObject(estimate.pricingResult)) {
+      const full = computeFullPembQuote(estimate.pricingResult, {
+        concrete: estimate.concreteAddon,
+        insulation: estimate.insulationAddon,
+        salesTax: estimate.salesTax,
+        cogsOverride: estimate.cogsOverride,
+        marginOverride: estimate.marginOverride,
+        sf: toNumber(estimate.squareFootage),
+      })
+      return Math.round(
+        toNumber(full.grandTotal, toNumber(estimate.pricingResult.totSell, estimate.totalSell))
+      )
+    }
+    return Math.round(toNumber(estimate.totalSell))
+  } catch (err) {
+    console.error('[resolveEstimateGrandTotal]', estimate._id, err.message)
+    return Math.round(toNumber(estimate.totalSell))
   }
-  if (estimate.fullQuoteResult?.grandTotal != null) {
-    return Math.round(estimate.fullQuoteResult.grandTotal)
-  }
-  if (estimate.pricingResult) {
-    const full = computeFullPembQuote(estimate.pricingResult, {
-      concrete: estimate.concreteAddon,
-      insulation: estimate.insulationAddon,
-      salesTax: estimate.salesTax,
-      cogsOverride: estimate.cogsOverride,
-      marginOverride: estimate.marginOverride,
-      sf: estimate.squareFootage,
-    })
-    return Math.round(full.grandTotal ?? estimate.pricingResult.totSell ?? 0)
-  }
-  return Math.round(estimate.totalSell ?? 0)
 }
 
 /** Building subtotal before concrete, insulation, and tax. */
 const resolveEstimateBuildingSubtotal = (estimate = {}) => {
-  if (estimate.jobType === 'Storage' && estimate.storagePricingResult) {
-    const sp = estimate.storagePricingResult
+  try {
+    if (estimate.jobType === 'Storage' && estimate.storagePricingResult) {
+      const sp = estimate.storagePricingResult
+      return Math.round(
+        toNumber(sp.buildingSell) +
+          toNumber(sp.doorSell) +
+          toNumber(sp.extrasSell) +
+          toNumber(sp.installSell) +
+          toNumber(sp.shipping) +
+          toNumber(sp.drawings)
+      )
+    }
+    if (estimate.fullQuoteResult?.buildingSubtotal != null) {
+      return Math.round(toNumber(estimate.fullQuoteResult.buildingSubtotal))
+    }
     return Math.round(
-      (sp.buildingSell || 0) +
-        (sp.doorSell || 0) +
-        (sp.extrasSell || 0) +
-        (sp.installSell || 0) +
-        (sp.shipping || 0) +
-        (sp.drawings || 0)
+      toNumber(estimate.pricingResult?.totSell, estimate.totalSell)
     )
+  } catch (err) {
+    console.error('[resolveEstimateBuildingSubtotal]', estimate._id, err.message)
+    return Math.round(toNumber(estimate.totalSell))
   }
-  if (estimate.fullQuoteResult?.buildingSubtotal != null) {
-    return Math.round(estimate.fullQuoteResult.buildingSubtotal)
-  }
-  return Math.round(estimate.pricingResult?.totSell ?? estimate.totalSell ?? 0)
 }
 
-const withEstimateListTotals = (estimate) => ({
+const withEstimateTotals = (estimate) => ({
   ...estimate,
   grandTotal: resolveEstimateGrandTotal(estimate),
   buildingSubtotal: resolveEstimateBuildingSubtotal(estimate),
 })
+
+const withEstimateListTotals = (estimate) => {
+  const {
+    drawingAttachments: _drawings,
+    parsedCategories: _parsed,
+    breakdownRows: _rows,
+    tabSummary: _tabs,
+    storageData: _storage,
+    weightByCategory: _weights,
+    ...rest
+  } = estimate
+  return {
+    ...rest,
+    grandTotal: resolveEstimateGrandTotal(estimate),
+    buildingSubtotal: resolveEstimateBuildingSubtotal(estimate),
+    drawingCount: Array.isArray(_drawings) ? _drawings.length : 0,
+  }
+}
 
 const applyEstimateTotals = (estimate, payload) => {
   const { pricing, fullQuote: incomingFullQuote } = payload
@@ -523,7 +569,7 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
   }
   await estimate.save()
 
-  return created(res, { estimate: withEstimateListTotals(estimate.toObject()) })
+  return created(res, { estimate: withEstimateTotals(estimate.toObject()) })
 })
 
 exports.getEstimateQuote = asyncHandler(async (req, res) => {
@@ -531,7 +577,7 @@ exports.getEstimateQuote = asyncHandler(async (req, res) => {
   if (!estimate) return notFound(res, 'Estimate not found')
   const access = assertEstimateAccess(estimate, req.user)
   if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-  return success(res, { estimate: withEstimateListTotals(estimate) })
+  return success(res, { estimate: withEstimateTotals(estimate) })
 })
 
 exports.updateEstimateQuote = asyncHandler(async (req, res) => {
@@ -595,7 +641,7 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
   }
 
   await estimate.save()
-  return success(res, { estimate: withEstimateListTotals(estimate.toObject()) })
+  return success(res, { estimate: withEstimateTotals(estimate.toObject()) })
 })
 
 exports.deleteEstimateQuote = asyncHandler(async (req, res) => {
@@ -621,7 +667,12 @@ exports.listEstimateQuotes = asyncHandler(async (req, res) => {
   const skip = (parsedPage - 1) * parsedLimit
 
   const [estimates, total] = await Promise.all([
-    EstimateQuote.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit).lean(),
+    EstimateQuote.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .select('-drawingAttachments -parsedCategories -breakdownRows -tabSummary -storageData -weightByCategory')
+      .lean(),
     EstimateQuote.countDocuments(filter),
   ])
 
@@ -638,7 +689,7 @@ const rangeStats = async (userId, from) => {
   if (userId) filter.createdBy = userId
   const rows = await EstimateQuote.find(filter).lean()
   const totalQuotes = rows.length
-  const totalValue = rows.reduce((s, r) => s + resolveEstimateGrandTotal(r), 0)
+  const totalValue = rows.reduce((s, r) => s + toNumber(resolveEstimateGrandTotal(r)), 0)
   const totalProfit = rows.reduce((s, r) => s + (r.profit || 0), 0)
   const avgMargin = totalQuotes > 0 ? rows.reduce((s, r) => s + (r.marginPercent || 0), 0) / totalQuotes : 0
   return {
