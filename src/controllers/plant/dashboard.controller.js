@@ -7,6 +7,7 @@ const Delivery = require('../../models/Delivery')
 const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Bundle = require('../../models/Bundle')
+const DailyProductionLog = require('../../models/DailyProductionLog')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { getScopedLeadIds } = require('../../utils/plantAccessScope')
@@ -19,10 +20,20 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
+  // Plant-wide (not per-project), so this is looked up regardless of the caller's assigned
+  // leads — the fabrication floor runs independent of which projects a given plant user owns.
+  const todaysLog = await DailyProductionLog.findOne({ date: startOfToday }).lean()
+
   if (!leadIds.length) {
     return success(res, {
       stats: { totalProjects: 0, inProduction: 0, readyToDispatch: 0, dispatchedToday: 0, pendingApproval: 0 },
-      productionOverviewToday: { plannedTonnage: null, producedTonnage: null, utilizationPct: null, onTimeDeliveryPct: null, reworkRejectionPct: null },
+      productionOverviewToday: {
+        plannedTonnage: todaysLog?.plannedTonnage ?? null,
+        producedTonnage: todaysLog?.producedTonnage ?? null,
+        utilizationPct: todaysLog?.utilizationPct ?? null,
+        onTimeDeliveryPct: null,
+        reworkRejectionPct: null,
+      },
       recentShipperFiles: [],
       plantAlerts: [],
       freightCarriers: [],
@@ -131,10 +142,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   }
   drawingRows.sort((a, b) => new Date(b.sentDate || 0) - new Date(a.sentDate || 0))
 
-  // "Production Overview (Today)" — only On-Time Delivery % and Rework/Rejection % have real
-  // backing data. Planned/Produced Tonnage and Utilization % have no fabrication-output or
-  // equipment-capacity tracking anywhere in the schema — left null rather than fabricated;
-  // building those for real requires a new production-log model, which is a product decision.
+  // "Production Overview (Today)" — plannedTonnage/producedTonnage/utilizationPct now come
+  // from DailyProductionLog (entered by plant staff via POST /dashboard/production-log);
+  // null until someone logs today's numbers, rather than a permanent gap.
   const [deliveredTodayDeliveries, bundlesVerifiedToday] = await Promise.all([
     Delivery.find({
       leadId: { $in: leadIds },
@@ -169,9 +179,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       pendingApproval: pendingApprovalLeadIds.length,
     },
     productionOverviewToday: {
-      plannedTonnage: null,  // no fabrication planning data exists
-      producedTonnage: null, // no production output tracking exists
-      utilizationPct: null,  // no equipment/capacity data exists
+      plannedTonnage: todaysLog?.plannedTonnage ?? null,
+      producedTonnage: todaysLog?.producedTonnage ?? null,
+      utilizationPct: todaysLog?.utilizationPct ?? null,
       onTimeDeliveryPct,
       reworkRejectionPct,
     },
@@ -180,4 +190,29 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     freightCarriers,
     drawingApprovalStatus: drawingRows.slice(0, 20),
   })
+})
+
+// POST /dashboard/production-log — plant staff logs today's planned/produced tonnage and
+// utilization. Upserts the one record for the given date (defaults to today) so re-logging
+// the same day updates it rather than creating duplicates.
+exports.logProduction = asyncHandler(async (req, res) => {
+  const { plannedTonnage, producedTonnage, utilizationPct, date } = req.body
+  const now = new Date()
+  const logDate = date ? new Date(date) : new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  logDate.setHours(0, 0, 0, 0)
+
+  const log = await DailyProductionLog.findOneAndUpdate(
+    { date: logDate },
+    {
+      $set: {
+        ...(plannedTonnage !== undefined && { plannedTonnage }),
+        ...(producedTonnage !== undefined && { producedTonnage }),
+        ...(utilizationPct !== undefined && { utilizationPct }),
+        loggedBy: req.user._id,
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  )
+
+  return success(res, { productionLog: log }, 'Production log saved')
 })

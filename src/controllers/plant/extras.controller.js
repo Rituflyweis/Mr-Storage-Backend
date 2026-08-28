@@ -17,7 +17,7 @@ const Vendor = require('../../models/Vendor')
 const asyncHandler = require('../../utils/asyncHandler')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { FREIGHT_BID_STATUSES, DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+const { FREIGHT_BID_STATUSES, DELIVERY_FULFILLMENT_STATUSES, DELIVERY_MATERIAL_CATEGORIES, DELIVERY_EQUIPMENT_OPTIONS } = require('../../config/constants')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse calendar stat.
 const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered')
 
@@ -582,6 +582,8 @@ exports.getAllDeliveriesFilterLookups = asyncHandler(async (req, res) => {
   return success(res, {
     vendors: vendors.map((v) => ({ _id: v._id, vendorName: v.vendorName })),
     internalOwners: owners.map((u) => ({ _id: u._id, name: u.name })),
+    materialCategories: DELIVERY_MATERIAL_CATEGORIES,
+    equipmentOptions: DELIVERY_EQUIPMENT_OPTIONS,
   })
 })
 

@@ -108,8 +108,12 @@ const mapCarrierListRow = (carrier, stats = {}) => ({
   avgBid: stats.avgBid || 0,
 })
 
-const buildCarrierListFilter = (query) => {
-  const { status, serviceType, serviceArea, equipmentType } = query
+// FreightCarrier has no month or material field of its own — "month" scopes to carriers with
+// bid activity in that month, and "material" scopes to carriers who've hauled that material,
+// both resolved via FreightBid -> Delivery (the same cross-collection pattern used for the
+// all-deliveries vendor/internal-owner filters).
+const buildCarrierListFilter = async (query) => {
+  const { status, serviceType, serviceArea, equipmentType, month, year, materialType } = query
   const filter = {}
 
   if (status) filter.status = status
@@ -128,6 +132,25 @@ const buildCarrierListFilter = (query) => {
       { contactName: regex },
       { email: regex },
     ]
+  }
+
+  if ((month && year) || materialType) {
+    const Delivery = require('../../models/Delivery')
+    const bidFilter = {}
+
+    if (month && year) {
+      const monthStart = new Date(Number(year), Number(month) - 1, 1)
+      const monthEnd = new Date(Number(year), Number(month), 1)
+      bidFilter.createdAt = { $gte: monthStart, $lt: monthEnd }
+    }
+
+    if (materialType) {
+      const deliveries = await Delivery.find({ materialType }).select('_id').lean()
+      bidFilter.deliveryId = { $in: deliveries.map((d) => d._id) }
+    }
+
+    const bids = await FreightBid.find(bidFilter).select('carrierId').lean()
+    filter._id = { $in: [...new Set(bids.map((b) => String(b.carrierId)))] }
   }
 
   return filter
@@ -149,7 +172,7 @@ exports.getCarriers = asyncHandler(async (req, res) => {
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const filter = buildCarrierListFilter(req.query)
+  const filter = await buildCarrierListFilter(req.query)
 
   const [carriers, total] = await Promise.all([
     FreightCarrier.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit).lean(),

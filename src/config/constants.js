@@ -190,6 +190,13 @@ const DRAWING_STATUSES = ['pending_review', 'approved', 'rejected']
 
 const VENDOR_STATUSES = ['active', 'inactive']
 const VENDOR_TYPES = ['steel', 'insulation', 'panels', 'trim', 'hardware', 'other']
+// Delivery.materialType has no enum today (free text, entered per-delivery) — real DB values
+// are inconsistent comma-joined strings. This is a starter dropdown list for the "Material
+// Category" filter, not an enforced schema constraint; existing free-text data isn't migrated.
+const DELIVERY_MATERIAL_CATEGORIES = ['Primary Steel', 'Secondary Steel', 'Doors', 'Trim', 'Hardware']
+// Delivery.loadingEquipment has no enum either (free-text array) — real DB data today only
+// has "Crane". Starter dropdown list for the "Equipment Required" filter, same caveat as above.
+const DELIVERY_EQUIPMENT_OPTIONS = ['Crane', 'Forklift', 'Flatbed Truck', 'Hydraulic Lift', 'Pallet Jack']
 const SHIPPER_REQUEST_STATUSES = [
   'sent', 'submitted',
   'comparison_processing', 'comparison_completed', 'comparison_failed',
@@ -276,6 +283,8 @@ module.exports = {
   DRAWING_STATUSES,
   VENDOR_STATUSES,
   VENDOR_TYPES,
+  DELIVERY_MATERIAL_CATEGORIES,
+  DELIVERY_EQUIPMENT_OPTIONS,
   SHIPPER_REQUEST_STATUSES,
   ACTIVE_SHIPPER_REQUEST_STATUSES,
   CARRIER_STATUSES,
