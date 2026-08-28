@@ -10,6 +10,10 @@ const SMDTCostVersion = require('../../models/SMDTCostVersion')
 const PackingList = require('../../models/PackingList')
 const Expense = require('../../models/Expense')
 const WIPProfit = require('../../models/WIPProfit')
+const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
+const POOrder = require('../../models/POOrder')
+const User = require('../../models/User')
+const Vendor = require('../../models/Vendor')
 const asyncHandler = require('../../utils/asyncHandler')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const { buildDateFilter } = require('../../utils/dateRange')
@@ -438,12 +442,13 @@ exports.getDeliveriesCalendar = asyncHandler(async (req, res) => {
   })
 })
 
-// Shared by getAllDeliveries + exportAllDeliveriesCsv. carrierId and customerId can't be
-// queried directly on Delivery (carrier lives on FreightBid via selectedCarrierBidId,
-// customer lives on Lead) so both are resolved to a set of matching ids first, same pattern
-// as the rest of this file.
+// Shared by getAllDeliveries + exportAllDeliveriesCsv. carrierId/customerId/vendorId/internalOwner
+// can't be queried directly on Delivery — carrier lives on FreightBid via selectedCarrierBidId,
+// customer lives on Lead, vendor lives on that lead's ConsolidatedBOM (the material supplier for
+// the project, not the freight carrier), and "internal owner" is the plant staff member the
+// project's PO order is assigned to. All four are resolved to a set of matching leadIds/bidIds first.
 const buildAllDeliveriesFilter = async (query) => {
-  const { projectId, customerId, carrierId, materialType, equipment, deliveryStatus, startDate, endDate, search } = query
+  const { projectId, customerId, carrierId, vendorId, internalOwner, materialType, equipment, deliveryStatus, startDate, endDate, search } = query
   const dateFilter = buildDateFilter({ startDate, endDate }, 'deliveryDate')
 
   const filter = { ...dateFilter }
@@ -452,10 +457,33 @@ const buildAllDeliveriesFilter = async (query) => {
   if (materialType) filter.materialType = materialType
   if (equipment) filter.loadingEquipment = equipment
 
+  const intersectLeadIds = (ids) => {
+    const idSet = new Set(ids.map(String))
+    if (filter.leadId && typeof filter.leadId === 'string') {
+      filter.leadId = idSet.has(filter.leadId) ? filter.leadId : '000000000000000000000000'
+    } else if (filter.leadId && filter.leadId.$in) {
+      filter.leadId.$in = filter.leadId.$in.filter((id) => idSet.has(String(id)))
+    } else {
+      filter.leadId = { $in: [...idSet] }
+    }
+  }
+
   if (customerId) {
     const leads = await Lead.find({ customerId }).select('_id').lean()
-    const leadIds = leads.map((l) => l._id)
-    filter.leadId = filter.leadId ? { $in: [filter.leadId].filter((id) => leadIds.some((l) => String(l) === String(id))) } : { $in: leadIds }
+    intersectLeadIds(leads.map((l) => l._id))
+  }
+
+  if (vendorId) {
+    // ConsolidatedBOM has no single top-level vendor — a project's BOM can be RFQ'd to
+    // several vendors at once (sentToVendors[]) — so this matches "projects whose BOM went
+    // to this vendor" rather than a strict one-vendor-per-delivery relationship.
+    const boms = await ConsolidatedBOM.find({ 'sentToVendors.vendorId': vendorId }).select('leadId').lean()
+    intersectLeadIds(boms.map((b) => b.leadId))
+  }
+
+  if (internalOwner) {
+    const pos = await POOrder.find({ assignedTo: internalOwner }).select('leadId').lean()
+    intersectLeadIds(pos.map((p) => p.leadId))
   }
 
   if (carrierId) {
@@ -474,6 +502,38 @@ const buildAllDeliveriesFilter = async (query) => {
   return filter
 }
 
+// Enriches a page of lean Delivery docs with Vendor (via the lead's ConsolidatedBOM) and
+// Internal Owner (via the lead's PO order assignee) — neither is a direct Delivery field.
+// Vendor is a best-effort display value: a project's BOM can be RFQ'd to multiple vendors
+// (sentToVendors[]), so this shows the most recently sent one rather than a definitive
+// "the vendor for this delivery" — there's no field anywhere that tracks which vendor
+// actually fulfilled a given delivery.
+const enrichDeliveriesWithVendorAndOwner = async (deliveries) => {
+  // Filter out missing leadId BEFORE stringifying — a bare `null` here would otherwise become
+  // the string "null" and get sent into a Mongo ObjectId query, throwing a CastError. A handful
+  // of Delivery records in the DB have no leadId at all (orphaned data), so this isn't rare.
+  const leadIds = [...new Set(deliveries.map((d) => d.leadId?._id || d.leadId).filter(Boolean).map(String))]
+  if (!leadIds.length) return deliveries
+
+  const [boms, pos] = await Promise.all([
+    ConsolidatedBOM.find({ leadId: { $in: leadIds } })
+      .select('leadId sentToVendors')
+      .populate('sentToVendors.vendorId', 'vendorName')
+      .lean(),
+    POOrder.find({ leadId: { $in: leadIds }, assignedTo: { $ne: null } }).select('leadId assignedTo').populate('assignedTo', 'name').lean(),
+  ])
+  const vendorByLead = new Map(boms.map((b) => {
+    const latest = (b.sentToVendors || []).slice().sort((x, y) => new Date(y.sentAt) - new Date(x.sentAt))[0]
+    return [String(b.leadId), latest?.vendorId?.vendorName || '']
+  }))
+  const ownerByLead = new Map(pos.map((p) => [String(p.leadId), p.assignedTo?.name || '']))
+
+  return deliveries.map((d) => {
+    const leadId = String(d.leadId?._id || d.leadId)
+    return { ...d, vendorName: vendorByLead.get(leadId) || '', internalOwnerName: ownerByLead.get(leadId) || '' }
+  })
+}
+
 exports.getAllDeliveries = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10 } = req.query
   const filter = await buildAllDeliveriesFilter(req.query)
@@ -481,7 +541,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   const statusGroups = await Delivery.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }])
   const statusMap = Object.fromEntries(statusGroups.map(s => [s._id, s.count]))
 
-  const [deliveries, total] = await Promise.all([
+  const [deliveriesRaw, total] = await Promise.all([
     Delivery.find(filter)
       .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
       .populate({ path: 'selectedCarrierBidId', select: 'carrierId quotedAmount', populate: { path: 'carrierId', select: 'carrierName' } })
@@ -491,6 +551,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
       .lean(),
     Delivery.countDocuments(filter),
   ])
+  const deliveries = await enrichDeliveriesWithVendorAndOwner(deliveriesRaw)
 
   return success(res, {
     stats: {
@@ -510,21 +571,33 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   })
 })
 
+// GET /all-deliveries/filters/lookups — populates the Advanced Filters modal's Vendor and
+// Internal Owner dropdowns (the only two that aren't already covered by existing lookup
+// endpoints — Project/Customer/Carrier/Material Category already have their own).
+exports.getAllDeliveriesFilterLookups = asyncHandler(async (req, res) => {
+  const [vendors, owners] = await Promise.all([
+    Vendor.find({ status: 'active' }).select('vendorName').sort({ vendorName: 1 }).lean(),
+    User.find({ role: 'plant', isActive: true }).select('name').sort({ name: 1 }).lean(),
+  ])
+  return success(res, {
+    vendors: vendors.map((v) => ({ _id: v._id, vendorName: v.vendorName })),
+    internalOwners: owners.map((u) => ({ _id: u._id, name: u.name })),
+  })
+})
+
 // GET /all-deliveries/export — CSV, same filters as the list endpoint.
-// Vendor and Internal Owner filters shown in the design have no backing field anywhere on
-// Delivery/Lead — there's no vendor concept on a delivery record and no internal-owner
-// assignment field — so those two are not implemented; every other filter in the design is.
 exports.exportAllDeliveriesCsv = asyncHandler(async (req, res) => {
   const filter = await buildAllDeliveriesFilter(req.query)
 
-  const deliveries = await Delivery.find(filter)
+  const deliveriesRaw = await Delivery.find(filter)
     .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
     .populate({ path: 'selectedCarrierBidId', select: 'carrierId', populate: { path: 'carrierId', select: 'carrierName' } })
     .sort({ deliveryDate: -1 })
     .lean()
+  const deliveries = await enrichDeliveriesWithVendorAndOwner(deliveriesRaw)
 
   const escapeCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
-  const header = ['Delivery #', 'Project', 'Customer', 'Material', 'Carrier', 'Status', 'Delivery Date', 'Pickup Location', 'Delivery Location']
+  const header = ['Delivery #', 'Project', 'Customer', 'Vendor', 'Carrier', 'Internal Owner', 'Material', 'Status', 'Delivery Date', 'Pickup Location', 'Delivery Location']
   const lines = [header.map(escapeCsv).join(',')]
   for (const d of deliveries) {
     const customer = d.leadId?.customerId
@@ -532,8 +605,10 @@ exports.exportAllDeliveriesCsv = asyncHandler(async (req, res) => {
       d.deliveryNumber || '',
       d.leadId?.projectName || d.leadId?.jobId || '',
       customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '',
-      d.materialType || '',
+      d.vendorName || '',
       d.selectedCarrierBidId?.carrierId?.carrierName || '',
+      d.internalOwnerName || '',
+      d.materialType || '',
       d.status || '',
       d.deliveryDate ? new Date(d.deliveryDate).toISOString().slice(0, 10) : '',
       d.pickupLocation || '',

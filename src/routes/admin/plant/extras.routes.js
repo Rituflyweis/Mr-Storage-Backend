@@ -60,6 +60,7 @@ router.get('/freight-loads/export', ctrl.exportFreightLoads)
 // Deliveries
 router.get('/deliveries-calendar', ctrl.getDeliveriesCalendar)
 router.get('/all-deliveries',      ctrl.getAllDeliveries)
+router.get('/all-deliveries/filters/lookups', ctrl.getAllDeliveriesFilterLookups)
 router.get('/all-deliveries/export', ctrl.exportAllDeliveriesCsv)
 
 // QR Labels
