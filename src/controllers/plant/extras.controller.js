@@ -123,11 +123,12 @@ exports.exportSavings = asyncHandler(async (req, res) => {
 })
 
 exports.getFreightLoads = asyncHandler(async (req, res) => {
-  const { status, search, carrierId, projectId, customerId, materialType, siteLocation, startDate, endDate, page = 1, limit = 20 } = req.query
+  const { status, search, carrierId, projectId, customerId, materialType, siteLocation, deliveryId, startDate, endDate, page = 1, limit = 20 } = req.query
 
   const filter = {}
   if (status) filter.status = status
   if (carrierId) filter.carrierId = carrierId
+  if (deliveryId) filter.deliveryId = deliveryId
   const dateFilter = buildDateFilter({ startDate, endDate })
   if (dateFilter.createdAt) filter.createdAt = dateFilter.createdAt
 
@@ -437,20 +438,45 @@ exports.getDeliveriesCalendar = asyncHandler(async (req, res) => {
   })
 })
 
-exports.getAllDeliveries = asyncHandler(async (req, res) => {
-  const { projectId, siteDestination, deliveryStatus, qrScanStatus, transporter, driver, startDate, endDate, search, page = 1, limit = 10 } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'scheduledDate')
+// Shared by getAllDeliveries + exportAllDeliveriesCsv. carrierId and customerId can't be
+// queried directly on Delivery (carrier lives on FreightBid via selectedCarrierBidId,
+// customer lives on Lead) so both are resolved to a set of matching ids first, same pattern
+// as the rest of this file.
+const buildAllDeliveriesFilter = async (query) => {
+  const { projectId, customerId, carrierId, materialType, equipment, deliveryStatus, startDate, endDate, search } = query
+  const dateFilter = buildDateFilter({ startDate, endDate }, 'deliveryDate')
 
   const filter = { ...dateFilter }
   if (projectId) filter.leadId = projectId
   if (deliveryStatus) filter.status = deliveryStatus
-  // carrierId filter handled via selectedCarrierBidId lookup — skip direct filter
+  if (materialType) filter.materialType = materialType
+  if (equipment) filter.loadingEquipment = equipment
+
+  if (customerId) {
+    const leads = await Lead.find({ customerId }).select('_id').lean()
+    const leadIds = leads.map((l) => l._id)
+    filter.leadId = filter.leadId ? { $in: [filter.leadId].filter((id) => leadIds.some((l) => String(l) === String(id))) } : { $in: leadIds }
+  }
+
+  if (carrierId) {
+    const bids = await FreightBid.find({ carrierId }).select('_id').lean()
+    filter.selectedCarrierBidId = { $in: bids.map((b) => b._id) }
+  }
+
   if (search) {
     filter.$or = [
-      { deliveryId: { $regex: search, $options: 'i' } },
-      { material: { $regex: search, $options: 'i' } },
+      { deliveryNumber: { $regex: search, $options: 'i' } },
+      { materialType:   { $regex: search, $options: 'i' } },
+      { description:    { $regex: search, $options: 'i' } },
     ]
   }
+
+  return filter
+}
+
+exports.getAllDeliveries = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10 } = req.query
+  const filter = await buildAllDeliveriesFilter(req.query)
 
   const statusGroups = await Delivery.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }])
   const statusMap = Object.fromEntries(statusGroups.map(s => [s._id, s.count]))
@@ -459,7 +485,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
     Delivery.find(filter)
       .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
       .populate({ path: 'selectedCarrierBidId', select: 'carrierId quotedAmount', populate: { path: 'carrierId', select: 'carrierName' } })
-      .sort({ scheduledDate: -1 })
+      .sort({ deliveryDate: -1 })
       .skip((parseInt(page) - 1) * parseInt(limit))
       .limit(parseInt(limit))
       .lean(),
@@ -482,6 +508,42 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
     page: parseInt(page),
     limit: parseInt(limit),
   })
+})
+
+// GET /all-deliveries/export — CSV, same filters as the list endpoint.
+// Vendor and Internal Owner filters shown in the design have no backing field anywhere on
+// Delivery/Lead — there's no vendor concept on a delivery record and no internal-owner
+// assignment field — so those two are not implemented; every other filter in the design is.
+exports.exportAllDeliveriesCsv = asyncHandler(async (req, res) => {
+  const filter = await buildAllDeliveriesFilter(req.query)
+
+  const deliveries = await Delivery.find(filter)
+    .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
+    .populate({ path: 'selectedCarrierBidId', select: 'carrierId', populate: { path: 'carrierId', select: 'carrierName' } })
+    .sort({ deliveryDate: -1 })
+    .lean()
+
+  const escapeCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const header = ['Delivery #', 'Project', 'Customer', 'Material', 'Carrier', 'Status', 'Delivery Date', 'Pickup Location', 'Delivery Location']
+  const lines = [header.map(escapeCsv).join(',')]
+  for (const d of deliveries) {
+    const customer = d.leadId?.customerId
+    lines.push([
+      d.deliveryNumber || '',
+      d.leadId?.projectName || d.leadId?.jobId || '',
+      customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '',
+      d.materialType || '',
+      d.selectedCarrierBidId?.carrierId?.carrierName || '',
+      d.status || '',
+      d.deliveryDate ? new Date(d.deliveryDate).toISOString().slice(0, 10) : '',
+      d.pickupLocation || '',
+      d.deliveryLocation || '',
+    ].map(escapeCsv).join(','))
+  }
+
+  res.setHeader('Content-Type', 'text/csv')
+  res.setHeader('Content-Disposition', 'attachment; filename="all-deliveries.csv"')
+  return res.send(lines.join('\n'))
 })
 
 const buildQRLabelsFilter = async ({ projectId, search }) => {

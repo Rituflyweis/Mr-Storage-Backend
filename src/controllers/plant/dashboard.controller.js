@@ -6,6 +6,7 @@ const Vendor = require('../../models/Vendor')
 const Delivery = require('../../models/Delivery')
 const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
+const Bundle = require('../../models/Bundle')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { getScopedLeadIds } = require('../../utils/plantAccessScope')
@@ -21,6 +22,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   if (!leadIds.length) {
     return success(res, {
       stats: { totalProjects: 0, inProduction: 0, readyToDispatch: 0, dispatchedToday: 0, pendingApproval: 0 },
+      productionOverviewToday: { plannedTonnage: null, producedTonnage: null, utilizationPct: null, onTimeDeliveryPct: null, reworkRejectionPct: null },
       recentShipperFiles: [],
       plantAlerts: [],
       freightCarriers: [],
@@ -129,6 +131,35 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   }
   drawingRows.sort((a, b) => new Date(b.sentDate || 0) - new Date(a.sentDate || 0))
 
+  // "Production Overview (Today)" — only On-Time Delivery % and Rework/Rejection % have real
+  // backing data. Planned/Produced Tonnage and Utilization % have no fabrication-output or
+  // equipment-capacity tracking anywhere in the schema — left null rather than fabricated;
+  // building those for real requires a new production-log model, which is a product decision.
+  const [deliveredTodayDeliveries, bundlesVerifiedToday] = await Promise.all([
+    Delivery.find({
+      leadId: { $in: leadIds },
+      status: 'delivered',
+      'statusHistory': { $elemMatch: { status: 'delivered', changedAt: { $gte: startOfToday } } },
+    }).select('deliveryDate statusHistory').lean(),
+    Bundle.find({ leadId: { $in: leadIds }, verifiedAt: { $gte: startOfToday } }).select('mismatchItems').lean(),
+  ])
+
+  let onTimeDeliveryPct = null
+  if (deliveredTodayDeliveries.length) {
+    const onTime = deliveredTodayDeliveries.filter((d) => {
+      const deliveredEntry = (d.statusHistory || []).slice().reverse().find((h) => h.status === 'delivered')
+      if (!deliveredEntry || !d.deliveryDate) return true // no planned date on record — don't penalize
+      return new Date(deliveredEntry.changedAt) <= new Date(d.deliveryDate)
+    }).length
+    onTimeDeliveryPct = Math.round((onTime / deliveredTodayDeliveries.length) * 100 * 10) / 10
+  }
+
+  let reworkRejectionPct = null
+  if (bundlesVerifiedToday.length) {
+    const withMismatch = bundlesVerifiedToday.filter((b) => (b.mismatchItems || []).length > 0).length
+    reworkRejectionPct = Math.round((withMismatch / bundlesVerifiedToday.length) * 100 * 10) / 10
+  }
+
   return success(res, {
     stats: {
       totalProjects,
@@ -137,9 +168,13 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       dispatchedToday,
       pendingApproval: pendingApprovalLeadIds.length,
     },
-    // No tonnage/utilization/rework-rate data exists anywhere in the schema (no fabrication
-    // output tracking) — omitted rather than fabricated. Flag to product if this needs building.
-    productionOverviewToday: null,
+    productionOverviewToday: {
+      plannedTonnage: null,  // no fabrication planning data exists
+      producedTonnage: null, // no production output tracking exists
+      utilizationPct: null,  // no equipment/capacity data exists
+      onTimeDeliveryPct,
+      reworkRejectionPct,
+    },
     recentShipperFiles,
     plantAlerts: alerts.slice(0, 10),
     freightCarriers,
