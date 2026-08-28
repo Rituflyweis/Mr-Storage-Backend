@@ -363,6 +363,10 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
     sheetCount: parsed.sheetCount,
     tabSummary: parsed.tabSummary,
     totalWeightLbs: Math.round(parsed.totalWeightLbs * 100) / 100,
+    detectedWeightLbs: Math.round((parsed.detectedWeightLbs || parsed.totalWeightLbs) * 100) / 100,
+    unmappedWeightLbs: Math.round((parsed.unmappedWeightLbs || 0) * 100) / 100,
+    extractionCoveragePct: parsed.extractionCoveragePct ?? 100,
+    unmappedTabs: parsed.unmappedTabs || [],
     squareFootage: sf,
     squareFootageMeta: {
       selected: sf,

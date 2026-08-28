@@ -195,12 +195,15 @@ const priceJob = (cats, options = {}) => {
   }
 
   matCost = rows.reduce((a, r) => a + r.price, 0);
+  const rowSubtotalBeforeBlend = matCost;
   const freight = totWt * PR.freight;
   const trucks = PR.truck > 0 ? Math.ceil(totWt / PR.truck) : 0;
 
   const blend = Math.min(1, Math.max(0, Number(blendPct) / 100));
   const quickenSavings = totWt * PR.delta;
   const blendedMatCost = matCost - quickenSavings * blend;
+  const vendorBlendAdjustment = blendedMatCost - rowSubtotalBeforeBlend;
+  const vendorBlendSavingsExact = rowSubtotalBeforeBlend - blendedMatCost;
   const blendedFreight = freight;
   const blendLabel =
     blend === 0
@@ -242,6 +245,9 @@ const priceJob = (cats, options = {}) => {
   return {
     rows,
     matCost: blendedMatCost,
+    rowSubtotalBeforeBlend,
+    vendorBlendAdjustment,
+    vendorBlendSavingsExact,
     totWt,
     freight: blendedFreight,
     trucks,

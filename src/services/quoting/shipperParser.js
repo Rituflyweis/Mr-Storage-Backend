@@ -3,6 +3,10 @@ const XLSX = require("xlsx");
 const normalizeTabName = (name) =>
   String(name || "")
     .toLowerCase()
+    .replace(/&amp;/g, "&")
+    .replace(/[_]+/g, " ")
+    .replace(/[()]/g, " ")
+    .replace(/\s+/g, " ")
     .trim()
     .replace(/^\d+\.\s*/, "");
 
@@ -184,7 +188,8 @@ const getTabCat = (name, customTabRules = []) => {
     n === "fasteners" ||
     n.includes("fastener") ||
     n.includes("screw") ||
-    n.includes("bolt")
+    n.includes("bolt") ||
+    n.includes("hardware")
   )
     return "fasteners";
   if (
@@ -197,6 +202,81 @@ const getTabCat = (name, customTabRules = []) => {
     return null;
   }
   if (n.includes("hss")) return "hss";
+  return null;
+};
+
+const inferCategoryFromSheetData = (data = []) => {
+  if (!Array.isArray(data) || !data.length) return null;
+  const text = normalizeTabName(
+    data
+      .slice(0, 16)
+      .map((row) => (Array.isArray(row) ? row.join(" ") : String(row || "")))
+      .join(" ")
+  );
+
+  // Avoid treating cover/index pages as material tabs.
+  if (
+    (text.includes("shipping list") || text.includes("building layout")) &&
+    !text.includes("qty")
+  ) {
+    return null;
+  }
+
+  if (
+    text.includes("columns & rafters") ||
+    text.includes("column") ||
+    text.includes("rafter") ||
+    text.includes("rigid frame") ||
+    text.includes("stud") ||
+    text.includes("top channel")
+  )
+    return "primary";
+  if (
+    text.includes("opening framing") ||
+    text.includes("door jamb") ||
+    text.includes("jamb") ||
+    text.includes("header")
+  )
+    return "opening";
+  if (
+    text.includes("purlin") ||
+    text.includes("girt") ||
+    text.includes("eave strut")
+  )
+    return "secondary";
+  if (
+    text.includes("sheeting") ||
+    text.includes("roof panels") ||
+    text.includes("wall panels") ||
+    text.includes("pbr panels") ||
+    text.includes("battenlok")
+  )
+    return "sheeting";
+  if (
+    text.includes("connection plate") ||
+    text.includes("connection plates") ||
+    text.includes("clips")
+  )
+    return "plate";
+  if (text.includes("angles")) return "angle";
+  if (text.includes("trim")) return "trim";
+  if (
+    text.includes("bracing") ||
+    text.includes("cable") ||
+    text.includes("sealant")
+  )
+    return "misc";
+  if (text.includes("accessories")) return "accessories";
+  if (
+    text.includes("fastener") ||
+    text.includes("bolts") ||
+    text.includes("screw") ||
+    text.includes("hardware") ||
+    text.includes("caulking") ||
+    text.includes("tape sealer")
+  )
+    return "fasteners";
+  if (text.includes("hss")) return "hss";
   return null;
 };
 
@@ -343,19 +423,26 @@ const emptyCategories = () => ({
 const parseShipperWorkbook = (wb, { sf = 0, customTabRules = [] } = {}) => {
   const cats = emptyCategories();
   const tabSummary = [];
+  const unmappedTabs = [];
+  let unmappedWeightLbs = 0;
 
   wb.SheetNames.forEach((sn) => {
-    const cat = getTabCat(sn, customTabRules);
-    if (!cat) {
-      tabSummary.push({ sheetName: sn, skipped: true, weightLbs: 0 });
-      return;
-    }
-
     const data = XLSX.utils.sheet_to_json(wb.Sheets[sn], {
       header: 1,
       defval: "",
     });
     const w = extractWeight(data);
+    const cat =
+      getTabCat(sn, customTabRules) || inferCategoryFromSheetData(data);
+    if (!cat) {
+      tabSummary.push({ sheetName: sn, skipped: true, weightLbs: w });
+      if (w > 0) {
+        unmappedTabs.push({ sheetName: sn, weightLbs: w });
+        unmappedWeightLbs += w;
+      }
+      return;
+    }
+
     const itemHits = applyItemRules(data, sn, sf || 0, customTabRules);
 
     if (itemHits.length > 0) {
@@ -395,11 +482,18 @@ const parseShipperWorkbook = (wb, { sf = 0, customTabRules = [] } = {}) => {
   const totalWeightLbs = Object.entries(cats)
     .filter(([k]) => k !== "customItems")
     .reduce((sum, [, v]) => sum + (v.weight || 0), 0);
+  const detectedWeightLbs = totalWeightLbs + unmappedWeightLbs;
+  const extractionCoveragePct =
+    detectedWeightLbs > 0 ? (totalWeightLbs / detectedWeightLbs) * 100 : 100;
 
   return {
     categories: cats,
     tabSummary,
     totalWeightLbs,
+    unmappedWeightLbs,
+    detectedWeightLbs,
+    extractionCoveragePct: Math.round(extractionCoveragePct * 100) / 100,
+    unmappedTabs,
     sheetCount: wb.SheetNames.length,
   };
 };
