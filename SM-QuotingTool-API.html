@@ -1330,7 +1330,7 @@
                 </div>
                 <div>
                   <span style="font-size: 10px; color: var(--muted)"
-                    >Computed Margin</span
+                    >Computed Gross Margin</span
                   ><br /><span
                     id="cogs-from-margin"
                     style="font-size: 15px; font-weight: 700; color: #15803d"
@@ -1925,7 +1925,11 @@
                     />
                   </label>
                 </div>
-                <div style="padding: 14px">
+                <div
+                  id="storage-drawing-dropzone"
+                  class="drop-zone"
+                  style="padding: 14px"
+                >
                   <div
                     id="storage-drawing-grid"
                     style="
@@ -1949,8 +1953,8 @@
                       border-radius: 8px;
                     "
                   >
-                    No drawings added yet. Click "+ Add Drawings" to attach
-                    layout plans.<br /><span style="font-size: 11px"
+                    No drawings added yet. Click "+ Add Drawings" or drag files
+                    here to attach layout plans.<br /><span style="font-size: 11px"
                       >Images or PDFs · Checked drawings append to the full
                       quote package</span
                     >
@@ -2048,6 +2052,7 @@
         install: "easy",
         blendPct: 50,
         squareFootage: 0,
+        squareFootageMeta: null,
         manualSquareFootage: false,
         installCostPerSf: 5.5,
         sellPerSf: 8.5,
@@ -2163,10 +2168,25 @@
       }
 
       function fmt(n) {
-        return "$" + Math.round(n || 0).toLocaleString();
+        const val = Number(n || 0);
+        return (
+          "$" +
+          val.toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+        );
       }
       function fmtPct(n) {
         return (Number(n) || 0).toFixed(1) + "%";
+      }
+
+      function fmtLbs(n) {
+        const val = Number(n || 0);
+        return val.toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
       }
 
       function computeBody() {
@@ -2230,6 +2250,7 @@
           toast("Uploading shipper...", "info");
           // Reset SF so backend derives fresh SF from shipper weight (matches v5 empty field)
           state.squareFootage = 0;
+          state.squareFootageMeta = null;
           state.manualSquareFootage = false;
           document.getElementById("live-sf").value = "";
           const fileBase64 = await fileToBase64(file);
@@ -2255,6 +2276,7 @@
           state.pricing = data.pricing;
           state.fullQuote = data.fullQuote || null;
           state.squareFootage = data.squareFootage || state.squareFootage;
+          state.squareFootageMeta = data.squareFootageMeta || null;
           state.sourceFileName = file.name;
           document.getElementById("shipper-name").textContent =
             file.name +
@@ -2273,6 +2295,15 @@
           updateCogsSummary();
           updateMarginSummary();
           debouncedLoadPreview();
+          if (state.squareFootageMeta?.source === "weight_formula") {
+            const m = state.squareFootageMeta;
+            const msg =
+              "SF auto-calculated from weight: " +
+              fmtLbs(m.fromWeight || 0) +
+              " lbs / 9 = " +
+              Number(m.selected || 0).toLocaleString();
+            toast(msg, "info");
+          }
           toast("Shipper parsed successfully", "success");
         } catch (e) {
           toast("Shipper upload failed: " + e.message, "error");
@@ -2396,11 +2427,6 @@
         const w = find([/^width/i]),
           l = find([/^length/i]);
         if (w && l) {
-          const sqft = Math.round(parseFloat(w) * parseFloat(l));
-          if (sqft) {
-            state.squareFootage = sqft;
-            document.getElementById("live-sf").value = sqft;
-          }
           state.buildingSize = w + "x" + l;
           document.getElementById("f-size").value = state.buildingSize;
         }
@@ -2608,8 +2634,7 @@
           }));
       }
 
-      function storageHandleDrawingInput(e) {
-        const files = Array.from(e.target.files || []);
+      function storageAddDrawingFiles(files) {
         if (!files.length) return;
         let pending = files.length;
         files.forEach((file) => {
@@ -2625,6 +2650,12 @@
           };
           reader.readAsDataURL(file);
         });
+      }
+
+      function storageHandleDrawingInput(e) {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        storageAddDrawingFiles(files);
         e.target.value = "";
       }
 
@@ -2670,10 +2701,11 @@
         const sell = fq?.grandTotal ?? p.totSell;
         const profit = fq?.totalProfit ?? p.profit;
         const margin = fq?.grandMargin ?? p.profPct;
+        const sfValue = Number(p.sf || state.squareFootage || 0);
         document.getElementById("metrics-row").innerHTML = `
-    <div class="metric info"><div class="metric-label">Total Sell</div><div class="metric-val">${fmt(sell)}</div><div class="metric-sub">${fmt(p.sfPrice || fq?.pricePerSf)}/SF · ${state.squareFootage.toLocaleString()} SF</div></div>
-    <div class="metric"><div class="metric-label">Total COGS</div><div class="metric-val">${fmt(p.totCost)}</div><div class="metric-sub">${Math.round(p.totWt || 0).toLocaleString()} lbs · ${p.trucks || 0} trucks</div></div>
-    <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(profit)}</div><div class="metric-sub">${fmtPct(margin)} margin</div></div>
+    <div class="metric info"><div class="metric-label">Total Sell</div><div class="metric-val">${fmt(sell)}</div><div class="metric-sub">${fmt(p.sfPrice || fq?.pricePerSf)}/SF · ${sfValue.toLocaleString()} SF</div></div>
+    <div class="metric"><div class="metric-label">Total COGS</div><div class="metric-val">${fmt(p.totCost)}</div><div class="metric-sub">${fmtLbs(p.totWt || 0)} lbs · ${p.trucks || 0} trucks</div></div>
+    <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(profit)}</div><div class="metric-sub">${fmtPct(margin)} gross margin</div></div>
     <div class="metric"><div class="metric-label">Material Sell</div><div class="metric-val">${fmt(p.matSell)}</div><div class="metric-sub">${p.blendLabel || ""}</div></div>
     ${fq?.salesTax?.amount ? `<div class="metric"><div class="metric-label">Sales Tax</div><div class="metric-val">${fmt(fq.salesTax.amount)}</div><div class="metric-sub">${fq.salesTax.rate}%</div></div>` : ""}
   `;
@@ -2683,22 +2715,40 @@
         const p = state.pricing;
         if (!p?.rows?.length) return;
         const tagClass = (t) => (t || "").replace("cat-", "");
+        const sfValue = Number(p.sf || state.squareFootage || 0);
+        const rowTotal = (p.rows || []).reduce(
+          (sum, row) => sum + Number(row?.price || 0),
+          0,
+        );
+        const blendAdjustment = rowTotal - Number(p.matCost || 0);
         const sub = document.getElementById("breakdown-sub");
         if (sub) {
+          const sfMeta = state.squareFootageMeta;
+          let sfText = `${sfValue.toLocaleString()} SF`;
+          if (sfMeta?.source === "weight_formula") {
+            sfText += ` (from weight: ${fmtLbs(sfMeta.fromWeight || 0)} / 9)`;
+          } else if (sfMeta?.source === "manual") {
+            sfText += " (manual override)";
+          }
+          if (sfMeta?.coverDerivedSqft) {
+            sfText += ` · cover sheet SF: ${Number(sfMeta.coverDerivedSqft).toLocaleString()}`;
+          }
           sub.textContent =
             (state.sourceFileName || "Shipper") +
             " · " +
-            state.squareFootage.toLocaleString() +
-            " SF · " +
-            Math.round(p.totWt || 0).toLocaleString() +
+            sfText +
+            " · " +
+            fmtLbs(p.totWt || 0) +
             " lbs";
         }
         let html =
           '<table><thead><tr><th>Category</th><th class="td-r">Weight (lbs)</th><th>Rate</th><th class="td-r">Price</th><th>Notes</th></tr></thead><tbody>';
         p.rows.forEach((r) => {
-          html += `<tr><td><span class="cat-tag cat-${tagClass(r.tag)}">${r.label}</span></td><td class="td-r">${r.wt ? Math.round(r.wt).toLocaleString() : "—"}</td><td>${r.rate}</td><td class="td-r">${fmt(r.price)}</td><td style="font-size:11px;color:var(--muted)">${r.notes || ""}</td></tr>`;
+          html += `<tr><td><span class="cat-tag cat-${tagClass(r.tag)}">${r.label}</span></td><td class="td-r">${fmtLbs(r.wt || 0)}</td><td>${r.rate}</td><td class="td-r">${fmt(r.price)}</td><td style="font-size:11px;color:var(--muted)">${r.notes || ""}</td></tr>`;
         });
-        html += `<tr class="total-row"><td>Material total</td><td class="td-r">${Math.round(p.totWt || 0).toLocaleString()} lbs</td><td></td><td class="td-r">${fmt(p.matCost)}</td><td></td></tr>`;
+        html += `<tr><td style="color:var(--muted)">Category subtotal (before blend)</td><td></td><td></td><td class="td-r">${fmt(rowTotal)}</td><td style="font-size:11px;color:var(--muted)">Sum of visible category prices</td></tr>`;
+        html += `<tr><td style="color:var(--muted)">Vendor blend adjustment</td><td></td><td>${p.blendLabel || ""}</td><td class="td-r">${fmt(-blendAdjustment)}</td><td style="font-size:11px;color:var(--muted)">Quicken/Central blended cost delta</td></tr>`;
+        html += `<tr class="total-row"><td>Material total</td><td class="td-r">${fmtLbs(p.totWt || 0)} lbs</td><td></td><td class="td-r">${fmt(p.matCost)}</td><td></td></tr>`;
         html += `<tr><td style="color:var(--muted)">Freight (${p.trucks || 0} trucks)</td><td></td><td></td><td class="td-r">${fmt(p.freight)}</td><td></td></tr>`;
         if (state.scope !== "supply") {
           html += `<tr><td style="color:var(--muted)">Install cost</td><td></td><td></td><td class="td-r">${fmt(p.instCost)}</td><td></td></tr>`;
@@ -2717,7 +2767,7 @@
         document.getElementById("storage-metrics").innerHTML = sp
           ? `
     <div class="metric info"><div class="metric-label">Grand Total</div><div class="metric-val">${fmt(sp.grandTotal)}</div><div class="metric-sub">${fmt(sp.pricePerSf)}/SF · ${(sp.totalSqft || 0).toLocaleString()} SF</div></div>
-    <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(sp.profit)}</div><div class="metric-sub">${fmtPct(sp.marginPercent)} margin</div></div>
+    <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(sp.profit)}</div><div class="metric-sub">${fmtPct(sp.marginPercent)} gross margin</div></div>
     <div class="metric"><div class="metric-label">Buildings</div><div class="metric-val">${fmt(sp.buildingSell)}</div></div>
     <div class="metric"><div class="metric-label">Install</div><div class="metric-val">${fmt(sp.installSell)}</div></div>
   `
@@ -2957,7 +3007,7 @@
       <div class="metric good"><div class="metric-label">Total Sell</div><div class="metric-val">${fmt(grand)}</div><div class="metric-sub">$${p.sfPrice}/SF · ${Number(p.sf || 0).toLocaleString()} SF</div></div>
       <div class="metric info"><div class="metric-label">Material Sell</div><div class="metric-val">${fmt(p.matSell)}</div><div class="metric-sub">${p.blendLabel || ""}</div></div>
       <div class="metric"><div class="metric-label">Install Sell</div><div class="metric-val">${fmt(p.instSell)}</div><div class="metric-sub">Cost ${fmt(p.instCost)}</div></div>
-      <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(fq?.grandProfit ?? p.profit)}</div><div class="metric-sub">${fmtPct(fq?.grandMargin ?? p.profPct)} margin</div></div>`;
+      <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(fq?.grandProfit ?? p.profit)}</div><div class="metric-sub">${fmtPct(fq?.grandMargin ?? p.profPct)} gross margin</div></div>`;
       }
 
       function debouncedLoadPreview() {
@@ -3099,13 +3149,19 @@
         const ff = document.getElementById("cogs-from-sf");
         if (fc) fc.textContent = fmt(comp.cost);
         if (fs) fs.textContent = fmt(comp.sell);
-        if (fm) fm.textContent = comp.margin.toFixed(1) + "%";
+        const compMarkup = comp.cost > 0 ? ((comp.sell - comp.cost) / comp.cost) * 100 : 0;
+        if (fm)
+          fm.textContent =
+            comp.margin.toFixed(1) +
+            "% margin (" +
+            compMarkup.toFixed(1) +
+            "% markup)";
         if (ff)
           ff.textContent =
             "$" +
-            (comp.cost / comp.sf).toFixed(2) +
+            (comp.cost / (comp.sf || 1)).toFixed(2) +
             " cost / $" +
-            (comp.sell / comp.sf).toFixed(2) +
+            (comp.sell / (comp.sf || 1)).toFixed(2) +
             " sell";
 
         const adjCost = form.costDollar || comp.cost;
@@ -3135,6 +3191,7 @@
         const profit = grandSell - grandCost;
         const matProfit = adjSell - adjCost;
         const matMargin = adjSell > 0 ? (matProfit / adjSell) * 100 : 0;
+        const matMarkup = adjCost > 0 ? (matProfit / adjCost) * 100 : 0;
         const totalMargin = grandSell > 0 ? (profit / grandSell) * 100 : 0;
         const sfPrice = comp.sf > 0 ? (grandSell / comp.sf).toFixed(2) : "0";
         const costDiff = adjCost - comp.cost;
@@ -3164,7 +3221,9 @@
           fmt(adjSell) +
           '</div><div class="metric-sub">' +
           matMargin.toFixed(1) +
-          "% mat margin · " +
+          "% margin / " +
+          matMarkup.toFixed(1) +
+          "% markup · " +
           (sellDiff >= 0 ? "+" : "") +
           fmt(Math.abs(sellDiff)) +
           "</div></div>" +
@@ -3729,6 +3788,32 @@
           else uploadStorageCog(f);
         });
       });
+
+      const storageDrawingDrop = document.getElementById(
+        "storage-drawing-dropzone",
+      );
+      if (storageDrawingDrop) {
+        storageDrawingDrop.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          storageDrawingDrop.classList.add("drag-over");
+        });
+        storageDrawingDrop.addEventListener("dragleave", () => {
+          storageDrawingDrop.classList.remove("drag-over");
+        });
+        storageDrawingDrop.addEventListener("drop", (e) => {
+          e.preventDefault();
+          storageDrawingDrop.classList.remove("drag-over");
+          const files = Array.from(e.dataTransfer?.files || []).filter((f) =>
+            /image\/|pdf/i.test(f.type) || /\.pdf$/i.test(f.name),
+          );
+          if (!files.length) {
+            toast("Drop image or PDF files only", "warn");
+            return;
+          }
+          storageAddDrawingFiles(files);
+          toast(files.length + " drawing file(s) added", "success");
+        });
+      }
 
       // ─── Init ───────────────────────────────────────────────────────
       updateAuthStatus();

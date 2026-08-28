@@ -112,44 +112,57 @@ const priceJob = (cats, options = {}) => {
     );
   }
 
-  const trimP =
-    cats.trim?.weight > 0
-      ? Math.max(cats.trim.weight * 2.8, sf * 0.65)
-      : sf * 0.65;
-  add("trim", "Trim", cats.trim?.weight || null, "bucket", trimP, "cat-trim");
-  const miscP =
-    cats.misc?.weight > 0
-      ? Math.max(cats.misc.weight * 3.5, sf * 0.22)
-      : sf * 0.22;
+  const trimWeightLbs = cats.trim?.weight || 0;
+  const trimByWeight = trimWeightLbs * 2.8;
+  const trimBySf = sf * 0.65;
+  const trimP = trimWeightLbs > 0 ? Math.max(trimByWeight, trimBySf) : trimBySf;
+  add(
+    "trim",
+    "Trim",
+    trimWeightLbs,
+    "max($2.80/lb, $0.65/SF)",
+    trimP,
+    "cat-trim",
+    `Weight basis ${trimByWeight.toFixed(2)} vs SF basis ${trimBySf.toFixed(2)} (${trimByWeight >= trimBySf ? "weight" : "SF"} basis used)`,
+  );
+  const miscWeightLbs = cats.misc?.weight || 0;
+  const miscByWeight = miscWeightLbs * 3.5;
+  const miscBySf = sf * 0.22;
+  const miscP = miscWeightLbs > 0 ? Math.max(miscByWeight, miscBySf) : miscBySf;
   add(
     "misc",
     "Cables, Bracing & Sealant",
-    cats.misc?.weight || null,
-    "bucket",
+    miscWeightLbs,
+    "max($3.50/lb, $0.22/SF)",
     miscP,
     "cat-misc",
+    `Weight basis ${miscByWeight.toFixed(2)} vs SF basis ${miscBySf.toFixed(2)} (${miscByWeight >= miscBySf ? "weight" : "SF"} basis used)`,
   );
+  const accessoriesWeightLbs = cats.accessories?.weight || 0;
+  const accessoriesByWeight = accessoriesWeightLbs * 1.5;
+  const accessoriesBySf = sf * 1.0;
   const accP =
-    cats.accessories?.weight > 0
-      ? Math.max(cats.accessories.weight * 1.5, sf * 1.0)
-      : sf * 1.0;
+    accessoriesWeightLbs > 0
+      ? Math.max(accessoriesByWeight, accessoriesBySf)
+      : accessoriesBySf;
   add(
     "accessories",
     "Accessories",
-    cats.accessories?.weight || null,
-    "bucket",
+    accessoriesWeightLbs,
+    "max($1.50/lb, $1.00/SF)",
     accP,
     "cat-misc",
+    `Weight basis ${accessoriesByWeight.toFixed(2)} vs SF basis ${accessoriesBySf.toFixed(2)} (${accessoriesByWeight >= accessoriesBySf ? "weight" : "SF"} basis used)`,
   );
   const fastP = sf * 0.48;
   add(
     "fasteners",
     "Fasteners",
-    null,
-    "per item (not $/lb)",
+    cats.fasteners?.weight || 0,
+    "$0.48/SF",
     fastP,
     "cat-fastener",
-    "Priced per piece — screws, tape, sealant",
+    "SF-based allowance for screws, tape, and sealant",
   );
 
   if (cats.customItems?.length) {

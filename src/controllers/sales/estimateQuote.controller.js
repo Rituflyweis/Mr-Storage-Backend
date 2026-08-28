@@ -70,6 +70,33 @@ const normalizeFullQuoteExtras = (body = {}) => ({
   marginOverride: body.marginOverride || undefined,
 })
 
+const extractFirstNumber = (value) => {
+  const m = String(value || '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)
+  return m ? Number(m[0]) : 0
+}
+
+const deriveCoverSquareFootage = (cover = {}) => {
+  const map = cover?.labelMap || {}
+  const keys = Object.keys(map)
+  const findByLabel = (patterns = []) => {
+    for (const k of keys) {
+      if (patterns.some((p) => p.test(k))) {
+        const n = extractFirstNumber(map[k])
+        if (n > 0) return n
+      }
+    }
+    return 0
+  }
+
+  const directSqft = findByLabel([/sq\s*ft/i, /square\s*foot/i, /\bsf\b/i])
+  if (directSqft > 0) return Math.round(directSqft)
+
+  const width = findByLabel([/^width/i, /\bwidth\b/i])
+  const length = findByLabel([/^length/i, /\blength\b/i])
+  if (width > 0 && length > 0) return Math.round(width * length)
+  return 0
+}
+
 const buildPricingPayload = async (userId, { categories, options, fullExtras }) => {
   const rulesDoc = await getOrCreatePricingRules(userId)
   const { pr } = buildPricingRates(rulesDoc)
@@ -314,12 +341,14 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
 
   const parsed = parseShipperBuffer(buffer, { sf: options.sf, customTabRules })
   const cover = parseShipperCoverSheet(parsed.workbook)
+  const coverSqft = deriveCoverSquareFootage(cover)
 
   const autoSf =
     parsed.totalWeightLbs > 0 ? Math.round(parsed.totalWeightLbs / 9) : 0
   // Fresh shipper upload: derive SF from weight unless client explicitly locked manual SF
+  const manualSfEnabled = Boolean(req.body.useManualSquareFootage && options.sf > 0)
   const sf =
-    req.body.useManualSquareFootage && options.sf > 0
+    manualSfEnabled
       ? options.sf
       : autoSf || options.sf || 0
 
@@ -335,6 +364,14 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
     tabSummary: parsed.tabSummary,
     totalWeightLbs: Math.round(parsed.totalWeightLbs * 100) / 100,
     squareFootage: sf,
+    squareFootageMeta: {
+      selected: sf,
+      source: manualSfEnabled ? 'manual' : 'weight_formula',
+      formula: 'round(totalWeightLbs / 9)',
+      fromWeight: autoSf,
+      coverDerivedSqft: coverSqft,
+      inputSf: options.sf || 0,
+    },
     parsedCategories: parsed.categories,
     coverSheet: cover.coverName
       ? { coverName: cover.coverName, labelMap: cover.labelMap, preview: cover.allText.substring(0, 2000) }
