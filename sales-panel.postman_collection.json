@@ -1,0 +1,1698 @@
+{
+	"info": {
+		"name": "SM-3 Sales Panel",
+		"_postman_id": "sales-panel-v1",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"description": "All Sales Panel endpoints"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000/api"
+		},
+		{
+			"key": "token",
+			"value": ""
+		},
+		{
+			"key": "leadId",
+			"value": ""
+		},
+		{
+			"key": "followUpId",
+			"value": ""
+		},
+		{
+			"key": "invoiceId",
+			"value": ""
+		},
+		{
+			"key": "paymentFollowUpId",
+			"value": ""
+		},
+		{
+			"key": "notificationId",
+			"value": ""
+		},
+		{
+			"key": "quotationId",
+			"value": ""
+		},
+		{
+			"key": "estimateId",
+			"value": ""
+		}
+	],
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/auth/login",
+						"body": {
+							"mode": "raw",
+							"raw": "{\"email\":\"sales@example.com\",\"password\":\"password123\"}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Dashboard",
+			"item": [
+				{
+					"name": "Get Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/dashboard/stats"
+					}
+				},
+				{
+					"name": "Conversion Funnel",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/dashboard/conversion-funnel"
+					}
+				},
+				{
+					"name": "Performance Trend",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/sales/dashboard/performance-trend?period=customers&range=7d",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"sales",
+								"dashboard",
+								"performance-trend"
+							],
+							"query": [
+								{
+									"key": "period",
+									"value": "customers"
+								},
+								{
+									"key": "range",
+									"value": "7d"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Today Tasks",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/dashboard/today-tasks"
+					}
+				},
+				{
+					"name": "Lead Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/dashboard/lead-stats"
+					}
+				},
+				{
+					"name": "Customer Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/dashboard/customer-stats"
+					}
+				},
+				{
+					"name": "AI Support Summary [NEW]",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/dashboard/ai-support-summary"
+					}
+				}
+			]
+		},
+		{
+			"name": "Assigned Leads",
+			"item": [
+				{
+					"name": "Get Leads",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/sales/leads?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"sales",
+								"leads"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Leads by Score",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/sales/leads/by-score?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"sales",
+								"leads",
+								"by-score"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Lead Scoring Table",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/leads/scored"
+					}
+				},
+				{
+					"name": "Create Lead",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/sales/leads",
+						"body": {
+							"mode": "raw",
+							"raw": "{\"customerId\":\"{{customerId}}\",\"projectName\":\"Workshop Texas\",\"buildingType\":\"Workshop\",\"location\":\"Texas\",\"quoteValue\":12500}"
+						}
+					}
+				},
+				{
+					"name": "Get Lead Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/leads/{{leadId}}/detail"
+					}
+				},
+				{
+					"name": "Log Activity",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/sales/leads/{{leadId}}/activity",
+						"body": {
+							"mode": "raw",
+							"raw": "{\"activityType\":\"call\",\"outcome\":\"positive\",\"notes\":\"Discussed pricing\"}"
+						}
+					}
+				},
+				{
+					"name": "Update Lead Temperature",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/sales/leads/{{leadId}}/temperature",
+						"body": {
+							"mode": "raw",
+							"raw": "{\"temperature\":\"hot\"}"
+						}
+					}
+				},
+				{
+					"name": "Export Leads (CSV)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/leads/export"
+					}
+				},
+				{
+					"name": "Export Leads (Excel)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/leads/export/excel"
+					}
+				}
+			]
+		},
+		{
+			"name": "Follow-ups",
+			"item": [
+				{
+					"name": "Overview \u2014 Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/stats"
+					}
+				},
+				{
+					"name": "Upcoming Follow-ups",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/upcoming"
+					}
+				},
+				{
+					"name": "Follow-up Trend",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/sales/followups/trend?range=7d",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"sales",
+								"followups",
+								"trend"
+							],
+							"query": [
+								{
+									"key": "range",
+									"value": "7d"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Response Rate",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/response-rate"
+					}
+				},
+				{
+					"name": "Smart Follow-Up Reminders [NEW]",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/smart-reminders"
+					}
+				},
+				{
+					"name": "Follow-Up KPIs [NEW]",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/kpis"
+					}
+				},
+				{
+					"name": "Create Follow-Up",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups",
+						"body": {
+							"mode": "raw",
+							"raw": "{\"leadId\":\"{{leadId}}\",\"followUpDate\":\"2025-02-01T14:00:00Z\",\"modeOfContact\":\"call\",\"priority\":\"high\"}"
+						}
+					}
+				},
+				{
+					"name": "Complete Follow-Up",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/{{followUpId}}/complete"
+					}
+				}
+			]
+		},
+		{
+			"name": "Lead Communication Timeline",
+			"item": [
+				{
+					"name": "Get Timeline",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/sales/followups/communication-timeline?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"sales",
+								"followups",
+								"communication-timeline"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Timeline by Lead",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/sales/followups/communication-timeline?leadId={{leadId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"sales",
+								"followups",
+								"communication-timeline"
+							],
+							"query": [
+								{
+									"key": "leadId",
+									"value": "{{leadId}}"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "AI Follow-Up Script Generator",
+			"item": [
+				{
+					"name": "Get AI Script Sessions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/ai-script"
+					}
+				},
+				{
+					"name": "Generate AI Script",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/ai-script",
+						"body": {
+							"mode": "raw",
+							"raw": "{\"leadId\":\"{{leadId}}\",\"messages\":[{\"role\":\"user\",\"content\":\"Generate a follow-up script for a warehouse lead\"}]}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Payment Follow-Up [NEW]",
+			"item": [
+				{
+					"name": "Get Payment Follow-Ups",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/sales/followups/payment-followup?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"sales",
+								"followups",
+								"payment-followup"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Payment Follow-Ups by Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/sales/followups/payment-followup?status=pending",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"sales",
+								"followups",
+								"payment-followup"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "pending"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Payment Follow-Up",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/payment-followup",
+						"body": {
+							"mode": "raw",
+							"raw": "{\"invoiceId\":\"{{invoiceId}}\",\"leadId\":\"{{leadId}}\",\"nextFollowUp\":\"2025-02-01T00:00:00Z\",\"notes\":\"Client promised payment by end of week\"}"
+						}
+					}
+				},
+				{
+					"name": "Update Payment Follow-Up Status",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/sales/followups/payment-followup/{{paymentFollowUpId}}/status",
+						"body": {
+							"mode": "raw",
+							"raw": "{\"status\":\"confirmed\"}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Notifications [NEW]",
+			"item": [
+				{
+					"name": "Get All Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/notifications?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"notifications"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Unread Count",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/notifications/unread-count"
+					}
+				},
+				{
+					"name": "Get Unread Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/notifications?read=false",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"notifications"
+							],
+							"query": [
+								{
+									"key": "read",
+									"value": "false"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get High Priority Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/notifications?priority=high",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"notifications"
+							],
+							"query": [
+								{
+									"key": "priority",
+									"value": "high"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Filter by Type (lead/task/meeting/escalation/payment)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/notifications?type=lead",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"notifications"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "lead"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Mark Notification as Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/notifications/{{notificationId}}/read"
+					}
+				},
+				{
+					"name": "Mark All as Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/notifications/read-all"
+					}
+				},
+				{
+					"name": "Delete Notification",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/notifications/{{notificationId}}"
+					}
+				}
+			]
+		},
+		{
+			"name": "Invoices",
+			"item": [
+				{
+					"name": "Get Lead Invoices",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/leads/{{leadId}}/invoices"
+					}
+				},
+				{
+					"name": "Create Invoice",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/leads/{{leadId}}/invoices",
+						"body": {
+							"mode": "raw",
+							"raw": "{\"invoiceNumber\":\"INV-2460\",\"date\":\"2025-10-25\",\"daysToPay\":15,\"lineItems\":[{\"description\":\"Steel structure\",\"rate\":75000,\"quantity\":1,\"tax\":10}]}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Meetings",
+			"item": [
+				{
+					"name": "Get Meetings",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/sales/meetings"
+					}
+				}
+			]
+		},
+		{
+			"name": "Sales Panel - Quotations & Pricing [NEW]",
+			"item": [
+				{
+					"name": "Quotations (Manual Quote)",
+					"item": [
+						{
+							"name": "List My Quotations",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/quotations?page=1&limit=20",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"quotations"
+									],
+									"query": [
+										{
+											"key": "page",
+											"value": "1"
+										},
+										{
+											"key": "limit",
+											"value": "20"
+										}
+									]
+								}
+							},
+							"_postman_note": "Sales-scoped quotation list. Filters: status(draft/sent/accepted/rejected), buildingType, minValue, maxValue, search (matches quoteNumber), startDate/endDate."
+						},
+						{
+							"name": "List My Quotations - Filtered",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/quotations?status=sent&buildingType=Warehouse&minValue=10000&maxValue=200000",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"quotations"
+									],
+									"query": [
+										{
+											"key": "status",
+											"value": "sent"
+										},
+										{
+											"key": "buildingType",
+											"value": "Warehouse"
+										},
+										{
+											"key": "minValue",
+											"value": "10000"
+										},
+										{
+											"key": "maxValue",
+											"value": "200000"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Quotation Stats (Total/Approved/Pending/Rejected)",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/quotations/stats",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"quotations",
+										"stats"
+									]
+								}
+							},
+							"_postman_note": "Figma \"Quotation\" dashboard cards. Status mapping: draft=Draft, sent=Pending Approval, accepted=Approved, rejected=Rejected."
+						},
+						{
+							"name": "Create Manual Quotation",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/quotations",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"quotations"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"buildingType\": \"Warehouse\",\n  \"width\": 30,\n  \"length\": 40,\n  \"height\": 12,\n  \"roofStyle\": \"Gable Roof\",\n  \"location\": \"Dallas, TX\",\n  \"windLoad\": \"120\",\n  \"snowLoad\": \"20\",\n  \"paymentTerms\": \"50% Down, 50% on Delivery\",\n  \"materialCost\": 80000,\n  \"freightCost\": 4500,\n  \"markupPercent\": 18,\n  \"basePrice\": 99710,\n  \"preparedBy\": \"Suresh Kapoor - Steel Material\",\n  \"validity\": \"2 weeks\"\n}"
+								}
+							},
+							"_postman_note": "basePrice/totalArea/totalCOGS/markupValue/finalPrice/psf are server-computed \u2014 client values for those are ignored. quoteNumber is auto-generated (QUO-0001...)."
+						},
+						{
+							"name": "Get Quotation",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/quotations/{{quotationId}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"quotations",
+										"{{quotationId}}"
+									]
+								}
+							}
+						},
+						{
+							"name": "Update Quotation (Draft Only)",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/quotations/{{quotationId}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"quotations",
+										"{{quotationId}}"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"markupPercent\": 20,\n  \"internalNotes\": \"Client is price sensitive - keep markup under 20%\"\n}"
+								}
+							},
+							"_postman_note": "Only allowed while status=draft. Re-runs pricing calc if width/length/materialCost/freightCost/markupPercent changed. versionNumber auto-increments on every save."
+						},
+						{
+							"name": "Delete Quotation (Draft Only)",
+							"request": {
+								"method": "DELETE",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/quotations/{{quotationId}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"quotations",
+										"{{quotationId}}"
+									]
+								}
+							},
+							"_postman_note": "Only draft quotations can be deleted (sent/accepted/rejected are permanent records)."
+						},
+						{
+							"name": "Send Quotation to Customer",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/quotations/{{quotationId}}/send",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"quotations",
+										"{{quotationId}}",
+										"send"
+									]
+								}
+							},
+							"_postman_note": "Emails the customer, sets status=sent, advances lead lifecycle to proposal_sent, fires async AI quote summary."
+						},
+						{
+							"name": "Get Quote AI Summary",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/quotations/{{quotationId}}/summary",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"quotations",
+										"{{quotationId}}",
+										"summary"
+									]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Pricing Rules",
+					"item": [
+						{
+							"name": "Get Pricing Rules",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/pricing-rules",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"pricing-rules"
+									]
+								}
+							},
+							"_postman_note": "One document per sales user (\"Your numbers \u2014 edit and save\", Figma Pricing Rules screen). Auto-created with sensible defaults on first GET."
+						},
+						{
+							"name": "Save Pricing Rules",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/pricing-rules",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"pricing-rules"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"steelRatesPerLb\": {\n    \"primaryFrames\": 1.71,\n    \"secondarySteel\": 0.88,\n    \"hssBeams\": 0.88,\n    \"angles\": 1.04,\n    \"openingsJambs\": 1.2,\n    \"platesClips\": 1.2\n  },\n  \"sheetingRatesPerSf\": {\n    \"standardScrewDown\": 1.71,\n    \"standingSeam\": 1.04\n  },\n  \"freight\": {\n    \"ratePerLb\": 1.71,\n    \"lbsPerTruck\": 40000,\n    \"accessoriesAllowancePerSf\": 0.1,\n    \"vendorDeltaPerLb\": 0.1\n  },\n  \"install\": {\n    \"pembEasy\": {\n      \"cost\": 5.5,\n      \"sell\": 8.5\n    },\n    \"pembMedium\": {\n      \"cost\": 5.5,\n      \"sell\": 8.5\n    },\n    \"pembHard\": {\n      \"cost\": 5.5,\n      \"sell\": 8.5\n    },\n    \"pembTallHard\": {\n      \"cost\": 5.5,\n      \"sell\": 8.5\n    },\n    \"storageBasic\": {\n      \"cost\": 5.5,\n      \"sell\": 8.5\n    },\n    \"storageTall\": {\n      \"cost\": 5.5,\n      \"sell\": 8.5\n    },\n    \"storageOverhang\": {\n      \"cost\": 5.5,\n      \"sell\": 8.5\n    }\n  },\n  \"markup\": {\n    \"pembMultiplier\": 1.3,\n    \"storageMultiplier\": 1.18\n  },\n  \"customTabRules\": [\n    {\n      \"matchAgainst\": \"Part #\",\n      \"valueToMatch\": \"TRM\",\n      \"category\": \"Trim\",\n      \"pricingMethod\": \"per_lb\",\n      \"rate\": 0.85,\n      \"label\": \"Trim\"\n    }\n  ]\n}"
+								}
+							},
+							"_postman_note": "Any top-level key omitted from the body is left unchanged. customTabRules are checked before the built-in keyword fallback when classifying shipper-file rows."
+						}
+					]
+				},
+				{
+					"name": "PEMB / Storage Quote Builder (Estimates)",
+					"item": [
+						{
+							"name": "Extract Drawing PDF (Preliminary)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/estimates/extract-drawing",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"estimates",
+										"extract-drawing"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"fileBase64\": \"<base64-encoded PDF bytes>\",\n  \"fileName\": \"Prelim Drawing Building ABC.pdf\"\n}"
+								}
+							},
+							"_postman_note": "Best-effort field extraction from page 1 text only (Title Block, Building Dimensions, Design Loads, Seismic/Site/Code). Labels vary a lot between vendors\u2019 drawings \u2014 returns rawTextPreview + extracted fields for the user to review/edit before applying, never auto-saved."
+						},
+						{
+							"name": "Extract Xshipper File (BOM/Weight breakdown)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/estimates/extract-shipper",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"estimates",
+										"extract-shipper"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"fileBase64\": \"<base64-encoded XLSX bytes>\",\n  \"fileName\": \"#6959 Paris TN expansion (Shipper).xlsx\"\n}"
+								}
+							},
+							"_postman_note": "Parses every tab of the .xlsx via ExcelJS, classifies each row into a weight category using pricing-rules customTabRules first, then a keyword fallback (purlin/girt/eave, door/jamb/header, roof/wall sheeting, connection/plate/clip, trim, cable/bracing/sealant, etc). Returns weightByCategory + totalWeightLbs for review \u2014 pass the reviewed array into Create Estimate Quote."
+						},
+						{
+							"name": "Quote History Summary (This Month/Quarter/YTD/All Time)",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/estimates/history/summary",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"estimates",
+										"history",
+										"summary"
+									]
+								}
+							},
+							"_postman_note": "Figma \"Quote Library\" screen. Returns totalQuotes/totalValue/totalProfit/avgMargin per range, plus profitByCategory (PEMB vs Storage) for all time."
+						},
+						{
+							"name": "List Estimate Quotes",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/estimates?jobType=PEMB&page=1&limit=20",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"estimates"
+									],
+									"query": [
+										{
+											"key": "jobType",
+											"value": "PEMB"
+										},
+										{
+											"key": "page",
+											"value": "1"
+										},
+										{
+											"key": "limit",
+											"value": "20"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Create Estimate Quote (PEMB/Storage COG Sheet)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/estimates",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"estimates"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"jobType\": \"PEMB\",\n  \"scope\": \"Both\",\n  \"roofType\": \"Standing Seam (SS)\",\n  \"leadCompanyName\": \"John Doe\",\n  \"customerEmail\": \"johndoe@gmail.com\",\n  \"streetAddress\": \"1234 Main Street\",\n  \"cityStateZip\": \"Pune, 412101\",\n  \"buildingSize\": \"200x250x36\",\n  \"squareFootage\": 68750,\n  \"jobNumber\": \"8098\",\n  \"installCostPerSf\": 5.5,\n  \"sellPerSf\": 8.5,\n  \"weightByCategory\": [\n    {\n      \"category\": \"Purlins, Girts & Eave Structs\",\n      \"weightLbs\": 950,\n      \"rate\": 0.88\n    },\n    {\n      \"category\": \"Door Jambs & Headers\",\n      \"weightLbs\": 1650,\n      \"rate\": 1.2\n    },\n    {\n      \"category\": \"Roof & Wall Sheeting\",\n      \"weightLbs\": 6241,\n      \"rate\": 1.3\n    },\n    {\n      \"category\": \"Connection Plates & Clips\",\n      \"weightLbs\": 233,\n      \"rate\": 1.2\n    }\n  ]\n}"
+								}
+							},
+							"_postman_note": "All pricing (materialCost, freightCost, totalCOGS, installCost, totalSell, profit, marginPercent, pricePerSf, trucksRequired) is computed server-side from weightByCategory + pricing-rules \u2014 client-supplied totals are ignored. weightByCategory normally comes from Extract Xshipper File, reviewed/edited by the user first."
+						},
+						{
+							"name": "Get Estimate Quote",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/estimates/{{estimateId}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"estimates",
+										"{{estimateId}}"
+									]
+								}
+							}
+						},
+						{
+							"name": "Update Estimate Quote (Draft Only)",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/estimates/{{estimateId}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"estimates",
+										"{{estimateId}}"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"installCostPerSf\": 6,\n  \"sellPerSf\": 9\n}"
+								}
+							},
+							"_postman_note": "Only draft estimates are editable; pricing recomputes on every save."
+						},
+						{
+							"name": "Delete Estimate Quote",
+							"request": {
+								"method": "DELETE",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/sales/estimates/{{estimateId}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"sales",
+										"estimates",
+										"{{estimateId}}"
+									]
+								}
+							}
+						}
+					]
+				}
+			],
+			"_postman_note": "Sales quotation flow, split into three parts per the Figma sales-panel screens:\n1) \"Quotations (Manual Quote)\" \u2014 the simple New Inquiry Form (create/send/track a single customer quote).\n2) \"Pricing Rules\" \u2014 per-user $/lb and $/SF rate sheet used by the estimate builder.\n3) \"PEMB / Storage Quote Builder\" \u2014 the weight-based COG-sheet estimator (upload a drawing PDF and/or an Xshipper .xlsx, review the extracted fields/weights, then create a priced estimate). PDF/XLSX field extraction is best-effort text/keyword matching, not true OCR/AI parsing \u2014 always surfaced for user review, never auto-applied."
+		},
+		{
+			"name": "Internal Communication (Direct + Group)",
+			"item": [
+				{
+					"name": "Get Users (search for DM)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/users?search="
+					}
+				},
+				{
+					"name": "Get Conversations (Direct + Group)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/conversations"
+					}
+				},
+				{
+					"name": "Get Unread Count",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/unread-count"
+					}
+				},
+				{
+					"name": "Direct \u2014 Get Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/direct/{{userId}}/messages?page=1&limit=30"
+					}
+				},
+				{
+					"name": "Get Presigned URL (for chat attachment)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/upload/presigned-url",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"fileName\": \"site-photo.jpg\",\n\t\"fileType\": \"image/jpeg\",\n\t\"folder\": \"chat-attachments\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Direct \u2014 Send Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/direct/{{userId}}/messages",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"content\": \"Hey, checking in on this\",\n\t\"attachments\": [\n\t\t{\n\t\t\t\"url\": \"{{baseUrl}}/.../chat-attachments/example.jpg\",\n\t\t\t\"name\": \"site-photo.jpg\",\n\t\t\t\"type\": \"image/jpeg\"\n\t\t}\n\t]\n}"
+						}
+					}
+				},
+				{
+					"name": "Group \u2014 Create",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"name\": \"Project Alpha Team\",\n\t\"memberIds\": [\n\t\t\"{{userId}}\"\n\t]\n}"
+						}
+					}
+				},
+				{
+					"name": "Group \u2014 Get Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups/{{groupId}}"
+					}
+				},
+				{
+					"name": "Group \u2014 Update Members (add/remove)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups/{{groupId}}/members",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"addMemberIds\": [],\n\t\"removeMemberIds\": []\n}"
+						}
+					}
+				},
+				{
+					"name": "Group \u2014 Get Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups/{{groupId}}/messages?page=1&limit=30"
+					}
+				},
+				{
+					"name": "Group \u2014 Send Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": "{{baseUrl}}/team-chat/groups/{{groupId}}/messages",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"content\": \"Team, please review the latest drawings\",\n\t\"attachments\": [\n\t\t{\n\t\t\t\"url\": \"{{baseUrl}}/.../chat-attachments/example.jpg\",\n\t\t\t\"name\": \"site-photo.jpg\",\n\t\t\t\"type\": \"image/jpeg\"\n\t\t}\n\t]\n}"
+						}
+					}
+				}
+			]
+		}
+	]
+}

@@ -56,8 +56,15 @@ const INVOICE_CREATE_MIN_LIFECYCLE_STAGE = 'proposal_sent'
 const PRIORITY_LEVELS = ['low', 'medium', 'high', 'urgent']
 const QUOTATION_STATUSES = ['draft', 'sent', 'accepted', 'rejected']
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
+/** Customer-submitted payment receipt review state — independent of invoice.status (invoice only
+ * flips to 'paid' once admin/sales verifies the proof). */
+const PAYMENT_PROOF_STATUSES = ['none', 'pending_review', 'verified', 'rejected']
 /** Line-item markup/tax input mode: percentage (of rate / line subtotal) or flat amount */
 const INVOICE_VALUE_TYPES = ['percentage', 'amount']
+const PAYMENT_METHODS = ['cash', 'bank_transfer', 'credit_card', 'upi', 'cheque', 'other']
+/** Who the invoice bills — the customer (revenue) vs money the company owes a vendor/carrier (expense). */
+const INVOICE_TYPES = ['customer', 'vendor', 'freight_carrier']
+const INVOICE_CATEGORIES = ['product', 'service', 'other']
 const FOLLOW_UP_STATUSES = ['pending', 'completed']
 const FOLLOW_UP_MODES = ['call', 'email', 'meeting']
 const MEETING_MODES = ['online', 'offline']
@@ -112,11 +119,16 @@ const AUDIT_ACTIONS = {
   QUOTATION_CREATED:        'quotation.created',
   QUOTATION_SENT:           'quotation.sent',
   QUOTATION_ACCEPTED:       'quotation.accepted',
+  QUOTATION_REJECTED:       'quotation.rejected',
   QUOTATION_EDITED:         'quotation.edited',
+  QUOTATION_DELETED:        'quotation.deleted',
   INVOICE_CREATED:          'invoice.created',
   INVOICE_SENT:             'invoice.sent',
   INVOICE_PAID:             'invoice.paid',
   INVOICE_EDITED:           'invoice.edited',
+  PAYMENT_PROOF_SUBMITTED: 'invoice.payment_proof_submitted',
+  PAYMENT_PROOF_VERIFIED:  'invoice.payment_proof_verified',
+  PAYMENT_PROOF_REJECTED:  'invoice.payment_proof_rejected',
   PAYMENT_STAGE_INVOICED:   'payment.stage_invoiced',
   PAYMENT_STAGE_PAID:       'payment.stage_paid',
   PAYMENT_SCHEDULE_UPDATED: 'payment.schedule_updated',
@@ -129,6 +141,7 @@ const AUDIT_ACTIONS = {
   ESCALATION_RESOLVED:      'escalation.resolved',
   USER_CREATED:             'user.created',
   USER_UPDATED:             'user.updated',
+  USER_DELETED:             'user.deleted',
   DOCUMENT_ADDED:           'lead.document_added',
   DOCUMENT_REMOVED:         'lead.document_removed',
   BUDGET_SET:               'lead.budget_set',
@@ -149,6 +162,8 @@ const AUDIT_ACTIONS = {
   DELIVERY_CREATED:          'delivery.created',
   DELIVERY_EDITED:           'delivery.edited',
   DELIVERY_RESCHEDULED:      'delivery.rescheduled',
+  DELIVERY_CALLBACK_REQUESTED: 'delivery.callback_requested',
+  DELIVERY_CONFIRMATION_SENT: 'delivery.confirmation_sent',
   FREIGHT_BIDS_SENT:         'freight_bids.sent',
   FREIGHT_BID_SUBMITTED:     'freight_bid.submitted',
   ALL_FREIGHT_BIDS_SUBMITTED: 'freight_bids.all_submitted',
@@ -175,6 +190,13 @@ const DRAWING_STATUSES = ['pending_review', 'approved', 'rejected']
 
 const VENDOR_STATUSES = ['active', 'inactive']
 const VENDOR_TYPES = ['steel', 'insulation', 'panels', 'trim', 'hardware', 'other']
+// Delivery.materialType has no enum today (free text, entered per-delivery) — real DB values
+// are inconsistent comma-joined strings. This is a starter dropdown list for the "Material
+// Category" filter, not an enforced schema constraint; existing free-text data isn't migrated.
+const DELIVERY_MATERIAL_CATEGORIES = ['Primary Steel', 'Secondary Steel', 'Doors', 'Trim', 'Hardware']
+// Delivery.loadingEquipment has no enum either (free-text array) — real DB data today only
+// has "Crane". Starter dropdown list for the "Equipment Required" filter, same caveat as above.
+const DELIVERY_EQUIPMENT_OPTIONS = ['Crane', 'Forklift', 'Flatbed Truck', 'Hydraulic Lift', 'Pallet Jack']
 const SHIPPER_REQUEST_STATUSES = [
   'sent', 'submitted',
   'comparison_processing', 'comparison_completed', 'comparison_failed',
@@ -190,13 +212,19 @@ const CARRIER_STATUSES = ['active', 'inactive']
 const FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested', 'selected', 'rejected', 'expired']
 const ACTIVE_FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested']
 const BUNDLE_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
-const BUNDLE_STATUSES = ['draft', 'confirmed', 'assigned_to_truck', 'loaded']
+const BUNDLE_STATUSES = ['draft', 'confirmed', 'assigned_to_truck', 'staged', 'loaded']
 const PACKING_LIST_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
-const PACKING_LIST_STATUSES = ['draft', 'confirmed', 'delivery_created', 'dispatched', 'delivered', 'cancelled']
+const PACKING_LIST_STATUSES = ['draft', 'confirmed', 'ready', 'loading', 'delivery_created', 'dispatched', 'delivered', 'cancelled']
 const TRUCK_TYPES = ['SEMI_53', 'HOTSHOT_40']
+// Fulfillment sub-flow (once a delivery is confirmed/carrier-selected) — the granular steps a
+// plant-panel dropdown walks through in order: material_prepared -> ... -> delivered.
+const DELIVERY_FULFILLMENT_STATUSES = [
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'staged', 'dispatched_to_site', 'delivered',
+]
 const DELIVERY_STATUSES = [
-  'draft', 'bidding_sent', 'carrier_selected', 'scheduled',
-  'confirmed', 'in_transit', 'delayed', 'delivered', 'cancelled',
+  'draft', 'bidding_sent', 'carrier_selected', 'scheduled', 'confirmed',
+  ...DELIVERY_FULFILLMENT_STATUSES,
+  'partial_received', 'received', 'delayed', 'cancelled', 'rescheduled',
 ]
 
 const SMDT_COST_UNITS = ['FT', 'LB', 'EA']
@@ -234,7 +262,11 @@ module.exports = {
   PRIORITY_LEVELS,
   QUOTATION_STATUSES,
   INVOICE_STATUSES,
+  PAYMENT_PROOF_STATUSES,
   INVOICE_VALUE_TYPES,
+  PAYMENT_METHODS,
+  INVOICE_TYPES,
+  INVOICE_CATEGORIES,
   FOLLOW_UP_STATUSES,
   FOLLOW_UP_MODES,
   MEETING_MODES,
@@ -251,6 +283,8 @@ module.exports = {
   DRAWING_STATUSES,
   VENDOR_STATUSES,
   VENDOR_TYPES,
+  DELIVERY_MATERIAL_CATEGORIES,
+  DELIVERY_EQUIPMENT_OPTIONS,
   SHIPPER_REQUEST_STATUSES,
   ACTIVE_SHIPPER_REQUEST_STATUSES,
   CARRIER_STATUSES,
@@ -262,6 +296,7 @@ module.exports = {
   PACKING_LIST_STATUSES,
   TRUCK_TYPES,
   DELIVERY_STATUSES,
+  DELIVERY_FULFILLMENT_STATUSES,
   SMDT_COST_UNITS,
   SMDT_CATEGORIES,
   BOM_JOB_STATUSES,

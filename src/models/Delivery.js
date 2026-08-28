@@ -34,6 +34,8 @@ const DeliverySchema = new mongoose.Schema(
           {
             status: { type: String, enum: DELIVERY_STATUSES, required: true },
             changedAt: { type: Date, default: Date.now },
+            changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+            description: { type: String, default: '' },
           },
           { _id: true }
         ),
@@ -52,6 +54,7 @@ const DeliverySchema = new mongoose.Schema(
     loadingEquipment: { type: [String], default: [] },
     bidDeadline: { type: Date, default: null },
     documentUrl: { type: String, default: '' },
+    attachments: { type: [String], default: [] },
     pickupLocation: { type: String, default: '' },
     pickupLocationData: { type: LocationSchema, default: () => ({}) },
     deliveryLocation: { type: String, default: '' },
@@ -65,12 +68,14 @@ const DeliverySchema = new mongoose.Schema(
     timings: { type: String, default: '' },
     receivingPoc: { type: String, default: '' },
     pickupContactPhone: { type: String, default: '' },
+    receivingPocEmail: { type: String, default: '' },
     specialRequirements: { type: String, default: '' },
     additionalNotes: { type: String, default: '' },
     rescheduleHistory: {
       type: [
         new mongoose.Schema(
           {
+            previousDate: { type: Date, default: null },
             date: { type: Date, default: null },
             timeWindowStart: { type: String, default: '' },
             timeWindowEnd: { type: String, default: '' },
@@ -78,16 +83,49 @@ const DeliverySchema = new mongoose.Schema(
             additionalNotes: { type: String, default: '' },
             rescheduledAt: { type: Date, default: Date.now },
             rescheduledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+            acknowledged: { type: Boolean, default: false },
+            acknowledgedAt: { type: Date, default: null },
           },
           { _id: true }
         ),
       ],
       default: [],
     },
+    confirmationEmailSent:   { type: Boolean, default: false },
+    confirmationEmailSentAt: { type: Date, default: null },
     selectedCarrierBidId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'FreightBid',
       default: null,
+    },
+    siteContact: {
+      contactName: { type: String, default: '' },
+      contactTitle: { type: String, default: '' },
+      phone: { type: String, default: '' },
+      email: { type: String, default: '' },
+      availableHours: { type: String, default: '' },
+      notes: { type: String, default: '' },
+    },
+    siteReadyConfirmation: {
+      confirmed: { type: Boolean, default: false },
+      confirmedAt: { type: Date, default: null },
+      confirmedBy: { type: String, default: '' },
+      checklist: {
+        siteCleared: { type: Boolean, default: false },
+        accessRouteAvailable: { type: Boolean, default: false },
+        safetyMeasuresInPlace: { type: Boolean, default: false },
+        personnelReady: { type: Boolean, default: false },
+      },
+    },
+    equipmentConfirmation: {
+      confirmed: { type: Boolean, default: false },
+      confirmedAt: { type: Date, default: null },
+      checklist: {
+        forkliftAvailable: { type: Boolean, default: false },
+        craneOrHeavyMachineryAvailable: { type: Boolean, default: false },
+        storageAreaReady: { type: Boolean, default: false },
+        toolsAndAccessoriesOnSite: { type: Boolean, default: false },
+      },
     },
   },
   { timestamps: true }

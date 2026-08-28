@@ -11,6 +11,7 @@ router.post('/',
 
 router.get('/:quotationId', ctrl.getQuotation)
 router.put('/:quotationId', ctrl.updateQuotation)
+router.delete('/:quotationId', ctrl.deleteQuotation)
 router.post('/:quotationId/send', ctrl.sendQuotation)
 router.get('/:quotationId/summary', ctrl.getQuoteSummary)
 

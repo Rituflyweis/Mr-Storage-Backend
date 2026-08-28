@@ -37,4 +37,11 @@ router.use('/packing-lists',     require('./packingList.routes'))
 router.use('/deliveries',        require('./delivery.routes'))
 router.use('/freight-bids',      require('./freightBid.routes'))
 
+// Savings, Freight/Awarded Loads (+filters), Deliveries Calendar, QR Labels, Item Costing,
+// Notification Details — these controllers already scope by getScopedLeadIds(req), which
+// handles both admin and plant roles, so the same route file is safe to mount here directly.
+// Previously only reachable under /admin/plant/*, meaning the plant role itself had no way to
+// reach QR labels, item costing, freight-load filters, or notification details.
+router.use('/', require('../admin/plant/extras.routes'))
+
 module.exports = router

@@ -4,6 +4,7 @@ const Customer = require('../../models/Customer')
 const PaymentSchedule = require('../../models/PaymentSchedule')
 const mailer = require('../../services/email/mailer')
 const auditService = require('../../services/audit.service')
+const notificationService = require('../../services/notification.service')
 const generateInvoiceNumber = require('../../utils/generateInvoiceNumber')
 const generatePONumber = require('../../utils/generatePONumber')
 const { success, created, notFound, badRequest, forbidden, error } = require('../../utils/apiResponse')
@@ -366,7 +367,106 @@ exports.markAsPaid = asyncHandler(async (req, res) => {
     },
   })
 
+  if (invoice.customerId) {
+    await notificationService.notify({
+      customerId: invoice.customerId,
+      leadId: invoice.leadId,
+      title: 'Payment received',
+      body: `Invoice ${invoice.invoiceNumber} for $${invoice.totalAmount?.toLocaleString() || invoice.totalAmount} has been marked as paid.`,
+      type: 'payment',
+      priority: 'low',
+      refId: invoice._id,
+      refModel: 'Invoice',
+    })
+  }
+
   return success(res, { invoice }, 'Invoice marked as paid')
+})
+
+// GET /invoices/payment-proofs/pending — queue of customer-submitted receipts awaiting review
+exports.getPendingPaymentProofs = asyncHandler(async (req, res) => {
+  const filter = { 'paymentProof.status': 'pending_review' }
+  if (req.user.role === 'sales') {
+    const leadIds = await Lead.find({ assignedSales: req.user._id }).distinct('_id')
+    filter.leadId = { $in: leadIds }
+  }
+
+  const invoices = await Invoice.find(filter)
+    .populate('customerId', 'firstName lastName email')
+    .populate('leadId', 'projectName jobId')
+    .sort({ 'paymentProof.submittedAt': -1 })
+    .lean()
+
+  return success(res, { invoices })
+})
+
+// PUT /invoices/:invoiceId/payment-proof/verify — approves the receipt and marks the invoice paid
+exports.verifyPaymentProof = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId)
+  if (!invoice) return notFound(res, 'Invoice not found')
+  if (invoice.paymentProof?.status !== 'pending_review') return badRequest(res, 'No pending receipt to verify for this invoice')
+
+  if (req.user.role === 'sales') {
+    const lead = await Lead.findById(invoice.leadId)
+    if (lead && String(lead.assignedSales) !== String(req.user._id)) return forbidden(res, 'Access denied')
+  }
+
+  invoice.paymentProof.status = 'verified'
+  invoice.paymentProof.reviewedBy = req.user._id
+  invoice.paymentProof.reviewedAt = new Date()
+  invoice.paymentProof.reviewNotes = req.body.reviewNotes || ''
+
+  invoice.status = 'paid'
+  invoice.paidAt = new Date()
+  invoice.paidBy = req.user._id
+  await invoice.save()
+
+  if (invoice.paymentScheduleStageId) {
+    await PaymentSchedule.findOneAndUpdate(
+      { 'stages._id': invoice.paymentScheduleStageId },
+      { $set: { 'stages.$.status': 'paid', 'stages.$.paidAt': new Date(), 'stages.$.paidBy': req.user._id } }
+    )
+  }
+
+  await auditService.log({
+    type: 'invoice',
+    action: AUDIT_ACTIONS.PAYMENT_PROOF_VERIFIED,
+    leadId: invoice.leadId,
+    customerId: invoice.customerId,
+    performedBy: req.user._id,
+    metadata: { invoiceId: invoice._id },
+  })
+
+  return success(res, { invoice }, 'Payment receipt verified — invoice marked as paid')
+})
+
+// PUT /invoices/:invoiceId/payment-proof/reject — sends the receipt back, invoice stays unpaid
+exports.rejectPaymentProof = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId)
+  if (!invoice) return notFound(res, 'Invoice not found')
+  if (invoice.paymentProof?.status !== 'pending_review') return badRequest(res, 'No pending receipt to reject for this invoice')
+
+  if (req.user.role === 'sales') {
+    const lead = await Lead.findById(invoice.leadId)
+    if (lead && String(lead.assignedSales) !== String(req.user._id)) return forbidden(res, 'Access denied')
+  }
+
+  invoice.paymentProof.status = 'rejected'
+  invoice.paymentProof.reviewedBy = req.user._id
+  invoice.paymentProof.reviewedAt = new Date()
+  invoice.paymentProof.reviewNotes = req.body.reviewNotes || ''
+  await invoice.save()
+
+  await auditService.log({
+    type: 'invoice',
+    action: AUDIT_ACTIONS.PAYMENT_PROOF_REJECTED,
+    leadId: invoice.leadId,
+    customerId: invoice.customerId,
+    performedBy: req.user._id,
+    metadata: { invoiceId: invoice._id, reason: req.body.reviewNotes },
+  })
+
+  return success(res, { invoice }, 'Payment receipt rejected — customer can resubmit')
 })
 
 exports.getLeadInvoices = asyncHandler(async (req, res) => {

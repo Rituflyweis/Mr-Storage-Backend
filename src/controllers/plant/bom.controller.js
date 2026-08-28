@@ -90,7 +90,8 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))
   const skip = (page - 1) * limit
 
-  const leadIds = await getScopedLeadIds(req)
+  let leadIds = await getScopedLeadIds(req)
+  if (req.query.projectId) leadIds = leadIds.filter((id) => String(id) === String(req.query.projectId))
   if (!leadIds.length) {
     return success(res, { projects: [], total: 0, page, limit })
   }
@@ -129,6 +130,51 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
 
   const total = rows.length
   const projects = rows.slice(skip, skip + limit)
+  return success(res, { projects, total, page, limit })
+})
+
+// GET /admin/plant/bom/consolidated — project-wise list of all generated Consolidated BOMs
+exports.getConsolidatedBOMList = asyncHandler(async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))
+  const skip = (page - 1) * limit
+
+  const leadIds = await getScopedLeadIds(req)
+  if (!leadIds.length) {
+    return success(res, { projects: [], total: 0, page, limit })
+  }
+
+  const filter = { leadId: { $in: leadIds } }
+  if (req.query.status) filter.status = req.query.status
+
+  const [consolidatedBOMs, total] = await Promise.all([
+    ConsolidatedBOM.find(filter)
+      .populate({ path: 'leadId', select: `_id ${LEAD_PROJECT_LIST_SELECT}`, populate: LEAD_PROJECT_LIST_POPULATE })
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    ConsolidatedBOM.countDocuments(filter),
+  ])
+
+  const projects = consolidatedBOMs
+    .filter((c) => c.leadId)
+    .map((c) => ({
+      consolidatedBOMId: c._id,
+      leadId: c.leadId._id,
+      projectId: c.leadId.jobId || '',
+      projectName: c.leadId.projectName || '',
+      ...mapProjectNameFallbackFields(c.leadId),
+      status: c.status,
+      fileUrl: c.fileUrl,
+      totalCost: roundMoney(c.totalCost),
+      totalWeight: c.totalWeight,
+      itemCount: c.items?.length || 0,
+      sentToVendorCount: c.sentToVendors?.length || 0,
+      generatedAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    }))
+
   return success(res, { projects, total, page, limit })
 })
 

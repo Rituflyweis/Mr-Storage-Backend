@@ -1,6 +1,16 @@
 const mongoose = require('mongoose')
 const { BUILDING_STATUSES, DRAWING_STATUSES } = require('../config/constants')
 
+const DrawingCommentSchema = new mongoose.Schema(
+  {
+    text:                { type: String, required: true, trim: true },
+    commentedBy:         { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    commentedByCustomer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
+    authorName:          { type: String, default: '' },
+  },
+  { timestamps: true }
+)
+
 const BuildingSchema = new mongoose.Schema(
   {
     leadId:         { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', required: true },
@@ -22,6 +32,7 @@ const BuildingSchema = new mongoose.Schema(
         uploadedBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
         uploadedAt:      { type: Date, default: Date.now },
         reviewedAt:      { type: Date, default: null },
+        comments:        { type: [DrawingCommentSchema], default: [] },
       },
     ],
     createdBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

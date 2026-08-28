@@ -654,6 +654,34 @@ const sendShipperRejectionEmail = async ({ toEmail, vendorName, projectName, job
   })
 }
 
+// "Send Report to the Shippers" — plant panel Order Verification screen. Recipient is typed in
+// freely (may not be the vendor's own email), so this builds inline HTML rather than pulling
+// vendor context from a template.
+const sendComparisonReportEmail = async ({ toEmail, projectName, jobId, summary, excelBuffer }) => {
+  const rows = [
+    ['Matched Items', summary?.matchedItems ?? 0],
+    ['Missing Items', summary?.missingItems ?? 0],
+    ['Extra Items', summary?.extraItems ?? 0],
+  ]
+  const html = `
+    <p>Order verification comparison report for <strong>${projectName || 'Project'}</strong> (${jobId || ''}).</p>
+    <table cellpadding="6" style="border-collapse:collapse">
+      ${rows.map(([label, val]) => `<tr><td style="border:1px solid #ddd">${label}</td><td style="border:1px solid #ddd">${val}</td></tr>`).join('')}
+    </table>
+    <p>See the attached Excel report for full line-item detail.</p>
+  `
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Order Verification Report: ${projectName || 'Project'}`,
+    html,
+    attachments: excelBuffer
+      ? [{ filename: `comparison-report-${jobId || 'report'}.xlsx`, content: excelBuffer }]
+      : [],
+  })
+}
+
 const sendShipperResubmitRequestEmail = async ({
   toEmail,
   vendorName,
@@ -911,6 +939,78 @@ const sendFreightBidResubmitRequestEmail = async ({
   })
 }
 
+const sendDeliveryConfirmationEmail = async ({
+  toEmail,
+  customerName,
+  projectName,
+  jobId,
+  deliveryNumber,
+  deliveryDate,
+  timings,
+  deliveryLocation,
+}) => {
+  const safeDeliveryDate = deliveryDate ? formatInvoiceDate(deliveryDate) : '—'
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Delivery Confirmation</h2>
+      <p>Hi ${escapeHtml(customerName || 'there')},</p>
+      <p>This confirms the scheduled delivery for your project:</p>
+      <ul>
+        <li><strong>Project:</strong> ${escapeHtml(projectName || '')}</li>
+        <li><strong>Job ID:</strong> ${escapeHtml(jobId || '')}</li>
+        <li><strong>Delivery #:</strong> ${escapeHtml(deliveryNumber || '')}</li>
+        <li><strong>Delivery Date:</strong> ${safeDeliveryDate}</li>
+        <li><strong>Time Window:</strong> ${escapeHtml(timings || '—')}</li>
+        <li><strong>Delivery Location:</strong> ${escapeHtml(deliveryLocation || '—')}</li>
+      </ul>
+      <p>You'll be notified of any changes to this schedule.</p>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Delivery Confirmed: ${projectName || 'Project'}${deliveryNumber ? ` (${deliveryNumber})` : ''}`,
+    html,
+  })
+}
+
+const sendDeliveryCallbackRequestEmail = async ({
+  toEmail,
+  salesRepName,
+  customerName,
+  customerEmail,
+  customerPhone,
+  projectName,
+  jobId,
+  deliveryNumber,
+  note,
+}) => {
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Customer Call Back Request</h2>
+      <p>Hi ${escapeHtml(salesRepName || 'there')},</p>
+      <p>A customer has requested a call back regarding a delivery:</p>
+      <ul>
+        <li><strong>Customer:</strong> ${escapeHtml(customerName || '')} (${escapeHtml(customerEmail || '')}${customerPhone ? `, ${escapeHtml(customerPhone)}` : ''})</li>
+        <li><strong>Project:</strong> ${escapeHtml(projectName || '')}</li>
+        <li><strong>Job ID:</strong> ${escapeHtml(jobId || '')}</li>
+        <li><strong>Delivery #:</strong> ${escapeHtml(deliveryNumber || '')}</li>
+        ${note ? `<li><strong>Note:</strong> ${escapeHtml(note)}</li>` : ''}
+      </ul>
+      <p>Please reach out to the customer at your earliest convenience.</p>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Call Back Requested: ${projectName || 'Project'}${deliveryNumber ? ` (${deliveryNumber})` : ''}`,
+    html,
+  })
+}
+
 module.exports = {
   isEmailConfigured,
   isSmtpConfigured,
@@ -925,8 +1025,11 @@ module.exports = {
   sendShipperApprovalEmail,
   sendShipperRejectionEmail,
   sendShipperResubmitRequestEmail,
+  sendComparisonReportEmail,
   sendFreightBidRequestEmail,
   sendFreightBidResubmitRequestEmail,
   sendFreightBidAwardedEmail,
   sendFreightBidRejectedEmail,
+  sendDeliveryConfirmationEmail,
+  sendDeliveryCallbackRequestEmail,
 }

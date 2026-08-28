@@ -1,6 +1,20 @@
 const mongoose = require('mongoose')
 const { BUNDLE_STATUSES } = require('../config/constants')
 
+const MISMATCH_ITEM_STATUSES = ['Received', 'Partially Received', 'Not Received']
+
+const MismatchItemSchema = new mongoose.Schema(
+  {
+    itemId:      { type: mongoose.Schema.Types.ObjectId, default: null },
+    partCode:    { type: String, default: '' },
+    description: { type: String, default: '' },
+    qty:         { type: Number, default: 0 },
+    receivedQty: { type: Number, default: 0 },
+    status:      { type: String, enum: MISMATCH_ITEM_STATUSES, default: 'Not Received' },
+  },
+  { _id: false }
+)
+
 const BundleItemSchema = new mongoose.Schema(
   {
     vendorQuoteLineId: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorQuoteLine', required: true, index: true },
@@ -78,6 +92,14 @@ const BundleSchema = new mongoose.Schema(
     handlingInstruction: { type: String, default: '' },
     warnings: { type: [String], default: [] },
     notes: { type: String, default: '' },
+
+    labelPrinted: { type: Boolean, default: false },
+    labelPrintedAt: { type: Date, default: null },
+    verified: { type: Boolean, default: false },
+    verifiedAt: { type: Date, default: null },
+    mismatchNotes: { type: String, default: '' },
+    mismatchReportedAt: { type: Date, default: null },
+    mismatchItems: { type: [MismatchItemSchema], default: [] },
   },
   { timestamps: true }
 )
@@ -85,3 +107,4 @@ const BundleSchema = new mongoose.Schema(
 BundleSchema.index({ bundlePlanId: 1, bundleNo: 1 }, { unique: true })
 
 module.exports = mongoose.model('Bundle', BundleSchema)
+module.exports.MISMATCH_ITEM_STATUSES = MISMATCH_ITEM_STATUSES

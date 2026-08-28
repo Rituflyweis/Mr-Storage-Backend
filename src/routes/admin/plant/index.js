@@ -14,6 +14,10 @@ router.use('/packing-list-plans', require('./packingListPlan.routes'))
 router.use('/projects', require('./projectOps.routes'))
 router.use('/vendors', require('./vendor.routes'))
 router.use('/carriers', require('./carrier.routes'))
+router.use('/freight-bids', require('./freightBid.routes'))
+router.use('/bundles', require('../../plant/bundle.routes'))
 router.use('/smdt', require('./smdt.routes'))
+router.use('/deliveries', require('./delivery.routes'))
+router.use('/', require('./extras.routes'))
 
 module.exports = router

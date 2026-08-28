@@ -9,5 +9,15 @@ router.use('/projects',  ...guard, require('./project.routes'))
 router.use('/invoices',  ...guard, require('./invoice.routes'))
 router.use('/expenses',  ...guard, require('./expense.routes'))
 router.use('/tax',       ...guard, require('./tax.routes'))
+router.use('/analytics', ...guard, require('./analytics.routes'))
+router.use('/payments',  ...guard, require('./payments.routes'))
+router.use('/reports',   ...guard, require('./reports.routes'))
+router.use('/financial', ...guard, require('./financial.routes'))
+// Reuses the admin financial controller wholesale — margin analysis, budget vs actual,
+// tax filing (state-wise/project-wise/export/prepare/file), payment approvals & status,
+// WIP profits, richer expense management, and profit/loss with export — none of this had
+// a lighter account-specific version, so mount the admin one directly rather than duplicate it.
+router.use('/financial-extra', ...guard, require('../admin/financial.routes'))
+router.use('/communication', ...guard, require('./communication.routes'))
 
 module.exports = router

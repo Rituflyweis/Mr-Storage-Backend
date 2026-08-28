@@ -6,6 +6,7 @@ router.get('/conversion-funnel', ctrl.getConversionFunnel)
 router.get('/performance-trend', ctrl.getPerformanceTrend)
 router.get('/today-tasks', ctrl.getTodayTasks)
 router.get('/lead-stats', ctrl.getLeadStats)
-router.get('/customer-stats', ctrl.getCustomerStats)
+router.get('/customer-stats',      ctrl.getCustomerStats)
+router.get('/ai-support-summary', ctrl.getAISupportSummary)
 
 module.exports = router

@@ -24,6 +24,7 @@ const {
   sendShipperApprovalEmail,
   sendShipperRejectionEmail,
   sendShipperResubmitRequestEmail,
+  sendComparisonReportEmail,
 } = require('../../services/email/mailer')
 const auditService = require('../../services/audit.service')
 const {
@@ -114,13 +115,22 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
     row.fileReceivedStatus = resolveFileReceivedStatus(row.totalShipperFiles, row.receivedShipperFiles)
   }
 
-  const projects = [...projectMap.values()].sort((a, b) => {
+  let projects = [...projectMap.values()].sort((a, b) => {
     const aTime = a.latestSubmittedAt ? new Date(a.latestSubmittedAt).getTime() : 0
     const bTime = b.latestSubmittedAt ? new Date(b.latestSubmittedAt).getTime() : 0
     return bTime - aTime
   })
 
-  return success(res, { projects, total: projects.length })
+  if (req.query.fileStatus) {
+    projects = projects.filter((p) => p.fileReceivedStatus === req.query.fileStatus)
+  }
+
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))
+  const total = projects.length
+  const paged = projects.slice((page - 1) * limit, (page - 1) * limit + limit)
+
+  return success(res, { projects: paged, total, page, limit })
 })
 
 exports.getShipperFilesStats = asyncHandler(async (req, res) => {
@@ -641,6 +651,89 @@ exports.getShipperComparisonSummary = asyncHandler(async (req, res) => {
     resubmitRequestedAt: request.resubmitRequestedAt || null,
     vendorExceptionSummary: request.vendorExceptionSummary || null,
   })
+})
+
+// Shared by exportComparisonReport and emailComparisonReport ("Download Excel Report" /
+// "Send Report to the Shippers" on the Order Verification screen).
+const buildComparisonReportExcel = async (request, results) => {
+  const ExcelJS = require('exceljs')
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Comparison Result')
+
+  sheet.columns = [
+    { header: 'Part Number', key: 'partNumber', width: 16 },
+    { header: 'Description', key: 'description', width: 30 },
+    { header: 'Ordered QTY', key: 'orderedQty', width: 14 },
+    { header: 'Shipped QTY', key: 'shippedQty', width: 14 },
+    { header: 'Difference', key: 'difference', width: 12 },
+    { header: 'Reason', key: 'reason', width: 24 },
+  ]
+
+  for (const row of results) {
+    sheet.addRow({
+      partNumber: row.expected?.partNumber || row.received?.partNumber || '',
+      description: row.expected?.description || row.received?.description || '',
+      orderedQty: row.expected?.quantity ?? '',
+      shippedQty: row.received?.quantity ?? '',
+      difference: row.difference?.quantity ?? '',
+      reason: row.reason || '',
+    })
+  }
+
+  sheet.getRow(1).font = { bold: true }
+  return workbook.xlsx.writeBuffer()
+}
+
+// GET /:requestId/comparison-report/export — "Download Excel Report"
+exports.exportComparisonReport = asyncHandler(async (req, res) => {
+  const { requestId } = req.params
+  const request = await ShipperRequest.findById(requestId).populate('leadId', 'projectName jobId').lean()
+  if (!request) return notFound(res, 'Shipper request not found')
+
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const results = await QuoteComparisonResult.find({ shipperRequestId: request._id }).sort({ createdAt: -1 }).lean()
+  const buffer = await buildComparisonReportExcel(request, results)
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', `attachment; filename="comparison-report-${request.leadId?.jobId || requestId}.xlsx"`)
+  return res.send(buffer)
+})
+
+// POST /:requestId/comparison-report/send — "Send Report to the Shippers"
+exports.emailComparisonReport = asyncHandler(async (req, res) => {
+  const { requestId } = req.params
+  const { email } = req.body
+  if (!email) return badRequest(res, 'email is required')
+
+  const request = await ShipperRequest.findById(requestId).populate('leadId', 'projectName jobId').lean()
+  if (!request) return notFound(res, 'Shipper request not found')
+
+  const access = await assertPlantProjectAccess(request.leadId?._id || request.leadId, req)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const [stats, results] = await Promise.all([
+    aggregateComparisonStats(QuoteComparisonResult, request._id),
+    QuoteComparisonResult.find({ shipperRequestId: request._id }).sort({ createdAt: -1 }).lean(),
+  ])
+  const excelBuffer = await buildComparisonReportExcel(request, results)
+
+  await sendComparisonReportEmail({
+    toEmail: email,
+    projectName: request.leadId?.projectName || '',
+    jobId: request.leadId?.jobId || '',
+    summary: { matchedItems: stats.matched.count, missingItems: stats.unmatched.count, extraItems: stats.extra.count },
+    excelBuffer,
+  })
+
+  return success(res, {}, 'Report sent to shippers')
 })
 
 exports.getShipperComparisonResults = asyncHandler(async (req, res) => {

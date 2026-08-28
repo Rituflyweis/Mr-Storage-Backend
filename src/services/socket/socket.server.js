@@ -3,7 +3,9 @@ const { JWT_ACCESS_SECRET } = require('../../config/env')
 const chatHandler = require('./chat.handler')
 const adminHandler = require('./admin.handler')
 const aiScriptHandler = require('./aiScript.handler')
+const teamChatHandler = require('./teamChat.handler')
 const customerPresence = require('./customerPresence.service')
+const staffPresence = require('./staffPresence.service')
 
 const initSocket = (io) => {
   global.io = io
@@ -48,8 +50,10 @@ const initSocket = (io) => {
 
     adminHandler(socket, adminNS)
     aiScriptHandler(socket)
+    teamChatHandler(socket, adminNS)
 
     socket.on('disconnect', () => {
+      staffPresence.unregisterSocket(socket.id)
       console.log('[Socket /admin] Disconnected:', socket.id)
     })
   })

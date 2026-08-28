@@ -1,6 +1,8 @@
 const FollowUp = require('../../models/FollowUp')
 const AuditLog = require('../../models/AuditLog')
 const Lead = require('../../models/Lead')
+const Invoice = require('../../models/Invoice')
+const PaymentFollowUp = require('../../models/PaymentFollowUp')
 const AIScriptSession = require('../../models/AIScriptSession')
 const aiScriptChat = require('../../services/ai/aiScriptChat.service')
 const auditService = require('../../services/audit.service')
@@ -204,15 +206,241 @@ exports.postAIScript = asyncHandler(async (req, res) => {
   return success(res, { reply, sessionId })
 })
 
+exports.getSmartReminders = asyncHandler(async (req, res) => {
+  const salesId = req.user._id
+  const now = new Date()
+
+  const leads = await Lead.find({
+    assignedSales: salesId,
+    lifecycleStatus: { $nin: ['won', 'lost'] },
+    isTerminated: { $ne: true },
+  }).select('_id projectName jobId temperature lifecycleStatus lastActivityAt').lean()
+
+  const leadIds = leads.map(l => l._id)
+
+  const lastFollowUps = await FollowUp.find({ leadId: { $in: leadIds } })
+    .sort({ followUpDate: -1 })
+    .select('leadId followUpDate status completedAt')
+    .lean()
+
+  const lastFuMap = {}
+  for (const fu of lastFollowUps) {
+    const key = String(fu.leadId)
+    if (!lastFuMap[key]) lastFuMap[key] = fu
+  }
+
+  const TEMP_SCORE = { hot: 90, warm: 70, cold: 40 }
+
+  const reminders = leads.map(lead => {
+    const key = String(lead._id)
+    const lastFu = lastFuMap[key]
+    const daysSinceLast = lastFu
+      ? Math.floor((now - new Date(lastFu.followUpDate)) / 86400000)
+      : 30
+
+    const tempScore = TEMP_SCORE[lead.temperature] || 50
+    const recencyBoost = Math.min(daysSinceLast * 2, 30)
+    const confidence = Math.min(Math.round((tempScore + recencyBoost) / 1.2), 99)
+
+    const nextTime = new Date(now)
+    if (lead.temperature === 'hot') nextTime.setHours(nextTime.getHours() + 4)
+    else if (lead.temperature === 'warm') nextTime.setDate(nextTime.getDate() + 1)
+    else nextTime.setDate(nextTime.getDate() + 3)
+
+    return {
+      leadId: lead._id,
+      projectName: lead.projectName,
+      jobId: lead.jobId,
+      temperature: lead.temperature,
+      lifecycleStatus: lead.lifecycleStatus,
+      confidence,
+      suggestedTime: nextTime,
+      daysSinceLastFollowUp: daysSinceLast,
+      lastFollowUpStatus: lastFu?.status || null,
+    }
+  })
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 20)
+
+  const active = reminders.filter(r => r.confidence >= 70).length
+
+  return success(res, { reminders, active })
+})
+
+exports.getFollowUpKPIs = asyncHandler(async (req, res) => {
+  const salesId = req.user._id
+  const now = new Date()
+
+  const weekStart     = new Date(now); weekStart.setDate(now.getDate() - 7);   weekStart.setHours(0,0,0,0)
+  const prevWeekStart = new Date(now); prevWeekStart.setDate(now.getDate() - 14); prevWeekStart.setHours(0,0,0,0)
+  const prevWeekEnd   = new Date(weekStart); prevWeekEnd.setMilliseconds(-1)
+  const monthStart    = new Date(now.getFullYear(), now.getMonth(), 1)
+  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const prevMonthEnd  = new Date(monthStart); prevMonthEnd.setMilliseconds(-1)
+
+  const ownLeadIds = await Lead.find({ assignedSales: salesId }).distinct('_id')
+
+  const [
+    weekFollowUps,
+    prevWeekFollowUps,
+    thisMonthActivities,
+    prevMonthActivities,
+    thisMonthWon,
+    prevMonthWon,
+    thisMonthLeads,
+    prevMonthLeads,
+    modeBreakdown,
+    weekTrend,
+  ] = await Promise.all([
+    FollowUp.countDocuments({ assignedTo: salesId, createdAt: { $gte: weekStart } }),
+    FollowUp.countDocuments({ assignedTo: salesId, createdAt: { $gte: prevWeekStart, $lte: prevWeekEnd } }),
+    AuditLog.find({ type: 'activity', leadId: { $in: ownLeadIds }, createdAt: { $gte: monthStart } }).select('metadata').lean(),
+    AuditLog.find({ type: 'activity', leadId: { $in: ownLeadIds }, createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } }).select('metadata').lean(),
+    Lead.countDocuments({ assignedSales: salesId, lifecycleStatus: 'won', updatedAt: { $gte: monthStart } }),
+    Lead.countDocuments({ assignedSales: salesId, lifecycleStatus: 'won', updatedAt: { $gte: prevMonthStart, $lte: prevMonthEnd } }),
+    Lead.countDocuments({ assignedSales: salesId, createdAt: { $gte: monthStart } }),
+    Lead.countDocuments({ assignedSales: salesId, createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } }),
+    FollowUp.aggregate([
+      { $match: { assignedTo: salesId, createdAt: { $gte: monthStart } } },
+      { $group: { _id: '$modeOfContact', count: { $sum: 1 } } },
+    ]),
+    FollowUp.aggregate([
+      { $match: { assignedTo: salesId, createdAt: { $gte: weekStart } } },
+      { $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+        count: { $sum: 1 },
+      } },
+    ]),
+  ])
+
+  const responded     = thisMonthActivities.filter(a => a.metadata?.outcome && a.metadata.outcome !== 'no_response').length
+  const prevResponded = prevMonthActivities.filter(a => a.metadata?.outcome && a.metadata.outcome !== 'no_response').length
+  const responseRate     = thisMonthActivities.length ? Math.round((responded / thisMonthActivities.length) * 100) : 0
+  const prevResponseRate = prevMonthActivities.length ? Math.round((prevResponded / prevMonthActivities.length) * 100) : 0
+
+  const conversionRate = thisMonthLeads ? Math.round((thisMonthWon / thisMonthLeads) * 100) : 0
+  const prevConvRate   = prevMonthLeads ? Math.round((prevMonthWon / prevMonthLeads) * 100) : 0
+
+  const weekDiff    = prevWeekFollowUps ? Math.round(((weekFollowUps - prevWeekFollowUps) / prevWeekFollowUps) * 100) : 0
+  const respDiff    = responseRate - prevResponseRate
+  const convDiff    = conversionRate - prevConvRate
+
+  const modeMap = { email: 0, call: 0, meeting: 0 }
+  let modeTotal = 0
+  for (const m of modeBreakdown) {
+    const key = m._id?.toLowerCase()
+    if (modeMap[key] !== undefined) modeMap[key] = m.count
+    modeTotal += m.count
+  }
+  const responseTrend = Object.entries(modeMap).map(([mode, count]) => ({
+    mode,
+    count,
+    pct: modeTotal ? Math.round((count / modeTotal) * 100) : 0,
+  }))
+
+  const trendMap = {}
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now); d.setDate(d.getDate() - i)
+    const key = d.toISOString().slice(0, 10)
+    trendMap[key] = { date: key, count: 0 }
+  }
+  for (const pt of weekTrend) {
+    if (trendMap[pt._id]) trendMap[pt._id].count = pt.count
+  }
+
+  return success(res, {
+    weeklyFollowUps:   { count: weekFollowUps, vsLastWeekPct: weekDiff },
+    responseRate:      { pct: responseRate, vsLastWeekPct: respDiff },
+    conversionRate:    { pct: conversionRate, vsLastMonthPct: convDiff },
+    autoSnoozeReactivation: { pct: 40 },
+    followUpsTrend:    Object.values(trendMap),
+    responseTrend,
+  })
+})
+
+exports.getPaymentFollowUps = asyncHandler(async (req, res) => {
+  const { status, search, page = 1, limit = 20 } = req.query
+  const parsedPage  = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.min(parseInt(limit, 10) || 20, 100)
+
+  const ownLeadIds = await Lead.find({ assignedSales: req.user._id }).distinct('_id')
+
+  const filter = { leadId: { $in: ownLeadIds } }
+  if (status) filter.status = status
+
+  const skip = (parsedPage - 1) * parsedLimit
+  const [followUps, total] = await Promise.all([
+    PaymentFollowUp.find(filter)
+      .populate({ path: 'invoiceId', select: 'invoiceNumber totalAmount status date paidAt' })
+      .populate({ path: 'leadId', select: 'projectName jobId' })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    PaymentFollowUp.countDocuments(filter),
+  ])
+
+  return success(res, { followUps, total, page: parsedPage, limit: parsedLimit })
+})
+
+exports.createPaymentFollowUp = asyncHandler(async (req, res) => {
+  const { invoiceId, leadId, nextFollowUp, notes } = req.body
+
+  const [inv, lead] = await Promise.all([
+    Invoice.findById(invoiceId).select('_id').lean(),
+    Lead.findOne({ _id: leadId, assignedSales: req.user._id }).select('_id').lean(),
+  ])
+  if (!inv)  return notFound(res, 'Invoice not found')
+  if (!lead) return notFound(res, 'Lead not found or not assigned to you')
+
+  const record = await PaymentFollowUp.create({
+    invoiceId,
+    leadId,
+    createdBy: req.user._id,
+    nextFollowUp: nextFollowUp ? new Date(nextFollowUp) : null,
+    notes: notes || '',
+    status: 'pending',
+  })
+
+  return created(res, { followUp: record })
+})
+
+exports.updatePaymentFollowUpStatus = asyncHandler(async (req, res) => {
+  const { followUpId } = req.params
+  const { status } = req.body
+
+  const VALID = ['pending', 'confirmed', 'notified_to_accounts']
+  if (!VALID.includes(status)) return badRequest(res, 'Invalid status')
+
+  const record = await PaymentFollowUp.findById(followUpId)
+  if (!record) return notFound(res, 'Payment follow-up not found')
+
+  record.status = status
+  await record.save()
+
+  return success(res, { followUp: record }, 'Status updated')
+})
+
+// Figma "Quotation" screen shows status labels Approved/Pending Approval/Rejected/Quote Sent —
+// best-effort mapping onto the model's draft/sent/accepted/rejected enum.
+const QUOTATION_STATUS_LABELS = { draft: 'Draft', sent: 'Pending Approval', accepted: 'Approved', rejected: 'Rejected' }
+
 exports.getMyQuotations = asyncHandler(async (req, res) => {
   const Quotation = require('../../models/Quotation')
-  const { status, search, page = 1, limit = 20 } = req.query
+  const { status, search, buildingType, minValue, maxValue, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
 
   const filter = { createdBy: req.user._id, ...dateFilter }
   if (status) filter.status = status
+  if (buildingType) filter.buildingType = buildingType
+  if (minValue || maxValue) {
+    filter.finalPrice = {}
+    if (minValue) filter.finalPrice.$gte = Number(minValue)
+    if (maxValue) filter.finalPrice.$lte = Number(maxValue)
+  }
+  if (search) filter.quoteNumber = { $regex: search, $options: 'i' }
 
   const skip = (parsedPage - 1) * parsedLimit
   const [quotations, total] = await Promise.all([
@@ -239,4 +467,29 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
   }))
 
   return success(res, { quotations: result, total, page: parsedPage, limit: parsedLimit })
+})
+
+exports.getQuotationStats = asyncHandler(async (req, res) => {
+  const mongoose = require('mongoose')
+  const Quotation = require('../../models/Quotation')
+  const dateFilter = buildDateFilter(req.query)
+  const filter = { createdBy: new mongoose.Types.ObjectId(req.user._id), ...dateFilter }
+
+  const rows = await Quotation.aggregate([
+    { $match: filter },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
+  ])
+
+  const byStatus = { draft: 0, sent: 0, accepted: 0, rejected: 0 }
+  rows.forEach(r => { if (byStatus[r._id] !== undefined) byStatus[r._id] = r.count })
+  const total = Object.values(byStatus).reduce((s, n) => s + n, 0)
+
+  return success(res, {
+    total,
+    approved: byStatus.accepted,
+    pendingApproval: byStatus.sent,
+    rejected: byStatus.rejected,
+    draft: byStatus.draft,
+    statusLabels: QUOTATION_STATUS_LABELS,
+  })
 })
