@@ -167,14 +167,14 @@ const generateStorageQuoteHtml = (payload = {}) => {
     <div class="q-section" style="margin-top:16px;">
       <div class="q-section-title">Building Breakdown</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <thead><tr style="background:#f8f9fb;"><th style="padding:6px 8px;text-align:left;">Building</th><th style="padding:6px 8px;text-align:center;">Dimensions</th><th style="padding:6px 8px;text-align:center;">Slope</th><th style="padding:6px 8px;text-align:center;">SF</th><th style="padding:6px 8px;text-align:center;">Roof Type</th><th style="padding:6px 8px;text-align:right;">Price</th></tr></thead>
+        <thead><tr style="background:#f8f9fb;"><th style="padding:6px 8px;text-align:left;">Building</th><th style="padding:6px 8px;text-align:center;">Dimensions</th><th style="padding:6px 8px;text-align:center;">Slope</th><th style="padding:6px 8px;text-align:center;">SF</th><th style="padding:6px 8px;text-align:center;">Roof Type</th><th style="padding:6px 8px;text-align:right;">Price (Sell)</th></tr></thead>
         <tbody>${bldRows}</tbody>
-        <tfoot><tr style="font-weight:700;border-top:2px solid #1e3a8a;"><td colspan="5" style="padding:8px;">Building Subtotal</td><td style="padding:8px;text-align:right;color:#1e3a8a;">${fmtMoney(sp.buildingSell)}</td></tr></tfoot>
+        <tfoot><tr style="font-weight:700;border-top:2px solid #1e3a8a;"><td colspan="5" style="padding:8px;">Building Subtotal (Sell)</td><td style="padding:8px;text-align:right;color:#1e3a8a;">${fmtMoney(sp.buildingSell)}</td></tr></tfoot>
       </table>
     </div>
     <div class="q-two-col" style="margin-top:16px;">
       <div class="q-section">
-        <div class="q-section-title">Pricing Summary</div>
+        <div class="q-section-title">Pricing Summary (Sell values)</div>
         <div class="q-breakdown"><table>
           ${summaryRows}
           <tr class="q-total-row"><td>Total</td><td style="text-align:right">${fmtMoney(grandTotal)}</td></tr>
@@ -244,10 +244,10 @@ const generateQuoteHtml = (payload = {}) => {
       <div class="q-section">
         <div class="q-section-title">Pricing Summary</div>
         <div class="q-breakdown"><table>
-          <tr class="q-sub-row"><td>Material</td><td style="text-align:right">${fmtMoney(res.matCost)}</td></tr>
-          <tr class="q-sub-row"><td>Freight (${res.trucks || 0} truck${res.trucks !== 1 ? 's' : ''})</td><td style="text-align:right">${fmtMoney(res.freight)}</td></tr>
-          ${String(res.scope || '').toLowerCase() !== 'supply' ? `<tr class="q-sub-row"><td>Installation</td><td style="text-align:right">${fmtMoney(res.instSell)}</td></tr>` : ''}
-          <tr class="q-sub-row" style="font-weight:600;"><td>Building Subtotal</td><td style="text-align:right">${fmtMoney(res.totSell)}</td></tr>
+          <tr class="q-sub-row"><td>Material Cost</td><td style="text-align:right">${fmtMoney(res.matCost)}</td></tr>
+          <tr class="q-sub-row"><td>Freight Cost (${res.trucks || 0} truck${res.trucks !== 1 ? 's' : ''})</td><td style="text-align:right">${fmtMoney(res.freight)}</td></tr>
+          ${String(res.scope || '').toLowerCase() !== 'supply' ? `<tr class="q-sub-row"><td>Installation Sell</td><td style="text-align:right">${fmtMoney(res.instSell)}</td></tr>` : ''}
+          <tr class="q-sub-row" style="font-weight:600;"><td>Building Subtotal (Sell)</td><td style="text-align:right">${fmtMoney(res.totSell)}</td></tr>
           ${concInclude ? `<tr class="q-sub-row"><td>Concrete (${concrete.thickness}" · ${concrete.psi} PSI · ${Number(sf).toLocaleString()} SF)</td><td style="text-align:right">${fmtMoney(concrete.appliedSell)}</td></tr>` : ''}
           ${insulInclude ? `<tr class="q-sub-row"><td>Insulation (${insulation.rRoof} roof / ${insulation.rWall} wall · ${Number(sf).toLocaleString()} SF)</td><td style="text-align:right">${fmtMoney(insulation.appliedSell)}</td></tr>` : ''}
           ${salesTax.amount > 0 ? `<tr class="q-sub-row" style="color:#b45309;"><td>Sales Tax (${salesTax.rate}% on materials &amp; insulation — labor not taxed)</td><td style="text-align:right">${fmtMoney(salesTax.amount)}</td></tr>` : ''}
