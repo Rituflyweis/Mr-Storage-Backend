@@ -377,7 +377,20 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   const tempPassword = Math.random().toString(36).slice(-6) +
     Math.random().toString(36).slice(-4).toUpperCase()
   employee.password = await bcrypt.hash(tempPassword, 12)
+  employee.passwordChangedAt = new Date()
   await employee.save()
+
+  await auditService.log({
+    type: 'user',
+    action: AUDIT_ACTIONS.USER_PASSWORD_RESET,
+    performedBy: req.user._id,
+    metadata: {
+      userId: String(employee._id),
+      email: employee.email,
+      role: employee.role,
+      source: 'admin_employee_reset',
+    },
+  })
 
   await mailer.sendEmployeeCredentials({
     toEmail: employee.email, name: employee.name, role: employee.role, tempPassword

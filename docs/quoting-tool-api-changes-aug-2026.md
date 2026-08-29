@@ -3,6 +3,8 @@
 **For frontend dev handoff** · August 2026  
 **Production:** `https://mr-storage-backend-025k.onrender.com`  
 **Reference UI:** `SM-QuotingTool-API.html` (open in browser, paste JWT from login)  
+**Latest fixes (Aug 28):** [`quoting-tool-frontend-changes-aug-28-2026.md`](./quoting-tool-frontend-changes-aug-28-2026.md) — SF meta, pricing row formulas, blend subtotals, margin labels, drawings  
+**Full API reference (Aug 28):** [`sales-quotation-api-2026-08-28.md`](./sales-quotation-api-2026-08-28.md) — complete sales quotation API, flows, request/response payloads  
 **Full API reference:** [`ai-quoting-tool-api.md`](./ai-quoting-tool-api.md)
 
 Only endpoints whose **request and/or response payloads changed** are listed below. Unlisted endpoints are unchanged.

@@ -70,7 +70,8 @@ const applyCogsOverride = (pricingResult, override = {}) => {
   const freightOrig = pricingResult.freight || 0
   const next = { ...pricingResult }
   next.matCost = preview.adjusted.cost - freightOrig
-  next.matSell = preview.adjusted.sell - freightOrig
+  // Keep matSell semantics aligned with base pricingEngine: material sell includes freight.
+  next.matSell = preview.adjusted.sell
   next.totSell = preview.adjusted.grandSell
   next.totCost = preview.adjusted.grandCost
   next.profit = preview.adjusted.profit

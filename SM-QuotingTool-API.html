@@ -1119,6 +1119,12 @@
                   oninput="
                     state.squareFootage = +this.value || 0;
                     state.manualSquareFootage = true;
+                    if (state.squareFootageMeta) {
+                      state.squareFootageMeta.source = 'manual';
+                      state.squareFootageMeta.selected = state.squareFootage;
+                      state.squareFootageMeta.inputSf = state.squareFootage;
+                    }
+                    hideSfChoiceBanner();
                     debouncedCompute();
                   "
                 />
@@ -1168,6 +1174,30 @@
                   id="inline-labor-margin"
                   style="font-size: 10px; color: var(--green); margin-top: 3px"
                 ></div>
+              </div>
+            </div>
+            <div
+              id="sf-choice-banner"
+              class="card no-print"
+              style="display: none; margin-bottom: 10px; padding: 10px 12px"
+            >
+              <div
+                id="sf-choice-text"
+                style="font-size: 12px; color: #1f2937; margin-bottom: 8px"
+              ></div>
+              <div class="btn-row" style="margin: 0">
+                <button
+                  class="btn btn-sm btn-primary"
+                  onclick="useSfChoice('weight')"
+                >
+                  Use Weight SF
+                </button>
+                <button class="btn btn-sm" onclick="useSfChoice('cover')">
+                  Use Cover SF
+                </button>
+                <button class="btn btn-sm" onclick="hideSfChoiceBanner()">
+                  Keep Current
+                </button>
               </div>
             </div>
             <div id="quote-html" class="preview-frame">
@@ -2053,6 +2083,8 @@
         blendPct: 50,
         squareFootage: 0,
         squareFootageMeta: null,
+        shipperTotalWeightLbs: 0,
+        sfChoice: null,
         manualSquareFootage: false,
         installCostPerSf: 5.5,
         sellPerSf: 8.5,
@@ -2189,6 +2221,57 @@
         });
       }
 
+      function hideSfChoiceBanner() {
+        const wrap = document.getElementById("sf-choice-banner");
+        if (wrap) wrap.style.display = "none";
+      }
+
+      function showSfChoiceBanner() {
+        if (state.manualSquareFootage) return hideSfChoiceBanner();
+        const meta = state.squareFootageMeta || {};
+        const weightSf = Number(meta.fromWeight || meta.selected || 0);
+        const coverSf = Number(meta.coverDerivedSqft || 0);
+        if (!weightSf || !coverSf) return hideSfChoiceBanner();
+        const diffPct =
+          Math.abs(weightSf - coverSf) / Math.max(weightSf, coverSf) * 100;
+        state.sfChoice = { weightSf, coverSf, diffPct };
+        const text = document.getElementById("sf-choice-text");
+        const wrap = document.getElementById("sf-choice-banner");
+        if (!text || !wrap) return;
+        text.innerHTML =
+          "SF mismatch detected: Weight formula gives <strong>" +
+          weightSf.toLocaleString() +
+          " SF</strong> while cover sheet gives <strong>" +
+          coverSf.toLocaleString() +
+          " SF</strong> (" +
+          diffPct.toFixed(1) +
+          "% difference). Choose which SF to use for pricing.";
+        wrap.style.display = "block";
+      }
+
+      function useSfChoice(kind) {
+        const choice = state.sfChoice || {};
+        const sf = kind === "cover" ? Number(choice.coverSf || 0) : Number(choice.weightSf || 0);
+        if (!sf) return;
+        state.squareFootage = sf;
+        state.manualSquareFootage = true;
+        if (state.squareFootageMeta) {
+          state.squareFootageMeta.source = "manual";
+          state.squareFootageMeta.selected = sf;
+          state.squareFootageMeta.inputSf = sf;
+        }
+        const live = document.getElementById("live-sf");
+        if (live) live.value = sf;
+        hideSfChoiceBanner();
+        debouncedCompute();
+        toast(
+          kind === "cover"
+            ? "Using cover-sheet SF for pricing"
+            : "Using weight-based SF for pricing",
+          "info",
+        );
+      }
+
       function computeBody() {
         return {
           parsedCategories: state.parsedCategories,
@@ -2251,8 +2334,11 @@
           // Reset SF so backend derives fresh SF from shipper weight (matches v5 empty field)
           state.squareFootage = 0;
           state.squareFootageMeta = null;
+          state.shipperTotalWeightLbs = 0;
+          state.sfChoice = null;
           state.manualSquareFootage = false;
           document.getElementById("live-sf").value = "";
+          hideSfChoiceBanner();
           const fileBase64 = await fileToBase64(file);
           const data = await apiFetch(
             "POST",
@@ -2277,6 +2363,7 @@
           state.fullQuote = data.fullQuote || null;
           state.squareFootage = data.squareFootage || state.squareFootage;
           state.squareFootageMeta = data.squareFootageMeta || null;
+          state.shipperTotalWeightLbs = Number(data.totalWeightLbs || 0);
           state.sourceFileName = file.name;
           document.getElementById("shipper-name").textContent =
             file.name +
@@ -2298,12 +2385,14 @@
           if (state.squareFootageMeta?.source === "weight_formula") {
             const m = state.squareFootageMeta;
             const msg =
-              "SF auto-calculated from weight: " +
-              fmtLbs(m.fromWeight || 0) +
-              " lbs / 9 = " +
-              Number(m.selected || 0).toLocaleString();
+              "SF auto-calculated: round(" +
+              fmtLbs(data.totalWeightLbs || 0) +
+              " lbs / 9) = " +
+              Number(m.selected || 0).toLocaleString() +
+              " SF";
             toast(msg, "info");
           }
+          showSfChoiceBanner();
           toast("Shipper parsed successfully", "success");
         } catch (e) {
           toast("Shipper upload failed: " + e.message, "error");
@@ -2450,7 +2539,7 @@
             buildings: data.buildings || [],
             doors: data.doors || [],
             extras: data.extras || [],
-            shipping: data.shippingDefault ?? 12000,
+            shipping: data.shippingDefault ?? 0,
             installSellPerSf: state.storageInstallSellPerSf,
             drawings: 0,
             project: data.project || {},
@@ -2470,10 +2559,7 @@
               data.project.address;
           const shipEl = document.getElementById("storage-shipping-val");
           if (shipEl) {
-            shipEl.value =
-              data.format === "vendor_cog"
-                ? data.shippingDefault || 12000
-                : data.shippingDefault || 0;
+            shipEl.value = data.shippingDefault || 0;
           }
           state.storageShipping = +shipEl?.value || 0;
           state.storageData.shipping = state.storageShipping;
@@ -2716,11 +2802,18 @@
         if (!p?.rows?.length) return;
         const tagClass = (t) => (t || "").replace("cat-", "");
         const sfValue = Number(p.sf || state.squareFootage || 0);
-        const rowTotal = (p.rows || []).reduce(
+        const computedRowTotal = (p.rows || []).reduce(
           (sum, row) => sum + Number(row?.price || 0),
           0,
         );
-        const blendAdjustment = rowTotal - Number(p.matCost || 0);
+        const rowTotal =
+          p.rowSubtotalBeforeBlend != null
+            ? Number(p.rowSubtotalBeforeBlend || 0)
+            : computedRowTotal;
+        const blendAdjustment =
+          p.vendorBlendAdjustment != null
+            ? Number(p.vendorBlendAdjustment || 0)
+            : Number(p.matCost || 0) - rowTotal;
         const sub = document.getElementById("breakdown-sub");
         if (sub) {
           const sfMeta = state.squareFootageMeta;
@@ -2747,15 +2840,15 @@
           html += `<tr><td><span class="cat-tag cat-${tagClass(r.tag)}">${r.label}</span></td><td class="td-r">${fmtLbs(r.wt || 0)}</td><td>${r.rate}</td><td class="td-r">${fmt(r.price)}</td><td style="font-size:11px;color:var(--muted)">${r.notes || ""}</td></tr>`;
         });
         html += `<tr><td style="color:var(--muted)">Category subtotal (before blend)</td><td></td><td></td><td class="td-r">${fmt(rowTotal)}</td><td style="font-size:11px;color:var(--muted)">Sum of visible category prices</td></tr>`;
-        html += `<tr><td style="color:var(--muted)">Vendor blend adjustment</td><td></td><td>${p.blendLabel || ""}</td><td class="td-r">${fmt(-blendAdjustment)}</td><td style="font-size:11px;color:var(--muted)">Quicken/Central blended cost delta</td></tr>`;
-        html += `<tr class="total-row"><td>Material total</td><td class="td-r">${fmtLbs(p.totWt || 0)} lbs</td><td></td><td class="td-r">${fmt(p.matCost)}</td><td></td></tr>`;
-        html += `<tr><td style="color:var(--muted)">Freight (${p.trucks || 0} trucks)</td><td></td><td></td><td class="td-r">${fmt(p.freight)}</td><td></td></tr>`;
+        html += `<tr><td style="color:var(--muted)">Vendor blend adjustment</td><td></td><td>${p.blendLabel || ""}</td><td class="td-r">${fmt(blendAdjustment)}</td><td style="font-size:11px;color:var(--muted)">Quicken/Central blended cost delta</td></tr>`;
+        html += `<tr class="total-row"><td>Material cost (after blend)</td><td class="td-r">${fmtLbs(p.totWt || 0)} lbs</td><td></td><td class="td-r">${fmt(p.matCost)}</td><td style="font-size:11px;color:var(--muted)">Before blend ${fmt(rowTotal)} ${blendAdjustment < 0 ? `- ${fmt(Math.abs(blendAdjustment))}` : `+ ${fmt(blendAdjustment)}`}</td></tr>`;
+        html += `<tr><td style="color:var(--muted)">Freight cost (${p.trucks || 0} trucks)</td><td></td><td></td><td class="td-r">${fmt(p.freight)}</td><td></td></tr>`;
         if (state.scope !== "supply") {
           html += `<tr><td style="color:var(--muted)">Install cost</td><td></td><td></td><td class="td-r">${fmt(p.instCost)}</td><td></td></tr>`;
           html += `<tr class="total-row"><td>Total cost</td><td></td><td></td><td class="td-r">${fmt(p.totCost)}</td><td></td></tr>`;
-          html += `<tr><td style="color:var(--green-light)">Install sell</td><td></td><td></td><td class="td-r" style="color:var(--green-light)">${fmt(p.instSell)}</td><td></td></tr>`;
+          html += `<tr><td style="color:var(--green-light)">Installation sell</td><td></td><td></td><td class="td-r" style="color:var(--green-light)">${fmt(p.instSell)}</td><td></td></tr>`;
         }
-        html += `<tr class="total-row" style="font-size:15px"><td style="color:var(--blue-light)">SELL PRICE</td><td></td><td></td><td class="td-r" style="color:var(--blue-light)">${fmt(p.totSell)}</td><td style="color:var(--muted);font-size:11px">${fmt(p.sfPrice)}/SF</td></tr>`;
+        html += `<tr class="total-row" style="font-size:15px"><td style="color:var(--blue-light)">Building subtotal (sell)</td><td></td><td></td><td class="td-r" style="color:var(--blue-light)">${fmt(p.totSell)}</td><td style="color:var(--muted);font-size:11px">${fmt(p.sfPrice)}/SF</td></tr>`;
         html += "</tbody></table>";
         document.getElementById("breakdown-table").innerHTML = html;
       }
@@ -3716,7 +3809,8 @@
       async function loadPricingRules() {
         if (!API.token) return;
         try {
-          const rules = await apiFetch("GET", API.rules);
+          const rulesRes = await apiFetch("GET", API.rules);
+          const rules = rulesRes?.pricingRules || rulesRes || {};
           state.pricingRules = rules;
           const fields = [
             ["steelRatesPerLb.primaryFrames", "Primary $/lb"],
@@ -3726,6 +3820,13 @@
             ["freight.ratePerLb", "Freight $/lb"],
             ["markup.pembMultiplier", "PEMB markup"],
             ["markup.storageMultiplier", "Storage markup"],
+            ["bucketRates.trim.perLb", "Trim $/lb"],
+            ["bucketRates.trim.perSf", "Trim $/SF floor"],
+            ["bucketRates.misc.perLb", "Cables/Bracing/Sealant $/lb"],
+            ["bucketRates.misc.perSf", "Cables/Bracing/Sealant $/SF floor"],
+            ["bucketRates.accessories.perLb", "Accessories $/lb"],
+            ["bucketRates.accessories.perSf", "Accessories $/SF floor"],
+            ["bucketRates.fasteners.perSf", "Fasteners $/SF"],
           ];
           let html = '<div class="grid-3" style="padding:14px">';
           fields.forEach(([path, label]) => {
