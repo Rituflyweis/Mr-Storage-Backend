@@ -244,8 +244,7 @@ const generateQuoteHtml = (payload = {}) => {
       <div class="q-section">
         <div class="q-section-title">Pricing Summary</div>
         <div class="q-breakdown"><table>
-          <tr class="q-sub-row"><td>Material Cost</td><td style="text-align:right">${fmtMoney(res.matCost)}</td></tr>
-          <tr class="q-sub-row"><td>Freight Cost (${res.trucks || 0} truck${res.trucks !== 1 ? 's' : ''})</td><td style="text-align:right">${fmtMoney(res.freight)}</td></tr>
+          <tr class="q-sub-row"><td>Material (Sell, includes freight)</td><td style="text-align:right">${fmtMoney(res.matSell)}</td></tr>
           ${String(res.scope || '').toLowerCase() !== 'supply' ? `<tr class="q-sub-row"><td>Installation Sell</td><td style="text-align:right">${fmtMoney(res.instSell)}</td></tr>` : ''}
           <tr class="q-sub-row" style="font-weight:600;"><td>Building Subtotal (Sell)</td><td style="text-align:right">${fmtMoney(res.totSell)}</td></tr>
           ${concInclude ? `<tr class="q-sub-row"><td>Concrete (${concrete.thickness}" · ${concrete.psi} PSI · ${Number(sf).toLocaleString()} SF)</td><td style="text-align:right">${fmtMoney(concrete.appliedSell)}</td></tr>` : ''}
