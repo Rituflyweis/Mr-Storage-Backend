@@ -2,7 +2,7 @@ const PricingRules = require('../../models/PricingRules')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
-const ALLOWED_TOP = ['steelRatesPerLb', 'sheetingRatesPerSf', 'freight', 'install', 'markup', 'customTabRules']
+const ALLOWED_TOP = ['steelRatesPerLb', 'sheetingRatesPerSf', 'freight', 'install', 'markup', 'bucketRates', 'customTabRules']
 
 exports.getPricingRules = asyncHandler(async (req, res) => {
   let rules = await PricingRules.findOne({ ownerId: req.user._id })

@@ -29,6 +29,13 @@ const DEFAULT_PR = {
   sos: 6.25,
   pembMu: 1.3,
   storMu: 1.18,
+  trimLb: 2.8,
+  trimSf: 0.65,
+  miscLb: 3.5,
+  miscSf: 0.22,
+  accessoriesLb: 1.5,
+  accessoriesSf: 1.0,
+  fastenersSf: 0.48,
 }
 
 const MATCH_TYPE_MAP = {
@@ -128,6 +135,15 @@ const buildPricingRates = (rulesDoc) => {
   const markup = rulesDoc.markup || {}
   pr.pembMu = markup.pembMultiplier ?? pr.pembMu
   pr.storMu = markup.storageMultiplier ?? pr.storMu
+
+  const bucket = rulesDoc.bucketRates || {}
+  pr.trimLb = bucket.trim?.perLb ?? pr.trimLb
+  pr.trimSf = bucket.trim?.perSf ?? pr.trimSf
+  pr.miscLb = bucket.misc?.perLb ?? pr.miscLb
+  pr.miscSf = bucket.misc?.perSf ?? pr.miscSf
+  pr.accessoriesLb = bucket.accessories?.perLb ?? pr.accessoriesLb
+  pr.accessoriesSf = bucket.accessories?.perSf ?? pr.accessoriesSf
+  pr.fastenersSf = bucket.fasteners?.perSf ?? pr.fastenersSf
 
   const install = rulesDoc.install || {}
   pr.pec = install.pembEasy?.cost ?? pr.pec

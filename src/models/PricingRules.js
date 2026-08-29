@@ -5,6 +5,11 @@ const CostSellSchema = new mongoose.Schema(
   { _id: false }
 )
 
+const BucketRateSchema = new mongoose.Schema(
+  { perLb: { type: Number, default: 0 }, perSf: { type: Number, default: 0 } },
+  { _id: false }
+)
+
 const CustomTabRuleSchema = new mongoose.Schema(
   {
     // Legacy fields (admin API)
@@ -63,6 +68,13 @@ const PricingRulesSchema = new mongoose.Schema(
     markup: {
       pembMultiplier:    { type: Number, default: 1.3 },  // e.g. 1.30 = cost x 1.30 (30%)
       storageMultiplier: { type: Number, default: 1.18 },
+    },
+
+    bucketRates: {
+      trim:        { type: BucketRateSchema, default: () => ({ perLb: 2.8, perSf: 0.65 }) },
+      misc:        { type: BucketRateSchema, default: () => ({ perLb: 3.5, perSf: 0.22 }) },
+      accessories: { type: BucketRateSchema, default: () => ({ perLb: 1.5, perSf: 1.0 }) },
+      fasteners:   { type: BucketRateSchema, default: () => ({ perLb: 0, perSf: 0.48 }) },
     },
 
     customTabRules: { type: [CustomTabRuleSchema], default: [] },
