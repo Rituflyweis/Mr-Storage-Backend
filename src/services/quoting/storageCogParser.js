@@ -1,8 +1,44 @@
 const XLSX = require('xlsx')
 
 const num = (v) => {
-  const n = parseFloat(v)
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+  const cleaned = String(v ?? '')
+    .replace(/[$,%\s]/g, '')
+    .replace(/,/g, '')
+  const n = parseFloat(cleaned)
   return Number.isFinite(n) ? n : 0
+}
+
+const pickShippingDefault = (cogData, vendorMeta = {}) => {
+  if (num(vendorMeta.shipping) > 0) return Math.round(num(vendorMeta.shipping))
+
+  for (let ri = 0; ri < Math.min(cogData.length, 80); ri++) {
+    const row = cogData[ri] || []
+    const label = String(row[11] || row[10] || row[8] || row[1] || row[0] || '').toLowerCase()
+    if (!/(shipping|freight)/.test(label)) continue
+
+    const candidates = [
+      row[12],
+      row[11],
+      row[10],
+      row[9],
+      row[8],
+      row[7],
+      row[6],
+      row[5],
+      row[4],
+      row[3],
+      row[2],
+      row[1],
+      row[0],
+    ]
+    for (const val of candidates) {
+      const amount = num(val)
+      if (amount > 0) return Math.round(amount)
+    }
+  }
+
+  return 0
 }
 
 const isVendorCogLayout = (cogData) => {
@@ -312,8 +348,7 @@ const parseStorageCogBuffer = (buffer) => {
   // Vendor COG column extras (insulation/gutters/standing seam) are not auto-included.
   const extras = extractStorageExtras(cogData)
 
-  const shipRow = cogData[12] || []
-  const shippingDefault = parseFloat(shipRow[12]) || 12000
+  const shippingDefault = pickShippingDefault(cogData, vendorMeta)
 
   const totalSqft = buildings.reduce((a, b) => a + (b.sqft || 0), 0)
   const buildingSell = buildings.reduce(

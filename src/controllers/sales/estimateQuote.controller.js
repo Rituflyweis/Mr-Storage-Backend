@@ -397,7 +397,7 @@ exports.extractStorageCog = asyncHandler(async (req, res) => {
       buildings: data.buildings,
       doors: data.doors,
       extras: data.extras,
-      shipping: data.shippingDefault ?? 12000,
+      shipping: data.shippingDefault ?? 0,
       installSellPerSf: req.body.installSellPerSf ?? 3.25,
       installCostPerSf: req.body.installCostPerSf ?? 2.5,
     },
