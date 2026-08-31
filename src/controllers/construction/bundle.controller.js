@@ -126,11 +126,17 @@ exports.getBundleScanHistory = asyncHandler(async (req, res) => {
 })
 
 exports.getPackingLists = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20 } = req.query
+  const { page = 1, limit = 20, status, search } = req.query
   const skip = (Number(page) - 1) * Number(limit)
 
+  // Mirrors exportPackingListsExcel's filter — the list and its export were previously out
+  // of sync (export supported status, list supported nothing at all).
+  const filter = {}
+  if (status) filter.status = status
+  if (search?.trim()) filter.packingListNo = { $regex: search.trim(), $options: 'i' }
+
   const [lists, total] = await Promise.all([
-    PackingList.find({})
+    PackingList.find(filter)
       .select('packingListNo truckType truckLabel totalBundles totalWeight maxLengthFeet status deliveryLocation packingListPlanId')
       .populate({
         path: 'packingListPlanId',
@@ -141,7 +147,7 @@ exports.getPackingLists = asyncHandler(async (req, res) => {
       .skip(skip)
       .limit(Number(limit))
       .lean(),
-    PackingList.countDocuments({}),
+    PackingList.countDocuments(filter),
   ])
 
   const stats = {

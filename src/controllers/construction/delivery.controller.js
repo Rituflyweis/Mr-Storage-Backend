@@ -63,11 +63,21 @@ const buildDeliveryCard = async (delivery) => {
 }
 
 exports.getDeliveries = asyncHandler(async (req, res) => {
-  const { status, leadId, page = 1, limit = 20 } = req.query
+  const { status, leadId, materialType, search, startDate, endDate, page = 1, limit = 20 } = req.query
 
   const filter = { status: { $ne: 'draft' } }
   if (status) filter.status = status
   if (leadId) filter.leadId = leadId
+  if (materialType) filter.materialType = materialType
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ deliveryNumber: regex }, { materialType: regex }, { description: regex }]
+  }
+  if (startDate || endDate) {
+    filter.deliveryDate = {}
+    if (startDate) filter.deliveryDate.$gte = new Date(startDate)
+    if (endDate) filter.deliveryDate.$lte = new Date(endDate)
+  }
 
   const skip = (Number(page) - 1) * Number(limit)
   const [deliveries, total] = await Promise.all([

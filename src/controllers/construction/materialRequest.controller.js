@@ -36,7 +36,7 @@ const mapRow = (mr) => ({
 })
 
 exports.getMaterialRequests = asyncHandler(async (req, res) => {
-  const { leadId, department, status, requestedBy, priority, siteLocation, dateFrom, dateTo, page = 1, limit = 20 } = req.query
+  const { leadId, department, status, requestedBy, priority, siteLocation, search, dateFrom, dateTo, page = 1, limit = 20 } = req.query
 
   const filter = {}
   if (leadId) filter.leadId = leadId
@@ -45,6 +45,7 @@ exports.getMaterialRequests = asyncHandler(async (req, res) => {
   if (requestedBy) filter.requestedBy = requestedBy
   if (priority) filter.priority = priority
   if (siteLocation) filter.siteLocation = siteLocation
+  if (search?.trim()) filter.requestId = { $regex: search.trim(), $options: 'i' }
   if (dateFrom || dateTo) {
     filter.requestDate = {}
     if (dateFrom) filter.requestDate.$gte = new Date(dateFrom)

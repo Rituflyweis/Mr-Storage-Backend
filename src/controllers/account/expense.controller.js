@@ -38,13 +38,16 @@ exports.getStats = asyncHandler(async (req, res) => {
 })
 
 exports.listExpenses = asyncHandler(async (req, res) => {
-  const { category, leadId, page = 1, limit = 20 } = req.query
+  const { category, leadId, status, paymentMethod, search, page = 1, limit = 20 } = req.query
   const skip = (Number(page) - 1) * Number(limit)
   const dateFilter = buildDateFilter(req.query, 'date')
 
   const filter = { isActive: true, ...dateFilter }
   if (category) filter.category = category
   if (leadId)   filter.leadId   = leadId
+  if (status)   filter.status   = status
+  if (paymentMethod) filter.paymentMethod = paymentMethod
+  if (search?.trim()) filter.description = { $regex: search.trim(), $options: 'i' }
 
   const [expenses, total] = await Promise.all([
     Expense.find(filter)

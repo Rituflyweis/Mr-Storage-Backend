@@ -971,7 +971,66 @@
 								"value": "Bearer {{token}}"
 							}
 						],
-						"url": "{{baseUrl}}/plant/carriers"
+						"url": {
+							"raw": "{{baseUrl}}/plant/carriers?status=&serviceType=&serviceArea=&equipmentType=&search=&page=1&limit=20&month=&year=&materialType=",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"plant",
+								"carriers"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "",
+									"description": "active | inactive"
+								},
+								{
+									"key": "serviceType",
+									"value": "",
+									"description": "exact match on FreightCarrier.serviceType"
+								},
+								{
+									"key": "serviceArea",
+									"value": "",
+									"description": "exact match on FreightCarrier.serviceArea"
+								},
+								{
+									"key": "equipmentType",
+									"value": "",
+									"description": "matches an entry in fleetEquipment[].equipmentName"
+								},
+								{
+									"key": "search",
+									"value": "",
+									"description": "matches carrierName / contactName / email"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								},
+								{
+									"key": "month",
+									"value": "",
+									"description": "1-12 \u2014 use with year. Scopes to carriers with bid activity that month (via FreightBid.createdAt)"
+								},
+								{
+									"key": "year",
+									"value": "",
+									"description": "e.g. 2026 \u2014 use with month"
+								},
+								{
+									"key": "materialType",
+									"value": "",
+									"description": "e.g. \"Primary Steel\" \u2014 scopes to carriers who've hauled deliveries with this materialType (via FreightBid -> Delivery)"
+								}
+							]
+						}
 					}
 				},
 				{
@@ -1628,7 +1687,69 @@
 								"value": "Bearer {{token}}"
 							}
 						],
-						"url": "{{baseUrl}}/plant/freight-loads"
+						"url": {
+							"raw": "{{baseUrl}}/plant/freight-loads?status=&search=&carrierId=&projectId=&customerId=&materialType=&siteLocation=&deliveryId=&startDate=&endDate=&page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"plant",
+								"freight-loads"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "",
+									"description": "FreightBid status: sent | submitted | resubmit_requested | selected | rejected | expired"
+								},
+								{
+									"key": "search",
+									"value": "",
+									"description": "matches project name / job ID / carrier name"
+								},
+								{
+									"key": "carrierId",
+									"value": ""
+								},
+								{
+									"key": "projectId",
+									"value": ""
+								},
+								{
+									"key": "customerId",
+									"value": ""
+								},
+								{
+									"key": "materialType",
+									"value": ""
+								},
+								{
+									"key": "siteLocation",
+									"value": ""
+								},
+								{
+									"key": "deliveryId",
+									"value": "",
+									"description": "filter to one specific delivery"
+								},
+								{
+									"key": "startDate",
+									"value": ""
+								},
+								{
+									"key": "endDate",
+									"value": ""
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
 					}
 				},
 				{
@@ -1693,7 +1814,105 @@
 								"value": "Bearer {{token}}"
 							}
 						],
-						"url": "{{baseUrl}}/plant/all-deliveries"
+						"url": {
+							"raw": "{{baseUrl}}/plant/all-deliveries?projectId=&customerId=&carrierId=&vendorId=&internalOwner=&materialType=&equipment=&deliveryStatus=&startDate=&endDate=&search=&page=1&limit=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"plant",
+								"all-deliveries"
+							],
+							"query": [
+								{
+									"key": "projectId",
+									"value": "",
+									"description": "Lead _id"
+								},
+								{
+									"key": "customerId",
+									"value": "",
+									"description": "Customer _id"
+								},
+								{
+									"key": "carrierId",
+									"value": "",
+									"description": "FreightCarrier _id"
+								},
+								{
+									"key": "vendorId",
+									"value": "",
+									"description": "Vendor _id \u2014 matches projects whose BOM was sent to this vendor"
+								},
+								{
+									"key": "internalOwner",
+									"value": "",
+									"description": "User _id \u2014 plant staff the project's PO order is assigned to"
+								},
+								{
+									"key": "materialType",
+									"value": "",
+									"description": "see /all-deliveries/filters/lookups for accepted values"
+								},
+								{
+									"key": "equipment",
+									"value": "",
+									"description": "see /all-deliveries/filters/lookups for accepted values"
+								},
+								{
+									"key": "deliveryStatus",
+									"value": "",
+									"description": "Delivery.status enum value"
+								},
+								{
+									"key": "startDate",
+									"value": ""
+								},
+								{
+									"key": "endDate",
+									"value": ""
+								},
+								{
+									"key": "search",
+									"value": "",
+									"description": "matches deliveryNumber / materialType / description"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "All Deliveries \u2014 Filter Lookups (Vendor/Owner/Material/Equipment)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/all-deliveries/filters/lookups"
+					}
+				},
+				{
+					"name": "All Deliveries \u2014 Export CSV",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": "{{baseUrl}}/plant/all-deliveries/export"
 					}
 				},
 				{

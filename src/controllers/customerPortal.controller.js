@@ -380,7 +380,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
 // Figma "My Projects" tabs — Proposed/New Enquiry (pre-PO) vs Confirmed (PO raised), mirrors the
 // isRaisedToPO flag already used to gate the Lead -> POOrder -> Invoice pipeline elsewhere.
 exports.getProjects = asyncHandler(async (req, res) => {
-  const { lifecycleStatus, tab, page = 1, limit = 20 } = req.query
+  const { lifecycleStatus, tab, search, page = 1, limit = 20 } = req.query
   const skip = (Number(page) - 1) * Number(limit)
 
   const baseFilter = { customerId: req.customer._id }
@@ -388,6 +388,10 @@ exports.getProjects = asyncHandler(async (req, res) => {
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
   if (tab === 'proposed') filter.isRaisedToPO = { $ne: true }
   if (tab === 'confirmed') filter.isRaisedToPO = true
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ projectName: regex }, { jobId: regex }]
+  }
 
   const ACTIVE_STAGES = [
     'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
@@ -781,7 +785,7 @@ exports.getPresignedUrl = asyncHandler(async (req, res) => {
 })
 
 exports.getPaymentInvoices = asyncHandler(async (req, res) => {
-  const { status, tab, leadId } = req.query
+  const { status, tab, leadId, search } = req.query
   const customerId = req.customer._id
 
   const invoiceFilter = { customerId }
@@ -790,6 +794,7 @@ exports.getPaymentInvoices = asyncHandler(async (req, res) => {
   else if (tab === 'unpaid') invoiceFilter.status = { $in: ['sent', 'overdue'] }
   else if (status) invoiceFilter.status = status
   if (leadId) invoiceFilter.leadId = leadId
+  if (search?.trim()) invoiceFilter.invoiceNumber = { $regex: search.trim(), $options: 'i' }
 
   const [invoices, leads] = await Promise.all([
     Invoice.find(invoiceFilter).select('-paidBy -createdBy -__v').sort({ createdAt: -1 }).lean(),
@@ -1129,9 +1134,11 @@ const buildDeliveryScheduleResponse = async (leads, tab) => {
 
 // GET /deliveries — unscoped, every project (kept for back-compat / dashboard-style usage)
 exports.getDeliverySchedule = asyncHandler(async (req, res) => {
-  const { tab = 'upcoming' } = req.query
+  const { tab = 'upcoming', leadId } = req.query
 
-  const leads = await Lead.find({ customerId: req.customer._id }).select('_id jobId projectName').lean()
+  const leadFilter = { customerId: req.customer._id }
+  if (leadId) leadFilter._id = leadId
+  const leads = await Lead.find(leadFilter).select('_id jobId projectName').lean()
   if (!leads.length) return success(res, { deliveries: [], total: 0, tabs: { upcoming: 0, past: 0, rescheduled: 0 } })
 
   return success(res, await buildDeliveryScheduleResponse(leads, tab))
@@ -1505,14 +1512,24 @@ exports.downloadDeliveryInstructions = asyncHandler(async (req, res) => {
 
 exports.getTaxReport = asyncHandler(async (req, res) => {
   const customerId = req.customer._id
+  const { leadId, startDate, endDate, page = 1, limit = 50 } = req.query
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.min(parseInt(limit, 10) || 50, 200)
 
   const leads = await Lead.find({ customerId }).select('_id jobId projectName buildingType location').lean()
-  if (!leads.length) return success(res, { rows: [], summary: { totalContractAmount: 0, totalTaxDue: 0 } })
+  if (!leads.length) return success(res, { rows: [], total: 0, page: parsedPage, limit: parsedLimit, summary: { totalContractAmount: 0, totalTaxDue: 0 } })
 
-  const leadIds = leads.map(l => l._id)
+  const leadIds = leadId ? leads.filter((l) => String(l._id) === String(leadId)).map((l) => l._id) : leads.map(l => l._id)
   const leadMap = new Map(leads.map(l => [String(l._id), l]))
 
-  const invoices = await Invoice.find({ customerId, leadId: { $in: leadIds } })
+  const invoiceFilter = { customerId, leadId: { $in: leadIds } }
+  if (startDate || endDate) {
+    invoiceFilter.date = {}
+    if (startDate) invoiceFilter.date.$gte = new Date(startDate)
+    if (endDate) invoiceFilter.date.$lte = new Date(endDate)
+  }
+
+  const invoices = await Invoice.find(invoiceFilter)
     .select('leadId invoiceNumber totalAmount tax date status lineItems')
     .sort({ date: -1 })
     .lean()
@@ -1539,10 +1556,13 @@ exports.getTaxReport = asyncHandler(async (req, res) => {
       }
     })
 
+  // Summary always reflects the full filtered set, not just the current page.
   const totalContractAmount = rows.reduce((s, r) => s + r.contractAmount, 0)
   const totalTaxDue = rows.reduce((s, r) => s + r.taxDue, 0)
+  const total = rows.length
+  const paged = rows.slice((parsedPage - 1) * parsedLimit, (parsedPage - 1) * parsedLimit + parsedLimit)
 
-  return success(res, { rows, summary: { totalContractAmount, totalTaxDue } })
+  return success(res, { rows: paged, total, page: parsedPage, limit: parsedLimit, summary: { totalContractAmount, totalTaxDue } })
 })
 
 // ── Project sub-routes ────────────────────────────────────────────────────────

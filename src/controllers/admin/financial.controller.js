@@ -7,7 +7,7 @@ const Tax = require('../../models/Tax')
 const PaymentApproval = require('../../models/PaymentApproval')
 const { PAYMENT_CATEGORIES, APPROVAL_STATUSES } = require('../../models/PaymentApproval')
 const User = require('../../models/User')
-const { success, notFound, badRequest } = require('../../utils/apiResponse')
+const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { withProjectIdFields } = require('../../utils/leadProjectId')
@@ -792,7 +792,7 @@ exports.createPaymentApproval = asyncHandler(async (req, res) => {
   const count = await PaymentApproval.countDocuments()
   const paymentId = `PR-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
   const approval = await PaymentApproval.create({ ...req.body, paymentId, requestedBy: req.user._id })
-  return notFound.call({ status: 201 }, res) || success(res, { approval }, 'Payment request created')
+  return created(res, { approval }, 'Payment request created')
 })
 
 exports.reviewPaymentApproval = asyncHandler(async (req, res) => {
@@ -1252,7 +1252,7 @@ exports.createExpenseCategory = asyncHandler(async (req, res) => {
 
 // GET /expenses/export — "Export Report" button on Expenses Management screen
 exports.exportExpenses = asyncHandler(async (req, res) => {
-  const { category, projectId, buildingLabel, status, startDate, endDate } = req.query
+  const { category, projectId, buildingLabel, status, startDate, endDate, search } = req.query
   const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
 
   const filter = { isActive: true, ...dateFilter }
@@ -1260,6 +1260,7 @@ exports.exportExpenses = asyncHandler(async (req, res) => {
   if (projectId) filter.leadId = projectId
   if (buildingLabel) filter.buildingLabel = buildingLabel
   if (status) filter.status = status
+  if (search) filter.description = { $regex: search, $options: 'i' }
 
   const expenses = await Expense.find(filter)
     .populate({ path: 'leadId', select: 'projectName jobId' })

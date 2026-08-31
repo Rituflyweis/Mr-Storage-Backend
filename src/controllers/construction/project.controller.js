@@ -8,12 +8,16 @@ const PROJECT_SELECT = 'projectName jobId buildingType location lifecycleStatus 
 const PROJECT_POPULATE = { path: 'customerId', select: 'firstName lastName email' }
 
 exports.getProjects = asyncHandler(async (req, res) => {
-  const { status, priority, page = 1, limit = 20 } = req.query
+  const { status, priority, search, page = 1, limit = 20 } = req.query
   const filter = {
     isTerminated: { $ne: true },
   }
   if (status) filter.lifecycleStatus = status
   if (priority) filter.priority = priority
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ projectName: regex }, { jobId: regex }]
+  }
 
   const skip = (Number(page) - 1) * Number(limit)
   const [leads, total] = await Promise.all([

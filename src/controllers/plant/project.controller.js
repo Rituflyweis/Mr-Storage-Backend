@@ -108,7 +108,7 @@ const formatClientName = (customer) => {
 }
 
 const buildPlantProjectFilter = (leadIds, query) => {
-  const { projectId, customerId, buildingType } = query
+  const { projectId, customerId, buildingType, search } = query
   let scopedLeadIds = leadIds
 
   if (projectId) {
@@ -119,6 +119,10 @@ const buildPlantProjectFilter = (leadIds, query) => {
 
   if (customerId) filter.customerId = customerId
   if (buildingType) filter.buildingType = buildingType.trim()
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ projectName: regex }, { jobId: regex }]
+  }
 
   return filter
 }

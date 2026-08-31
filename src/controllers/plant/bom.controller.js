@@ -108,6 +108,9 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
     .lean()
   const leadMap = new Map(leads.map((l) => [String(l._id), l]))
 
+  const searchTerm = req.query.search?.trim().toLowerCase()
+  const statusFilter = req.query.status
+
   const rows = latestJobs
     .map((job) => {
       const lead = leadMap.get(String(job.leadId))
@@ -126,6 +129,8 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
       }
     })
     .filter(Boolean)
+    .filter((row) => !searchTerm || row.projectName.toLowerCase().includes(searchTerm) || row.projectId.toLowerCase().includes(searchTerm))
+    .filter((row) => !statusFilter || row.fileStatus === statusFilter)
     .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime())
 
   const total = rows.length

@@ -368,8 +368,23 @@ exports.getPaymentFollowUps = asyncHandler(async (req, res) => {
   const filter = { leadId: { $in: ownLeadIds } }
   if (status) filter.status = status
 
+  let followUps, total
+  if (search?.trim()) {
+    // Search targets project name/jobId (leadId) and invoice number — both live on populated
+    // refs, not directly on PaymentFollowUp, so resolve matching ids first.
+    const regex = new RegExp(search.trim(), 'i')
+    const [matchingLeads, matchingInvoices] = await Promise.all([
+      Lead.find({ _id: { $in: ownLeadIds }, $or: [{ projectName: regex }, { jobId: regex }] }).select('_id').lean(),
+      Invoice.find({ invoiceNumber: regex }).select('_id').lean(),
+    ])
+    filter.$or = [
+      { leadId: { $in: matchingLeads.map((l) => l._id) } },
+      { invoiceId: { $in: matchingInvoices.map((i) => i._id) } },
+    ]
+  }
+
   const skip = (parsedPage - 1) * parsedLimit
-  const [followUps, total] = await Promise.all([
+  ;[followUps, total] = await Promise.all([
     PaymentFollowUp.find(filter)
       .populate({ path: 'invoiceId', select: 'invoiceNumber totalAmount status date paidAt' })
       .populate({ path: 'leadId', select: 'projectName jobId' })

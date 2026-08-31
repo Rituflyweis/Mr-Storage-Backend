@@ -124,6 +124,12 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
   if (req.query.fileStatus) {
     projects = projects.filter((p) => p.fileReceivedStatus === req.query.fileStatus)
   }
+  if (req.query.search?.trim()) {
+    const term = req.query.search.trim().toLowerCase()
+    projects = projects.filter((p) =>
+      (p.projectName || '').toLowerCase().includes(term) || (p.jobId || '').toLowerCase().includes(term)
+    )
+  }
 
   const page = Math.max(1, parseInt(req.query.page, 10) || 1)
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))

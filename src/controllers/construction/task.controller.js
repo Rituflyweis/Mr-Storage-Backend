@@ -9,13 +9,22 @@ const asyncHandler = require('../../utils/asyncHandler')
 const notificationService = require('../../services/notification.service')
 
 exports.getTasks = asyncHandler(async (req, res) => {
-  const { leadId, status, priority, assignedTo, page = 1, limit = 50 } = req.query
+  const { leadId, status, priority, assignedTo, search, startDate, endDate, page = 1, limit = 50 } = req.query
 
   const filter = {}
   if (leadId) filter.leadId = leadId
   if (status) filter.status = status
   if (priority) filter.priority = priority
   if (assignedTo) filter.assignedTo = assignedTo
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ title: regex }, { description: regex }]
+  }
+  if (startDate || endDate) {
+    filter.dueDate = {}
+    if (startDate) filter.dueDate.$gte = new Date(startDate)
+    if (endDate) filter.dueDate.$lte = new Date(endDate)
+  }
 
   const skip = (Number(page) - 1) * Number(limit)
   const [tasks, total] = await Promise.all([
