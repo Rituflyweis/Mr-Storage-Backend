@@ -1,0 +1,134 @@
+[
+  {
+    "file": "#2321 Choctaw Expansion Austin Building B (Shipper).ods",
+    "extractStatus": 200,
+    "extractSuccess": true,
+    "extractMessage": "Success",
+    "sheetCount": 26,
+    "totalWeightLbs": 18343.5,
+    "squareFootage": 2038,
+    "extractionCoveragePct": 100,
+    "unmappedWeightLbs": 0,
+    "unmappedTabs": [],
+    "rowSubtotalBeforeBlend": 24356.44252,
+    "vendorBlendAdjustment": -917.1752000000015,
+    "matCost": 23439.26732,
+    "computeStatus": 200,
+    "computeSuccess": true,
+    "computeMessage": "Success",
+    "computeTotals": {
+      "matCost": 23439.26732,
+      "totSell": 33571.099692
+    }
+  },
+  {
+    "file": "#2321 Choctaw Expansion Austin Building E (Shipper).ods",
+    "extractStatus": 200,
+    "extractSuccess": true,
+    "extractMessage": "Success",
+    "sheetCount": 29,
+    "totalWeightLbs": 72479.8,
+    "squareFootage": 8053,
+    "extractionCoveragePct": 100,
+    "unmappedWeightLbs": 0,
+    "unmappedTabs": [],
+    "rowSubtotalBeforeBlend": 107072.478486,
+    "vendorBlendAdjustment": -3623.990148541663,
+    "matCost": 103448.48833745834,
+    "computeStatus": 200,
+    "computeSuccess": true,
+    "computeMessage": "Success",
+    "computeTotals": {
+      "matCost": 103448.48833745834,
+      "totSell": 146732.12154076668
+    }
+  },
+  {
+    "file": "#2321 Choctaw Expansion Austin Building F (Shipper).ods",
+    "extractStatus": 200,
+    "extractSuccess": true,
+    "extractMessage": "Success",
+    "sheetCount": 31,
+    "totalWeightLbs": 59994.2,
+    "squareFootage": 6666,
+    "extractionCoveragePct": 100,
+    "unmappedWeightLbs": 0,
+    "unmappedTabs": [],
+    "rowSubtotalBeforeBlend": 71159.37464,
+    "vendorBlendAdjustment": -2999.709910000005,
+    "matCost": 68159.66472999999,
+    "computeStatus": 200,
+    "computeSuccess": true,
+    "computeMessage": "Success",
+    "computeTotals": {
+      "matCost": 68159.66472999999,
+      "totSell": 98746.5836448
+    }
+  },
+  {
+    "file": "1215-USB_SHIPPER (3) (1) (2).xls",
+    "extractStatus": 200,
+    "extractSuccess": true,
+    "extractMessage": "Success",
+    "sheetCount": 21,
+    "totalWeightLbs": 586580.22,
+    "squareFootage": 65176,
+    "extractionCoveragePct": 100,
+    "unmappedWeightLbs": 0,
+    "unmappedTabs": [],
+    "rowSubtotalBeforeBlend": 827384.5092000001,
+    "vendorBlendAdjustment": -29329.011150000035,
+    "matCost": 798055.49805,
+    "computeStatus": 200,
+    "computeSuccess": true,
+    "computeMessage": "Success",
+    "computeTotals": {
+      "matCost": 798055.49805,
+      "totSell": 1136604.205152
+    }
+  },
+  {
+    "file": "Bldg-D SHIPPER (2) (1).xlsx",
+    "extractStatus": 200,
+    "extractSuccess": true,
+    "extractMessage": "Success",
+    "sheetCount": 11,
+    "totalWeightLbs": 20965.15,
+    "squareFootage": 2329,
+    "extractionCoveragePct": 100,
+    "unmappedWeightLbs": 0,
+    "unmappedTabs": [],
+    "rowSubtotalBeforeBlend": 23717.427499999994,
+    "vendorBlendAdjustment": -1048.2574999999997,
+    "matCost": 22669.169999999995,
+    "computeStatus": 200,
+    "computeSuccess": true,
+    "computeMessage": "Success",
+    "computeTotals": {
+      "matCost": 22669.169999999995,
+      "totSell": 33013.03134999999
+    }
+  },
+  {
+    "file": "_$#6959 Paris, TN expansion (Shipper) (1).xlsx",
+    "extractStatus": 200,
+    "extractSuccess": true,
+    "extractMessage": "Success",
+    "sheetCount": 1,
+    "totalWeightLbs": 0,
+    "squareFootage": 0,
+    "extractionCoveragePct": 100,
+    "unmappedWeightLbs": 0,
+    "unmappedTabs": [],
+    "rowSubtotalBeforeBlend": 0,
+    "vendorBlendAdjustment": 0,
+    "matCost": 0,
+    "computeStatus": 200,
+    "computeSuccess": true,
+    "computeMessage": "Success",
+    "computeTotals": {
+      "matCost": 0,
+      "totSell": 0
+    }
+  }
+]

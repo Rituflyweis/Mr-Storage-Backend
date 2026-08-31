@@ -128,7 +128,17 @@ exports.getResponseRate = asyncHandler(async (req, res) => {
 });
 
 exports.createFollowUp = asyncHandler(async (req, res) => {
-  const { leadId, followUpDate, modeOfContact, notes, priority } = req.body;
+  const {
+    leadId,
+    followUpDate,
+    modeOfContact,
+    notes,
+    priority,
+    reminderMinutes,
+    notifyCustomer,
+    sendSms,
+    sendEmail,
+  } = req.body;
   const lead = await Lead.findById(leadId).select("customerId").lean();
   if (!lead) return notFound(res, "Lead not found");
   const customerId = lead.customerId;
@@ -140,6 +150,10 @@ exports.createFollowUp = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
     followUpDate: new Date(followUpDate),
     modeOfContact: modeOfContact || "call",
+    reminderMinutes: Number(reminderMinutes ?? 30),
+    notifyCustomer: notifyCustomer !== false,
+    sendSms: sendSms !== false,
+    sendEmail: sendEmail !== false,
     notes: notes || "",
     priority: priority || "medium",
   });
@@ -150,7 +164,15 @@ exports.createFollowUp = asyncHandler(async (req, res) => {
     leadId,
     customerId,
     performedBy: req.user._id,
-    metadata: { followUpDate, priority, modeOfContact },
+    metadata: {
+      followUpDate,
+      priority,
+      modeOfContact,
+      reminderMinutes,
+      notifyCustomer,
+      sendSms,
+      sendEmail,
+    },
   });
 
   scheduleFollowUpReminder(followUp);

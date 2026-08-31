@@ -564,6 +564,30 @@ const sendOtp = async ({ toEmail, name, otp, expiresInMinutes = 10 }) => {
   });
 };
 
+const sendFollowUpNudgeEmail = async ({
+  toEmail,
+  customerName = "there",
+  subject = "Quick follow-up from our team",
+  message = "",
+}) => {
+  const safeMessage = escapeHtml(message || "").replace(/\n/g, "<br/>");
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Follow-up Reminder</h2>
+      <p>Hi ${escapeHtml(customerName)},</p>
+      <p>${safeMessage || "Our team is following up with you regarding your project. Please reply when convenient."}</p>
+      <p>Thank you,<br/>Storage Materials Team</p>
+    </div>
+  `;
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject,
+    html,
+  });
+};
+
 const EMPLOYEE_LOGIN_URLS = {
   admin: "https://admin.storagematerials.org/sign-in/",
   sales: "https://sales.storagematerials.org/sign-in/",
@@ -1073,6 +1097,7 @@ module.exports = {
   sendQuotation,
   sendInvoice,
   sendOtp,
+  sendFollowUpNudgeEmail,
   sendEmployeeCredentials,
   sendNewCustomerEnquiryNotification,
   sendConsolidatedBOMToVendor,

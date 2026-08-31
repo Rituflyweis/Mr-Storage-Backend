@@ -78,6 +78,10 @@ module.exports = {
       ? `Steel Building Depot <${process.env.SMTP_USER}>`
       : null),
 
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
+  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
+  TWILIO_FROM_PHONE: process.env.TWILIO_FROM_PHONE || '',
+
   CLIENT_URL: process.env.CLIENT_URL || "http://localhost:3000",
   MASTER_OTP:
     process.env.NODE_ENV !== "production"

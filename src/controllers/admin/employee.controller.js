@@ -8,7 +8,7 @@ const Escalation = require('../../models/Escalation')
 const roundRobinService = require('../../services/roundRobin.service')
 const auditService = require('../../services/audit.service')
 const mailer = require('../../services/email/mailer')
-const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
+const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
@@ -30,6 +30,19 @@ const mapEmployeeLeadRow = (lead) => {
     createdAt: lead.createdAt,
     lead: enrichLeadDocument(lead),
   }
+}
+
+const requireMainAdminForAdminMutation = async (req, res) => {
+  const requester = await User.findById(req.user._id).select('_id role isMainAdmin')
+  if (!requester || requester.role !== 'admin') {
+    forbidden(res, 'Only admins can perform this action')
+    return null
+  }
+  if (!requester.isMainAdmin) {
+    forbidden(res, 'Only main admin can create or manage admin users')
+    return null
+  }
+  return requester
 }
 
 exports.getStats = asyncHandler(async (req, res) => {
@@ -116,6 +129,10 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
 
 exports.createEmployee = asyncHandler(async (req, res) => {
   const { name, email, phone, role, password, department, permissions } = req.body
+  if (String(role || '').toLowerCase() === 'admin') {
+    const requester = await requireMainAdminForAdminMutation(req, res)
+    if (!requester) return
+  }
 
   const exists = await User.findOne({ email: email.toLowerCase().trim() })
   if (exists) return badRequest(res, 'Email already in use')
@@ -229,6 +246,17 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
 
   const employee = await User.findById(userId)
   if (!employee) return notFound(res, 'Employee not found')
+  const nextRole = role !== undefined ? String(role).toLowerCase() : undefined
+  if (employee.role === 'admin' || nextRole === 'admin') {
+    const requester = await requireMainAdminForAdminMutation(req, res)
+    if (!requester) return
+    if (employee.isMainAdmin && nextRole && nextRole !== 'admin') {
+      return badRequest(res, 'Main admin role cannot be changed')
+    }
+    if (employee.isMainAdmin && isActive === false) {
+      return badRequest(res, 'Main admin cannot be deactivated')
+    }
+  }
 
   const prevRole = employee.role
   const prevActive = employee.isActive
@@ -335,6 +363,11 @@ exports.getEmployeeTimeline = asyncHandler(async (req, res) => {
 exports.toggleStatus = asyncHandler(async (req, res) => {
   const employee = await User.findById(req.params.userId)
   if (!employee) return notFound(res, 'Employee not found')
+  if (employee.role === 'admin') {
+    const requester = await requireMainAdminForAdminMutation(req, res)
+    if (!requester) return
+    if (employee.isMainAdmin) return badRequest(res, 'Main admin status cannot be toggled')
+  }
 
   employee.isActive = !employee.isActive
   await employee.save()
@@ -349,6 +382,12 @@ exports.deleteEmployee = asyncHandler(async (req, res) => {
 
   const employee = await User.findById(userId)
   if (!employee) return notFound(res, 'Employee not found')
+  if (employee.role === 'admin') {
+    const requester = await requireMainAdminForAdminMutation(req, res)
+    if (!requester) return
+    if (employee.isMainAdmin) return badRequest(res, 'Main admin cannot be deleted')
+    if (String(employee._id) === String(req.user._id)) return badRequest(res, 'You cannot delete your own account')
+  }
 
   const activeLeadCount = await Lead.countDocuments({ assignedSales: userId, isTerminated: { $ne: true } })
   if (activeLeadCount > 0) {
@@ -373,6 +412,11 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   const employee = await User.findById(req.params.userId)
   if (!employee) return notFound(res, 'Employee not found')
   if (!employee.isActive) return badRequest(res, 'Cannot reset password for inactive employee')
+  if (employee.role === 'admin') {
+    const requester = await requireMainAdminForAdminMutation(req, res)
+    if (!requester) return
+    if (employee.isMainAdmin) return badRequest(res, 'Main admin password reset is not allowed from this endpoint')
+  }
 
   const tempPassword = Math.random().toString(36).slice(-6) +
     Math.random().toString(36).slice(-4).toUpperCase()

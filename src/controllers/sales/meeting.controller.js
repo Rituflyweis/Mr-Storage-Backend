@@ -51,7 +51,19 @@ exports.getMeetings = asyncHandler(async (req, res) => {
 })
 
 exports.createMeeting = asyncHandler(async (req, res) => {
-  const { customerId, leadId, title, meetingTime, duration, mode, meetingLink, notes } = req.body
+  const {
+    customerId,
+    leadId,
+    title,
+    meetingTime,
+    duration,
+    mode,
+    meetingLink,
+    notes,
+    reminderMinutes,
+    reminderSms,
+    reminderEmail,
+  } = req.body
 
   if (mode === 'online' && !meetingLink) {
     return badRequest(res, 'Meeting link is required for online meetings')
@@ -75,6 +87,9 @@ exports.createMeeting = asyncHandler(async (req, res) => {
     duration,
     mode,
     meetingLink: meetingLink || '',
+    reminderMinutes: Number(reminderMinutes ?? 30),
+    reminderSms: reminderSms !== false,
+    reminderEmail: reminderEmail !== false,
     notes: notes || '',
   })
 
@@ -108,7 +123,7 @@ exports.editMeeting = asyncHandler(async (req, res) => {
     return badRequest(res, 'Meeting link required for online meetings')
   }
 
-  const ALLOWED = ['title', 'meetingTime', 'duration', 'mode', 'meetingLink', 'notes', 'status']
+  const ALLOWED = ['title', 'meetingTime', 'duration', 'mode', 'meetingLink', 'notes', 'status', 'reminderMinutes', 'reminderSms', 'reminderEmail']
   ALLOWED.forEach((k) => {
     if (updates[k] === undefined) return
     meeting[k] = k === 'meetingTime' ? new Date(updates[k]) : updates[k]

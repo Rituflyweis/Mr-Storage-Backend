@@ -44,5 +44,6 @@ router.use('/uploads', uploadGuard, require('./upload.routes'))
 router.use('/smdt', smdtGuard, require('./smdt.routes'))
 router.use('/activity', require('./pageActivity.routes'))
 router.use('/notifications', ...notifGuard, require('./notification.routes'))
+router.use('/followup-automation', require('./followupAutomation.routes'))
 
 module.exports = router

@@ -64,11 +64,16 @@ const QUOTATION_STATUSES = ["draft", "sent", "accepted", "rejected"];
 const INVOICE_STATUSES = ["draft", "sent", "paid", "overdue", "cancelled"];
 /** Customer-submitted payment receipt review state — independent of invoice.status (invoice only
  * flips to 'paid' once admin/sales verifies the proof). */
-const PAYMENT_PROOF_STATUSES = ["none", "pending_review", "verified", "rejected"];
+const PAYMENT_PROOF_STATUSES = [
+  "none",
+  "pending_review",
+  "verified",
+  "rejected",
+];
 /** Line-item markup/tax input mode: percentage (of rate / line subtotal) or flat amount */
 const INVOICE_VALUE_TYPES = ["percentage", "amount"];
 const FOLLOW_UP_STATUSES = ["pending", "completed"];
-const FOLLOW_UP_MODES = ["call", "email", "meeting"];
+const FOLLOW_UP_MODES = ["call", "email", "meeting", "sms"];
 const MEETING_MODES = ["online", "offline"];
 const MEETING_STATUSES = ["scheduled", "completed", "cancelled", "rescheduled"];
 const ESCALATION_STATUSES = ["pending", "resolved"];
@@ -149,12 +154,20 @@ const AUDIT_ACTIONS = {
   MEETING_COMPLETED: "meeting.completed",
   FOLLOWUP_CREATED: "followup.created",
   FOLLOWUP_COMPLETED: "followup.completed",
+  FOLLOWUP_CONFIG_UPDATED: "followup.config_updated",
+  FOLLOWUP_AUTO_SENT: "followup.auto_sent",
+  FOLLOWUP_AUTO_FAILED: "followup.auto_failed",
   ESCALATION_CREATED: "escalation.created",
   ESCALATION_RESOLVED: "escalation.resolved",
   USER_CREATED: "user.created",
   USER_UPDATED: "user.updated",
   USER_PASSWORD_RESET: "user.password_reset",
   USER_DELETED: "user.deleted",
+  ADMIN_MAIN_ASSIGNED: "admin.main_assigned",
+  ADMIN_CREATED: "admin.created",
+  ADMIN_UPDATED: "admin.updated",
+  ADMIN_STATUS_TOGGLED: "admin.status_toggled",
+  ADMIN_DELETED: "admin.deleted",
   DOCUMENT_ADDED: "lead.document_added",
   DOCUMENT_REMOVED: "lead.document_removed",
   BUDGET_SET: "lead.budget_set",

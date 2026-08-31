@@ -8,6 +8,7 @@ const UserSchema = new mongoose.Schema(
     password: { type: String, required: true },
     phone:    { type: String, trim: true },
     role:       { type: String, enum: USER_ROLES, required: true },
+    isMainAdmin:      { type: Boolean, default: false },
     department: { type: String, default: '', trim: true },
     isActive:           { type: Boolean, default: true },
     permissions: {
