@@ -14,6 +14,7 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog, getEmployeesAuditLog } = require('../../services/auditActivity.service')
+const EMPLOYEE_BASE_FILTER = { role: { $ne: 'admin' } }
 
 const mapEmployeeLeadRow = (lead) => {
   const jobId = lead.jobId || ''
@@ -49,10 +50,10 @@ exports.getStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
 
   const [total, active, byRole] = await Promise.all([
-    User.countDocuments({ ...dateFilter, role: { $ne: 'admin' } }),
-    User.countDocuments({ ...dateFilter, role: { $ne: 'admin' }, isActive: true }),
+    User.countDocuments({ ...dateFilter, ...EMPLOYEE_BASE_FILTER }),
+    User.countDocuments({ ...dateFilter, ...EMPLOYEE_BASE_FILTER, isActive: true }),
     User.aggregate([
-      { $match: dateFilter },
+      { $match: { ...dateFilter, ...EMPLOYEE_BASE_FILTER } },
       { $group: { _id: '$role', count: { $sum: 1 } } },
     ]),
   ])
@@ -97,8 +98,8 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
   const { role, isActive, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
 
-  const filter = { ...dateFilter }
-  if (role) filter.role = role
+  const filter = { ...dateFilter, ...EMPLOYEE_BASE_FILTER }
+  if (role && String(role).toLowerCase() !== 'admin') filter.role = role
   if (isActive !== undefined) filter.isActive = isActive === 'true'
 
   const { search } = req.query
@@ -170,7 +171,7 @@ exports.createEmployee = asyncHandler(async (req, res) => {
 exports.getEmployeeDetail = asyncHandler(async (req, res) => {
   const { userId } = req.params
 
-  const employee = await User.findById(userId).select('-password').lean()
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER }).select('-password').lean()
   if (!employee) return notFound(res, 'Employee not found')
 
   const [
@@ -244,7 +245,7 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   const { userId } = req.params
   const { name, phone, role, isActive, department, permissions } = req.body
 
-  const employee = await User.findById(userId)
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
   const nextRole = role !== undefined ? String(role).toLowerCase() : undefined
   if (employee.role === 'admin' || nextRole === 'admin') {
@@ -291,7 +292,7 @@ exports.getEmployeeAssignedLeads = asyncHandler(async (req, res) => {
   const { userId } = req.params
   const { page = 1, limit = 20 } = req.query
 
-  const employee = await User.findById(userId).select('_id name email role isActive').lean()
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER }).select('_id name email role isActive').lean()
   if (!employee) return notFound(res, 'Employee not found')
 
   const dateFilter = buildDateFilter(req.query)
@@ -337,7 +338,7 @@ exports.getEmployeeTimeline = asyncHandler(async (req, res) => {
   const { userId } = req.params
   const dateFilter = buildDateFilter(req.query, 'createdAt')
 
-  const employee = await User.findById(userId).lean()
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER }).lean()
   if (!employee) return notFound(res, 'Employee not found')
 
   // AuditLog.performedBy is this employee — shows everything they did
@@ -361,13 +362,8 @@ exports.getEmployeeTimeline = asyncHandler(async (req, res) => {
 })
 
 exports.toggleStatus = asyncHandler(async (req, res) => {
-  const employee = await User.findById(req.params.userId)
+  const employee = await User.findOne({ _id: req.params.userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
-  if (employee.role === 'admin') {
-    const requester = await requireMainAdminForAdminMutation(req, res)
-    if (!requester) return
-    if (employee.isMainAdmin) return badRequest(res, 'Main admin status cannot be toggled')
-  }
 
   employee.isActive = !employee.isActive
   await employee.save()
@@ -380,14 +376,8 @@ exports.toggleStatus = asyncHandler(async (req, res) => {
 exports.deleteEmployee = asyncHandler(async (req, res) => {
   const { userId } = req.params
 
-  const employee = await User.findById(userId)
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
-  if (employee.role === 'admin') {
-    const requester = await requireMainAdminForAdminMutation(req, res)
-    if (!requester) return
-    if (employee.isMainAdmin) return badRequest(res, 'Main admin cannot be deleted')
-    if (String(employee._id) === String(req.user._id)) return badRequest(res, 'You cannot delete your own account')
-  }
 
   const activeLeadCount = await Lead.countDocuments({ assignedSales: userId, isTerminated: { $ne: true } })
   if (activeLeadCount > 0) {
@@ -409,14 +399,9 @@ exports.deleteEmployee = asyncHandler(async (req, res) => {
 })
 
 exports.resetPassword = asyncHandler(async (req, res) => {
-  const employee = await User.findById(req.params.userId)
+  const employee = await User.findOne({ _id: req.params.userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
   if (!employee.isActive) return badRequest(res, 'Cannot reset password for inactive employee')
-  if (employee.role === 'admin') {
-    const requester = await requireMainAdminForAdminMutation(req, res)
-    if (!requester) return
-    if (employee.isMainAdmin) return badRequest(res, 'Main admin password reset is not allowed from this endpoint')
-  }
 
   const tempPassword = Math.random().toString(36).slice(-6) +
     Math.random().toString(36).slice(-4).toUpperCase()

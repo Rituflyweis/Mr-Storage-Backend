@@ -8,6 +8,7 @@ const Lead = require('../src/models/Lead')
 const Invoice = require('../src/models/Invoice')
 const FollowUp = require('../src/models/FollowUp')
 const Meeting = require('../src/models/Meeting')
+const CalendarEvent = require('../src/models/CalendarEvent')
 const FollowUpAutomationConfig = require('../src/models/FollowUpAutomationConfig')
 const FollowUpDispatchLog = require('../src/models/FollowUpDispatchLog')
 
@@ -333,6 +334,104 @@ const run = async () => {
       created.meetings.push(r.json.data.meeting._id)
     })
 
+    await scenario('Calendar events API returns synced follow-up and meeting entries', async () => {
+      const start = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const end = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const r = await callApi({
+        method: 'GET',
+        path: `/calendar/events?startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}`,
+        token: salesToken,
+      })
+      assert(r.status === 200, `Expected 200, got ${r.status}`)
+      const events = r.json?.data?.events || []
+      const hasMeeting = events.some((e) => String(e.sourceModel) === 'Meeting')
+      const hasFollowUp = events.some((e) => String(e.sourceModel) === 'FollowUp')
+      assert(hasMeeting, 'Expected at least one synced meeting calendar event')
+      assert(hasFollowUp, 'Expected at least one synced follow-up calendar event')
+    })
+
+    await scenario('Calendar reminder API updates reminder and syncs source', async () => {
+      const event = await CalendarEvent.findOne({
+        userId: sales._id,
+        sourceModel: 'Meeting',
+        sourceId: { $in: created.meetings },
+      }).lean()
+      assert(event, 'Expected meeting calendar event to exist')
+
+      const r = await callApi({
+        method: 'PUT',
+        path: `/calendar/events/${event._id}/reminder`,
+        token: salesToken,
+        body: {
+          reminderMinutes: 12,
+          reminderSms: false,
+          reminderEmail: true,
+        },
+      })
+      assert(r.status === 200, `Expected 200, got ${r.status}`)
+      const meetingRow = await Meeting.findById(event.sourceId).lean()
+      assert(Number(meetingRow.reminderMinutes) === 12, 'Expected meeting reminderMinutes to sync from calendar')
+      assert(meetingRow.reminderSms === false, 'Expected meeting reminderSms to sync from calendar')
+      assert(meetingRow.reminderEmail === true, 'Expected meeting reminderEmail to sync from calendar')
+    })
+
+    await scenario('Meeting reschedule/cancel reflects in calendar event', async () => {
+      const meetingId = created.meetings[0]
+      const newTime = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString()
+      const edit = await callApi({
+        method: 'PUT',
+        path: `/sales/meetings/${meetingId}`,
+        token: salesToken,
+        body: {
+          meetingTime: newTime,
+          status: 'rescheduled',
+        },
+      })
+      assert(edit.status === 200, `Expected 200 on reschedule, got ${edit.status}`)
+
+      const e1 = await CalendarEvent.findOne({ sourceModel: 'Meeting', sourceId: meetingId }).lean()
+      assert(new Date(e1.startsAt).toISOString() === new Date(newTime).toISOString(), 'Expected calendar startsAt updated on reschedule')
+      assert(e1.status === 'scheduled', 'Expected calendar event to remain scheduled on reschedule')
+
+      const cancel = await callApi({
+        method: 'PUT',
+        path: `/sales/meetings/${meetingId}`,
+        token: salesToken,
+        body: { status: 'cancelled' },
+      })
+      assert(cancel.status === 200, `Expected 200 on cancel, got ${cancel.status}`)
+      const e2 = await CalendarEvent.findOne({ sourceModel: 'Meeting', sourceId: meetingId }).lean()
+      assert(e2.status === 'cancelled', 'Expected calendar event status cancelled')
+    })
+
+    await scenario('Follow-up complete reflects completed status in calendar event', async () => {
+      const fu = await callApi({
+        method: 'POST',
+        path: '/sales/followups',
+        token: salesToken,
+        body: {
+          leadId: String(lead._id),
+          followUpDate: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+          modeOfContact: 'call',
+          reminderMinutes: 10,
+          notes: 'Complete status sync test',
+        },
+      })
+      assert(fu.status === 201, `Expected 201, got ${fu.status}`)
+      const followUpId = fu.json?.data?.followUp?._id
+      created.followups.push(followUpId)
+
+      const done = await callApi({
+        method: 'PUT',
+        path: `/sales/followups/${followUpId}/complete`,
+        token: salesToken,
+      })
+      assert(done.status === 200, `Expected 200 on complete, got ${done.status}`)
+
+      const evt = await CalendarEvent.findOne({ sourceModel: 'FollowUp', sourceId: followUpId }).lean()
+      assert(evt?.status === 'completed', 'Expected follow-up calendar event completed')
+    })
+
     await scenario('Second run-now respects cooldown (no immediate repeat sends)', async () => {
       const before = await FollowUp.countDocuments({
         leadId: lead._id,
@@ -375,6 +474,9 @@ const run = async () => {
     }
     if (created.invoices.length) {
       await Invoice.deleteMany({ _id: { $in: created.invoices } })
+    }
+    if (created.leads.length) {
+      await CalendarEvent.deleteMany({ leadId: { $in: created.leads } })
     }
     if (created.leads.length) {
       await Lead.deleteMany({ _id: { $in: created.leads } })

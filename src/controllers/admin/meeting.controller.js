@@ -5,6 +5,7 @@ const auditService = require('../../services/audit.service')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, MEETING_STATUSES } = require('../../config/constants')
+const { upsertMeetingEvent, syncMeetingStatus } = require('../../services/calendar/calendarSync.service')
 
 exports.getMeetings = asyncHandler(async (req, res) => {
   const { status, search, leadId } = req.query
@@ -87,6 +88,7 @@ exports.createMeeting = asyncHandler(async (req, res) => {
     reminderEmail: reminderEmail !== false,
     notes: notes || '',
   })
+  await upsertMeetingEvent(meeting)
 
   await auditService.log({
     type: 'meeting',
@@ -150,6 +152,8 @@ exports.editMeeting = asyncHandler(async (req, res) => {
     meeting[k] = updates[k]
   })
   await meeting.save()
+  await upsertMeetingEvent(meeting)
+  await syncMeetingStatus(meeting)
 
   await auditService.log({
     type: 'meeting',
@@ -172,6 +176,7 @@ exports.completeMeeting = asyncHandler(async (req, res) => {
   meeting.status = 'completed'
   meeting.completedAt = new Date()
   await meeting.save()
+  await syncMeetingStatus(meeting)
 
   await auditService.log({
     type: 'meeting',

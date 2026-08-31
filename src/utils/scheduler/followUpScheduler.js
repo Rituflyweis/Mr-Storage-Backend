@@ -4,7 +4,8 @@ const FollowUp = require('../../models/FollowUp')
 const Notification = require('../../models/Notification')
 
 const scheduleFollowUpReminder = (followUp) => {
-  const jobDate = new Date(followUp.followUpDate)
+  const reminderMinutes = Number(followUp.reminderMinutes ?? 30)
+  const jobDate = new Date(new Date(followUp.followUpDate).getTime() - reminderMinutes * 60 * 1000)
   if (jobDate < new Date()) return  // past date skip
 
   schedule.scheduleJob(followUp._id.toString(), jobDate, async () => {
@@ -16,7 +17,7 @@ const scheduleFollowUpReminder = (followUp) => {
         userId: followUp.assignedTo,
         leadId: followUp.leadId,
         title: 'Follow-up reminder',
-        body: 'You have a scheduled follow-up due now.',
+        body: `Follow-up is scheduled at ${new Date(followUp.followUpDate).toLocaleString()} and is due in ${reminderMinutes} minutes.`,
         type: 'followup',
         priority: followUp.priority === 'high' ? 'high' : 'medium',
         refId: followUp._id,
@@ -31,7 +32,8 @@ const scheduleFollowUpReminder = (followUp) => {
         leadId: followUp.leadId,
         followUpDate: followUp.followUpDate,
         modeOfContact: followUp.modeOfContact,
-        message: 'Follow-up reminder!',
+        reminderMinutes,
+        message: `Follow-up is scheduled at ${new Date(followUp.followUpDate).toLocaleString()} and is due in ${reminderMinutes} minutes.`,
       })
     } catch (err) {
       console.error('FollowUp reminder error:', err)

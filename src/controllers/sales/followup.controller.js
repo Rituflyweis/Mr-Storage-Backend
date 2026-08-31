@@ -19,6 +19,10 @@ const { AUDIT_ACTIONS } = require("../../config/constants");
 const {
   scheduleFollowUpReminder,
 } = require("../../utils/scheduler/followUpScheduler");
+const {
+  upsertFollowUpEvent,
+  markFollowUpCompleted,
+} = require("../../services/calendar/calendarSync.service");
 
 const isOverdue = (f) =>
   f.status === "pending" && new Date(f.followUpDate) < new Date();
@@ -176,6 +180,7 @@ exports.createFollowUp = asyncHandler(async (req, res) => {
   });
 
   scheduleFollowUpReminder(followUp);
+  await upsertFollowUpEvent(followUp);
 
   return created(res, { followUp });
 });
@@ -191,6 +196,7 @@ exports.completeFollowUp = asyncHandler(async (req, res) => {
   followUp.status = "completed";
   followUp.completedAt = new Date();
   await followUp.save();
+  await markFollowUpCompleted(followUp);
 
   await auditService.log({
     type: "followup",

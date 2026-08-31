@@ -8,6 +8,7 @@ const Invoice = require('../../models/Invoice')
 const Meeting = require('../../models/Meeting')
 const User = require('../../models/User')
 const Notification = require('../../models/Notification')
+const { upsertFollowUpEvent } = require('../calendar/calendarSync.service')
 const auditService = require('../audit.service')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { sendSms } = require('../sms/sms.service')
@@ -19,13 +20,84 @@ const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
+const DEFAULT_AUTOMATION_CONFIG = {
+  key: 'global',
+  chatDropOff: {
+    enabled: true,
+    inactivityMinutes: 30,
+    maxAttempts: 3,
+    attemptIntervalsMinutes: [30, 180, 1440],
+    requireNotQuoteReady: true,
+    requireNotHandedToSales: true,
+  },
+  coldLead: {
+    enabled: true,
+    intervalsDays: [1, 3, 7, 14],
+    maxAttempts: 4,
+  },
+  invoiceReminder: {
+    enabled: true,
+    intervalsHours: [24, 72, 168],
+    maxAttempts: 3,
+  },
+  manualReminder: {
+    defaultReminderMinutes: 30,
+    sendDueNowReminder: true,
+  },
+  channels: {
+    sms: true,
+    email: true,
+  },
+  timezone: 'UTC',
+}
+
+const fillDefaults = (cfg = {}) => ({
+  ...DEFAULT_AUTOMATION_CONFIG,
+  ...cfg,
+  chatDropOff: {
+    ...DEFAULT_AUTOMATION_CONFIG.chatDropOff,
+    ...(cfg.chatDropOff || {}),
+  },
+  coldLead: {
+    ...DEFAULT_AUTOMATION_CONFIG.coldLead,
+    ...(cfg.coldLead || {}),
+  },
+  invoiceReminder: {
+    ...DEFAULT_AUTOMATION_CONFIG.invoiceReminder,
+    ...(cfg.invoiceReminder || {}),
+  },
+  manualReminder: {
+    ...DEFAULT_AUTOMATION_CONFIG.manualReminder,
+    ...(cfg.manualReminder || {}),
+  },
+  channels: {
+    ...DEFAULT_AUTOMATION_CONFIG.channels,
+    ...(cfg.channels || {}),
+  },
+})
+
+const toReadableDateTime = (value) => new Date(value).toLocaleString()
+const dueInLine = (minutes) => {
+  const n = Number(minutes || 0)
+  if (n <= 0) return 'is due now.'
+  return `is due in ${n} minutes.`
+}
+
 const getOrCreateConfig = async () => {
   const cfg = await FollowUpAutomationConfig.findOneAndUpdate(
     { key: 'global' },
-    { $setOnInsert: { key: 'global' } },
+    { $setOnInsert: DEFAULT_AUTOMATION_CONFIG },
     { upsert: true, new: true }
-  ).lean()
-  return cfg
+  )
+
+  const withDefaults = fillDefaults(cfg.toObject())
+  const hasDiff = JSON.stringify(cfg.toObject()) !== JSON.stringify(withDefaults)
+  if (hasDiff) {
+    cfg.set(withDefaults)
+    await cfg.save()
+    return cfg.toObject()
+  }
+  return cfg.toObject()
 }
 
 const normalizePhone = (countryCode, phone) => {
@@ -206,6 +278,7 @@ const sendLeadAutomation = async ({
   })
 
   if (followUp) {
+    await upsertFollowUpEvent(followUp)
     followUp.reminderSentAt = new Date()
     await followUp.save()
   }
@@ -372,13 +445,19 @@ const processDueManualFollowUps = async (config) => {
     status: 'pending',
     source: 'manual',
     reminderSentAt: null,
-    followUpDate: { $lte: now },
   })
-    .select('_id leadId customerId assignedTo notes sendSms sendEmail notifyCustomer')
+    .select('_id leadId customerId assignedTo notes sendSms sendEmail notifyCustomer followUpDate reminderMinutes')
     .lean()
 
   let sent = 0
   for (const fu of followUps) {
+    const reminderMinutes = Number(fu.reminderMinutes ?? config?.manualReminder?.defaultReminderMinutes ?? 30)
+    const reminderAt = new Date(fu.followUpDate).getTime() - reminderMinutes * MINUTE
+    if (now.getTime() < reminderAt) continue
+
+    const customerMessage = `Reminder: follow-up is scheduled at ${toReadableDateTime(fu.followUpDate)} and ${dueInLine(reminderMinutes)}${fu.notes ? ` Notes: ${fu.notes}` : ''}`
+    const staffMessage = `Reminder: follow-up is scheduled at ${toReadableDateTime(fu.followUpDate)} and ${dueInLine(reminderMinutes)}`
+
     const [customer, assignedUser] = await Promise.all([
       Customer.findById(fu.customerId).lean(),
       User.findById(fu.assignedTo).lean(),
@@ -387,9 +466,7 @@ const processDueManualFollowUps = async (config) => {
     if (fu.notifyCustomer && customer) {
       await sendChannels({
         kind: 'manual_followup',
-        message:
-          fu.notes ||
-          'Hi, this is a scheduled follow-up from Storage Materials. Please reply and we will assist you.',
+        message: customerMessage,
         subject: 'Scheduled follow-up reminder',
         customer,
         leadId: fu.leadId,
@@ -411,7 +488,7 @@ const processDueManualFollowUps = async (config) => {
       }
       await sendChannels({
         kind: 'manual_followup',
-        message: `Reminder: follow-up is due now for lead ${String(fu.leadId)}.`,
+        message: staffMessage,
         subject: 'Follow-up due now',
         customer: staffProxyCustomer,
         leadId: fu.leadId,
@@ -428,7 +505,7 @@ const processDueManualFollowUps = async (config) => {
       userId: fu.assignedTo,
       leadId: fu.leadId,
       title: 'Follow-up due now',
-      body: 'A scheduled follow-up is now due.',
+      body: staffMessage,
       type: 'followup',
       priority: 'medium',
       refId: fu._id,
@@ -462,7 +539,7 @@ const processMeetingReminders = async (config) => {
     }
     await sendChannels({
       kind: 'meeting_reminder',
-      message: `Reminder: "${m.title}" meeting is scheduled at ${new Date(m.meetingTime).toLocaleString()}.`,
+      message: `Reminder: "${m.title}" meeting is scheduled at ${toReadableDateTime(m.meetingTime)} and ${dueInLine(m.reminderMinutes)}`,
       subject: 'Meeting reminder',
       customer: staffProxyCustomer,
       leadId: m.leadId,

@@ -163,13 +163,29 @@ Request body:
 
 ## Existing Follow-Up APIs (enhanced fields)
 
-### Sales create follow-up
+### Manual follow-up flow APIs (sales)
 
 `POST /api/sales/followups`
 
-### Admin create follow-up
+`GET /api/sales/followups/stats`
+
+`GET /api/sales/followups/upcoming`
+
+`PUT /api/sales/followups/:followUpId/complete`
+
+### Manual follow-up flow APIs (admin)
 
 `POST /api/admin/followups`
+
+`GET /api/admin/followups`
+
+`GET /api/admin/followups/activity-log`
+
+`GET /api/admin/followups/stats`
+
+`GET /api/admin/followups/upcoming`
+
+`PUT /api/admin/followups/:followUpId/complete`
 
 New optional request fields on both:
 
@@ -198,14 +214,48 @@ New optional request fields:
 }
 ```
 
+## In-house calendar sync APIs (no Google/Outlook dependency)
+
+Calendar events are maintained inside this platform and auto-synced from follow-up/meeting actions.
+
+- Follow-up create -> calendar event auto-created
+- Follow-up complete -> calendar event auto-marked `completed`
+- Meeting create -> calendar event auto-created
+- Meeting reschedule/edit -> calendar event auto-updated
+- Meeting cancel -> calendar event auto-marked `cancelled`
+
+### Fetch calendar events
+
+`GET /api/calendar/events?startDate=<iso>&endDate=<iso>&status=scheduled|completed|cancelled&kind=meeting|followup`
+
+- `sales` can fetch only their own calendar.
+- `admin` can fetch own events or pass `userId` to view a specific employee.
+
+### Update reminder preference from calendar
+
+`PUT /api/calendar/events/:eventId/reminder`
+
+Request body:
+
+```json
+{
+  "reminderMinutes": 30,
+  "reminderSms": true,
+  "reminderEmail": true
+}
+```
+
+This updates both calendar event reminder settings and the linked source record (`Meeting`/`FollowUp`).
+
 ## Automation Runtime Behavior
 
 - Runner starts with backend boot and executes every 60 seconds.
 - Chat drop-off sends only when lead is still active and configured conditions pass.
 - Cold lead reminders use configured day intervals and max attempts.
 - Invoice reminders target invoices in `sent` / `overdue`.
-- Manual follow-up reminders send when due (`followUpDate <= now`) and `source = manual`.
+- Manual follow-up reminders are triggered at `followUpDate - reminderMinutes`.
 - Meeting reminders send when current time reaches `meetingTime - reminderMinutes`.
+- Reminder text includes schedule time + `due in X minutes` phrasing.
 
 ## Delivery Provider Behavior
 
