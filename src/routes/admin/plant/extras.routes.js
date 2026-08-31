@@ -69,6 +69,7 @@ router.get('/qr-labels/export', ctrl.exportQRLabelsExcel)
 
 // Item Cost List (Costing)
 router.get('/costing',            ctrl.getItemCostList)
+router.get('/costing/categories', ctrl.getItemCostCategories)
 router.get('/costing/export',     ctrl.exportItemCostListExcel)
 router.post('/costing',
   [body('category').notEmpty(), body('partName').notEmpty(), body('costUnit').notEmpty(), body('mbsCost').isNumeric()],

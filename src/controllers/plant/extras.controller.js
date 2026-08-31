@@ -701,8 +701,17 @@ exports.exportQRLabelsExcel = asyncHandler(async (req, res) => {
 const { getActiveCostVersion, cleanStr, normalizeCode } = require('../../services/plant/smdt.service')
 const { SMDT_CATEGORIES } = require('../../config/constants')
 
+// GET /costing/categories — populates the category filter dropdown with real values.
+exports.getItemCostCategories = asyncHandler(async (req, res) => {
+  return success(res, { categories: SMDT_CATEGORIES })
+})
+
 exports.getItemCostList = asyncHandler(async (req, res) => {
-  const { search, page = 1, limit = 20 } = req.query
+  // `category` was previously not accepted at all — selecting a category on the frontend was
+  // apparently being sent through `search` instead, which only matches partName/description,
+  // so a "category" pick behaved like a name search rather than an exact category filter.
+  // `sort=latest` is new — orders by createdAt desc instead of the default alphabetical sort.
+  const { search, category, sort, page = 1, limit = 20 } = req.query
 
   const activeVersion = await getActiveCostVersion()
   if (!activeVersion) {
@@ -713,14 +722,17 @@ exports.getItemCostList = asyncHandler(async (req, res) => {
   }
 
   const filter = { costVersionId: activeVersion._id, isActive: true }
+  if (category) filter.category = category
   if (search) filter.$or = [
     { partName: { $regex: search, $options: 'i' } },
     { description: { $regex: search, $options: 'i' } },
   ]
 
+  const sortOrder = sort === 'latest' ? { createdAt: -1 } : { partName: 1 }
+
   const [items, total, statsAgg] = await Promise.all([
     SMDTItem.find(filter)
-      .sort({ partName: 1 })
+      .sort(sortOrder)
       .skip((parseInt(page) - 1) * parseInt(limit))
       .limit(parseInt(limit))
       .lean(),
@@ -814,15 +826,17 @@ exports.updateItemCost = asyncHandler(async (req, res) => {
 
 // GET /costing/export
 exports.exportItemCostListExcel = asyncHandler(async (req, res) => {
-  const { search } = req.query
+  const { search, category, sort } = req.query
   const activeVersion = await getActiveCostVersion()
   const filter = activeVersion ? { costVersionId: activeVersion._id, isActive: true } : { _id: null }
+  if (category) filter.category = category
   if (search) filter.$or = [
     { partName: { $regex: search, $options: 'i' } },
     { description: { $regex: search, $options: 'i' } },
   ]
 
-  const items = await SMDTItem.find(filter).sort({ partName: 1 }).lean()
+  const sortOrder = sort === 'latest' ? { createdAt: -1 } : { partName: 1 }
+  const items = await SMDTItem.find(filter).sort(sortOrder).lean()
 
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet('Item Cost List')

@@ -5,6 +5,7 @@ const Customer = require('../../models/Customer')
 const ProjectBudget = require('../../models/ProjectBudget')
 const Tax = require('../../models/Tax')
 const PaymentApproval = require('../../models/PaymentApproval')
+const PaymentSchedule = require('../../models/PaymentSchedule')
 const { PAYMENT_CATEGORIES, APPROVAL_STATUSES } = require('../../models/PaymentApproval')
 const User = require('../../models/User')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
@@ -131,7 +132,9 @@ const computePaymentsDashboard = async (query) => {
     Invoice.aggregate([{ $match: base }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
     Invoice.aggregate([{ $match: { ...base, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
     Invoice.aggregate([{ $match: { ...base, status: { $in: ['sent', 'overdue'] } } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.aggregate([{ $match: { status: 'overdue' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    // Was previously matching status:'overdue' with no date filter at all — "Total Overdue"
+    // ignored the "Select date range" picker entirely and always showed the all-time total.
+    Invoice.aggregate([{ $match: { ...base, status: 'overdue' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
     Invoice.aggregate([
       { $match: { status: 'overdue', createdAt: { $gte: new Date(now.getFullYear(), 0, 1) } } },
       { $group: { _id: null, total: { $sum: '$totalAmount' } } }
@@ -149,8 +152,13 @@ const computePaymentsDashboard = async (query) => {
   const totalOverdueYTD   = ytdAgg[0]?.total || 0
   const totalOverdueYTDPct = totalPayments > 0 ? Math.round((totalOverdueYTD / totalPayments) * 100 * 10) / 10 : 0
 
+  // "Payment status Distribution" — was previously ignoring the date-range filter entirely
+  // (always all-time), and `count` was counting invoices rather than distinct clients even
+  // though the widget's labels read "X clients".
   const statusDistribution = await Invoice.aggregate([
-    { $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } }
+    { $match: base },
+    { $group: { _id: '$status', clientIds: { $addToSet: '$customerId' }, amount: { $sum: '$totalAmount' } } },
+    { $project: { _id: 1, count: { $size: '$clientIds' }, amount: 1 } },
   ])
 
   // Revenue trend last 6 months
@@ -184,10 +192,46 @@ const computePaymentsDashboard = async (query) => {
     }}
   ])
 
-  // Stage wise payment progress (initial vs final by invoice number pattern or custom logic)
-  const stageWise = await Invoice.aggregate([
-    { $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } }
+  // "Stage wise payment progress" — this was a straight copy of statusDistribution's query
+  // (identical $group by status), so the widget showed the same breakdown twice instead of
+  // real payment-schedule progress. Stage names are free text and vary per project (Deposit,
+  // First Instalment, Final, ...), so "Initial" / "Final" means the first vs. last stage of
+  // each schedule, not a name match. Pulled from PaymentSchedule directly (not via Invoice —
+  // invoices aren't reliably linked back to a specific schedule stage in practice).
+  const scheduleStageAgg = await PaymentSchedule.aggregate([
+    { $project: {
+      customerId: 1,
+      totalAmount: 1,
+      initialStage: { $arrayElemAt: ['$stages', 0] },
+      finalStage: { $arrayElemAt: ['$stages', -1] },
+    }},
+    { $group: {
+      _id: null,
+      totalSchedules: { $sum: 1 },
+      initialPaidCount: { $sum: { $cond: [{ $eq: ['$initialStage.status', 'paid'] }, 1, 0] } },
+      initialClientIds: { $addToSet: { $cond: [{ $eq: ['$initialStage.status', 'paid'] }, '$customerId', '$$REMOVE'] } },
+      initialAmount: { $sum: { $cond: [{ $eq: ['$initialStage.status', 'paid'] }, '$initialStage.amount', 0] } },
+      finalPaidCount: { $sum: { $cond: [{ $eq: ['$finalStage.status', 'paid'] }, 1, 0] } },
+      finalClientIds: { $addToSet: { $cond: [{ $eq: ['$finalStage.status', 'paid'] }, '$customerId', '$$REMOVE'] } },
+      finalAmount: { $sum: { $cond: [{ $eq: ['$finalStage.status', 'paid'] }, '$finalStage.amount', 0] } },
+    }},
   ])
+
+  const sw = scheduleStageAgg[0] || { totalSchedules: 0, initialPaidCount: 0, initialClientIds: [], initialAmount: 0, finalPaidCount: 0, finalClientIds: [], finalAmount: 0 }
+  const stageWise = [
+    {
+      _id: 'Initial Payment',
+      progressPct: sw.totalSchedules > 0 ? Math.round((sw.initialPaidCount / sw.totalSchedules) * 100) : 0,
+      clientCount: sw.initialClientIds.length,
+      amount: sw.initialAmount,
+    },
+    {
+      _id: 'Final Payment',
+      progressPct: sw.totalSchedules > 0 ? Math.round((sw.finalPaidCount / sw.totalSchedules) * 100) : 0,
+      clientCount: sw.finalClientIds.length,
+      amount: sw.finalAmount,
+    },
+  ]
 
   return {
     stats: { totalPayments, totalReceived, totalOutstanding, totalOverdue, totalOverdueYTD, totalOverdueYTDPct },

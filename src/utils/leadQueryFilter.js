@@ -2,6 +2,28 @@ const Customer = require('../models/Customer')
 const { buildDateFilter } = require('./dateRange')
 const { LEAD_TEMPERATURES, resolveLeadTemperatureFromScore } = require('../config/constants')
 
+// buildDateFilter only understands explicit startDate/endDate — a quick-filter pill sending
+// `period=today` (the convention already used on the Account Dashboard) was silently ignored
+// here, so a "Today" quick filter on the Leads screen showed all-time results with no error.
+// Falls through to plain buildDateFilter whenever explicit dates are present.
+const buildLeadDateFilter = (query = {}, field = 'createdAt') => {
+  if (query.startDate || query.endDate) return buildDateFilter(query, field)
+  if (!query.period) return {}
+
+  const now = new Date()
+  if (query.period === 'today') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    return buildDateFilter({ startDate: start.toISOString(), endDate: end.toISOString() }, field)
+  }
+  if (query.period === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1)
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+    return buildDateFilter({ startDate: start.toISOString(), endDate: end.toISOString() }, field)
+  }
+  return {}
+}
+
 const buildAdminLeadFilter = async (query = {}) => {
   const {
     search,
@@ -15,7 +37,7 @@ const buildAdminLeadFilter = async (query = {}) => {
     isHandedToSales,
     isTerminated,
   } = query
-  const dateFilter = buildDateFilter(query)
+  const dateFilter = buildLeadDateFilter(query)
 
   const filter = { isDeleted: { $ne: true }, ...dateFilter }
   if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
@@ -43,7 +65,7 @@ const buildAdminLeadFilter = async (query = {}) => {
 
 const buildSalesLeadFilter = async (query = {}, salesId) => {
   const { search, buildingType, lifecycleStatus, isQuoteReady } = query
-  const dateFilter = buildDateFilter(query)
+  const dateFilter = buildLeadDateFilter(query)
 
   const filter = { assignedSales: salesId, isDeleted: { $ne: true }, ...dateFilter }
   if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
@@ -70,7 +92,7 @@ const buildSalesLeadFilter = async (query = {}, salesId) => {
  * Query `status` is accepted as an alias for `temperature` (hot | warm | cold).
  */
 const buildLeadsByScoreFilter = async (query = {}, { assignedSales } = {}) => {
-  const filter = { isDeleted: { $ne: true }, ...buildDateFilter(query, 'updatedAt') }
+  const filter = { isDeleted: { $ne: true }, ...buildLeadDateFilter(query, 'updatedAt') }
   if (assignedSales) filter.assignedSales = assignedSales
 
   const temperature = query.temperature || query.status

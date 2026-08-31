@@ -11,7 +11,11 @@ router.use('/load-planning', require('./loadPlanning.routes'))
 router.use('/bundle-plans', require('./bundlePlan.routes'))
 router.use('/packing-lists', require('./packingList.routes'))
 router.use('/packing-list-plans', require('./packingListPlan.routes'))
-router.use('/projects', require('./projectOps.routes'))
+// Reuses the plant panel's own project routes wholesale (not just the projectOps subset) so
+// admin's Plant > Projects section has the exact same flow as the plant panel itself — list,
+// stats, detail, and lifecycle updates were previously only reachable from the plant role,
+// even though getScopedLeadIds already returns every project (unscoped) for admin.
+router.use('/projects', require('../../plant/project.routes'))
 router.use('/vendors', require('./vendor.routes'))
 router.use('/carriers', require('./carrier.routes'))
 router.use('/freight-bids', require('./freightBid.routes'))
