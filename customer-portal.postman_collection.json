@@ -423,7 +423,8 @@
 							]
 						},
 						"description": "Returns: lead, quotation, quoteSummary, invoices[], paymentSchedule, navigation\n\nlead now also includes: buildingsCount (count of Building docs for this project), createdAt, plannedStartDate, endDate\n\nnavigation { previous, next } \u2014 sibling project { _id, jobId, projectName } in the customer's project list (same order as Get All Projects), for the prev/next project switcher button. null at either end of the list."
-					}
+					},
+					"_postman_note": "Fixed a real bug: the Mongoose .select() was missing jobId, so lead.jobId/projectId always came back as \"\" even when the Lead document had a real PRO-xxxx job id. Now also includes projectName, roofStyle, sqft, width/length/height, numDoors/numWindows/numInsulation, numberOfBuildings, notes, source."
 				},
 				{
 					"name": "Get Project Stats",
@@ -567,10 +568,11 @@
 						},
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"buildingType\": \"warehouse\",\n  \"location\": \"Pune, Maharashtra\",\n  \"roofStyle\": \"gable\",\n  \"sqft\": \"5000\",\n  \"width\": 50,\n  \"length\": 100,\n  \"description\": \"Steel warehouse \u2014 clear span, 18ft eave height\"\n}"
+							"raw": "{\n  \"projectName\": \"ABC Warehouse Expansion\",\n  \"buildingType\": \"Warehouse\",\n  \"expectedStartDate\": \"2026-09-15\",\n  \"targetCompletionDate\": \"2026-12-30\",\n  \"fullAddress\": \"Baner Road\",\n  \"city\": \"Pune\",\n  \"pincode\": \"412101\",\n  \"state\": \"Maharashtra\",\n  \"width\": 20,\n  \"length\": 20,\n  \"height\": 20,\n  \"doors\": 2,\n  \"windows\": 4,\n  \"insulation\": 5,\n  \"description\": \"Describe any special requirements, preferred materials, design requirements, delivery expectations, or other information our team should know.\"\n}"
 						},
 						"description": "Creates a new project enquiry (lead) for this customer. Sets lifecycleStatus: initial_contact."
-					}
+					},
+					"_postman_note": "Updated to match the Figma \"Create New Project\" form. Required: projectName, buildingType, expectedStartDate, targetCompletionDate, fullAddress, city, pincode, state. Optional: width/length/height/doors/windows/insulation, description. Creates a Lead with source=customer_portal, lifecycleStatus=initial_contact. Request body keys doors/windows/insulation map to Lead.numDoors/numWindows/numInsulation (existing model fields \u2014 response echoes them back as numDoors/numWindows/numInsulation)."
 				},
 				{
 					"name": "Get Project Tracking",
@@ -595,7 +597,7 @@
 							]
 						}
 					},
-					"_postman_note": "'Project Tracking' tab. projectSteps now includes per-step startedBy/startedAt/completedBy/completedAt/currentStage(sub-label)/completionPct/expectedCompletion/notes/attachments[] \u2014 sourced from ProjectStepDetail records the construction panel writes via PUT /construction/projects/:leadId/steps/:stepKey. Also includes taskProgress, timeline, milestones."
+					"_postman_note": "projectSteps now has 21 individual entries (one per granular sales+plant lifecycle stage: initial_contact -> ... -> delivered) instead of 5 collapsed buckets (Design/Fabrication/Dispatch/Install/Complete) \u2014 matches the Plant Panel's stage-by-stage tracking 1:1. Each stage key is now one of: initial_contact, requirements_gathered, proposal_sent, negotiation, deal_closed, payment_done, converted_to_po, sent_to_admin, released_to_plant, drawings_received, bom_received, bom_review, material_check, production_planning, fabrication_started, quality_inspection, packing_bundling, shipper_prepared, ready_for_delivery, dispatched, delivered."
 				},
 				{
 					"name": "List Projects \u2014 Proposed/New Enquiry Tab",
@@ -679,7 +681,7 @@
 							]
 						}
 					},
-					"_postman_note": "Cross-project list with numberOfBuildings/totalDrawings/lastUpdate per project"
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				},
 				{
 					"name": "Get Project Drawings & Images",
@@ -727,7 +729,8 @@
 							]
 						},
 						"description": "Returns:\n  drawings[]        \u2014 DrawingDocument records (with status, revisionNote, fileUrl)\n  embeddedDocuments[] \u2014 from lead.documents array\n  total\n\nTest script auto-saves first drawing _id to {{docId}}.\n\nMock data (PRO-001):\n  Foundation Plan Rev A   (architectural, approved)\n  Structural Steel Layout (structural,   approved)\n  Roof Panel Layout       (architectural, approved)\n  Electrical Plan         (other,         under_review)\n  Site Elevation          (other,         approved)\n\nStatuses: pending | approved | rejected | under_review"
-					}
+					},
+					"_postman_note": "Fixed a real bug: this endpoint only ever queried DrawingDocument, but the Plant Panel uploads fabrication drawings onto a separate store \u2014 Building.drawings (per-building, versioned). Customer Panel was showing empty drawings for projects with Plant-uploaded drawings. Fix merges Building.drawings into the SAME \"drawings\" array, mapped onto the existing DrawingDocument field shape (status pending_review -> pending; rejectionReason -> notes/revisionNote; versionNumber/buildingLabel added). Response structure is unchanged: project / drawings / embeddedDocuments / total \u2014 no new top-level keys."
 				},
 				{
 					"name": "Approve Drawing",
@@ -754,7 +757,8 @@
 							]
 						},
 						"description": "Customer approves a drawing.\n\nSets status \u2192 approved, approvedAt \u2192 now.\nReturns: { _id, name, status }\n\nRun 'Get Project Drawings' first to populate {{docId}}."
-					}
+					},
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				},
 				{
 					"name": "Request Drawing Revision",
@@ -789,7 +793,8 @@
 							"raw": "{\n  \"note\": \"Please adjust the roof pitch from 3:12 to 4:12 and increase eave height to 22ft\"\n}"
 						},
 						"description": "Customer requests a revision on a drawing.\n\nSets status \u2192 under_review, saves revisionNote + revisionRequestedAt.\nnote is required.\nReturns: { _id, name, status, revisionNote }"
-					}
+					},
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				},
 				{
 					"name": "Get Project Buildings",
@@ -814,7 +819,7 @@
 							]
 						}
 					},
-					"_postman_note": "Per-building drawing/document counts \u2014 'Select a building' screen"
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				},
 				{
 					"name": "Get Building Drawings & Documents",
@@ -840,7 +845,42 @@
 							]
 						}
 					},
-					"_postman_note": "Path segment is the building label (URL-encode spaces). Returns drawings[] (category=drawing|photo) + documents[] (category=document) separately"
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
+				},
+				{
+					"name": "Add Drawing Comment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/customer/projects/{{leadId}}/drawings/{{docId}}/comments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"customer",
+								"projects",
+								"{{leadId}}",
+								"drawings",
+								"{{docId}}",
+								"comments"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"Please clarify duct size near column B4\"\n}"
+						}
+					},
+					"_postman_note": "Root cause of the empty-drawings/\"Drawing not found\" bugs: Plant Panel uploads onto Building.drawings (separate, per-building, versioned store), not DrawingDocument. Fixed across ALL drawing endpoints \u2014 this one, /customer/drawings, buildings breakdown, building detail, approve, request-revision, and comments \u2014 they now resolve/merge both sources via a shared resolver so :docId works no matter which panel uploaded the file. Building labels normalized to \"Building A/B/...\" (was \"Building 1\" mismatch)."
 				}
 			]
 		},

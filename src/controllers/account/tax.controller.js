@@ -24,7 +24,7 @@ exports.getStats = asyncHandler(async (req, res) => {
 })
 
 exports.listTaxes = asyncHandler(async (req, res) => {
-  const { status } = req.query
+  const { status, state, filingFrequency, search } = req.query
   const dateFilter = buildDateFilter(req.query, 'dueDate')
   const now = new Date()
 
@@ -35,6 +35,9 @@ exports.listTaxes = asyncHandler(async (req, res) => {
   } else if (status) {
     filter.status = status
   }
+  if (state) filter.state = state
+  if (filingFrequency) filter.filingFrequency = filingFrequency
+  if (search?.trim()) filter.state = { $regex: search.trim(), $options: 'i' }
 
   const taxes = await Tax.find(filter)
     .populate('createdBy', 'name email')

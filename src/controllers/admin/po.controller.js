@@ -84,11 +84,28 @@ const releasePOToPlant = async (order, assignedTo, adminUserId) => {
 }
 
 exports.getAllPOOrders = asyncHandler(async (req, res) => {
-  const { status } = req.query
+  const { status, search } = req.query
   const dateFilter = buildDateFilter(req.query)
 
   const filter = { ...dateFilter }
   if (status) filter.status = status
+
+  if (search?.trim()) {
+    // poNumber lives directly on POOrder; project/customer names live on the populated refs,
+    // so resolve matching leadIds first rather than trying to filter across a populate.
+    const Lead = require('../../models/Lead')
+    const Customer = require('../../models/Customer')
+    const term = search.trim()
+    const [leads, customers] = await Promise.all([
+      Lead.find({ $or: [{ projectName: { $regex: term, $options: 'i' } }, { jobId: { $regex: term, $options: 'i' } }] }).select('_id').lean(),
+      Customer.find({ $or: [{ firstName: { $regex: term, $options: 'i' } }, { lastName: { $regex: term, $options: 'i' } }] }).select('_id').lean(),
+    ])
+    filter.$or = [
+      { poNumber: { $regex: term, $options: 'i' } },
+      { leadId: { $in: leads.map((l) => l._id) } },
+      { customerId: { $in: customers.map((c) => c._id) } },
+    ]
+  }
 
   const orders = await POOrder.find(filter)
     .populate('leadId')

@@ -71,16 +71,20 @@ const PAYMENT_PROOF_STATUSES = [
   "rejected",
 ];
 /** Line-item markup/tax input mode: percentage (of rate / line subtotal) or flat amount */
-const INVOICE_VALUE_TYPES = ["percentage", "amount"];
-const FOLLOW_UP_STATUSES = ["pending", "completed"];
-const FOLLOW_UP_MODES = ["call", "email", "meeting", "sms"];
-const MEETING_MODES = ["online", "offline"];
-const MEETING_STATUSES = ["scheduled", "completed", "cancelled", "rescheduled"];
-const ESCALATION_STATUSES = ["pending", "resolved"];
-const PO_STATUSES = ["pending", "approved", "rejected"];
-const PAYMENT_AMOUNT_TYPES = ["percentage", "fixed"];
-const PAYMENT_STAGE_STATUSES = ["pending", "invoiced", "paid", "overdue"];
-const ASSIGN_METHODS = ["auto", "manual"];
+const INVOICE_VALUE_TYPES = ['percentage', 'amount']
+const PAYMENT_METHODS = ['cash', 'bank_transfer', 'credit_card', 'upi', 'cheque', 'other']
+/** Who the invoice bills — the customer (revenue) vs money the company owes a vendor/carrier (expense). */
+const INVOICE_TYPES = ['customer', 'vendor', 'freight_carrier']
+const INVOICE_CATEGORIES = ['product', 'service', 'other']
+const FOLLOW_UP_STATUSES = ['pending', 'completed']
+const FOLLOW_UP_MODES = ['call', 'email', 'meeting', 'sms']
+const MEETING_MODES = ['online', 'offline']
+const MEETING_STATUSES = ['scheduled', 'completed', 'cancelled', 'rescheduled']
+const ESCALATION_STATUSES = ['pending', 'resolved']
+const PO_STATUSES = ['pending', 'approved', 'rejected']
+const PAYMENT_AMOUNT_TYPES = ['percentage', 'fixed']
+const PAYMENT_STAGE_STATUSES = ['pending', 'invoiced', 'paid', 'overdue']
+const ASSIGN_METHODS = ['auto', 'manual']
 
 const AUDIT_TYPES = [
   "lead",
@@ -219,15 +223,15 @@ const BUILDING_STATUSES = [
 
 const DRAWING_STATUSES = ["pending_review", "approved", "rejected"];
 
-const VENDOR_STATUSES = ["active", "inactive"];
-const VENDOR_TYPES = [
-  "steel",
-  "insulation",
-  "panels",
-  "trim",
-  "hardware",
-  "other",
-];
+const VENDOR_STATUSES = ['active', 'inactive']
+const VENDOR_TYPES = ['steel', 'insulation', 'panels', 'trim', 'hardware', 'other']
+// Delivery.materialType has no enum today (free text, entered per-delivery) — real DB values
+// are inconsistent comma-joined strings. This is a starter dropdown list for the "Material
+// Category" filter, not an enforced schema constraint; existing free-text data isn't migrated.
+const DELIVERY_MATERIAL_CATEGORIES = ['Primary Steel', 'Secondary Steel', 'Doors', 'Trim', 'Hardware']
+// Delivery.loadingEquipment has no enum either (free-text array) — real DB data today only
+// has "Crane". Starter dropdown list for the "Equipment Required" filter, same caveat as above.
+const DELIVERY_EQUIPMENT_OPTIONS = ['Crane', 'Forklift', 'Flatbed Truck', 'Hydraulic Lift', 'Pallet Jack']
 const SHIPPER_REQUEST_STATUSES = [
   "sent",
   "submitted",
@@ -247,56 +251,24 @@ const ACTIVE_SHIPPER_REQUEST_STATUSES = [
   "resubmit_requested",
 ];
 
-const CARRIER_STATUSES = ["active", "inactive"];
-const FREIGHT_BID_STATUSES = [
-  "sent",
-  "submitted",
-  "resubmit_requested",
-  "selected",
-  "rejected",
-  "expired",
-];
-const ACTIVE_FREIGHT_BID_STATUSES = ["sent", "submitted", "resubmit_requested"];
-const BUNDLE_PLAN_STATUSES = ["draft", "generated", "confirmed", "cancelled"];
-const BUNDLE_STATUSES = [
-  "draft",
-  "confirmed",
-  "assigned_to_truck",
-  "staged",
-  "loaded",
-];
-const PACKING_LIST_PLAN_STATUSES = [
-  "draft",
-  "generated",
-  "confirmed",
-  "cancelled",
-];
-const PACKING_LIST_STATUSES = [
-  "draft",
-  "confirmed",
-  "ready",
-  "loading",
-  "delivery_created",
-  "dispatched",
-  "delivered",
-  "cancelled",
-];
-const TRUCK_TYPES = ["SEMI_53", "HOTSHOT_40"];
+const CARRIER_STATUSES = ['active', 'inactive']
+const FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested', 'selected', 'rejected', 'expired']
+const ACTIVE_FREIGHT_BID_STATUSES = ['sent', 'submitted', 'resubmit_requested']
+const BUNDLE_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
+const BUNDLE_STATUSES = ['draft', 'confirmed', 'assigned_to_truck', 'staged', 'loaded']
+const PACKING_LIST_PLAN_STATUSES = ['draft', 'generated', 'confirmed', 'cancelled']
+const PACKING_LIST_STATUSES = ['draft', 'confirmed', 'ready', 'loading', 'delivery_created', 'dispatched', 'delivered', 'cancelled']
+const TRUCK_TYPES = ['SEMI_53', 'HOTSHOT_40']
+// Fulfillment sub-flow (once a delivery is confirmed/carrier-selected) — the granular steps a
+// plant-panel dropdown walks through in order: material_prepared -> ... -> delivered.
+const DELIVERY_FULFILLMENT_STATUSES = [
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'staged', 'dispatched_to_site', 'delivered',
+]
 const DELIVERY_STATUSES = [
-  "draft",
-  "bidding_sent",
-  "carrier_selected",
-  "scheduled",
-  "confirmed",
-  "in_transit",
-  "delayed",
-  "staged",
-  "delivered",
-  "partial_received",
-  "received",
-  "cancelled",
-  "rescheduled",
-];
+  'draft', 'bidding_sent', 'carrier_selected', 'scheduled', 'confirmed',
+  ...DELIVERY_FULFILLMENT_STATUSES,
+  'partial_received', 'received', 'delayed', 'cancelled', 'rescheduled',
+]
 
 const SMDT_COST_UNITS = ["FT", "LB", "EA"];
 
@@ -362,6 +334,9 @@ module.exports = {
   INVOICE_STATUSES,
   PAYMENT_PROOF_STATUSES,
   INVOICE_VALUE_TYPES,
+  PAYMENT_METHODS,
+  INVOICE_TYPES,
+  INVOICE_CATEGORIES,
   FOLLOW_UP_STATUSES,
   FOLLOW_UP_MODES,
   MEETING_MODES,
@@ -378,6 +353,8 @@ module.exports = {
   DRAWING_STATUSES,
   VENDOR_STATUSES,
   VENDOR_TYPES,
+  DELIVERY_MATERIAL_CATEGORIES,
+  DELIVERY_EQUIPMENT_OPTIONS,
   SHIPPER_REQUEST_STATUSES,
   ACTIVE_SHIPPER_REQUEST_STATUSES,
   CARRIER_STATUSES,
@@ -389,6 +366,7 @@ module.exports = {
   PACKING_LIST_STATUSES,
   TRUCK_TYPES,
   DELIVERY_STATUSES,
+  DELIVERY_FULFILLMENT_STATUSES,
   SMDT_COST_UNITS,
   SMDT_CATEGORIES,
   BOM_JOB_STATUSES,

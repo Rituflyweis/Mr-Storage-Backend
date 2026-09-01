@@ -4,15 +4,20 @@ const Task = require('../../models/Task')
 const { success, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
-const PROJECT_SELECT = 'projectName jobId buildingType location lifecycleStatus endDate plannedStartDate customerId'
+const PROJECT_SELECT = 'projectName jobId buildingType location lifecycleStatus priority endDate plannedStartDate customerId createdAt'
 const PROJECT_POPULATE = { path: 'customerId', select: 'firstName lastName email' }
 
 exports.getProjects = asyncHandler(async (req, res) => {
-  const { status, page = 1, limit = 20 } = req.query
+  const { status, priority, search, page = 1, limit = 20 } = req.query
   const filter = {
     isTerminated: { $ne: true },
   }
   if (status) filter.lifecycleStatus = status
+  if (priority) filter.priority = priority
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ projectName: regex }, { jobId: regex }]
+  }
 
   const skip = (Number(page) - 1) * Number(limit)
   const [leads, total] = await Promise.all([
@@ -82,14 +87,16 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
     .lean()
   if (!lead) return notFound(res, 'Project not found')
 
-  const [deliveries, tasks] = await Promise.all([
-    Delivery.find({ leadId: lead._id, status: { $ne: 'draft' } })
-      .select('deliveryNumber status deliveryDate description')
-      .sort({ deliveryDate: -1 })
+  const now = new Date()
+  const [upcomingDeliveries, tasks] = await Promise.all([
+    // "Upcoming Material Delivery" — future, not-yet-delivered deliveries, soonest first.
+    Delivery.find({ leadId: lead._id, status: { $nin: ['draft', 'cancelled', 'delivered'] }, deliveryDate: { $gte: now } })
+      .select('deliveryNumber status deliveryDate description materialType loadWeight')
+      .sort({ deliveryDate: 1 })
       .limit(5)
       .lean(),
     Task.find({ leadId: lead._id }).select('title status priority dueDate assignedTo').lean(),
   ])
 
-  return success(res, { project: lead, deliveries, tasks })
+  return success(res, { project: lead, deliveries: upcomingDeliveries, tasks })
 })

@@ -12,6 +12,8 @@ const TaxSchema = new mongoose.Schema(
     threshold:        { type: String, default: '', trim: true },
     websiteLink:      { type: String, default: null, trim: true },
     status:           { type: String, enum: TAX_STATUSES, default: 'pending' },
+    leadId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null },
+    customerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
     createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     paidBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     paidAt:      { type: Date, default: null },
@@ -21,5 +23,7 @@ const TaxSchema = new mongoose.Schema(
 
 TaxSchema.index({ dueDate: 1 })
 TaxSchema.index({ status: 1 })
+TaxSchema.index({ leadId: 1 })
+TaxSchema.index({ customerId: 1 })
 
 module.exports = mongoose.model('Tax', TaxSchema)

@@ -12,6 +12,10 @@ const deliveryCtrl = require('../../controllers/construction/delivery.controller
 const bundleCtrl = require('../../controllers/construction/bundle.controller')
 const materialRequestCtrl = require('../../controllers/construction/materialRequest.controller')
 
+// Chat — same controller as the admin chat panel (no admin-specific logic in it), just exposed
+// under the construction-role-accessible router so the mobile app's chat screens work.
+router.use('/chat', require('../admin/chat.routes'))
+
 // Dashboard
 router.get('/dashboard', dashCtrl.getDashboard)
 
@@ -26,6 +30,7 @@ router.get('/projects/:leadId', projectCtrl.getProjectDetail)
 router.get('/drawings', drawingCtrl.getDrawings)
 router.get('/drawings/:leadId', drawingCtrl.getProjectDrawings)
 router.post('/drawings/:leadId', drawingCtrl.uploadDrawing)
+router.put('/drawings/:leadId/documents/:docId/review', drawingCtrl.reviewDrawing)
 
 // Tasks
 router.get('/tasks/stats', taskCtrl.getTaskStats)
@@ -47,6 +52,7 @@ router.post('/work-logs', taskCtrl.createWorkLog)
 
 // Material Requests
 router.get('/material-requests', materialRequestCtrl.getMaterialRequests)
+router.get('/material-requests/filters', materialRequestCtrl.getMaterialRequestFilters)
 router.post('/material-requests', materialRequestCtrl.createMaterialRequest)
 router.get('/material-requests/:requestId', materialRequestCtrl.getMaterialRequest)
 router.put('/material-requests/:requestId/status', materialRequestCtrl.updateMaterialRequestStatus)
@@ -55,6 +61,7 @@ router.post('/material-requests/:requestId/items/:itemId/deliver', materialReque
 
 // Delivery Tracking (static routes before param routes)
 router.post('/deliveries/scan-bundle', deliveryCtrl.scanBundle)
+router.post('/deliveries', deliveryCtrl.createDelivery)
 router.get('/deliveries', deliveryCtrl.getDeliveries)
 router.get('/deliveries/:deliveryId', deliveryCtrl.getDelivery)
 router.post('/deliveries/:deliveryId/mark-received', deliveryCtrl.markReceived)

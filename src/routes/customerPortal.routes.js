@@ -35,6 +35,7 @@ router.get('/projects/:leadId/buildings',                          ctrl.getProje
 router.get('/projects/:leadId/buildings/:buildingLabel',           ctrl.getBuildingDrawings)
 router.post('/projects/:leadId/drawings/:docId/approve',           ctrl.approveDrawing)
 router.post('/projects/:leadId/drawings/:docId/request-revision',  ctrl.requestDrawingRevision)
+router.post('/projects/:leadId/drawings/:docId/comments',          [body('text').trim().notEmpty()], validate, ctrl.addDrawingComment)
 router.get('/projects/:leadId/activity',                           ctrl.getProjectActivity)
 router.get('/projects/:leadId/notes',                              ctrl.getProjectNotes)
 router.get('/projects/:leadId/followups',                          ctrl.getProjectFollowUps)
@@ -48,12 +49,22 @@ router.get('/projects/:leadId/order-quotations',                   ctrl.getProje
 router.get('/projects/:leadId',                                    ctrl.getProject)
 router.post('/projects',
   [
+    body('projectName').notEmpty().withMessage('projectName is required'),
     body('buildingType').notEmpty().withMessage('buildingType is required'),
-    body('location').notEmpty().withMessage('location is required'),
+    body('expectedStartDate').notEmpty().withMessage('expectedStartDate is required').isISO8601(),
+    body('targetCompletionDate').notEmpty().withMessage('targetCompletionDate is required').isISO8601(),
+    body('fullAddress').if(body('location').not().exists()).notEmpty().withMessage('fullAddress is required'),
+    body('city').notEmpty().withMessage('city is required'),
+    body('pincode').notEmpty().withMessage('pincode is required'),
+    body('state').notEmpty().withMessage('state is required'),
     body('roofStyle').optional().isString(),
     body('sqft').optional().isString(),
     body('width').optional().isNumeric(),
     body('length').optional().isNumeric(),
+    body('height').optional().isNumeric(),
+    body('doors').optional().isNumeric(),
+    body('windows').optional().isNumeric(),
+    body('insulation').optional().isNumeric(),
     body('description').optional().isString(),
   ],
   validate,
@@ -120,6 +131,7 @@ router.post('/chat/:channel/messages',       ctrl.sendChatMessage)
 
 // Notifications
 router.get('/notifications',              ctrl.getCustomerNotifications)
+router.get('/notifications/unread-count', ctrl.getCustomerUnreadNotificationCount)
 router.put('/notifications/read-all',     ctrl.markAllCustomerNotificationsRead)
 router.put('/notifications/:id/read',     ctrl.markCustomerNotificationRead)
 

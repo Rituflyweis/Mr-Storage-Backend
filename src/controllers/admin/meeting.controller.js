@@ -2,6 +2,7 @@ const Meeting = require('../../models/Meeting')
 const Customer = require('../../models/Customer')
 const Lead = require('../../models/Lead')
 const auditService = require('../../services/audit.service')
+const notificationService = require('../../services/notification.service')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, MEETING_STATUSES } = require('../../config/constants')
@@ -97,6 +98,17 @@ exports.createMeeting = asyncHandler(async (req, res) => {
     customerId,
     performedBy: req.user._id,
     metadata: { title, meetingTime, mode },
+  })
+
+  await notificationService.notify({
+    customerId,
+    leadId: leadId || null,
+    title: 'Meeting scheduled',
+    body: `"${title}" — ${new Date(meetingTime).toLocaleString()}${mode === 'online' ? ' (online)' : ''}`,
+    type: 'meeting',
+    priority: 'medium',
+    refId: meeting._id,
+    refModel: 'Meeting',
   })
 
   return created(res, { meeting })

@@ -5,11 +5,14 @@ const Customer = require('../../models/Customer')
 const ProjectBudget = require('../../models/ProjectBudget')
 const Tax = require('../../models/Tax')
 const PaymentApproval = require('../../models/PaymentApproval')
-const { success, notFound, badRequest } = require('../../utils/apiResponse')
+const PaymentSchedule = require('../../models/PaymentSchedule')
+const { PAYMENT_CATEGORIES, APPROVAL_STATUSES } = require('../../models/PaymentApproval')
+const User = require('../../models/User')
+const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { withProjectIdFields } = require('../../utils/leadProjectId')
-const { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpensesExcel } = require('../../utils/exportFinancialAdmin')
+const { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpensesExcel, generatePaymentsDashboardExcel, generateStateWiseTaxExcel, generateProjectWiseTaxExcel, generatePaymentApprovalsExcel, generatePaymentHistoryExcel, generateTaxFilingExcel } = require('../../utils/exportFinancialAdmin')
 const { parse: parseCsv } = require('csv-parse/sync')
 const generateExpenseId = require('../../utils/generateExpenseId')
 const generatePaymentApprovalId = require('../../utils/generatePaymentApprovalId')
@@ -123,15 +126,17 @@ exports.getInvoiceAging = asyncHandler(async (req, res) => {
 })
 
 // ── Payments Dashboard ─────────────────────────────────────────────────────────
-exports.getPaymentsDashboard = asyncHandler(async (req, res) => {
-  const base = buildDateFilter(req.query)
+const computePaymentsDashboard = async (query) => {
+  const base = buildDateFilter(query)
   const now = new Date()
 
   const [totalAgg, receivedAgg, outstandingAgg, overdueAgg, ytdAgg, recentInvoices] = await Promise.all([
     Invoice.aggregate([{ $match: base }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
     Invoice.aggregate([{ $match: { ...base, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
     Invoice.aggregate([{ $match: { ...base, status: { $in: ['sent', 'overdue'] } } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.aggregate([{ $match: { status: 'overdue' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    // Was previously matching status:'overdue' with no date filter at all — "Total Overdue"
+    // ignored the "Select date range" picker entirely and always showed the all-time total.
+    Invoice.aggregate([{ $match: { ...base, status: 'overdue' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
     Invoice.aggregate([
       { $match: { status: 'overdue', createdAt: { $gte: new Date(now.getFullYear(), 0, 1) } } },
       { $group: { _id: null, total: { $sum: '$totalAmount' } } }
@@ -149,8 +154,13 @@ exports.getPaymentsDashboard = asyncHandler(async (req, res) => {
   const totalOverdueYTD   = ytdAgg[0]?.total || 0
   const totalOverdueYTDPct = totalPayments > 0 ? Math.round((totalOverdueYTD / totalPayments) * 100 * 10) / 10 : 0
 
+  // "Payment status Distribution" — was previously ignoring the date-range filter entirely
+  // (always all-time), and `count` was counting invoices rather than distinct clients even
+  // though the widget's labels read "X clients".
   const statusDistribution = await Invoice.aggregate([
-    { $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } }
+    { $match: base },
+    { $group: { _id: '$status', clientIds: { $addToSet: '$customerId' }, amount: { $sum: '$totalAmount' } } },
+    { $project: { _id: 1, count: { $size: '$clientIds' }, amount: 1 } },
   ])
 
   // Revenue trend last 6 months
@@ -184,40 +194,120 @@ exports.getPaymentsDashboard = asyncHandler(async (req, res) => {
     }}
   ])
 
-  // Stage wise payment progress (initial vs final by invoice number pattern or custom logic)
-  const stageWise = await Invoice.aggregate([
-    { $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } }
+  // "Stage wise payment progress" — this was a straight copy of statusDistribution's query
+  // (identical $group by status), so the widget showed the same breakdown twice instead of
+  // real payment-schedule progress. Stage names are free text and vary per project (Deposit,
+  // First Instalment, Final, ...), so "Initial" / "Final" means the first vs. last stage of
+  // each schedule, not a name match. Pulled from PaymentSchedule directly (not via Invoice —
+  // invoices aren't reliably linked back to a specific schedule stage in practice).
+  const scheduleStageAgg = await PaymentSchedule.aggregate([
+    { $project: {
+      customerId: 1,
+      totalAmount: 1,
+      initialStage: { $arrayElemAt: ['$stages', 0] },
+      finalStage: { $arrayElemAt: ['$stages', -1] },
+    }},
+    { $group: {
+      _id: null,
+      totalSchedules: { $sum: 1 },
+      initialPaidCount: { $sum: { $cond: [{ $eq: ['$initialStage.status', 'paid'] }, 1, 0] } },
+      initialClientIds: { $addToSet: { $cond: [{ $eq: ['$initialStage.status', 'paid'] }, '$customerId', '$$REMOVE'] } },
+      initialAmount: { $sum: { $cond: [{ $eq: ['$initialStage.status', 'paid'] }, '$initialStage.amount', 0] } },
+      finalPaidCount: { $sum: { $cond: [{ $eq: ['$finalStage.status', 'paid'] }, 1, 0] } },
+      finalClientIds: { $addToSet: { $cond: [{ $eq: ['$finalStage.status', 'paid'] }, '$customerId', '$$REMOVE'] } },
+      finalAmount: { $sum: { $cond: [{ $eq: ['$finalStage.status', 'paid'] }, '$finalStage.amount', 0] } },
+    }},
   ])
 
-  return success(res, {
+  const sw = scheduleStageAgg[0] || { totalSchedules: 0, initialPaidCount: 0, initialClientIds: [], initialAmount: 0, finalPaidCount: 0, finalClientIds: [], finalAmount: 0 }
+  const stageWise = [
+    {
+      _id: 'Initial Payment',
+      progressPct: sw.totalSchedules > 0 ? Math.round((sw.initialPaidCount / sw.totalSchedules) * 100) : 0,
+      clientCount: sw.initialClientIds.length,
+      amount: sw.initialAmount,
+    },
+    {
+      _id: 'Final Payment',
+      progressPct: sw.totalSchedules > 0 ? Math.round((sw.finalPaidCount / sw.totalSchedules) * 100) : 0,
+      clientCount: sw.finalClientIds.length,
+      amount: sw.finalAmount,
+    },
+  ]
+
+  return {
     stats: { totalPayments, totalReceived, totalOutstanding, totalOverdue, totalOverdueYTD, totalOverdueYTDPct },
     statusDistribution,
     revenueTrend,
     expectedPayments,
     stageWise,
     recentPayments: recentInvoices,
-  })
+  }
+}
+
+exports.getPaymentsDashboard = asyncHandler(async (req, res) => {
+  const data = await computePaymentsDashboard(req.query)
+  return success(res, data)
+})
+
+// GET /payments-dashboard/export — "Export" button on Payments Dashboard screen
+exports.exportPaymentsDashboard = asyncHandler(async (req, res) => {
+  const { stats, recentPayments } = await computePaymentsDashboard(req.query)
+
+  const buffer = await generatePaymentsDashboardExcel(stats, recentPayments)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="payments-dashboard.xlsx"')
+  return res.send(buffer)
 })
 
 // ── Tax & Filling ──────────────────────────────────────────────────────────────
-exports.getTaxFiling = asyncHandler(async (req, res) => {
-  const { state, startDate, endDate, page = 1, limit = 10 } = req.query
-  const parsedPage  = Math.max(parseInt(page, 10) || 1, 1)
-  const parsedLimit = Math.min(parseInt(limit, 10) || 10, 100)
-  const now = new Date()
 
+// Shared by getTaxFiling and getTaxFilingStats so both honor identical filters.
+const buildTaxFilingFilter = async ({ state, projectId, clientId, search, startDate, endDate }) => {
   const filter = {}
   if (state) filter.state = state
+  // Cast explicitly: aggregate() $match, unlike find(), does not auto-cast string ids to ObjectId.
+  if (projectId) filter.leadId = new mongoose.Types.ObjectId(projectId)
+  if (clientId) filter.customerId = new mongoose.Types.ObjectId(clientId)
   if (startDate || endDate) {
     filter.dueDate = {}
     if (startDate) filter.dueDate.$gte = new Date(startDate)
     if (endDate)   filter.dueDate.$lte = new Date(endDate)
   }
 
+  if (search?.trim()) {
+    const term = search.trim()
+    const matchingLeads = await Lead.find({
+      $or: [{ projectName: { $regex: term, $options: 'i' } }, { jobId: { $regex: term, $options: 'i' } }],
+    }).select('_id').lean()
+
+    filter.$or = [
+      { state: { $regex: term, $options: 'i' } },
+      { threshold: { $regex: term, $options: 'i' } },
+      ...(matchingLeads.length ? [{ leadId: { $in: matchingLeads.map(l => l._id) } }] : []),
+    ]
+  }
+
+  return filter
+}
+
+exports.getTaxFiling = asyncHandler(async (req, res) => {
+  const { state, projectId, clientId, search, startDate, endDate, page = 1, limit = 10 } = req.query
+  const parsedPage  = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.min(parseInt(limit, 10) || 10, 100)
+
+  const filter = await buildTaxFilingFilter({ state, projectId, clientId, search, startDate, endDate })
+
+  const populateOpts = [
+    { path: 'leadId', select: 'projectName jobId' },
+    { path: 'customerId', select: 'firstName lastName' },
+  ]
+
   const [pending, history, stats] = await Promise.all([
-    Tax.find({ ...filter, status: 'pending' }).sort({ dueDate: 1 }).skip((parsedPage - 1) * parsedLimit).limit(parsedLimit).lean(),
-    Tax.find({ ...filter, status: 'paid' }).sort({ paidAt: -1 }).limit(20).lean(),
+    Tax.find({ ...filter, status: 'pending' }).populate(populateOpts).sort({ dueDate: 1 }).skip((parsedPage - 1) * parsedLimit).limit(parsedLimit).lean(),
+    Tax.find({ ...filter, status: 'paid' }).populate(populateOpts).sort({ paidAt: -1 }).limit(20).lean(),
     Tax.aggregate([
+      { $match: filter },
       { $group: {
         _id: null,
         totalTaxable: { $sum: '$amount' },
@@ -228,8 +318,8 @@ exports.getTaxFiling = asyncHandler(async (req, res) => {
   ])
 
   const s = stats[0] || {}
-  const filed = await Tax.countDocuments({ status: 'paid' })
-  const unfiled = await Tax.countDocuments({ status: 'pending' })
+  const filed = await Tax.countDocuments({ ...filter, status: 'paid' })
+  const unfiled = await Tax.countDocuments({ ...filter, status: 'pending' })
 
   return success(res, {
     stats: {
@@ -243,6 +333,108 @@ exports.getTaxFiling = asyncHandler(async (req, res) => {
     filingHistory: history,
     page: parsedPage,
     limit: parsedLimit,
+  })
+})
+
+// GET /tax-filing/export
+exports.exportTaxFiling = asyncHandler(async (req, res) => {
+  const { state, projectId, clientId, search, startDate, endDate } = req.query
+  const filter = await buildTaxFilingFilter({ state, projectId, clientId, search, startDate, endDate })
+
+  const records = await Tax.find(filter)
+    .populate([{ path: 'leadId', select: 'projectName jobId' }, { path: 'customerId', select: 'firstName lastName' }])
+    .sort({ dueDate: 1 })
+    .lean()
+
+  const buffer = await generateTaxFilingExcel(records)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="tax-filing.xlsx"')
+  return res.send(buffer)
+})
+
+// Shared by any stat card that shows a "X% from last month" trend.
+const pctChange = (current, previous) => {
+  if (!previous) return 0
+  return Math.round(((current - previous) / previous) * 100 * 100) / 100
+}
+
+// GET /tax-filing/stats — stat cards on Tax & Filing screen
+exports.getTaxFilingStats = asyncHandler(async (req, res) => {
+  const { state, projectId, clientId, search } = req.query
+  const baseFilter = await buildTaxFilingFilter({ state, projectId, clientId, search })
+  const now = new Date()
+
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+
+  const monthAgg = async (rangeStart, rangeEnd) => {
+    const agg = await Tax.aggregate([
+      { $match: { ...baseFilter, createdAt: { $gte: rangeStart, $lt: rangeEnd } } },
+      { $group: {
+        _id: null,
+        totalTaxable: { $sum: '$amount' },
+        totalCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+      }}
+    ])
+    return agg[0] || { totalTaxable: 0, totalCollected: 0 }
+  }
+
+  const [thisMonth, lastMonth, overall] = await Promise.all([
+    monthAgg(thisMonthStart, now),
+    monthAgg(lastMonthStart, thisMonthStart),
+    Tax.aggregate([
+      { $match: baseFilter },
+      { $group: {
+        _id: null,
+        totalTaxable: { $sum: '$amount' },
+        totalCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+        taxPayableByStates: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
+        filed: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+        unfiled: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
+      }}
+    ]),
+  ])
+
+  const o = overall[0] || { totalTaxable: 0, totalCollected: 0, taxPayableByStates: 0, filed: 0, unfiled: 0 }
+
+  // value = all-time total (same scope as the tax-filing list, so the two screens agree);
+  // pctChangeFromLastMonth is a separate month-over-month growth-rate indicator.
+  return success(res, {
+    totalSalesTaxable: {
+      value: o.totalTaxable,
+      pctChangeFromLastMonth: pctChange(thisMonth.totalTaxable, lastMonth.totalTaxable),
+    },
+    totalSalesTaxCollected: {
+      value: o.totalCollected,
+      pctChangeFromLastMonth: pctChange(thisMonth.totalCollected, lastMonth.totalCollected),
+    },
+    taxPayableByStates: {
+      value: o.taxPayableByStates,
+    },
+    fileVsUnfiledTax: {
+      filed: o.filed,
+      unfiled: o.unfiled,
+    },
+  })
+})
+
+// GET /tax-filing/filters — populates Project ID / Client dropdowns on Tax & Filing screen
+exports.getTaxFilingFilters = asyncHandler(async (req, res) => {
+  const [states, leadIds, customerIds] = await Promise.all([
+    Tax.distinct('state'),
+    Tax.distinct('leadId', { leadId: { $ne: null } }),
+    Tax.distinct('customerId', { customerId: { $ne: null } }),
+  ])
+
+  const [projects, clients] = await Promise.all([
+    leadIds.length ? Lead.find({ _id: { $in: leadIds } }).select('projectName jobId').sort({ projectName: 1 }).lean() : [],
+    customerIds.length ? Customer.find({ _id: { $in: customerIds } }).select('firstName lastName').sort({ firstName: 1 }).lean() : [],
+  ])
+
+  return success(res, {
+    states: states.filter(Boolean).sort(),
+    projects: projects.map(p => ({ leadId: p._id, projectName: p.projectName, jobId: p.jobId })),
+    clients: clients.map(c => ({ customerId: c._id, name: `${c.firstName} ${c.lastName || ''}`.trim() })),
   })
 })
 
@@ -266,17 +458,33 @@ exports.completeFiling = asyncHandler(async (req, res) => {
 })
 
 // ── State Wise Tax ─────────────────────────────────────────────────────────────
-exports.getStateWiseTax = asyncHandler(async (req, res) => {
-  const { project, startDate, endDate } = req.query
+
+// Shared by getStateWiseTax, getStateWiseTaxStats, exportStateWiseTax, getUpcomingFilingDeadlines.
+const buildStateWiseFilter = ({ projectId, startDate, endDate }) => {
+  const filter = {}
+  if (projectId) filter.leadId = new mongoose.Types.ObjectId(projectId)
+  if (startDate || endDate) {
+    filter.dueDate = {}
+    if (startDate) filter.dueDate.$gte = new Date(startDate)
+    if (endDate)   filter.dueDate.$lte = new Date(endDate)
+  }
+  return filter
+}
+
+const computeStateWiseTax = async ({ projectId, startDate, endDate }) => {
+  const filter = buildStateWiseFilter({ projectId, startDate, endDate })
 
   const stateStats = await Tax.aggregate([
+    { $match: filter },
     { $group: {
       _id: '$state',
       taxCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
       taxableSales: { $sum: '$amount' },
       paidFiled: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
       payable: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
-      nextDue: { $min: '$dueDate' },
+      // Only pending dueDates count as "next filing due" — an already-paid record's dueDate is
+      // irrelevant, but $min across all statuses would still pick it up if it happened to be earliest.
+      nextDue: { $min: { $cond: [{ $eq: ['$status', 'pending'] }, '$dueDate', null] } },
       status: { $first: '$status' },
     }},
     { $sort: { nextDue: 1 } }
@@ -286,7 +494,15 @@ exports.getStateWiseTax = asyncHandler(async (req, res) => {
   const totalPaid           = stateStats.reduce((s, r) => s + r.paidFiled, 0)
   const totalPayable        = stateStats.reduce((s, r) => s + r.payable, 0)
   const pendingFilingStates = stateStats.filter(r => r.payable > 0).length
-  const nextFilingDue       = stateStats.find(r => r.payable > 0)?.nextDue || null
+  const nextFilingDue       = stateStats.filter(r => r.nextDue).sort((a, b) => new Date(a.nextDue) - new Date(b.nextDue))[0]?.nextDue || null
+
+  return { stateStats, totalTaxCollected, totalPaid, totalPayable, pendingFilingStates, nextFilingDue }
+}
+
+exports.getStateWiseTax = asyncHandler(async (req, res) => {
+  const { projectId, startDate, endDate } = req.query
+  const { stateStats, totalTaxCollected, totalPaid, totalPayable, pendingFilingStates, nextFilingDue } =
+    await computeStateWiseTax({ projectId, startDate, endDate })
 
   return success(res, {
     stats: { totalTaxCollected, totalPaid, totalPayable, pendingFilingStates, nextFilingDue },
@@ -295,63 +511,275 @@ exports.getStateWiseTax = asyncHandler(async (req, res) => {
   })
 })
 
+// GET /state-wise-tax/stats — stat cards on State-wise Tax screen
+exports.getStateWiseTaxStats = asyncHandler(async (req, res) => {
+  const { projectId, startDate, endDate } = req.query
+  const filter = buildStateWiseFilter({ projectId, startDate, endDate })
+  const now = new Date()
+
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+
+  const monthAgg = async (rangeStart, rangeEnd) => {
+    const agg = await Tax.aggregate([
+      { $match: { ...filter, createdAt: { $gte: rangeStart, $lt: rangeEnd } } },
+      { $group: {
+        _id: null,
+        taxCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+        payable: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
+      }}
+    ])
+    return agg[0] || { taxCollected: 0, payable: 0 }
+  }
+
+  const [thisMonth, lastMonth, overall] = await Promise.all([
+    monthAgg(thisMonthStart, now),
+    monthAgg(lastMonthStart, thisMonthStart),
+    computeStateWiseTax({ projectId, startDate, endDate }),
+  ])
+
+  const nextDueRecord = overall.nextFilingDue
+    ? await Tax.findOne({ ...filter, status: 'pending', dueDate: overall.nextFilingDue }).select('state dueDate').lean()
+    : null
+
+  // value = all-time total (same scope as the state-wise-tax list, so the two screens agree);
+  // pctChangeFromLastMonth is a separate month-over-month growth-rate indicator, not a
+  // value-scoping choice — it compares only new activity created this month vs last month.
+  return success(res, {
+    totalTaxCollected: {
+      value: overall.totalTaxCollected,
+      pctChangeFromLastMonth: pctChange(thisMonth.taxCollected, lastMonth.taxCollected),
+    },
+    totalPaid: {
+      value: overall.totalPaid,
+      pctChangeFromLastMonth: pctChange(thisMonth.taxCollected, lastMonth.taxCollected),
+    },
+    totalPayable: {
+      value: overall.totalPayable,
+      pctChangeFromLastMonth: pctChange(thisMonth.payable, lastMonth.payable),
+    },
+    pendingFilingStates: {
+      count: overall.pendingFilingStates,
+      label: 'Requires Filing',
+    },
+    nextFilingDue: {
+      date: nextDueRecord?.dueDate || null,
+      state: nextDueRecord?.state || null,
+    },
+  })
+})
+
+// GET /state-wise-tax/export
+exports.exportStateWiseTax = asyncHandler(async (req, res) => {
+  const { projectId, startDate, endDate } = req.query
+  const { stateStats } = await computeStateWiseTax({ projectId, startDate, endDate })
+
+  const buffer = await generateStateWiseTaxExcel(stateStats)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="state-wise-tax.xlsx"')
+  return res.send(buffer)
+})
+
+const FILING_FREQUENCY_LABELS = {
+  monthly: 'Monthly Return',
+  quarterly: 'Quarterly Return',
+  annually: 'Annual Return',
+  varies: 'Varies',
+  local_only: 'Local Filing',
+}
+
+// GET /state-wise-tax/upcoming-deadlines
+exports.getUpcomingFilingDeadlines = asyncHandler(async (req, res) => {
+  const { projectId, limit = 6 } = req.query
+  const parsedLimit = Math.min(parseInt(limit, 10) || 6, 50)
+  const filter = buildStateWiseFilter({ projectId })
+  const now = new Date()
+
+  const upcoming = await Tax.find({ ...filter, status: 'pending', dueDate: { $gte: now } })
+    .sort({ dueDate: 1 })
+    .limit(parsedLimit)
+    .lean()
+
+  const deadlines = upcoming.map((tax) => ({
+    _id: tax._id,
+    state: tax.state,
+    filingType: FILING_FREQUENCY_LABELS[tax.filingFrequency] || tax.filingFrequency,
+    dueDate: tax.dueDate,
+    daysLeft: Math.ceil((new Date(tax.dueDate) - now) / 86400000),
+  }))
+
+  return success(res, { deadlines, total: deadlines.length })
+})
+
 exports.syncStateTax = asyncHandler(async (req, res) => {
   return success(res, { syncedAt: new Date() }, 'Tax data synced successfully')
 })
 
 // ── Project Wise Tax ───────────────────────────────────────────────────────────
+
+// Groups real Tax records by leadId (project) instead of state — reuses the same filter shape
+// as state-wise tax since both just filter the Tax collection by leadId/dueDate range.
+const computeProjectWiseTax = async ({ projectId, startDate, endDate }) => {
+  const filter = buildStateWiseFilter({ projectId, startDate, endDate })
+  // filter.leadId is already set when projectId is given — don't let this clobber it.
+  if (!filter.leadId) filter.leadId = { $ne: null }
+
+  const grouped = await Tax.aggregate([
+    { $match: filter },
+    { $group: {
+      _id: '$leadId',
+      taxCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+      taxableSales: { $sum: '$amount' },
+      paidFiled: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+      payable: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
+      nextDue: { $min: { $cond: [{ $eq: ['$status', 'pending'] }, '$dueDate', null] } },
+    }},
+  ])
+
+  const leadIds = grouped.map(g => g._id)
+  const leads = leadIds.length
+    ? await Lead.find({ _id: { $in: leadIds } }).select('projectName jobId location customerId')
+        .populate('customerId', 'firstName lastName').lean()
+    : []
+  const leadMap = new Map(leads.map(l => [String(l._id), l]))
+
+  const projects = grouped
+    .map(g => {
+      const lead = leadMap.get(String(g._id))
+      return {
+        leadId: g._id,
+        projectName: lead?.projectName || '',
+        jobId: lead?.jobId || '',
+        location: lead?.location || '',
+        customerName: lead ? `${lead.customerId?.firstName || ''} ${lead.customerId?.lastName || ''}`.trim() : '',
+        taxCollected: g.taxCollected,
+        taxableSales: g.taxableSales,
+        paidFiled: g.paidFiled,
+        payable: g.payable,
+        dueDate: g.nextDue,
+        status: g.payable > 0 ? 'Payment Due' : 'Filed',
+      }
+    })
+    .sort((a, b) => {
+      if (!a.dueDate) return 1
+      if (!b.dueDate) return -1
+      return new Date(a.dueDate) - new Date(b.dueDate)
+    })
+
+  const totalTaxCollected    = projects.reduce((s, p) => s + p.taxCollected, 0)
+  const totalPaid            = projects.reduce((s, p) => s + p.paidFiled, 0)
+  const totalPayable         = projects.reduce((s, p) => s + p.payable, 0)
+  const pendingFilingProjects = projects.filter(p => p.payable > 0).length
+  const nextFilingProject     = projects.find(p => p.payable > 0 && p.dueDate) || null
+
+  return { projects, totalTaxCollected, totalPaid, totalPayable, pendingFilingProjects, nextFilingProject }
+}
+
 exports.getProjectWiseTax = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10 } = req.query
+  const { projectId, startDate, endDate, page = 1, limit = 10 } = req.query
   const parsedPage  = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.min(parseInt(limit, 10) || 10, 100)
 
-  const leads = await Lead.find({ quoteValue: { $gt: 0 } })
-    .populate('customerId', 'firstName lastName')
-    .sort({ createdAt: -1 })
-    .skip((parsedPage - 1) * parsedLimit)
-    .limit(parsedLimit)
-    .lean()
+  const { projects } = await computeProjectWiseTax({ projectId, startDate, endDate })
+  const total = projects.length
+  const paged = projects.slice((parsedPage - 1) * parsedLimit, (parsedPage - 1) * parsedLimit + parsedLimit)
 
-  const projects = leads.map(l => {
-    const taxRate = 0.0825
-    const taxCollected = Math.round(l.quoteValue * taxRate)
-    return {
-      leadId: l._id,
-      projectName: l.projectName,
-      location: l.location || '',
-      taxCollected,
-      taxableSales: l.quoteValue,
-      paidFiled: Math.round(taxCollected * 0.6),
-      payable: Math.round(taxCollected * 0.4),
-      dueDate: new Date(Date.now() + 30 * 86400000),
-      status: 'Payment Due',
-    }
+  return success(res, { projects: paged, total, page: parsedPage, limit: parsedLimit })
+})
+
+// GET /project-wise-tax/stats — stat cards on Project-wise Tax screen
+exports.getProjectWiseTaxStats = asyncHandler(async (req, res) => {
+  const { projectId, startDate, endDate } = req.query
+  const filter = buildStateWiseFilter({ projectId, startDate, endDate })
+  const now = new Date()
+
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+
+  const monthAgg = async (rangeStart, rangeEnd) => {
+    const agg = await Tax.aggregate([
+      { $match: { ...filter, createdAt: { $gte: rangeStart, $lt: rangeEnd } } },
+      { $group: {
+        _id: null,
+        taxCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+        payable: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
+      }}
+    ])
+    return agg[0] || { taxCollected: 0, payable: 0 }
+  }
+
+  const [thisMonth, lastMonth, overall] = await Promise.all([
+    monthAgg(thisMonthStart, now),
+    monthAgg(lastMonthStart, thisMonthStart),
+    computeProjectWiseTax({ projectId, startDate, endDate }),
+  ])
+
+  // value = all-time total (same scope as the project-wise-tax list, so the two screens agree);
+  // pctChangeFromLastMonth is a separate month-over-month growth-rate indicator.
+  return success(res, {
+    totalTaxCollected: {
+      value: overall.totalTaxCollected,
+      pctChangeFromLastMonth: pctChange(thisMonth.taxCollected, lastMonth.taxCollected),
+    },
+    totalPaid: {
+      value: overall.totalPaid,
+      pctChangeFromLastMonth: pctChange(thisMonth.taxCollected, lastMonth.taxCollected),
+    },
+    totalPayable: {
+      value: overall.totalPayable,
+      pctChangeFromLastMonth: pctChange(thisMonth.payable, lastMonth.payable),
+    },
+    pendingFiling: {
+      count: overall.pendingFilingProjects,
+      label: 'Requires Filing',
+    },
+    nextFilingDue: {
+      date: overall.nextFilingProject?.dueDate || null,
+      location: overall.nextFilingProject?.location || null,
+    },
   })
+})
 
-  const total = await Lead.countDocuments({ quoteValue: { $gt: 0 } })
-  return success(res, { projects, total, page: parsedPage, limit: parsedLimit })
+// GET /project-wise-tax/export
+exports.exportProjectWiseTax = asyncHandler(async (req, res) => {
+  const { projectId, startDate, endDate } = req.query
+  const { projects } = await computeProjectWiseTax({ projectId, startDate, endDate })
+
+  const buffer = await generateProjectWiseTaxExcel(projects)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="project-wise-tax.xlsx"')
+  return res.send(buffer)
 })
 
 // ── Payment Approval ───────────────────────────────────────────────────────────
-exports.getPaymentApprovals = asyncHandler(async (req, res) => {
-  const { status, category, department, startDate, endDate, page = 1, limit = 10 } = req.query
-  const parsedPage  = Math.max(parseInt(page, 10) || 1, 1)
-  const parsedLimit = Math.min(parseInt(limit, 10) || 10, 100)
 
+// Shared by getPaymentApprovals and exportPaymentApprovals.
+const buildPaymentApprovalFilter = ({ status, category, department, requestedBy, startDate, endDate }) => {
   const filter = {}
-  if (status)     filter.status   = status
-  if (category)   filter.category = category
-  if (department) filter.department = department
+  if (status)      filter.status      = status
+  if (category)    filter.category    = category
+  if (department)  filter.department  = department
+  if (requestedBy) filter.requestedBy = new mongoose.Types.ObjectId(requestedBy)
   if (startDate || endDate) {
     filter.createdAt = {}
     if (startDate) filter.createdAt.$gte = new Date(startDate)
     if (endDate)   filter.createdAt.$lte = new Date(endDate)
   }
+  return filter
+}
+
+exports.getPaymentApprovals = asyncHandler(async (req, res) => {
+  const { status, category, department, requestedBy, startDate, endDate, page = 1, limit = 10 } = req.query
+  const parsedPage  = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.min(parseInt(limit, 10) || 10, 100)
+
+  const filter = buildPaymentApprovalFilter({ status, category, department, requestedBy, startDate, endDate })
 
   const [approvals, total, stats] = await Promise.all([
     PaymentApproval.find(filter).populate('requestedBy', 'name').sort({ createdAt: -1 }).skip((parsedPage - 1) * parsedLimit).limit(parsedLimit).lean(),
     PaymentApproval.countDocuments(filter),
     PaymentApproval.aggregate([
+      { $match: filter },
       { $group: {
         _id: '$status',
         count: { $sum: 1 },
@@ -380,10 +808,36 @@ exports.getPaymentApprovals = asyncHandler(async (req, res) => {
   })
 })
 
+// GET /payment-approvals/filters — populates Requested By / Category dropdowns
+exports.getPaymentApprovalFilters = asyncHandler(async (req, res) => {
+  const requesterIds = await PaymentApproval.distinct('requestedBy')
+  const requesters = requesterIds.length
+    ? await User.find({ _id: { $in: requesterIds } }).select('name').sort({ name: 1 }).lean()
+    : []
+
+  return success(res, {
+    categories: PAYMENT_CATEGORIES,
+    statuses: APPROVAL_STATUSES,
+    requestedBy: requesters.map(u => ({ userId: u._id, name: u.name })),
+  })
+})
+
+// GET /payment-approvals/export
+exports.exportPaymentApprovals = asyncHandler(async (req, res) => {
+  const { status, category, department, requestedBy, startDate, endDate } = req.query
+  const filter = buildPaymentApprovalFilter({ status, category, department, requestedBy, startDate, endDate })
+
+  const approvals = await PaymentApproval.find(filter).populate('requestedBy', 'name').sort({ createdAt: -1 }).lean()
+  const buffer = await generatePaymentApprovalsExcel(approvals)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="payment-approvals.xlsx"')
+  return res.send(buffer)
+})
+
 exports.createPaymentApproval = asyncHandler(async (req, res) => {
   const paymentId = await generatePaymentApprovalId()
   const approval = await PaymentApproval.create({ ...req.body, paymentId, requestedBy: req.user._id })
-  return notFound.call({ status: 201 }, res) || success(res, { approval }, 'Payment request created')
+  return created(res, { approval }, 'Payment request created')
 })
 
 exports.reviewPaymentApproval = asyncHandler(async (req, res) => {
@@ -404,14 +858,40 @@ exports.reviewPaymentApproval = asyncHandler(async (req, res) => {
 })
 
 // ── Payment Status (Vendor/Carrier) ───────────────────────────────────────────
+
+// Shared by getPaymentStatus and exportPaymentStatus.
+const buildPaymentHistoryFilter = async ({ paymentMethod, status, search }) => {
+  const filter = {}
+  if (status) filter.status = status
+  if (paymentMethod) filter.paymentMethod = paymentMethod
+
+  if (search?.trim()) {
+    const term = search.trim()
+    const [matchingLeads, matchingCustomers] = await Promise.all([
+      Lead.find({ projectName: { $regex: term, $options: 'i' } }).select('_id').lean(),
+      Customer.find({
+        $or: [{ firstName: { $regex: term, $options: 'i' } }, { lastName: { $regex: term, $options: 'i' } }],
+      }).select('_id').lean(),
+    ])
+
+    filter.$or = [
+      { invoiceNumber: { $regex: term, $options: 'i' } },
+      ...(matchingLeads.length ? [{ leadId: { $in: matchingLeads.map(l => l._id) } }] : []),
+      ...(matchingCustomers.length ? [{ customerId: { $in: matchingCustomers.map(c => c._id) } }] : []),
+    ]
+  }
+
+  return filter
+}
+
 exports.getPaymentStatus = asyncHandler(async (req, res) => {
-  const { paymentMethod, status: statusFilter, page = 1, limit = 10 } = req.query
+  const { paymentMethod, status, search, page = 1, limit = 10 } = req.query
   const parsedPage  = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.min(parseInt(limit, 10) || 10, 100)
   const now = new Date()
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
 
-  const invoiceFilter = {}
-  if (statusFilter) invoiceFilter.status = statusFilter
+  const invoiceFilter = await buildPaymentHistoryFilter({ paymentMethod, status, search })
 
   const [invoices, total] = await Promise.all([
     Invoice.find(invoiceFilter)
@@ -436,15 +916,30 @@ exports.getPaymentStatus = asyncHandler(async (req, res) => {
     { $limit: 5 }
   ])
 
-  const [totalOutstanding, totalPaid] = await Promise.all([
+  const [totalOutstanding, totalPaid, overdueCount, vendorAgg, carrierAgg] = await Promise.all([
     Invoice.aggregate([{ $match: { status: { $in: ['sent', 'overdue'] } } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.aggregate([{ $match: { status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    Invoice.aggregate([{ $match: { status: 'paid', paidAt: { $gte: thisMonthStart } } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    Invoice.countDocuments({ status: 'overdue' }),
+    PaymentApproval.aggregate([
+      { $match: { payeeType: 'vendor', status: 'approved' } },
+      { $group: { _id: null, total: { $sum: '$amount' }, vendors: { $addToSet: '$payee' } } },
+    ]),
+    PaymentApproval.aggregate([
+      { $match: { payeeType: { $in: ['carrier', 'shipper'] }, status: 'approved' } },
+      { $group: { _id: null, total: { $sum: '$amount' }, carriers: { $addToSet: '$payee' } } },
+    ]),
   ])
 
   return success(res, {
     stats: {
       totalOutstanding: totalOutstanding[0]?.total || 0,
+      dueSoonCount: dueSoon.length,
+      overdueCount,
       totalPaid: totalPaid[0]?.total || 0,
+      vendorPayments: vendorAgg[0]?.total || 0,
+      vendorCount: vendorAgg[0]?.vendors?.length || 0,
+      carrierPayments: carrierAgg[0]?.total || 0,
+      carrierCount: carrierAgg[0]?.carriers?.length || 0,
     },
     overduePayments: overdueInvoices,
     dueSoon,
@@ -453,6 +948,23 @@ exports.getPaymentStatus = asyncHandler(async (req, res) => {
     page: parsedPage,
     limit: parsedLimit,
   })
+})
+
+// GET /payment-status/export
+exports.exportPaymentStatus = asyncHandler(async (req, res) => {
+  const { paymentMethod, status, search } = req.query
+  const filter = await buildPaymentHistoryFilter({ paymentMethod, status, search })
+
+  const invoices = await Invoice.find(filter)
+    .populate('leadId', 'projectName')
+    .populate('customerId', 'firstName lastName')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const buffer = await generatePaymentHistoryExcel(invoices)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="payment-history.xlsx"')
+  return res.send(buffer)
 })
 
 // ─── Financial Overview Sub-pages ────────────────────────────────────────────
@@ -785,7 +1297,7 @@ exports.createExpenseCategory = asyncHandler(async (req, res) => {
 
 // GET /expenses/export — "Export Report" button on Expenses Management screen
 exports.exportExpenses = asyncHandler(async (req, res) => {
-  const { category, projectId, buildingLabel, status, startDate, endDate } = req.query
+  const { category, projectId, buildingLabel, status, startDate, endDate, search } = req.query
   const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
 
   const filter = { isActive: true, ...dateFilter }
@@ -793,6 +1305,7 @@ exports.exportExpenses = asyncHandler(async (req, res) => {
   if (projectId) filter.leadId = projectId
   if (buildingLabel) filter.buildingLabel = buildingLabel
   if (status) filter.status = status
+  if (search) filter.description = { $regex: search, $options: 'i' }
 
   const expenses = await Expense.find(filter)
     .populate({ path: 'leadId', select: 'projectName jobId' })

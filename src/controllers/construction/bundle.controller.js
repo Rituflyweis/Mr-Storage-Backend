@@ -1,4 +1,6 @@
+const mongoose = require('mongoose')
 const Bundle = require('../../models/Bundle')
+const { MISMATCH_ITEM_STATUSES } = require('../../models/Bundle')
 const PackingList = require('../../models/PackingList')
 const Lead = require('../../models/Lead')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
@@ -124,11 +126,17 @@ exports.getBundleScanHistory = asyncHandler(async (req, res) => {
 })
 
 exports.getPackingLists = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20 } = req.query
+  const { page = 1, limit = 20, status, search } = req.query
   const skip = (Number(page) - 1) * Number(limit)
 
+  // Mirrors exportPackingListsExcel's filter — the list and its export were previously out
+  // of sync (export supported status, list supported nothing at all).
+  const filter = {}
+  if (status) filter.status = status
+  if (search?.trim()) filter.packingListNo = { $regex: search.trim(), $options: 'i' }
+
   const [lists, total] = await Promise.all([
-    PackingList.find({})
+    PackingList.find(filter)
       .select('packingListNo truckType truckLabel totalBundles totalWeight maxLengthFeet status deliveryLocation packingListPlanId')
       .populate({
         path: 'packingListPlanId',
@@ -139,7 +147,7 @@ exports.getPackingLists = asyncHandler(async (req, res) => {
       .skip(skip)
       .limit(Number(limit))
       .lean(),
-    PackingList.countDocuments({}),
+    PackingList.countDocuments(filter),
   ])
 
   const stats = {
@@ -303,17 +311,42 @@ exports.markBundleLoaded = asyncHandler(async (req, res) => {
 })
 
 exports.reportBundleMismatch = asyncHandler(async (req, res) => {
-  const { notes } = req.body
+  const { notes, items } = req.body
   if (!notes) return badRequest(res, 'notes is required')
+  if (items !== undefined && !Array.isArray(items)) return badRequest(res, 'items must be an array')
 
   const bundle = await Bundle.findById(req.params.bundleId)
   if (!bundle) return notFound(res, 'Bundle not found')
 
+  if (items?.length) {
+    for (const item of items) {
+      if (!item.itemId || !mongoose.Types.ObjectId.isValid(item.itemId)) {
+        return badRequest(res, 'Each item requires a valid itemId')
+      }
+      if (item.status && !MISMATCH_ITEM_STATUSES.includes(item.status)) {
+        return badRequest(res, `Invalid status "${item.status}". Use: ${MISMATCH_ITEM_STATUSES.join(', ')}`)
+      }
+    }
+  }
+
   bundle.mismatchNotes = notes
   bundle.mismatchReportedAt = new Date()
+  bundle.mismatchItems = (items || []).map((item) => ({
+    itemId: item.itemId,
+    partCode: item.partCode || '',
+    description: item.description || '',
+    qty: item.qty ?? 0,
+    receivedQty: item.receivedQty ?? 0,
+    status: item.status || 'Not Received',
+  }))
   await bundle.save()
 
-  return success(res, { bundleId: bundle._id, mismatchNotes: bundle.mismatchNotes }, 'Mismatch reported')
+  return success(res, {
+    bundleId: bundle._id,
+    mismatchNotes: bundle.mismatchNotes,
+    mismatchReportedAt: bundle.mismatchReportedAt,
+    mismatchItems: bundle.mismatchItems,
+  }, 'Mismatch reported')
 })
 
 exports.getPackingListDetail = asyncHandler(async (req, res) => {

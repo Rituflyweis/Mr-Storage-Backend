@@ -3,10 +3,16 @@ const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
 exports.getDrawings = asyncHandler(async (req, res) => {
-  const { type, leadId, page = 1, limit = 20 } = req.query
+  const { type, leadId, search, page = 1, limit = 20 } = req.query
 
   const filter = { isTerminated: { $ne: true } }
   if (leadId) filter._id = leadId
+  if (search?.trim()) {
+    filter.$or = [
+      { projectName: { $regex: search.trim(), $options: 'i' } },
+      { jobId: { $regex: search.trim(), $options: 'i' } },
+    ]
+  }
 
   const leads = await Lead.find(filter)
     .select('projectName jobId location documents customerId updatedAt')
@@ -75,4 +81,24 @@ exports.uploadDrawing = asyncHandler(async (req, res) => {
   await lead.save()
 
   return success(res, { document: lead.documents[lead.documents.length - 1] }, 'Document uploaded')
+})
+
+// PUT /drawings/:leadId/documents/:docId/review — approve/reject a drawing (Approved/Rejected badge)
+exports.reviewDrawing = asyncHandler(async (req, res) => {
+  const { leadId, docId } = req.params
+  const { approvalStatus } = req.body
+  if (!['approved', 'rejected'].includes(approvalStatus)) return badRequest(res, 'approvalStatus must be approved or rejected')
+
+  const lead = await Lead.findById(leadId)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const doc = lead.documents.id(docId)
+  if (!doc) return notFound(res, 'Document not found')
+
+  doc.approvalStatus = approvalStatus
+  doc.reviewedBy = req.user._id
+  doc.reviewedAt = new Date()
+  await lead.save()
+
+  return success(res, { document: doc }, 'Document reviewed')
 })

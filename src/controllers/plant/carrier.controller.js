@@ -10,6 +10,7 @@ const {
 } = require('../../config/constants')
 
 const normalizeAddress = (address = {}) => ({
+  country: address.country?.trim() || '',
   placeNumber: address.placeNumber?.trim() || '',
   streetAddress: address.streetAddress?.trim() || '',
   landmark: address.landmark?.trim() || '',
@@ -64,6 +65,9 @@ const getCarrierBidStatsMap = async (carrierIds) => {
         awardedBidCount: {
           $sum: { $cond: [{ $eq: ['$status', 'selected'] }, 1, 0] },
         },
+        awardedAmount: {
+          $sum: { $cond: [{ $eq: ['$status', 'selected'] }, '$quotedAmount', 0] },
+        },
         submittedBidCount: {
           $sum: { $cond: [{ $ifNull: ['$submittedAt', false] }, 1, 0] },
         },
@@ -77,6 +81,7 @@ const getCarrierBidStatsMap = async (carrierIds) => {
       totalBids: row.totalBids,
       activeBids: row.activeBids,
       awardedBidCount: row.awardedBidCount,
+      awardedAmount: row.awardedAmount || 0,
       bidWinRate: calcBidWinRate(row.awardedBidCount, row.submittedBidCount),
       avgBid: row.avgBid ? Math.round(row.avgBid * 100) / 100 : 0,
     }
@@ -98,12 +103,17 @@ const mapCarrierListRow = (carrier, stats = {}) => ({
   activeBids: stats.activeBids || 0,
   totalBids: stats.totalBids || 0,
   awardedBidCount: stats.awardedBidCount || 0,
+  awardedAmount: stats.awardedAmount || 0,
   bidWinRate: stats.bidWinRate || 0,
   avgBid: stats.avgBid || 0,
 })
 
-const buildCarrierListFilter = (query) => {
-  const { status, serviceType, serviceArea, equipmentType } = query
+// FreightCarrier has no month or material field of its own — "month" scopes to carriers with
+// bid activity in that month, and "material" scopes to carriers who've hauled that material,
+// both resolved via FreightBid -> Delivery (the same cross-collection pattern used for the
+// all-deliveries vendor/internal-owner filters).
+const buildCarrierListFilter = async (query) => {
+  const { status, serviceType, serviceArea, equipmentType, month, year, materialType } = query
   const filter = {}
 
   if (status) filter.status = status
@@ -122,6 +132,25 @@ const buildCarrierListFilter = (query) => {
       { contactName: regex },
       { email: regex },
     ]
+  }
+
+  if ((month && year) || materialType) {
+    const Delivery = require('../../models/Delivery')
+    const bidFilter = {}
+
+    if (month && year) {
+      const monthStart = new Date(Number(year), Number(month) - 1, 1)
+      const monthEnd = new Date(Number(year), Number(month), 1)
+      bidFilter.createdAt = { $gte: monthStart, $lt: monthEnd }
+    }
+
+    if (materialType) {
+      const deliveries = await Delivery.find({ materialType }).select('_id').lean()
+      bidFilter.deliveryId = { $in: deliveries.map((d) => d._id) }
+    }
+
+    const bids = await FreightBid.find(bidFilter).select('carrierId').lean()
+    filter._id = { $in: [...new Set(bids.map((b) => String(b.carrierId)))] }
   }
 
   return filter
@@ -143,7 +172,7 @@ exports.getCarriers = asyncHandler(async (req, res) => {
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const filter = buildCarrierListFilter(req.query)
+  const filter = await buildCarrierListFilter(req.query)
 
   const [carriers, total] = await Promise.all([
     FreightCarrier.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit).lean(),
@@ -233,6 +262,7 @@ exports.getCarrierDetail = asyncHandler(async (req, res) => {
     totalBids: 0,
     activeBids: 0,
     awardedBidCount: 0,
+    awardedAmount: 0,
     bidWinRate: 0,
     avgBid: 0,
   }
@@ -245,14 +275,31 @@ exports.getCarrierDetail = asyncHandler(async (req, res) => {
     return latest
   }, null)
 
-  const assignedProjects = [
-    ...new Set(
-      awardedBids
-        .map(bid => bid.deliveryId?.leadId?._id || bid.deliveryId?.leadId)
-        .filter(Boolean)
-        .map(id => String(id))
-    ),
-  ].length
+  const assignedProjectsMap = new Map()
+  for (const bid of awardedBids) {
+    const lead = bid.deliveryId?.leadId
+    const leadId = lead?._id || lead
+    if (!leadId) continue
+    const key = String(leadId)
+    if (!assignedProjectsMap.has(key)) {
+      assignedProjectsMap.set(key, {
+        _id: leadId,
+        projectName: lead?.projectName || '',
+        jobId: lead?.jobId || '',
+        deliveryCount: 0,
+        lastAwardedAt: null,
+      })
+    }
+    const entry = assignedProjectsMap.get(key)
+    entry.deliveryCount += 1
+    const awardedAt = bid.selectedAt || bid.updatedAt
+    if (awardedAt && (!entry.lastAwardedAt || new Date(awardedAt) > new Date(entry.lastAwardedAt))) {
+      entry.lastAwardedAt = awardedAt
+    }
+  }
+  const assignedProjects = [...assignedProjectsMap.values()].sort(
+    (a, b) => new Date(b.lastAwardedAt || 0) - new Date(a.lastAwardedAt || 0)
+  )
 
   const freightHistory = bids.map(bid => ({
     _id: bid._id,
@@ -278,12 +325,14 @@ exports.getCarrierDetail = asyncHandler(async (req, res) => {
       totalBids: stats.totalBids,
       activeBids: stats.activeBids,
       awardedBidCount: stats.awardedBidCount,
+      awardedAmount: stats.awardedAmount,
       bidWinRate: stats.bidWinRate,
       avgBid: stats.avgBid,
       lastAwardedDate,
       avgResponseTimeHours: calcAvgResponseHours(bids),
-      assignedProjects,
+      assignedProjects: assignedProjects.length,
     },
+    assignedProjects,
     freightHistory,
   })
 })

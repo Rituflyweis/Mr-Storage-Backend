@@ -5,6 +5,38 @@ const FollowUp = require('../../models/FollowUp')
 const Invoice = require('../../models/Invoice')
 const Quotation = require('../../models/Quotation')
 const Escalation = require('../../models/Escalation')
+const Task = require('../../models/Task')
+const Delivery = require('../../models/Delivery')
+const POOrder = require('../../models/POOrder')
+const DrawingDocument = require('../../models/DrawingDocument')
+const BOMJob = require('../../models/BOMJob')
+const Building = require('../../models/Building')
+const { buildDeliveryCard } = require('../construction/delivery.controller')
+
+// Shared by plant + construction detail — table shape for the "Assigned Projects" tab.
+const buildAssignedProjectsTable = async (leadIds) => {
+  const [leads, buildingCounts] = await Promise.all([
+    Lead.find({ _id: { $in: leadIds } })
+      .populate({ path: 'customerId', select: 'firstName lastName' })
+      .sort({ createdAt: -1 })
+      .lean(),
+    Building.aggregate([
+      { $match: { leadId: { $in: leadIds } } },
+      { $group: { _id: '$leadId', count: { $sum: 1 } } },
+    ]),
+  ])
+  const buildingCountMap = new Map(buildingCounts.map((b) => [String(b._id), b.count]))
+
+  return leads.map((lead) => ({
+    leadId: lead._id,
+    projectName: lead.projectName || '',
+    jobId: lead.jobId || '',
+    customerName: lead.customerId ? `${lead.customerId.firstName || ''} ${lead.customerId.lastName || ''}`.trim() : '',
+    buildingsCount: buildingCountMap.get(String(lead._id)) || 0,
+    status: lead.lifecycleStatus,
+    projectValue: lead.quoteValue ?? 0,
+  }))
+}
 const roundRobinService = require('../../services/roundRobin.service')
 const auditService = require('../../services/audit.service')
 const mailer = require('../../services/email/mailer')
@@ -49,12 +81,21 @@ const requireMainAdminForAdminMutation = async (req, res) => {
 exports.getStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
 
-  const [total, active, byRole] = await Promise.all([
+  const [total, active, byRole, topPerformerAgg] = await Promise.all([
     User.countDocuments({ ...dateFilter, ...EMPLOYEE_BASE_FILTER }),
     User.countDocuments({ ...dateFilter, ...EMPLOYEE_BASE_FILTER, isActive: true }),
     User.aggregate([
       { $match: { ...dateFilter, ...EMPLOYEE_BASE_FILTER } },
       { $group: { _id: '$role', count: { $sum: 1 } } },
+    ]),
+    Lead.aggregate([
+      { $match: { assignedSales: { $ne: null }, lifecycleStatus: { $in: CLOSED_STAGES } } },
+      { $group: { _id: '$assignedSales', closedLeads: { $sum: 1 } } },
+      { $sort: { closedLeads: -1 } },
+      { $limit: 1 },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'employee' } },
+      { $unwind: '$employee' },
+      { $project: { _id: 0, employeeId: '$employee._id', name: '$employee.name', closedLeads: 1 } },
     ]),
   ])
 
@@ -62,10 +103,14 @@ exports.getStats = asyncHandler(async (req, res) => {
     total,
     active,
     byRole,
-    topPerformer: null, // dummy for now
+    topPerformer: topPerformerAgg[0] || null,
   })
 })
 
+// GET /admin/employees/performance — "Sales Employee Performance" screen: revenue
+// distribution pie chart + per-employee breakdown. Commission has no backend field yet
+// (no rate is stored anywhere per employee), so it is intentionally omitted rather than
+// faked — add a commissionRate field to User if that needs to become real.
 exports.getPerformance = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
 
@@ -73,20 +118,39 @@ exports.getPerformance = asyncHandler(async (req, res) => {
 
   const performance = await Promise.all(
     employees.map(async (emp) => {
-      const [totalLeads, closedLeads] = await Promise.all([
+      const [totalLeads, closedLeads, revenueAgg] = await Promise.all([
         Lead.countDocuments({ assignedSales: emp._id }),
         Lead.countDocuments({ assignedSales: emp._id, lifecycleStatus: { $in: CLOSED_STAGES } }),
+        Invoice.aggregate([
+          { $lookup: { from: 'leads', localField: 'leadId', foreignField: '_id', as: 'lead' } },
+          { $unwind: '$lead' },
+          { $match: { 'lead.assignedSales': emp._id, status: 'paid' } },
+          { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+        ]),
       ])
       return {
         employee: { _id: emp._id, name: emp.name, email: emp.email },
         totalLeads,
         closedLeads,
         conversionRate: totalLeads > 0 ? Math.round((closedLeads / totalLeads) * 100) : 0,
+        revenue: revenueAgg[0]?.total || 0,
       }
     })
   )
 
-  return success(res, { performance })
+  const totalRevenue = performance.reduce((sum, p) => sum + p.revenue, 0)
+  const withShare = performance
+    .map((p) => ({ ...p, revenueSharePercent: totalRevenue > 0 ? Math.round((p.revenue / totalRevenue) * 100) : 0 }))
+    .sort((a, b) => b.revenue - a.revenue)
+
+  const topPerformer = withShare[0] || null
+
+  return success(res, {
+    performance: withShare,
+    totalRevenue,
+    totalDeals: performance.reduce((sum, p) => sum + p.closedLeads, 0),
+    topPerformer,
+  })
 })
 
 exports.getEmployeesAuditLog = asyncHandler(async (req, res) => {
@@ -117,11 +181,33 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
     .limit(parseInt(limit))
     .lean()
 
+  // The directory's work-volume column means something different per role — a lead count
+  // is meaningless for a plant/construction/account employee — so compute the metric that
+  // actually applies to each row instead of blanket-counting leads for everyone.
   const withCounts = await Promise.all(
-    employees.map(async (emp) => ({
-      ...emp,
-      assignedLeadCount: await Lead.countDocuments({ assignedSales: emp._id }),
-    }))
+    employees.map(async (emp) => {
+      let workCount = 0
+      let workLabel = ''
+      if (emp.role === 'sales') {
+        workCount = await Lead.countDocuments({ assignedSales: emp._id })
+        workLabel = 'Leads'
+      } else if (emp.role === 'construction') {
+        workCount = await Task.countDocuments({ assignedTo: emp._id })
+        workLabel = 'Tasks'
+      } else if (emp.role === 'plant') {
+        workCount = await POOrder.countDocuments({ assignedTo: emp._id })
+        workLabel = 'PO Orders'
+      } else if (emp.role === 'account') {
+        workCount = await Invoice.countDocuments({ createdBy: emp._id })
+        workLabel = 'Invoices'
+      }
+      return {
+        ...emp,
+        assignedLeadCount: emp.role === 'sales' ? workCount : 0, // kept for backward compatibility
+        workCount,
+        workLabel,
+      }
+    })
   )
 
   const total = await User.countDocuments(filter)
@@ -168,62 +254,41 @@ exports.createEmployee = asyncHandler(async (req, res) => {
   return created(res, { user })
 })
 
-exports.getEmployeeDetail = asyncHandler(async (req, res) => {
-  const { userId } = req.params
-
-  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER }).select('-password').lean()
-  if (!employee) return notFound(res, 'Employee not found')
-
-  const [
-    assignedLeads,
-    followUpsTotal,
-    followUpsCompleted,
-    quotationsCreated,
-    escalationsRaised,
-    revenueAgg,
-  ] = await Promise.all([
-    Lead.find({ assignedSales: userId })
-      .populate({ path: 'customerId', select: 'firstName lastName email customerId' })
-      .sort({ createdAt: -1 })
-      .lean(),
-    FollowUp.countDocuments({ assignedTo: userId }),
-    FollowUp.countDocuments({ assignedTo: userId, status: 'completed' }),
-    Quotation.countDocuments({ createdBy: userId }),
-    Escalation.countDocuments({ raisedBy: userId }),
-    Invoice.aggregate([
-      {
-        $lookup: {
-          from: 'leads',
-          localField: 'leadId',
-          foreignField: '_id',
-          as: 'lead',
-        },
-      },
-      { $unwind: '$lead' },
-      { $match: { 'lead.assignedSales': employee._id, status: 'paid' } },
-      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
-    ]),
-  ])
+// Sales employees are measured by their lead pipeline; every other role works against
+// operational records instead (tasks, deliveries, PO orders, invoices) so the detail
+// page shows a section that actually maps to what that role does day to day.
+const getSalesDetail = async (employee) => {
+  const [assignedLeads, followUpsTotal, followUpsCompleted, quotationsCreated, escalationsRaised, revenueAgg] =
+    await Promise.all([
+      Lead.find({ assignedSales: employee._id })
+        .populate({ path: 'customerId', select: 'firstName lastName email customerId' })
+        .sort({ createdAt: -1 })
+        .lean(),
+      FollowUp.countDocuments({ assignedTo: employee._id }),
+      FollowUp.countDocuments({ assignedTo: employee._id, status: 'completed' }),
+      Quotation.countDocuments({ createdBy: employee._id }),
+      Escalation.countDocuments({ raisedBy: employee._id }),
+      Invoice.aggregate([
+        { $lookup: { from: 'leads', localField: 'leadId', foreignField: '_id', as: 'lead' } },
+        { $unwind: '$lead' },
+        { $match: { 'lead.assignedSales': employee._id, status: 'paid' } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+      ]),
+    ])
 
   const activeLeads = []
   const closedLeads = []
   for (const lead of assignedLeads) {
     const row = mapEmployeeLeadRow(lead)
-    if (CLOSED_STAGES.includes(lead.lifecycleStatus)) {
-      closedLeads.push(row)
-    } else if (!lead.isTerminated) {
-      activeLeads.push(row)
-    }
+    if (CLOSED_STAGES.includes(lead.lifecycleStatus)) closedLeads.push(row)
+    else if (!lead.isTerminated) activeLeads.push(row)
   }
 
   const totalLeads = assignedLeads.length
   const closedCount = closedLeads.length
-  const followUpsCompletedPercentage = followUpsTotal > 0
-    ? Math.round((followUpsCompleted / followUpsTotal) * 100)
-    : 0
 
-  return success(res, {
-    employee,
+  return {
+    section: 'sales',
     activeLeads,
     closedLeads,
     stats: {
@@ -233,12 +298,117 @@ exports.getEmployeeDetail = asyncHandler(async (req, res) => {
       conversionRate: totalLeads > 0 ? Math.round((closedCount / totalLeads) * 100) : 0,
       followUpsTotal,
       followUpsCompleted,
-      followUpsCompletedPercentage,
+      followUpsCompletedPercentage: followUpsTotal > 0 ? Math.round((followUpsCompleted / followUpsTotal) * 100) : 0,
       quotationsCreated,
       escalationsRaised,
       revenueGenerated: revenueAgg[0]?.total || 0,
     },
-  })
+  }
+}
+
+// "Assigned Projects" tab shows delivery cards for construction (not a project table) —
+// scoped to the leads this employee has a task on, since Delivery has no assignedTo of
+// its own. Reuses the exact card shape the construction panel itself renders.
+const getConstructionDetail = async (employee) => {
+  const taskLeadIds = await Task.distinct('leadId', { assignedTo: employee._id })
+
+  const [tasksTotal, tasksDone, tasksInProgress, deliveriesRaw, deliveriesHandled, invoicesRaised] =
+    await Promise.all([
+      Task.countDocuments({ assignedTo: employee._id }),
+      Task.countDocuments({ assignedTo: employee._id, status: 'done' }),
+      Task.countDocuments({ assignedTo: employee._id, status: 'in_progress' }),
+      Delivery.find({ leadId: { $in: taskLeadIds } })
+        .populate({ path: 'leadId', select: 'projectName jobId location' })
+        .sort({ updatedAt: -1 })
+        .limit(20)
+        .lean(),
+      Delivery.countDocuments({ 'statusHistory.changedBy': employee._id }),
+      Invoice.countDocuments({ createdBy: employee._id }),
+    ])
+
+  const assignedDeliveries = await Promise.all(deliveriesRaw.map(buildDeliveryCard))
+
+  return {
+    section: 'construction',
+    assignedDeliveries,
+    stats: {
+      totalProjects: taskLeadIds.length,
+      tasksTotal,
+      tasksDone,
+      tasksInProgress,
+      tasksCompletionRate: tasksTotal > 0 ? Math.round((tasksDone / tasksTotal) * 100) : 0,
+      deliveriesHandled,
+      invoicesRaised,
+    },
+  }
+}
+
+// "Assigned Projects" tab is a project table for plant (Project Name / Customer /
+// Buildings / Status / Project Value) — scoped to leads reachable via this employee's
+// assigned PO orders. Performance mirrors the Drawings + BOM screens plant actually works in.
+const getPlantDetail = async (employee) => {
+  const poLeadIds = await POOrder.distinct('leadId', { assignedTo: employee._id })
+
+  const [assignedProjects, drawingsUploaded, drawingsApproved, bomPending, bomApproved, bomRejected] =
+    await Promise.all([
+      buildAssignedProjectsTable(poLeadIds),
+      DrawingDocument.countDocuments({ uploadedBy: employee._id }),
+      DrawingDocument.countDocuments({ uploadedBy: employee._id, status: 'approved' }),
+      BOMJob.countDocuments({ uploadedBy: employee._id, status: { $in: ['queued', 'processing'] } }),
+      BOMJob.countDocuments({ uploadedBy: employee._id, status: 'completed' }),
+      BOMJob.countDocuments({ uploadedBy: employee._id, status: 'failed' }),
+    ])
+
+  return {
+    section: 'plant',
+    assignedProjects,
+    stats: {
+      totalProjects: poLeadIds.length,
+      drawingsUploaded,
+      drawingApprovalRate: drawingsUploaded > 0 ? Math.round((drawingsApproved / drawingsUploaded) * 100) : 0,
+      bomSubmissionPending: bomPending,
+      bomSubmissionApproved: bomApproved,
+      bomSubmissionRejected: bomRejected,
+    },
+  }
+}
+
+const getAccountDetail = async (employee) => {
+  const [invoicesCreated, invoicesMarkedPaid, recentInvoices, revenueCollectedAgg] = await Promise.all([
+    Invoice.countDocuments({ createdBy: employee._id }),
+    Invoice.countDocuments({ paidBy: employee._id }),
+    Invoice.find({ paidBy: employee._id }).sort({ updatedAt: -1 }).limit(20).lean(),
+    Invoice.aggregate([
+      { $match: { paidBy: employee._id, status: 'paid' } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+    ]),
+  ])
+
+  return {
+    section: 'account',
+    recentInvoices,
+    stats: {
+      invoicesCreated,
+      invoicesMarkedPaid,
+      revenueCollected: revenueCollectedAgg[0]?.total || 0,
+    },
+  }
+}
+
+exports.getEmployeeDetail = asyncHandler(async (req, res) => {
+  const { userId } = req.params
+
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER }).select('-password').lean()
+  if (!employee) return notFound(res, 'Employee not found')
+
+  const roleDetail =
+    employee.role === 'sales' ? await getSalesDetail(employee) :
+    employee.role === 'construction' ? await getConstructionDetail(employee) :
+    employee.role === 'plant' ? await getPlantDetail(employee) :
+    employee.role === 'account' ? await getAccountDetail(employee) :
+    { section: 'admin', stats: {} } // admin has no operational pipeline of its own
+
+  return success(res, { employee, ...roleDetail })
 })
 
 exports.updateEmployee = asyncHandler(async (req, res) => {

@@ -106,7 +106,10 @@ exports.getOrdersAndPayments = asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query
   const skip = (Number(page) - 1) * Number(limit)
 
+  // status lives on each stage (stages[].status), not on the schedule itself — matches
+  // schedules that have at least one stage in the requested status.
   const scheduleFilter = {}
+  if (status) scheduleFilter.stages = { $elemMatch: { status } }
 
   const [schedules, total] = await Promise.all([
     PaymentSchedule.find(scheduleFilter)

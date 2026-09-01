@@ -6,6 +6,7 @@ const {
   PO_STATUSES,
   LEAD_TEMPERATURES,
   resolveLeadTemperatureFromScore,
+  PRIORITY_LEVELS,
 } = require('../config/constants')
 
 const AssigningHistorySchema = new mongoose.Schema(
@@ -43,6 +44,8 @@ const LeadScoringSchema = new mongoose.Schema(
 
 const DOCUMENT_TYPES = ['drawing', 'approval', 'general', 'contract', 'photo', 'other']
 
+const DOCUMENT_APPROVAL_STATUSES = ['pending', 'approved', 'rejected']
+
 const DocumentSchema = new mongoose.Schema(
   {
     url:        { type: String, required: true },
@@ -50,6 +53,9 @@ const DocumentSchema = new mongoose.Schema(
     type:       { type: String, enum: DOCUMENT_TYPES, default: 'general' },
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     uploadedAt: { type: Date, default: Date.now },
+    approvalStatus: { type: String, enum: DOCUMENT_APPROVAL_STATUSES, default: 'pending' },
+    reviewedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    reviewedAt:     { type: Date, default: null },
   },
   { _id: true }
 )
@@ -68,6 +74,9 @@ const LeadSchema = new mongoose.Schema(
     customerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
     buildingType:    { type: String, default: '' },
     location:        { type: String, default: '' },
+    city:            { type: String, default: '' },
+    state:           { type: String, default: '' },
+    pincode:         { type: String, default: '' },
     roofStyle:       { type: String, default: '' },
     sqft:            { type: String, default: '' },
     width:           { type: Number, default: null },
@@ -76,6 +85,7 @@ const LeadSchema = new mongoose.Schema(
     source:          { type: String, enum: LEAD_SOURCES, default: 'chat' },
     jobId:           { type: String, default: null },
     projectName:     { type: String, default: '' },
+    priority:        { type: String, enum: PRIORITY_LEVELS, default: 'medium' },
     endDate:           { type: Date, default: null },
     plannedStartDate:  { type: Date, default: null },
     numberOfBuildings: { type: Number, default: 1, min: 1 },
@@ -197,3 +207,4 @@ LeadSchema.post('init', function () {
 })
 
 module.exports = mongoose.model('Lead', LeadSchema)
+module.exports.DOCUMENT_APPROVAL_STATUSES = DOCUMENT_APPROVAL_STATUSES

@@ -5,6 +5,13 @@ const validate = require('../../../middleware/validate')
 const { TRUCK_TYPES } = require('../../../config/constants')
 
 router.get('/projects', ctrl.getPackingListPlanProjects)
+router.get('/export', ctrl.exportPackingListsExcel)
+
+router.get('/:packingListId/download-pdf',
+  [param('packingListId').isMongoId()],
+  validate,
+  ctrl.downloadPackingListPdf
+)
 
 router.get('/:packingListId',
   [param('packingListId').isMongoId()],

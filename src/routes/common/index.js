@@ -7,14 +7,11 @@ const {
   invoiceCreateValidators,
 } = require("../../utils/invoiceRouteValidators");
 
-const notifGuard = [
-  verifyToken,
-  roleGuard(["admin", "sales", "account", "plant", "construction"]),
-];
-const guard = [verifyToken, roleGuard(["admin", "sales"])];
-const lookupGuard = [verifyToken, roleGuard(["admin", "sales", "plant"])];
-const uploadGuard = [verifyToken, roleGuard(["admin", "sales", "plant"])];
-const smdtGuard = [verifyToken, roleGuard(["admin", "plant"])];
+const notifGuard = [verifyToken, roleGuard(['admin', 'sales', 'account', 'plant', 'construction'])]
+const guard = [verifyToken, roleGuard(['admin', 'sales'])]
+const lookupGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant'])]
+const uploadGuard = [verifyToken, roleGuard(['admin', 'sales', 'plant', 'construction'])]
+const smdtGuard = [verifyToken, roleGuard(['admin', 'plant'])]
 
 const lookupValidators = [
   query("search").optional().isString(),
@@ -58,15 +55,23 @@ router.post(
 );
 
 // Resource routes
-router.use("/quotations", ...guard, require("./quotation.routes"));
-router.use("/invoices", ...guard, require("./invoice.routes"));
-router.use("/payment-schedules", ...guard, require("./payment.routes"));
-router.use("/upload", uploadGuard, require("./upload.routes"));
-router.use("/uploads", uploadGuard, require("./upload.routes"));
-router.use("/smdt", smdtGuard, require("./smdt.routes"));
-router.use("/activity", require("./pageActivity.routes"));
-router.use("/notifications", ...notifGuard, require("./notification.routes"));
-router.use("/followup-automation", require("./followupAutomation.routes"));
-router.use("/calendar", ...guard, require("./calendar.routes"));
+router.use('/quotations', ...guard, require('./quotation.routes'))
+router.use('/invoices', ...guard, require('./invoice.routes'))
+router.use('/payment-schedules', ...guard, require('./payment.routes'))
+router.use('/upload', uploadGuard, require('./upload.routes'))
+router.use('/uploads', uploadGuard, require('./upload.routes'))
+router.use('/smdt', smdtGuard, require('./smdt.routes'))
+router.use('/activity', require('./pageActivity.routes'))
+router.use('/notifications', ...notifGuard, require('./notification.routes'))
+router.use('/team-chat', ...notifGuard, require('./teamChat.routes'))
+router.use('/followup-automation', require('./followupAutomation.routes'))
+router.use('/calendar', ...guard, require('./calendar.routes'))
+
+// Staff "My Profile" screen — same role set as notifications (any authenticated staff member)
+const profileCtrl = require('../../controllers/common/profile.controller')
+router.get('/profile', ...notifGuard, profileCtrl.getProfile)
+router.put('/profile', ...notifGuard, profileCtrl.updateProfile)
+router.put('/profile/password', ...notifGuard, profileCtrl.updateProfilePassword)
+router.put('/profile/notification-settings', ...notifGuard, profileCtrl.updateNotificationSettings)
 
 module.exports = router;

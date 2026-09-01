@@ -12,6 +12,7 @@ const TaskSchema = new mongoose.Schema(
     dueDate:     { type: Date, default: null },
     completedAt: { type: Date, default: null },
     notes:       { type: String, default: '' },
+    attachments: { type: [String], default: [] },
   },
   { timestamps: true }
 )

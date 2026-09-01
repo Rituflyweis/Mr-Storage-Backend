@@ -3,6 +3,7 @@ const { CARRIER_STATUSES } = require('../config/constants')
 
 const AddressSchema = new mongoose.Schema(
   {
+    country:       { type: String, default: '' },
     placeNumber:   { type: String, default: '' },
     streetAddress: { type: String, default: '' },
     landmark:      { type: String, default: '' },

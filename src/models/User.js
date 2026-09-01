@@ -3,20 +3,24 @@ const { USER_ROLES } = require("../config/constants");
 
 const UserSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
+    name:     { type: String, required: true, trim: true },
+    email:    { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, required: true },
-    phone: { type: String, trim: true },
-    role: { type: String, enum: USER_ROLES, required: true },
+    phone:    { type: String, trim: true },
+    avatar:   { type: String, default: '' },
+    role:       { type: String, enum: USER_ROLES, required: true },
     isMainAdmin: { type: Boolean, default: false },
-    department: { type: String, default: "", trim: true },
-    isActive: { type: Boolean, default: true },
+    department: { type: String, default: '', trim: true },
+    isActive:           { type: Boolean, default: true },
+    notificationSettings: {
+      twoFactorAuth:          { type: Boolean, default: false },
+      emailNotification:      { type: Boolean, default: true },
+      smsNotification:        { type: Boolean, default: false },
+      dashboardNotifications: { type: Boolean, default: true },
+      weeklyEmailReports:     { type: Boolean, default: false },
+      systemAlerts:           { type: Boolean, default: true },
+      loginAlertsViaMail:     { type: Boolean, default: true },
+    },
     permissions: {
       leadAccess: {
         view: { type: Boolean, default: false },
