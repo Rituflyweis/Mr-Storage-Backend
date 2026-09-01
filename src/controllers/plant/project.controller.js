@@ -11,6 +11,7 @@ const BOMItem = require('../../models/BOMItem')
 const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const AuditLog = require('../../models/AuditLog')
 const auditService = require('../../services/audit.service')
+const { notifyCustomerDrawingUploaded } = require('../../services/customerNotification.service')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog } = require('../../services/auditActivity.service')
@@ -566,6 +567,15 @@ exports.uploadProjectDrawings = asyncHandler(async (req, res) => {
         versionNumber: item.drawing.versionNumber,
         fileName: item.drawing.fileName,
       },
+    })
+
+    await notifyCustomerDrawingUploaded({
+      customerId: lead.customerId,
+      leadId,
+      lead,
+      fileName: item.drawing.fileName,
+      buildingNumber: item.buildingNumber,
+      refId: item.buildingId,
     })
   }
 

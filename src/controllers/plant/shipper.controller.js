@@ -50,6 +50,7 @@ const {
 } = require('../../utils/shipperAmountComparison')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const generateBundlePlanNumber = require('../../utils/generateBundlePlanNumber')
 
 const getAssignedLeadIds = async (req) => getScopedLeadIds(req)
 
@@ -58,16 +59,6 @@ const resolveFileReceivedStatus = (total, received) => {
   if (received <= 0) return 'none'
   if (received >= total) return 'all'
   return 'partial'
-}
-
-const getNextBundlePlanNumber = async () => {
-  const latest = await BundlePlan.findOne({
-    planNumber: { $regex: /^BP-\d+$/ },
-  }).sort({ createdAt: -1 }).select('planNumber').lean()
-
-  const current = latest?.planNumber ? Number(String(latest.planNumber).replace('BP-', '')) : 0
-  const next = Number.isFinite(current) ? current + 1 : 1
-  return `BP-${String(next).padStart(4, '0')}`
 }
 
 exports.getShipperProjects = asyncHandler(async (req, res) => {
@@ -912,7 +903,7 @@ exports.generateBundlePlan = asyncHandler(async (req, res) => {
     return badRequest(res, 'No bundles could be generated from vendor lines')
   }
 
-  const planNumber = existingPlan?.planNumber || await getNextBundlePlanNumber()
+  const planNumber = existingPlan?.planNumber || await generateBundlePlanNumber()
 
   const totalWeight = generatedBundles.reduce(
     (sum, bundle) => sum + Number(bundle.totalWeight || 0),

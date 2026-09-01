@@ -1,0 +1,3924 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Storage Materials — AI Quoting System (API)</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      :root {
+        --bg: #f0f2f5;
+        --surface: #fff;
+        --surface2: #f5f6f8;
+        --border: #dde1e7;
+        --border2: #c8cdd6;
+        --text: #1a1d23;
+        --muted: #5a6272;
+        --hint: #9aa0ad;
+        --blue: #2176c7;
+        --green: #15803d;
+        --amber: #b45309;
+        --red: #dc2626;
+        --r: 8px;
+        --rs: 5px;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        min-height: 100vh;
+      }
+      .sidebar {
+        background: #1a3a5c;
+        border-right: 1px solid #162f4a;
+        display: flex;
+        flex-direction: column;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+      }
+      .main {
+        padding: 28px;
+        overflow-y: auto;
+      }
+      .logo-area {
+        padding: 18px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      .logo-name {
+        font-size: 15px;
+        font-weight: 700;
+        color: #fff;
+      }
+      .logo-sub {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.55);
+        margin-top: 2px;
+      }
+      .nav {
+        flex: 1;
+        padding: 10px 0;
+      }
+      .nav-section {
+        font-size: 10px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.35);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 10px 20px 4px;
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 20px;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.6);
+        cursor: pointer;
+        border-left: 2px solid transparent;
+      }
+      .nav-item:hover,
+      .nav-item.active {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.12);
+        border-left-color: #60a5fa;
+      }
+      .sidebar-bottom {
+        padding: 14px 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      .sbl {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.4);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+      .jt-btn,
+      .sc-btn {
+        flex: 1;
+        padding: 6px 4px;
+        border-radius: var(--rs);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 11px;
+        cursor: pointer;
+        text-align: center;
+      }
+      .jt-btn.active {
+        background: #2176c7;
+        border-color: #2176c7;
+        color: #fff;
+      }
+      .sc-btn.active {
+        background: #15803d;
+        border-color: #15803d;
+        color: #fff;
+      }
+      .job-row,
+      .scope-row {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 6px;
+      }
+      select.sb-sel {
+        width: 100%;
+        padding: 6px 8px;
+        border-radius: var(--rs);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: #fff;
+        font-size: 11px;
+        margin-bottom: 5px;
+      }
+      .page-hdr {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 20px;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .page-title {
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .page-sub {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        margin-bottom: 14px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      }
+      .card-hdr {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .card-title {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .card-sub {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .drop-zone {
+        border: 2px dashed var(--border2);
+        border-radius: var(--r);
+        padding: 36px 24px;
+        text-align: center;
+        cursor: pointer;
+        margin-bottom: 20px;
+        background: #fff;
+      }
+      .drop-zone.drag-over {
+        border-color: var(--blue);
+        background: #deeaf7;
+      }
+      .drop-zone.has-file {
+        border-color: var(--green);
+        background: #dcfce7;
+        border-style: solid;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .metric {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        padding: 14px;
+      }
+      .metric-label {
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 5px;
+        text-transform: uppercase;
+      }
+      .metric-val {
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .metric-sub {
+        font-size: 11px;
+        color: var(--hint);
+        margin-top: 3px;
+      }
+      .metric.good {
+        border-top: 2px solid var(--green);
+      }
+      .metric.info {
+        border-top: 2px solid var(--blue);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th {
+        padding: 9px 14px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        border-bottom: 1px solid var(--border);
+        background: #f8f9fb;
+      }
+      td {
+        padding: 9px 14px;
+        font-size: 13px;
+        border-bottom: 1px solid var(--border);
+      }
+      .td-r {
+        text-align: right;
+        font-family: monospace;
+      }
+      .cat-tag {
+        font-size: 10px;
+        padding: 2px 7px;
+        border-radius: 3px;
+        font-weight: 600;
+      }
+      .cat-primary {
+        background: #deeaf7;
+        color: #1a3a5c;
+      }
+      .cat-secondary {
+        background: #dcfce7;
+        color: #14532d;
+      }
+      .cat-sheeting {
+        background: #fef3c7;
+        color: #78350f;
+      }
+      .cat-opening {
+        background: #f3e8ff;
+        color: #6b21a8;
+      }
+      .cat-angle {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .cat-trim,
+      .cat-misc,
+      .cat-fastener {
+        background: #f1f3f5;
+        color: #5a6272;
+      }
+      .total-row td {
+        font-weight: 700;
+        background: #f0f4fa;
+      }
+      .btn {
+        padding: 8px 16px;
+        border-radius: var(--rs);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid var(--border2);
+        background: #fff;
+      }
+      .btn-primary {
+        background: var(--blue);
+        border-color: var(--blue);
+        color: #fff;
+      }
+      .btn-success {
+        background: #dcfce7;
+        border-color: var(--green);
+        color: #166534;
+      }
+      .btn-sm {
+        padding: 4px 10px;
+        font-size: 11px;
+      }
+      .btn-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+      }
+      .tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 18px;
+        flex-wrap: wrap;
+      }
+      .tab-btn {
+        padding: 9px 16px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      .tab-btn.active {
+        color: var(--blue);
+        border-bottom-color: var(--blue);
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .alert {
+        padding: 10px 14px;
+        border-radius: var(--rs);
+        font-size: 12px;
+        margin-bottom: 12px;
+      }
+      .alert-info {
+        background: #deeaf7;
+        border: 1px solid var(--blue);
+        color: #1a5fa0;
+      }
+      .alert-warn {
+        background: #fef3c7;
+        border: 1px solid var(--amber);
+        color: #92400e;
+      }
+      .alert-error {
+        background: #fee2e2;
+        border: 1px solid var(--red);
+        color: #991b1b;
+      }
+      .alert-success {
+        background: #dcfce7;
+        border: 1px solid var(--green);
+        color: #166534;
+      }
+      .auth-bar {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 10px 20px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        font-size: 12px;
+      }
+      .auth-bar input {
+        padding: 6px 10px;
+        border: 1px solid var(--border2);
+        border-radius: var(--rs);
+        font-size: 12px;
+      }
+      .auth-bar input[type="text"] {
+        min-width: 280px;
+      }
+      .auth-bar input[type="password"] {
+        min-width: 200px;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--red);
+        display: inline-block;
+      }
+      .status-dot.ok {
+        background: var(--green);
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 14px;
+      }
+      .field label {
+        display: block;
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+        margin-bottom: 4px;
+        font-weight: 600;
+      }
+      .field input,
+      .field select,
+      .field textarea {
+        width: 100%;
+        padding: 7px 10px;
+        border-radius: var(--rs);
+        border: 1px solid var(--border2);
+        font-size: 13px;
+      }
+      .live-bar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 12px;
+        background: #f8f9fb;
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        margin-bottom: 14px;
+        align-items: flex-end;
+      }
+      .live-bar > div {
+        min-width: 120px;
+        flex: 1;
+      }
+      .live-bar .slider-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .live-bar input[type="range"] {
+        flex: 1;
+      }
+      .history-item {
+        padding: 11px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--rs);
+        margin-bottom: 7px;
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        cursor: pointer;
+        background: #fff;
+      }
+      .history-item:hover {
+        border-color: var(--blue);
+      }
+      .hi-name {
+        font-weight: 600;
+        flex: 1;
+      }
+      .hi-meta {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .hi-price {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--blue);
+      }
+      .preview-frame {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        background: #fff;
+        min-height: 400px;
+        padding: 16px;
+        overflow: auto;
+      }
+      .no-print {
+      }
+      @media print {
+        .sidebar,
+        .auth-bar,
+        .no-print,
+        .tabs,
+        .page-hdr {
+          display: none !important;
+        }
+        .app {
+          display: block !important;
+        }
+        .main {
+          padding: 0 !important;
+        }
+      }
+      .loading {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      .quote-output {
+        background: #fff;
+        color: #111;
+        border-radius: var(--r);
+        padding: 32px;
+      }
+      .q-logo-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 2px solid #1e3a8a;
+      }
+      .q-logo-sub {
+        font-size: 10px;
+        color: #64748b;
+        margin-top: 4px;
+        line-height: 1.5;
+      }
+      .q-header-right {
+        text-align: right;
+      }
+      .q-co-name {
+        font-size: 22px;
+        font-weight: 800;
+        color: #1e3a8a;
+      }
+      .q-co-detail {
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 4px;
+        line-height: 1.6;
+      }
+      .q-doc-info {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .q-field label {
+        font-size: 10px;
+        font-weight: 700;
+        color: #64748b;
+        text-transform: uppercase;
+      }
+      .q-field p {
+        font-size: 13px;
+        font-weight: 600;
+        margin-top: 4px;
+      }
+      .q-price-box {
+        background: #1e3a8a;
+        color: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+        margin: 20px 0;
+      }
+      .q-price-label {
+        font-size: 11px;
+        opacity: 0.85;
+      }
+      .q-price-val {
+        font-size: 32px;
+        font-weight: 800;
+      }
+      .q-price-sf {
+        font-size: 12px;
+        opacity: 0.85;
+        margin-top: 4px;
+      }
+      .q-section-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #1e3a8a;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+      .q-two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      .q-breakdown table {
+        width: 100%;
+        font-size: 12px;
+        border-collapse: collapse;
+      }
+      .q-sub-row td {
+        padding: 5px 0;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .q-total-row td {
+        padding: 8px 0;
+        font-weight: 700;
+        font-size: 14px;
+        border-top: 2px solid #1e3a8a;
+      }
+      .q-list {
+        font-size: 12px;
+        padding-left: 18px;
+        line-height: 1.7;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="auth-bar no-print">
+      <strong>API Mode</strong>
+      <span>Base URL</span>
+      <input
+        type="text"
+        id="api-base"
+        placeholder="https://mr-storage-backend-025k.onrender.com"
+        value="https://mr-storage-backend-025k.onrender.com"
+      />
+      <span>JWT Token</span>
+      <input
+        type="password"
+        id="api-token"
+        placeholder="Paste access token from login"
+      />
+      <button class="btn btn-sm" onclick="saveAuth()">Save</button>
+      <span class="status-dot" id="auth-status"></span>
+      <span id="auth-label" style="color: var(--muted)">Not connected</span>
+      <span style="margin-left: auto; color: var(--hint)"
+        >Uses /api/sales/estimates + /api/sales/pricing-rules</span
+      >
+    </div>
+
+    <div class="app">
+      <aside class="sidebar no-print">
+        <div class="logo-area">
+          <div class="logo-name">STORAGE MATERIALS</div>
+          <div class="logo-sub">AI Quoting System · API Backend</div>
+        </div>
+        <nav class="nav">
+          <div class="nav-section">Quoting</div>
+          <div
+            class="nav-item active"
+            data-page="quote"
+            onclick="showPage('quote', this)"
+          >
+            PEMB Quote
+          </div>
+          <div
+            class="nav-item"
+            data-page="storage"
+            onclick="showPage('storage', this)"
+          >
+            Storage COG
+          </div>
+          <div
+            class="nav-item"
+            data-page="preview"
+            onclick="showPage('preview', this)"
+          >
+            Quote Preview
+          </div>
+          <div
+            class="nav-item"
+            data-page="history"
+            onclick="showPage('history', this)"
+          >
+            Quote Library
+          </div>
+          <div
+            class="nav-item"
+            data-page="pricing"
+            onclick="showPage('pricing', this)"
+          >
+            Pricing Rules
+          </div>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="sbl">Job Type</div>
+          <div class="job-row">
+            <button
+              class="jt-btn active"
+              id="jt-pemb"
+              onclick="setJobType('PEMB')"
+            >
+              PEMB
+            </button>
+            <button
+              class="jt-btn"
+              id="jt-storage"
+              onclick="setJobType('Storage')"
+            >
+              Storage
+            </button>
+          </div>
+          <div class="sbl">Scope</div>
+          <div class="scope-row">
+            <button class="sc-btn active" id="sc-supply" onclick="setScope('supply')">
+              Supply
+            </button>
+            <button
+              class="sc-btn"
+              id="sc-install"
+              onclick="setScope('install')"
+            >
+              Install
+            </button>
+            <button
+              class="sc-btn"
+              id="sc-both"
+              onclick="setScope('both')"
+            >
+              Both
+            </button>
+          </div>
+          <div class="sbl">Roof Type</div>
+          <select class="sb-sel" id="sb-roof" onchange="onControlChange()">
+            <option value="screw-down">Screw-down</option>
+            <option value="standing-seam">Standing seam</option>
+          </select>
+          <div class="sbl">Install Difficulty</div>
+          <select class="sb-sel" id="sb-install" onchange="onControlChange()">
+            <option value="easy" selected>Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+            <option value="tall">Tall</option>
+          </select>
+          <div class="sbl">Vendor Blend % (Quicken)</div>
+          <input
+            type="range"
+            id="sb-blend"
+            min="0"
+            max="100"
+            value="50"
+            style="width: 100%"
+            oninput="
+              document.getElementById('blend-val').textContent =
+                this.value + '%';
+              onControlChange();
+            "
+          />
+          <div
+            id="blend-val"
+            style="
+              font-size: 11px;
+              color: rgba(255, 255, 255, 0.7);
+              text-align: center;
+            "
+          >
+            50%
+          </div>
+          <div class="sbl" style="margin-top: 8px">Install Cost $/SF</div>
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              margin-bottom: 4px;
+            "
+          >
+            <input
+              type="range"
+              id="sb-cost"
+              min="3"
+              max="12"
+              step="0.25"
+              value="5.5"
+              style="flex: 1"
+              oninput="syncInstallSliders('cost', this.value)"
+            />
+            <span
+              id="sb-cost-val"
+              style="
+                font-size: 12px;
+                font-weight: 700;
+                color: #fbbf24;
+                min-width: 38px;
+              "
+              >$5.50</span
+            >
+          </div>
+          <div class="sbl">Install Sell $/SF</div>
+          <div style="display: flex; align-items: center; gap: 6px">
+            <input
+              type="range"
+              id="sb-sell"
+              min="7.5"
+              max="15"
+              step="0.25"
+              value="8.5"
+              style="flex: 1"
+              oninput="syncInstallSliders('sell', this.value)"
+            />
+            <span
+              id="sb-sell-val"
+              style="
+                font-size: 12px;
+                font-weight: 700;
+                color: #fff;
+                min-width: 38px;
+              "
+              >$8.50</span
+            >
+          </div>
+          <div
+            id="labor-margin-display"
+            style="
+              font-size: 11px;
+              color: #4ade80;
+              margin-top: 6px;
+              font-weight: 600;
+            "
+          ></div>
+        </div>
+      </aside>
+
+      <main class="main" id="main-content">
+        <!-- ========== PEMB QUOTE PAGE ========== -->
+        <div id="page-quote">
+          <div class="page-hdr">
+            <div>
+              <div class="page-title">
+                PEMB Quote
+                <span
+                  id="shipper-badge"
+                  style="font-size: 12px; color: var(--muted)"
+                ></span>
+              </div>
+              <div class="page-sub">
+                Upload shipper → backend parses & prices → live recompute via
+                API
+              </div>
+            </div>
+            <div class="btn-row" style="margin: 0">
+              <button class="btn btn-success" onclick="saveEstimate()">
+                Save Draft
+              </button>
+              <button
+                class="btn btn-primary"
+                onclick="
+                  showPage('preview');
+                  loadPreview();
+                "
+              >
+                Preview →
+              </button>
+            </div>
+          </div>
+          <div id="global-alert"></div>
+
+          <div class="card no-print">
+            <div class="card-hdr">
+              <div class="card-title">Customer & Project Info</div>
+            </div>
+            <div class="grid-3" style="padding: 14px">
+              <div class="field">
+                <label>Company Name</label
+                ><input
+                  id="f-company"
+                  oninput="state.leadCompanyName = this.value"
+                />
+              </div>
+              <div class="field">
+                <label>Email</label
+                ><input
+                  id="f-email"
+                  type="email"
+                  oninput="state.customerEmail = this.value"
+                />
+              </div>
+              <div class="field">
+                <label>Job Number</label
+                ><input id="f-job" oninput="state.jobNumber = this.value" />
+              </div>
+              <div class="field">
+                <label>Street Address</label
+                ><input
+                  id="f-street"
+                  oninput="state.streetAddress = this.value"
+                />
+              </div>
+              <div class="field">
+                <label>City, State ZIP</label
+                ><input id="f-city" oninput="state.cityStateZip = this.value" />
+              </div>
+              <div class="field">
+                <label>Building Size</label
+                ><input
+                  id="f-size"
+                  placeholder="60x120x16"
+                  oninput="state.buildingSize = this.value"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="grid-2 no-print">
+            <div class="card">
+              <div class="card-hdr">
+                <div class="card-title">Shipper File (.xlsx)</div>
+              </div>
+              <div
+                class="drop-zone"
+                id="shipper-drop"
+                onclick="document.getElementById('shipper-input').click()"
+              >
+                <div class="drop-title">
+                  Drop Xshipper Excel or click to browse
+                </div>
+                <div class="drop-sub" id="shipper-name">No file loaded</div>
+              </div>
+              <input
+                type="file"
+                id="shipper-input"
+                accept=".xlsx,.xls"
+                hidden
+                onchange="uploadShipper(this.files[0])"
+              />
+            </div>
+            <div class="card">
+              <div class="card-hdr">
+                <div class="card-title">Prelim Drawing (PDF)</div>
+              </div>
+              <div
+                class="drop-zone"
+                id="pdf-drop"
+                onclick="document.getElementById('pdf-input').click()"
+              >
+                <div class="drop-title">Drop prelim PDF (optional)</div>
+                <div class="drop-sub" id="pdf-name">
+                  Extracts fields via API
+                </div>
+              </div>
+              <input
+                type="file"
+                id="pdf-input"
+                accept=".pdf"
+                hidden
+                onchange="uploadDrawing(this.files[0])"
+              />
+              <div
+                id="pdf-fields"
+                style="
+                  padding: 0 14px 14px;
+                  font-size: 12px;
+                  color: var(--muted);
+                "
+              ></div>
+            </div>
+          </div>
+
+          <div
+            class="card no-print"
+            id="pdf-specs-card"
+            style="display: none; margin-bottom: 14px"
+          >
+            <div class="card-hdr">
+              <div>
+                <div class="card-title">Extracted Drawing Specs</div>
+                <div class="card-sub">
+                  Review and edit before applying to quote fields
+                </div>
+              </div>
+            </div>
+            <div style="padding: 10px 14px; border-bottom: 1px solid var(--border)">
+              <div
+                style="
+                  font-size: 10px;
+                  font-weight: 700;
+                  color: #1a3a5c;
+                  text-transform: uppercase;
+                  letter-spacing: 0.05em;
+                  margin-bottom: 8px;
+                "
+              >
+                Building Type &amp; Panels
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 10px">
+                <div style="flex: 1; min-width: 140px">
+                  <div style="font-size: 10px; color: var(--muted); margin-bottom: 3px">
+                    Frame Type
+                  </div>
+                  <input type="text" id="ex-frame" style="width: 100%; padding: 6px 8px" />
+                </div>
+                <div style="flex: 1; min-width: 140px">
+                  <div style="font-size: 10px; color: var(--muted); margin-bottom: 3px">
+                    Roof Panel / Color
+                  </div>
+                  <input type="text" id="ex-roofpanel" style="width: 100%; padding: 6px 8px" />
+                </div>
+                <div style="flex: 1; min-width: 140px">
+                  <div style="font-size: 10px; color: var(--muted); margin-bottom: 3px">
+                    Wall Panel
+                  </div>
+                  <input type="text" id="ex-wall" style="width: 100%; padding: 6px 8px" />
+                </div>
+                <div style="flex: 1; min-width: 140px">
+                  <div style="font-size: 10px; color: var(--muted); margin-bottom: 3px">
+                    Additional Notes
+                  </div>
+                  <input type="text" id="ex-notes" style="width: 100%; padding: 6px 8px" />
+                </div>
+              </div>
+            </div>
+            <div style="padding: 10px 14px">
+              <button class="btn btn-primary btn-sm" onclick="applyExtractedDrawing()">
+                Apply to Quote Fields
+              </button>
+            </div>
+          </div>
+
+          <div id="metrics-row" class="metrics"></div>
+
+          <div class="tabs no-print">
+            <button class="tab-btn active" onclick="showTab('breakdown', this)">
+              Breakdown
+            </button>
+            <button class="tab-btn" onclick="showTab('quote-tab', this)">
+              Quote
+            </button>
+            <button class="tab-btn" onclick="showTab('sow-tab', this)">
+              Statement of Work
+            </button>
+            <button class="tab-btn" onclick="showTab('margin-tab', this)">
+              Margin
+            </button>
+            <button class="tab-btn" onclick="showTab('cogs-tab', this)">
+              COGS
+            </button>
+            <button class="tab-btn" onclick="showTab('addons-tab', this)">
+              Concrete / Insulation
+            </button>
+            <button class="tab-btn" onclick="showTab('contract-tab', this)">
+              Contract
+            </button>
+          </div>
+
+          <div class="tab-content active" id="tab-breakdown">
+            <div class="card">
+              <div class="card-hdr">
+                <div>
+                  <div class="card-title">Weight + Price by Category</div>
+                  <div class="card-sub" id="breakdown-sub"></div>
+                </div>
+                <button class="btn btn-sm" onclick="showPage('pricing')">
+                  Edit pricing rules
+                </button>
+              </div>
+              <div class="table-wrap" id="breakdown-table">
+                <p style="padding: 20px; color: var(--muted)">
+                  Upload a shipper file to see pricing breakdown.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-content" id="tab-quote-tab">
+            <div class="live-bar no-print">
+              <div>
+                <label
+                  style="
+                    font-size: 10px;
+                    color: var(--muted);
+                    text-transform: uppercase;
+                  "
+                  >Scope</label
+                >
+                <div style="display: flex; gap: 4px; margin-top: 4px">
+                  <button
+                    class="btn btn-sm sc-btn-inline active"
+                    data-s="supply"
+                    onclick="setScope('supply')"
+                  >
+                    Supply
+                  </button>
+                  <button
+                    class="btn btn-sm sc-btn-inline"
+                    data-s="install"
+                    onclick="setScope('install')"
+                  >
+                    Install
+                  </button>
+                  <button
+                    class="btn btn-sm sc-btn-inline"
+                    data-s="both"
+                    onclick="setScope('both')"
+                  >
+                    Both
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label
+                  style="
+                    font-size: 10px;
+                    color: var(--muted);
+                    text-transform: uppercase;
+                  "
+                  >Square Footage</label
+                >
+                <input
+                  type="number"
+                  id="live-sf"
+                  style="width: 100%; padding: 6px; margin-top: 4px"
+                  oninput="
+                    state.squareFootage = +this.value || 0;
+                    state.manualSquareFootage = true;
+                    if (state.squareFootageMeta) {
+                      state.squareFootageMeta.source = 'manual';
+                      state.squareFootageMeta.selected = state.squareFootage;
+                      state.squareFootageMeta.inputSf = state.squareFootage;
+                    }
+                    hideSfChoiceBanner();
+                    debouncedCompute();
+                  "
+                />
+              </div>
+              <div>
+                <label
+                  style="
+                    font-size: 10px;
+                    color: var(--muted);
+                    text-transform: uppercase;
+                  "
+                  >Install Cost $/SF</label
+                >
+                <div class="slider-row">
+                  <input
+                    type="range"
+                    id="live-cost"
+                    min="3"
+                    max="12"
+                    step="0.25"
+                    value="5.5"
+                    oninput="syncInstallSliders('cost', this.value)"
+                  /><span id="live-cost-val">$5.50</span>
+                </div>
+              </div>
+              <div>
+                <label
+                  style="
+                    font-size: 10px;
+                    color: var(--muted);
+                    text-transform: uppercase;
+                  "
+                  >Install Sell $/SF</label
+                >
+                <div class="slider-row">
+                  <input
+                    type="range"
+                    id="live-sell"
+                    min="7.5"
+                    max="15"
+                    step="0.25"
+                    value="8.5"
+                    oninput="syncInstallSliders('sell', this.value)"
+                  /><span id="live-sell-val">$8.50</span>
+                </div>
+                <div
+                  id="inline-labor-margin"
+                  style="font-size: 10px; color: var(--green); margin-top: 3px"
+                ></div>
+              </div>
+            </div>
+            <div
+              id="sf-choice-banner"
+              class="card no-print"
+              style="display: none; margin-bottom: 10px; padding: 10px 12px"
+            >
+              <div
+                id="sf-choice-text"
+                style="font-size: 12px; color: #1f2937; margin-bottom: 8px"
+              ></div>
+              <div class="btn-row" style="margin: 0">
+                <button
+                  class="btn btn-sm btn-primary"
+                  onclick="useSfChoice('weight')"
+                >
+                  Use Weight SF
+                </button>
+                <button class="btn btn-sm" onclick="useSfChoice('cover')">
+                  Use Cover SF
+                </button>
+                <button class="btn btn-sm" onclick="hideSfChoiceBanner()">
+                  Keep Current
+                </button>
+              </div>
+            </div>
+            <div id="quote-html" class="preview-frame">
+              <p style="color: var(--muted)">
+                Upload shipper and open this tab — quote loads from backend preview.
+              </p>
+            </div>
+            <div class="field" style="margin-top: 12px">
+              <label>Additional Information (printed on quote)</label>
+              <textarea
+                id="quote-additional-info"
+                rows="3"
+                placeholder="Optional notes for customer quote..."
+                style="width: 100%; padding: 8px"
+                oninput="state.additionalInfo = this.value"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="tab-content" id="tab-sow-tab">
+            <div class="btn-row no-print" style="margin-bottom: 10px">
+              <button class="btn btn-sm" onclick="loadPreview()">Refresh SOW</button>
+              <button class="btn btn-sm" onclick="showPage('preview')">
+                Open Full Preview
+              </button>
+            </div>
+            <div id="sow-html" class="preview-frame">
+              <p style="color: var(--muted)">
+                Upload shipper and open this tab — SOW loads from backend preview.
+              </p>
+            </div>
+          </div>
+
+          <div class="tab-content" id="tab-contract-tab">
+            <div class="btn-row no-print" style="margin-bottom: 10px">
+              <button class="btn btn-sm" onclick="loadPreview()">Refresh Contract</button>
+              <button class="btn btn-sm" onclick="downloadPdf()">Download PDF</button>
+            </div>
+            <div id="contract-html" class="preview-frame">
+              <p style="color: var(--muted)">
+                Contract preview loads from backend after quote is generated.
+              </p>
+            </div>
+          </div>
+
+          <div class="tab-content" id="tab-margin-tab">
+            <div class="card" style="margin-bottom: 14px">
+              <div class="card-hdr">
+                <div class="card-title">Current Quote Summary</div>
+                <div class="card-sub">From latest shipper compute — adjust below to override</div>
+              </div>
+              <div id="margin-summary" class="metrics" style="padding: 0 16px 16px"></div>
+            </div>
+            <div class="card">
+              <div class="card-hdr">
+                <div class="card-title">Margin & Profit Adjuster</div>
+                <div class="card-sub">
+                  Target margin uses marginOverride.pct on /compute
+                </div>
+              </div>
+              <div class="grid-3" style="padding: 16px">
+                <div class="field">
+                  <label>Labor Rate Override $/SF (auto = blank)</label>
+                  <input
+                    type="number"
+                    id="margin-labor"
+                    step="0.25"
+                    placeholder="auto"
+                    oninput="previewMargin()"
+                  />
+                </div>
+                <div class="field">
+                  <label>Target Margin % (auto = blank)</label>
+                  <input
+                    type="number"
+                    id="margin-pct"
+                    step="1"
+                    min="0"
+                    max="100"
+                    placeholder="auto"
+                    oninput="previewMargin()"
+                  />
+                </div>
+                <div class="field">
+                  <label>Fixed Sell Override $</label>
+                  <input
+                    type="number"
+                    id="margin-sell-fixed"
+                    step="500"
+                    placeholder="Leave blank = computed"
+                    oninput="previewMargin()"
+                  />
+                </div>
+              </div>
+              <div style="padding: 0 16px 16px">
+                <div id="margin-preview" class="metrics"></div>
+                <div class="btn-row">
+                  <button class="btn btn-primary" onclick="applyMargin()">
+                    Apply to Quote & SOW
+                  </button>
+                  <button class="btn" onclick="resetMargin()">
+                    Reset to Shipper Numbers
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-content" id="tab-cogs-tab">
+            <div class="card" style="margin-bottom: 14px">
+              <div class="card-hdr">
+                <div>
+                  <div class="card-title">
+                    COGS — Building Cost & Sell Adjustment
+                  </div>
+                  <div class="card-sub">
+                    Starts from computed shipper numbers — adjust cost for
+                    special specs, then set target margin
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style="
+                  background: #f0f4fa;
+                  border-bottom: 1px solid var(--border);
+                  padding: 12px 16px;
+                  display: flex;
+                  gap: 24px;
+                  flex-wrap: wrap;
+                  align-items: center;
+                "
+              >
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: #1a3a5c;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                  "
+                >
+                  From Shipper:
+                </div>
+                <div>
+                  <span style="font-size: 10px; color: var(--muted)">COGS</span><br /><span
+                    id="cogs-from-cost"
+                    style="font-size: 15px; font-weight: 700"
+                    >—</span
+                  >
+                </div>
+                <div>
+                  <span style="font-size: 10px; color: var(--muted)"
+                    >Computed Sell</span
+                  ><br /><span
+                    id="cogs-from-sell"
+                    style="font-size: 15px; font-weight: 700; color: #2176c7"
+                    >—</span
+                  >
+                </div>
+                <div>
+                  <span style="font-size: 10px; color: var(--muted)"
+                    >Computed Gross Margin</span
+                  ><br /><span
+                    id="cogs-from-margin"
+                    style="font-size: 15px; font-weight: 700; color: #15803d"
+                    >—</span
+                  >
+                </div>
+                <div>
+                  <span style="font-size: 10px; color: var(--muted)">$/SF</span
+                  ><br /><span id="cogs-from-sf" style="font-size: 15px; font-weight: 700"
+                    >—</span
+                  >
+                </div>
+              </div>
+
+              <div
+                style="
+                  padding: 16px;
+                  display: grid;
+                  grid-template-columns: 1fr 1fr;
+                  gap: 20px;
+                "
+              >
+                <div>
+                  <div
+                    style="
+                      font-size: 11px;
+                      font-weight: 700;
+                      color: var(--muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      margin-bottom: 12px;
+                      padding-bottom: 6px;
+                      border-bottom: 2px solid #f59e0b;
+                    "
+                  >
+                    Step 1 — Adjust Building COGS ($)
+                  </div>
+                  <div style="margin-bottom: 10px">
+                    <div style="font-size: 10px; color: var(--muted); margin-bottom: 4px">
+                      New Cost Total ($)
+                    </div>
+                    <input
+                      type="number"
+                      id="cogs-cost-dollar"
+                      step="500"
+                      min="0"
+                      placeholder="e.g. 525000"
+                      style="
+                        width: 100%;
+                        padding: 8px 10px;
+                        border-radius: 5px;
+                        border: 2px solid #f59e0b;
+                        background: #fff;
+                        font-size: 15px;
+                        font-family: monospace;
+                        font-weight: 700;
+                      "
+                      oninput="cogsOnCostInput()"
+                    />
+                  </div>
+                  <div style="margin-bottom: 6px">
+                    <div style="font-size: 10px; color: var(--muted); margin-bottom: 4px">
+                      — or adjust by % —
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px">
+                      <input
+                        type="range"
+                        id="cogs-cost-pct-slider"
+                        min="-30"
+                        max="50"
+                        step="1"
+                        value="0"
+                        style="flex: 1; accent-color: #f59e0b"
+                        oninput="cogsOnCostPctSlider(this.value)"
+                      />
+                      <span
+                        id="cogs-cost-pct-label"
+                        style="
+                          font-size: 12px;
+                          font-weight: 700;
+                          color: #b45309;
+                          min-width: 44px;
+                          text-align: right;
+                        "
+                        >0%</span
+                      >
+                    </div>
+                    <div style="font-size: 10px; color: var(--hint); margin-top: 3px">
+                      Slide right = add cost, slide left = reduce cost
+                    </div>
+                  </div>
+                  <div
+                    id="cogs-cost-result"
+                    style="
+                      background: #fff8ed;
+                      border: 1px solid #fcd34d;
+                      border-radius: 5px;
+                      padding: 8px 10px;
+                      margin-top: 8px;
+                      font-size: 12px;
+                      color: #92400e;
+                    "
+                  ></div>
+                </div>
+
+                <div>
+                  <div
+                    style="
+                      font-size: 11px;
+                      font-weight: 700;
+                      color: var(--muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      margin-bottom: 12px;
+                      padding-bottom: 6px;
+                      border-bottom: 2px solid #2176c7;
+                    "
+                  >
+                    Step 2 — Set Target Margin
+                  </div>
+                  <div style="margin-bottom: 10px">
+                    <div style="font-size: 10px; color: var(--muted); margin-bottom: 4px">
+                      Material Margin %
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px">
+                      <input
+                        type="range"
+                        id="cogs-margin-slider"
+                        min="0"
+                        max="60"
+                        step="0.5"
+                        value="20"
+                        style="flex: 1; accent-color: #2176c7"
+                        oninput="cogsOnMarginSlider(this.value)"
+                      />
+                      <input
+                        type="number"
+                        id="cogs-margin-val"
+                        step="0.5"
+                        min="0"
+                        max="100"
+                        value="20"
+                        style="
+                          width: 60px;
+                          padding: 5px 6px;
+                          border-radius: 4px;
+                          border: 1px solid var(--border2);
+                          background: var(--surface2);
+                          font-size: 13px;
+                          font-family: monospace;
+                          font-weight: 700;
+                          text-align: right;
+                        "
+                        oninput="cogsOnMarginInput(this.value)"
+                      />
+                      <span style="font-size: 12px; color: var(--muted)">%</span>
+                    </div>
+                  </div>
+                  <div style="margin-bottom: 10px">
+                    <div style="font-size: 10px; color: var(--muted); margin-bottom: 4px">
+                      — or type a fixed sell price ($) —
+                    </div>
+                    <input
+                      type="number"
+                      id="cogs-sell-dollar"
+                      step="500"
+                      min="0"
+                      placeholder="Leave blank to use margin"
+                      style="
+                        width: 100%;
+                        padding: 8px 10px;
+                        border-radius: 5px;
+                        border: 2px solid #2176c7;
+                        background: #fff;
+                        font-size: 15px;
+                        font-family: monospace;
+                        font-weight: 700;
+                      "
+                      oninput="cogsOnSellInput()"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style="
+                  background: #f8f9fb;
+                  border-top: 1px solid var(--border);
+                  padding: 14px 16px;
+                "
+              >
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: var(--muted);
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    margin-bottom: 10px;
+                  "
+                >
+                  Live Result
+                </div>
+                <div
+                  id="cogs-summary"
+                  class="metrics"
+                  style="margin-bottom: 12px"
+                >
+                  <div style="color: var(--muted); font-size: 12px">
+                    Generate a quote first to use COGS override.
+                  </div>
+                </div>
+                <div class="btn-row">
+                  <button class="btn btn-primary" onclick="applyCogs()">
+                    Apply to Quote & SOW
+                  </button>
+                  <button class="btn" onclick="resetCogs()">
+                    Reset to Shipper Numbers
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-content" id="tab-addons-tab">
+            <div class="grid-2">
+              <div class="card">
+                <div class="card-hdr">
+                  <div class="card-title">Concrete Add-on</div>
+                </div>
+                <div style="padding: 14px; display: grid; gap: 10px">
+                  <label
+                    ><input
+                      type="checkbox"
+                      id="conc-include"
+                      onchange="
+                        state.concrete.include = this.checked;
+                        debouncedCompute();
+                      "
+                    />
+                    Include on quote</label
+                  >
+                  <div class="field">
+                    <label>Cost $/SF</label
+                    ><input
+                      type="number"
+                      id="conc-cost"
+                      value="7.25"
+                      step="0.25"
+                      oninput="
+                        state.concrete.costSF = +this.value;
+                        debouncedCompute();
+                      "
+                    />
+                  </div>
+                  <div class="field">
+                    <label>Target Margin %</label
+                    ><input
+                      type="number"
+                      id="conc-margin"
+                      value="25"
+                      oninput="
+                        state.concrete.marginPct = +this.value;
+                        debouncedCompute();
+                      "
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-hdr">
+                  <div class="card-title">Insulation Add-on</div>
+                </div>
+                <div style="padding: 14px; display: grid; gap: 10px">
+                  <label
+                    ><input
+                      type="checkbox"
+                      id="insul-include"
+                      onchange="
+                        state.insulation.include = this.checked;
+                        debouncedCompute();
+                      "
+                    />
+                    Include on quote</label
+                  >
+                  <div class="field">
+                    <label>Cost $/SF</label
+                    ><input
+                      type="number"
+                      id="insul-cost"
+                      value="1.5"
+                      step="0.05"
+                      oninput="
+                        state.insulation.costSF = +this.value;
+                        debouncedCompute();
+                      "
+                    />
+                  </div>
+                  <div class="field">
+                    <label>Target Margin %</label
+                    ><input
+                      type="number"
+                      id="insul-margin"
+                      value="30"
+                      oninput="
+                        state.insulation.marginPct = +this.value;
+                        debouncedCompute();
+                      "
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-hdr">
+                  <div class="card-title">Sales Tax</div>
+                </div>
+                <div style="padding: 14px; display: grid; gap: 10px">
+                  <div style="display: flex; gap: 8px">
+                    <input
+                      type="text"
+                      id="tax-zip"
+                      maxlength="5"
+                      placeholder="ZIP"
+                      style="width: 80px; padding: 7px"
+                    />
+                    <button class="btn btn-sm" onclick="lookupTax()">
+                      Lookup
+                    </button>
+                    <input
+                      type="number"
+                      id="tax-rate"
+                      step="0.25"
+                      min="0"
+                      max="15"
+                      value="0"
+                      style="flex: 1; padding: 7px"
+                      oninput="
+                        state.salesTax.rate = +this.value;
+                        debouncedCompute();
+                      "
+                    />
+                  </div>
+                  <div
+                    id="tax-status"
+                    style="font-size: 11px; color: var(--muted)"
+                  ></div>
+                  <label
+                    ><input
+                      type="checkbox"
+                      id="tax-include"
+                      checked
+                      onchange="
+                        state.salesTax.include = this.checked;
+                        debouncedCompute();
+                      "
+                    />
+                    Include tax on quote</label
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== STORAGE COG PAGE ========== -->
+        <div id="page-storage" style="display: none">
+          <div class="page-hdr">
+            <div>
+              <div class="page-title">Storage Quote</div>
+              <div class="page-sub">
+                POST /extract-storage-cog + /compute-storage
+              </div>
+            </div>
+            <button class="btn btn-success" onclick="saveStorageEstimate()">
+              Save Draft
+            </button>
+          </div>
+          <div class="card no-print" style="margin-bottom: 14px">
+            <div class="card-hdr">
+              <div class="card-title">Customer & Project</div>
+            </div>
+            <div
+              style="
+                padding: 14px;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 12px;
+              "
+            >
+              <div>
+                <label style="font-size: 10px; color: var(--muted)"
+                  >Customer</label
+                >
+                <input
+                  id="s-customer-name"
+                  style="width: 100%; padding: 7px; margin-top: 4px"
+                  oninput="state.storageCustomer = this.value; renderStorageQuote()"
+                />
+              </div>
+              <div>
+                <label style="font-size: 10px; color: var(--muted)"
+                  >Location</label
+                >
+                <input
+                  id="s-job-location"
+                  style="width: 100%; padding: 7px; margin-top: 4px"
+                  oninput="state.storageLocation = this.value; renderStorageQuote()"
+                />
+              </div>
+              <div>
+                <label style="font-size: 10px; color: var(--muted)"
+                  >Address</label
+                >
+                <input
+                  id="s-customer-address"
+                  style="width: 100%; padding: 7px; margin-top: 4px"
+                  oninput="renderStorageQuote()"
+                />
+              </div>
+            </div>
+          </div>
+          <div class="card no-print" style="margin-bottom: 14px">
+            <div
+              class="drop-zone"
+              id="cog-drop"
+              onclick="document.getElementById('cog-input').click()"
+            >
+              <div class="drop-title">Drop Storage COG Excel</div>
+              <div class="drop-sub" id="cog-name">No file loaded</div>
+            </div>
+            <input
+              type="file"
+              id="cog-input"
+              accept=".xlsx,.xls"
+              hidden
+              onchange="uploadStorageCog(this.files[0])"
+            />
+          </div>
+          <div id="storage-results-area" style="display: none">
+            <div
+              class="card no-print"
+              style="margin-bottom: 14px; padding: 14px"
+            >
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                  gap: 16px;
+                "
+              >
+                <div>
+                  <label style="font-size: 10px; color: var(--muted)"
+                    >Erection sell $/SF</label
+                  >
+                  <input
+                    type="number"
+                    id="storage-install-val"
+                    value="3.25"
+                    step="0.25"
+                    style="width: 100%; padding: 7px; margin-top: 4px"
+                    oninput="onStorageControlChange()"
+                  />
+                </div>
+                <div>
+                  <label style="font-size: 10px; color: var(--muted)"
+                    >Erection cost $/SF</label
+                  >
+                  <input
+                    type="number"
+                    id="storage-install-cost-val"
+                    value="2.5"
+                    step="0.25"
+                    style="width: 100%; padding: 7px; margin-top: 4px"
+                    oninput="onStorageControlChange()"
+                  />
+                </div>
+                <div>
+                  <label style="font-size: 10px; color: var(--muted)"
+                    >Shipping / Freight $</label
+                  >
+                  <input
+                    type="number"
+                    id="storage-shipping-val"
+                    value="0"
+                    step="500"
+                    style="width: 100%; padding: 7px; margin-top: 4px"
+                    oninput="onStorageControlChange()"
+                  />
+                </div>
+                <div>
+                  <label style="font-size: 10px; color: var(--muted)"
+                    >Engineering Drawings $</label
+                  >
+                  <input
+                    type="number"
+                    id="storage-drawings-val"
+                    value="0"
+                    step="500"
+                    style="width: 100%; padding: 7px; margin-top: 4px"
+                    oninput="onStorageControlChange()"
+                  />
+                </div>
+                <div>
+                  <label style="font-size: 10px; color: var(--muted)"
+                    >Sales tax rate %</label
+                  >
+                  <input
+                    type="number"
+                    id="storage-tax-rate"
+                    value="0"
+                    step="0.25"
+                    min="0"
+                    max="15"
+                    style="width: 100%; padding: 7px; margin-top: 4px"
+                    oninput="onStorageControlChange()"
+                  />
+                </div>
+                <div>
+                  <label style="font-size: 10px; color: var(--muted)"
+                    >Include sales tax</label
+                  >
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 8px;
+                      margin-top: 8px;
+                      font-size: 13px;
+                      cursor: pointer;
+                    "
+                  >
+                    <input
+                      type="checkbox"
+                      id="storage-tax-include"
+                      checked
+                      onchange="onStorageControlChange()"
+                    />
+                    Tax on materials &amp; doors
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div id="storage-metrics" class="metrics"></div>
+            <div class="tabs no-print">
+              <button
+                class="tab-btn active"
+                onclick="showStorageTab('buildings', this)"
+              >
+                Buildings
+              </button>
+              <button class="tab-btn" onclick="showStorageTab('quote', this)">
+                Quote
+              </button>
+              <button class="tab-btn" onclick="showStorageTab('drawings', this)">
+                Drawings
+              </button>
+            </div>
+            <div class="tab-content active" id="storage-tab-buildings">
+              <div id="storage-breakdown" class="card">
+                <div style="padding: 14px; color: var(--muted)">
+                  Upload COG sheet to begin.
+                </div>
+              </div>
+            </div>
+            <div class="tab-content" id="storage-tab-quote">
+              <div class="card">
+                <div id="storage-quote-content">
+                  <p style="padding: 20px; color: var(--muted)">
+                    Upload a COG sheet, then open this tab to see the quote.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="tab-content" id="storage-tab-drawings">
+              <div class="card" style="margin-bottom: 14px">
+                <div class="card-hdr">
+                  <div>
+                    <div class="card-title">Building Drawings &amp; Plans</div>
+                    <div class="card-sub">
+                      Add layout plans or elevations to include in the quote
+                      package — checked drawings appear at the end of the PDF
+                    </div>
+                  </div>
+                  <label class="btn btn-sm" style="cursor: pointer">
+                    + Add Drawings
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      multiple
+                      hidden
+                      onchange="storageHandleDrawingInput(event)"
+                    />
+                  </label>
+                </div>
+                <div
+                  id="storage-drawing-dropzone"
+                  class="drop-zone"
+                  style="padding: 14px"
+                >
+                  <div
+                    id="storage-drawing-grid"
+                    style="
+                      display: grid;
+                      grid-template-columns: repeat(
+                        auto-fill,
+                        minmax(180px, 1fr)
+                      );
+                      gap: 12px;
+                      margin-bottom: 14px;
+                    "
+                  ></div>
+                  <div
+                    id="storage-drawing-empty"
+                    style="
+                      text-align: center;
+                      padding: 32px;
+                      color: var(--muted);
+                      font-size: 13px;
+                      border: 2px dashed var(--border2);
+                      border-radius: 8px;
+                    "
+                  >
+                    No drawings added yet. Click "+ Add Drawings" or drag files
+                    here to attach layout plans.<br /><span style="font-size: 11px"
+                      >Images or PDFs · Checked drawings append to the full
+                      quote package</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="btn-row no-print">
+                <button
+                  class="btn btn-success"
+                  onclick="showPage('preview'); loadPreview();"
+                >
+                  Preview Full Package
+                </button>
+                <button class="btn btn-primary" onclick="downloadPdf()">
+                  Download PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== PREVIEW PAGE ========== -->
+        <div id="page-preview" style="display: none">
+          <div class="page-hdr">
+            <div>
+              <div class="page-title">Quote Preview</div>
+              <div class="page-sub">Rendered by POST /documents/preview</div>
+            </div>
+            <div class="btn-row" style="margin: 0">
+              <button class="btn" onclick="loadPreview()">Refresh</button>
+              <button class="btn btn-primary" onclick="downloadPdf()">
+                Download PDF
+              </button>
+              <button class="btn" onclick="window.print()">Print</button>
+            </div>
+          </div>
+          <div id="assembled-preview" class="preview-frame">
+            <p style="color: var(--muted)">
+              Click Refresh to load preview from API.
+            </p>
+          </div>
+        </div>
+
+        <!-- ========== HISTORY PAGE ========== -->
+        <div id="page-history" style="display: none">
+          <div class="page-hdr">
+            <div>
+              <div class="page-title">Quote Library</div>
+              <div class="page-sub">GET /estimates</div>
+            </div>
+            <button class="btn btn-sm" onclick="loadHistory()">Refresh</button>
+          </div>
+          <div id="history-summary" class="metrics"></div>
+          <div id="history-list"></div>
+        </div>
+
+        <!-- ========== PRICING RULES PAGE ========== -->
+        <div id="page-pricing" style="display: none">
+          <div class="page-hdr">
+            <div>
+              <div class="page-title">Pricing Rules</div>
+              <div class="page-sub">GET/PUT /api/sales/pricing-rules</div>
+            </div>
+            <button class="btn btn-primary" onclick="savePricingRules()">
+              Save Rules
+            </button>
+          </div>
+          <div id="pricing-editor" class="card">
+            <div style="padding: 14px; color: var(--muted)">Loading...</div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      // ─── Config & State ───────────────────────────────────────────────
+      const API = {
+        get base() {
+          return (
+            localStorage.getItem("qt_api_base") ||
+            "https://mr-storage-backend-025k.onrender.com"
+          ).replace(/\/$/, "");
+        },
+        get token() {
+          return localStorage.getItem("qt_api_token") || "";
+        },
+        estimates: "/api/sales/estimates",
+        rules: "/api/sales/pricing-rules",
+      };
+
+      const state = {
+        jobType: "PEMB",
+        scope: "supply",
+        roof: "screw-down",
+        install: "easy",
+        blendPct: 50,
+        squareFootage: 0,
+        squareFootageMeta: null,
+        shipperTotalWeightLbs: 0,
+        sfChoice: null,
+        manualSquareFootage: false,
+        installCostPerSf: 5.5,
+        sellPerSf: 8.5,
+        parsedCategories: null,
+        tabSummary: null,
+        pricing: null,
+        fullQuote: null,
+        extractedDrawingFields: null,
+        sourceFileName: "",
+        estimateId: null,
+        leadCompanyName: "",
+        customerEmail: "",
+        streetAddress: "",
+        cityStateZip: "",
+        buildingSize: "",
+        jobNumber: "",
+        additionalInfo: "",
+        marginOverride: {
+          applied: false,
+          laborSF: null,
+          pct: null,
+          sellFixed: null,
+        },
+        cogsOverride: {
+          applied: false,
+          costDollar: null,
+          marginPct: 20,
+          sellDollar: null,
+          costPctAdj: 0,
+        },
+        salesTax: { rate: 0, include: true },
+        concrete: { include: false, costSF: 7.25, marginPct: 25 },
+        insulation: { include: false, costSF: 1.5, marginPct: 30 },
+        storageData: null,
+        storagePricing: null,
+        storageCustomer: "",
+        storageLocation: "",
+        storageDrawingFiles: [],
+        storageInstallSellPerSf: 3.25,
+        storageInstallCostPerSf: 2.5,
+        storageShipping: 0,
+        storageDrawingsFee: 0,
+        pricingRules: null,
+      };
+
+      let computeTimer = null;
+      let previewTimer = null;
+
+      // ─── API Layer ──────────────────────────────────────────────────
+      async function apiFetch(method, path, body) {
+        const headers = { "Content-Type": "application/json" };
+        if (API.token) headers.Authorization = "Bearer " + API.token;
+        const res = await fetch(API.base + path, {
+          method,
+          headers,
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+        let json;
+        try {
+          json = await res.json();
+        } catch {
+          throw new Error("Invalid JSON response (" + res.status + ")");
+        }
+        if (!res.ok || json.success === false) {
+          throw new Error(json.message || "HTTP " + res.status);
+        }
+        return json.data !== undefined ? json.data : json;
+      }
+
+      async function fileToBase64(file) {
+        const buf = await file.arrayBuffer();
+        let binary = "";
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i++)
+          binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+      }
+
+      function saveAuth() {
+        localStorage.setItem(
+          "qt_api_base",
+          document.getElementById("api-base").value.trim(),
+        );
+        localStorage.setItem(
+          "qt_api_token",
+          document.getElementById("api-token").value.trim(),
+        );
+        updateAuthStatus();
+        toast("Auth saved", "success");
+      }
+
+      function updateAuthStatus() {
+        document.getElementById("api-base").value = API.base;
+        document.getElementById("api-token").value = API.token;
+        const ok = !!API.token;
+        document.getElementById("auth-status").className =
+          "status-dot" + (ok ? " ok" : "");
+        document.getElementById("auth-label").textContent = ok
+          ? "Token set"
+          : "Not connected";
+      }
+
+      function toast(msg, type) {
+        const el = document.getElementById("global-alert");
+        if (!el) return;
+        el.className = "alert alert-" + (type || "info");
+        el.textContent = msg;
+        el.style.display = "block";
+        if (type === "success")
+          setTimeout(() => {
+            el.style.display = "none";
+          }, 3000);
+      }
+
+      function fmt(n) {
+        const val = Number(n || 0);
+        return (
+          "$" +
+          val.toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+        );
+      }
+      function fmtPct(n) {
+        return (Number(n) || 0).toFixed(1) + "%";
+      }
+
+      function fmtLbs(n) {
+        const val = Number(n || 0);
+        return val.toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+      }
+
+      function hideSfChoiceBanner() {
+        const wrap = document.getElementById("sf-choice-banner");
+        if (wrap) wrap.style.display = "none";
+      }
+
+      function showSfChoiceBanner() {
+        if (state.manualSquareFootage) return hideSfChoiceBanner();
+        const meta = state.squareFootageMeta || {};
+        const weightSf = Number(meta.fromWeight || meta.selected || 0);
+        const coverSf = Number(meta.coverDerivedSqft || 0);
+        if (!weightSf || !coverSf) return hideSfChoiceBanner();
+        const diffPct =
+          Math.abs(weightSf - coverSf) / Math.max(weightSf, coverSf) * 100;
+        state.sfChoice = { weightSf, coverSf, diffPct };
+        const text = document.getElementById("sf-choice-text");
+        const wrap = document.getElementById("sf-choice-banner");
+        if (!text || !wrap) return;
+        text.innerHTML =
+          "SF mismatch detected: Weight formula gives <strong>" +
+          weightSf.toLocaleString() +
+          " SF</strong> while cover sheet gives <strong>" +
+          coverSf.toLocaleString() +
+          " SF</strong> (" +
+          diffPct.toFixed(1) +
+          "% difference). Choose which SF to use for pricing.";
+        wrap.style.display = "block";
+      }
+
+      function useSfChoice(kind) {
+        const choice = state.sfChoice || {};
+        const sf = kind === "cover" ? Number(choice.coverSf || 0) : Number(choice.weightSf || 0);
+        if (!sf) return;
+        state.squareFootage = sf;
+        state.manualSquareFootage = true;
+        if (state.squareFootageMeta) {
+          state.squareFootageMeta.source = "manual";
+          state.squareFootageMeta.selected = sf;
+          state.squareFootageMeta.inputSf = sf;
+        }
+        const live = document.getElementById("live-sf");
+        if (live) live.value = sf;
+        hideSfChoiceBanner();
+        debouncedCompute();
+        toast(
+          kind === "cover"
+            ? "Using cover-sheet SF for pricing"
+            : "Using weight-based SF for pricing",
+          "info",
+        );
+      }
+
+      function computeBody() {
+        return {
+          parsedCategories: state.parsedCategories,
+          jobType: state.jobType,
+          scope: state.scope,
+          roof: state.roof,
+          install: state.install,
+          squareFootage: state.squareFootage,
+          sf: state.squareFootage,
+          useManualSquareFootage: state.manualSquareFootage,
+          blendPct: state.blendPct,
+          installCostPerSf: state.installCostPerSf,
+          sellPerSf: state.sellPerSf,
+          concrete: state.concrete,
+          insulation: state.insulation,
+          salesTax: state.salesTax,
+          cogsOverride: state.cogsOverride.applied ? state.cogsOverride : null,
+          marginOverride: state.marginOverride.applied
+            ? state.marginOverride
+            : null,
+        };
+      }
+
+      function debouncedCompute() {
+        clearTimeout(computeTimer);
+        computeTimer = setTimeout(() => runCompute(), 350);
+      }
+
+      async function runCompute() {
+        if (!state.parsedCategories) return;
+        try {
+          document.getElementById("main-content").classList.add("loading");
+          const data = await apiFetch(
+            "POST",
+            API.estimates + "/compute",
+            computeBody(),
+          );
+          state.pricing = data.pricing;
+          state.fullQuote = data.fullQuote || null;
+          renderMetrics();
+          renderBreakdown();
+          updateLaborMarginDisplay();
+          updateCogsSummary();
+          updateMarginSummary();
+          debouncedLoadPreview();
+        } catch (e) {
+          toast("Compute failed: " + e.message, "error");
+        } finally {
+          document.getElementById("main-content").classList.remove("loading");
+        }
+      }
+
+      // ─── Upload Handlers ────────────────────────────────────────────
+      async function uploadShipper(file) {
+        if (!file) return;
+        if (!API.token)
+          return toast("Set JWT token in the auth bar first", "warn");
+        try {
+          toast("Uploading shipper...", "info");
+          // Reset SF so backend derives fresh SF from shipper weight (matches v5 empty field)
+          state.squareFootage = 0;
+          state.squareFootageMeta = null;
+          state.shipperTotalWeightLbs = 0;
+          state.sfChoice = null;
+          state.manualSquareFootage = false;
+          document.getElementById("live-sf").value = "";
+          hideSfChoiceBanner();
+          const fileBase64 = await fileToBase64(file);
+          const data = await apiFetch(
+            "POST",
+            API.estimates + "/extract-shipper",
+            {
+              fileBase64,
+              fileName: file.name,
+              jobType: state.jobType,
+              scope: state.scope,
+              roof: state.roof,
+              install: state.install,
+              blendPct: state.blendPct,
+              installCostPerSf: state.installCostPerSf,
+              sellPerSf: state.sellPerSf,
+              squareFootage: 0,
+              sf: 0,
+            },
+          );
+          state.parsedCategories = data.parsedCategories;
+          state.tabSummary = data.tabSummary;
+          state.pricing = data.pricing;
+          state.fullQuote = data.fullQuote || null;
+          state.squareFootage = data.squareFootage || state.squareFootage;
+          state.squareFootageMeta = data.squareFootageMeta || null;
+          state.shipperTotalWeightLbs = Number(data.totalWeightLbs || 0);
+          state.sourceFileName = file.name;
+          document.getElementById("shipper-name").textContent =
+            file.name +
+            " (" +
+            Math.round(data.totalWeightLbs || 0).toLocaleString() +
+            " lbs)";
+          document.getElementById("shipper-drop").classList.add("has-file");
+          document.getElementById("shipper-badge").textContent =
+            "· " + file.name;
+          document.getElementById("live-sf").value = state.squareFootage;
+          if (data.coverSheet?.labelMap)
+            applyCoverFields(data.coverSheet.labelMap);
+          renderMetrics();
+          renderBreakdown();
+          updateLaborMarginDisplay();
+          updateCogsSummary();
+          updateMarginSummary();
+          debouncedLoadPreview();
+          if (state.squareFootageMeta?.source === "weight_formula") {
+            const m = state.squareFootageMeta;
+            const msg =
+              "SF auto-calculated: round(" +
+              fmtLbs(data.totalWeightLbs || 0) +
+              " lbs / 9) = " +
+              Number(m.selected || 0).toLocaleString() +
+              " SF";
+            toast(msg, "info");
+          }
+          showSfChoiceBanner();
+          toast("Shipper parsed successfully", "success");
+        } catch (e) {
+          toast("Shipper upload failed: " + e.message, "error");
+        }
+      }
+
+      function applyExtractedDrawingFields(ex) {
+        const keys = [
+          "customer",
+          "project",
+          "location",
+          "width",
+          "length",
+          "eave",
+          "sqft",
+          "wind",
+          "snow",
+          "dead",
+          "code",
+          "frame",
+          "roofpanel",
+          "wall",
+          "notes",
+        ];
+        keys.forEach((k) => {
+          const el = document.getElementById("ex-" + k);
+          if (el && ex[k]) {
+            el.value = ex[k];
+            el.style.background = "#f0fff4";
+          }
+        });
+        const card = document.getElementById("pdf-specs-card");
+        if (card) card.style.display = "block";
+      }
+
+      function applyExtractedDrawing() {
+        const ex = state.extractedDrawingFields || {};
+        if (ex.customer) {
+          document.getElementById("f-company").value = ex.customer;
+          state.leadCompanyName = ex.customer;
+        }
+        if (ex.location) {
+          document.getElementById("f-city").value = ex.location;
+          state.cityStateZip = ex.location;
+        }
+        if (ex.sqft) {
+          state.squareFootage = +ex.sqft || state.squareFootage;
+          document.getElementById("live-sf").value = state.squareFootage;
+        }
+        if (ex.width && ex.length) {
+          const sz =
+            ex.width.replace(/'/g, "") + "x" + ex.length.replace(/'/g, "");
+          document.getElementById("f-size").value = sz;
+          state.buildingSize = sz;
+        }
+        ["frame", "roofpanel", "wall", "notes"].forEach((k) => {
+          const el = document.getElementById("ex-" + k);
+          if (el?.value) ex[k] = el.value;
+        });
+        state.extractedDrawingFields = ex;
+        debouncedCompute();
+        debouncedLoadPreview();
+        toast("Drawing specs applied", "success");
+      }
+
+      async function uploadDrawing(file) {
+        if (!file) return;
+        if (!API.token) return toast("Set JWT token first", "warn");
+        try {
+          const fileBase64 = await fileToBase64(file);
+          const data = await apiFetch(
+            "POST",
+            API.estimates + "/extract-drawing",
+            { fileBase64, fileName: file.name },
+          );
+          state.extractedDrawingFields = data.extracted || {};
+          document.getElementById("pdf-name").textContent =
+            file.name + " — " + (data.filledCount || 0) + " fields";
+          document.getElementById("pdf-drop").classList.add("has-file");
+          const ex = data.extracted || {};
+          applyExtractedDrawingFields(ex);
+          if (ex.customer) {
+            document.getElementById("f-company").value = ex.customer;
+            state.leadCompanyName = ex.customer;
+          }
+          if (ex.sqft) {
+            state.squareFootage = +ex.sqft || state.squareFootage;
+            document.getElementById("live-sf").value = state.squareFootage;
+          }
+          if (ex.width && ex.length) {
+            const sz =
+              ex.width.replace(/'/g, "") + "x" + ex.length.replace(/'/g, "");
+            document.getElementById("f-size").value = sz;
+            state.buildingSize = sz;
+          }
+          let html = "<strong>Extracted:</strong> ";
+          html += Object.entries(ex)
+            .filter(([, v]) => v)
+            .map(([k, v]) => k + ": " + v)
+            .join(" · ");
+          if (data.note) html += "<br><em>" + data.note + "</em>";
+          document.getElementById("pdf-fields").innerHTML = html;
+          debouncedCompute();
+        } catch (e) {
+          toast("PDF extract failed: " + e.message, "error");
+        }
+      }
+
+      function applyCoverFields(map) {
+        const find = (pats) => {
+          for (const k of Object.keys(map)) {
+            for (const p of pats) if (p.test(k) && map[k]) return map[k];
+          }
+          return null;
+        };
+        const cust = find([/customer/i]);
+        if (cust) {
+          document.getElementById("f-company").value = cust;
+          state.leadCompanyName = cust;
+        }
+        const w = find([/^width/i]),
+          l = find([/^length/i]);
+        if (w && l) {
+          state.buildingSize = w + "x" + l;
+          document.getElementById("f-size").value = state.buildingSize;
+        }
+      }
+
+      async function uploadStorageCog(file) {
+        if (!file || !API.token) return;
+        try {
+          toast("Uploading COG sheet...", "info");
+          const fileBase64 = await fileToBase64(file);
+          const data = await apiFetch(
+            "POST",
+            API.estimates + "/extract-storage-cog",
+            {
+              fileBase64,
+              fileName: file.name,
+              salesTax: state.salesTax,
+            },
+          );
+          state.storageData = {
+            buildings: data.buildings || [],
+            doors: data.doors || [],
+            extras: data.extras || [],
+            shipping: data.shippingDefault ?? 0,
+            installSellPerSf: state.storageInstallSellPerSf,
+            drawings: 0,
+            project: data.project || {},
+            format: data.format,
+            globalMarkupPct: data.globalMarkupPct,
+            summary: data.summary,
+          };
+          state.storagePricing = data.storagePricing || null;
+          state.storageCustomer = data.project?.customer || "";
+          state.storageLocation =
+            data.project?.location || data.project?.address || "";
+          document.getElementById("s-customer-name").value =
+            state.storageCustomer;
+          document.getElementById("s-job-location").value = state.storageLocation;
+          if (data.project?.address)
+            document.getElementById("s-customer-address").value =
+              data.project.address;
+          const shipEl = document.getElementById("storage-shipping-val");
+          if (shipEl) {
+            shipEl.value = data.shippingDefault || 0;
+          }
+          state.storageShipping = +shipEl?.value || 0;
+          state.storageData.shipping = state.storageShipping;
+          document.getElementById("cog-name").textContent =
+            file.name +
+            " · " +
+            (data.buildings?.length || 0) +
+            " building(s) · " +
+            (data.summary?.totalSqft || 0).toLocaleString() +
+            " SF";
+          document.getElementById("cog-drop").classList.add("has-file");
+          document.getElementById("storage-results-area").style.display =
+            "block";
+          await runComputeStorage();
+          toast("Storage COG loaded", "success");
+        } catch (e) {
+          toast("COG upload failed: " + e.message, "error");
+        }
+      }
+
+      function onStorageControlChange() {
+        state.storageInstallSellPerSf =
+          +document.getElementById("storage-install-val")?.value || 0;
+        state.storageInstallCostPerSf =
+          +document.getElementById("storage-install-cost-val")?.value || 0;
+        state.storageShipping =
+          +document.getElementById("storage-shipping-val")?.value || 0;
+        state.storageDrawingsFee =
+          +document.getElementById("storage-drawings-val")?.value || 0;
+        state.salesTax.rate =
+          +document.getElementById("storage-tax-rate")?.value || 0;
+        state.salesTax.include =
+          document.getElementById("storage-tax-include")?.checked !== false;
+        if (state.storageData) {
+          state.storageData.shipping = state.storageShipping;
+          state.storageData.drawings = state.storageDrawingsFee;
+          state.storageData.installSellPerSf = state.storageInstallSellPerSf;
+          state.storageData.installCostPerSf = state.storageInstallCostPerSf;
+        }
+        debouncedStorageCompute();
+      }
+
+      function storagePricingSummaryLines(sp, grandTotalOverride) {
+        const spx = sp || {};
+        const grandTotal = Math.round(
+          grandTotalOverride ?? spx.grandTotal ?? 0,
+        );
+        const buildings = spx.buildings || [];
+        const concrete = spx.concrete || {};
+        const insulation = spx.insulation || {};
+        const concSell = concrete.include
+          ? Math.round(concrete.appliedSell || 0)
+          : 0;
+        const insulSell = insulation.include
+          ? Math.round(insulation.appliedSell || 0)
+          : 0;
+        const taxRate = spx.salesTax?.rate || 0;
+        const taxAmt = Math.round(spx.salesTax?.amount || 0);
+        let installSell = Math.round(
+          spx.installSell ?? spx.breakdown?.install?.sell ?? 0,
+        );
+        if (!installSell && state.storageInstallSellPerSf && spx.totalSqft) {
+          installSell = Math.round(state.storageInstallSellPerSf * spx.totalSqft);
+        }
+        const rows = [];
+        const push = (label, amount, key, extra = {}) => {
+          const amt = Math.round(Number(amount) || 0);
+          if (key === "buildings" || amt > 0)
+            rows.push({ label, amount: amt, key, ...extra });
+        };
+        push(
+          `Buildings (${buildings.length})`,
+          spx.buildingSell || 0,
+          "buildings",
+        );
+        push("Doors & Hardware", spx.doorSell || 0, "doors");
+        push("Erection / Installation", installSell, "install");
+        push("Options & Add-ons", spx.extrasSell || 0, "extras");
+        push("Shipping & Freight", spx.shipping || 0, "shipping");
+        push("Engineering Drawings", spx.drawings || 0, "drawings");
+        if (concSell) push("Concrete", concSell, "concrete");
+        if (insulSell) push("Insulation", insulSell, "insulation");
+        if (taxAmt)
+          push(`Sales Tax (${taxRate}%)`, taxAmt, "tax", { taxStyle: true });
+        let lineSum = rows.reduce((a, r) => a + r.amount, 0);
+        if (grandTotal > lineSum) {
+          const gap = grandTotal - lineSum;
+          let installRow = rows.find((r) => r.key === "install");
+          if (!installRow) {
+            installRow = {
+              label: "Erection / Installation",
+              amount: 0,
+              key: "install",
+            };
+            const shipIdx = rows.findIndex((r) => r.key === "shipping");
+            rows.splice(shipIdx >= 0 ? shipIdx : rows.length, 0, installRow);
+          }
+          installRow.amount += gap;
+          lineSum += gap;
+        }
+        return { rows, grandTotal, lineSum };
+      }
+
+      let storageComputeTimer = null;
+      function debouncedStorageCompute() {
+        clearTimeout(storageComputeTimer);
+        storageComputeTimer = setTimeout(() => runComputeStorage(), 350);
+      }
+
+      async function runComputeStorage() {
+        if (!state.storageData?.buildings?.length || !API.token) return;
+        try {
+          const data = await apiFetch(
+            "POST",
+            API.estimates + "/compute-storage",
+            {
+              storageData: state.storageData,
+              installSellPerSf: state.storageInstallSellPerSf,
+              installCostPerSf: state.storageInstallCostPerSf,
+              shipping: state.storageShipping,
+              drawings: state.storageDrawingsFee,
+              salesTax: state.salesTax,
+            },
+          );
+          state.storagePricing = data.storagePricing;
+          if (state.storagePricing?.salesTax?.rate != null) {
+            const taxEl = document.getElementById("storage-tax-rate");
+            if (taxEl) taxEl.value = state.storagePricing.salesTax.rate;
+            state.salesTax.rate = state.storagePricing.salesTax.rate;
+          }
+          renderStorage();
+          renderStorageQuote();
+        } catch (e) {
+          toast("Storage compute failed: " + e.message, "error");
+        }
+      }
+
+      function showStorageTab(tab, btn) {
+        document
+          .querySelectorAll("#storage-results-area .tab-btn")
+          .forEach((b) => b.classList.remove("active"));
+        document
+          .querySelectorAll("#storage-results-area .tab-content")
+          .forEach((c) => c.classList.remove("active"));
+        if (btn) btn.classList.add("active");
+        document.getElementById("storage-tab-" + tab)?.classList.add("active");
+        if (tab === "quote") renderStorageQuote();
+        if (tab === "drawings") storageRenderDrawingGrid();
+      }
+
+      function storageDrawingAttachmentsForApi() {
+        return (state.storageDrawingFiles || [])
+          .filter((d) => d.includeInPackage !== false && d.data)
+          .map((d) => ({
+            name: d.name,
+            fileBase64: d.data,
+            includeInQuote: true,
+          }));
+      }
+
+      function storageAddDrawingFiles(files) {
+        if (!files.length) return;
+        let pending = files.length;
+        files.forEach((file) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            state.storageDrawingFiles.push({
+              name: file.name,
+              data: ev.target.result,
+              includeInPackage: true,
+            });
+            pending -= 1;
+            if (pending === 0) storageRenderDrawingGrid();
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function storageHandleDrawingInput(e) {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        storageAddDrawingFiles(files);
+        e.target.value = "";
+      }
+
+      function storageRenderDrawingGrid() {
+        const grid = document.getElementById("storage-drawing-grid");
+        const empty = document.getElementById("storage-drawing-empty");
+        if (!grid) return;
+        if (!state.storageDrawingFiles.length) {
+          grid.innerHTML = "";
+          if (empty) empty.style.display = "block";
+          return;
+        }
+        if (empty) empty.style.display = "none";
+        grid.innerHTML = state.storageDrawingFiles
+          .map((d, i) => {
+            const isImage = String(d.data || "").startsWith("data:image");
+            const preview = isImage
+              ? `<img src="${d.data}" alt="${d.name}" style="width:100%;height:140px;object-fit:cover;display:block;">`
+              : `<div style="width:100%;height:140px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#64748b;font-size:12px;padding:12px;text-align:center;">PDF<br>${d.name}</div>`;
+            return (
+              `<div style="position:relative;border:2px solid ${d.includeInPackage ? "#2176c7" : "#e2e8f0"};border-radius:6px;overflow:hidden;">` +
+              preview +
+              `<div style="padding:6px 8px;background:#f8f9fb;">` +
+              `<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px;">${d.name}</div>` +
+              `<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;">` +
+              `<input type="checkbox" ${d.includeInPackage ? "checked" : ""} onchange="state.storageDrawingFiles[${i}].includeInPackage=this.checked;storageRenderDrawingGrid();" style="accent-color:#2176c7;">Include in package` +
+              `</label></div>` +
+              `<button onclick="state.storageDrawingFiles.splice(${i},1);storageRenderDrawingGrid();" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;">✕</button>` +
+              `</div>`
+            );
+          })
+          .join("");
+      }
+
+      // ─── Render ─────────────────────────────────────────────────────
+      function renderMetrics() {
+        const p = state.pricing;
+        const fq = state.fullQuote;
+        if (!p) {
+          document.getElementById("metrics-row").innerHTML = "";
+          return;
+        }
+        const sell = fq?.grandTotal ?? p.totSell;
+        const profit = fq?.totalProfit ?? p.profit;
+        const margin = fq?.grandMargin ?? p.profPct;
+        const sfValue = Number(p.sf || state.squareFootage || 0);
+        document.getElementById("metrics-row").innerHTML = `
+    <div class="metric info"><div class="metric-label">Total Sell</div><div class="metric-val">${fmt(sell)}</div><div class="metric-sub">${fmt(p.sfPrice || fq?.pricePerSf)}/SF · ${sfValue.toLocaleString()} SF</div></div>
+    <div class="metric"><div class="metric-label">Total COGS</div><div class="metric-val">${fmt(p.totCost)}</div><div class="metric-sub">${fmtLbs(p.totWt || 0)} lbs · ${p.trucks || 0} trucks</div></div>
+    <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(profit)}</div><div class="metric-sub">${fmtPct(margin)} gross margin</div></div>
+    <div class="metric"><div class="metric-label">Material Sell</div><div class="metric-val">${fmt(p.matSell)}</div><div class="metric-sub">${p.blendLabel || ""}</div></div>
+    ${fq?.salesTax?.amount ? `<div class="metric"><div class="metric-label">Sales Tax</div><div class="metric-val">${fmt(fq.salesTax.amount)}</div><div class="metric-sub">${fq.salesTax.rate}%</div></div>` : ""}
+  `;
+      }
+
+      function renderBreakdown() {
+        const p = state.pricing;
+        if (!p?.rows?.length) return;
+        const tagClass = (t) => (t || "").replace("cat-", "");
+        const sfValue = Number(p.sf || state.squareFootage || 0);
+        const computedRowTotal = (p.rows || []).reduce(
+          (sum, row) => sum + Number(row?.price || 0),
+          0,
+        );
+        const rowTotal =
+          p.rowSubtotalBeforeBlend != null
+            ? Number(p.rowSubtotalBeforeBlend || 0)
+            : computedRowTotal;
+        const blendAdjustment =
+          p.vendorBlendAdjustment != null
+            ? Number(p.vendorBlendAdjustment || 0)
+            : Number(p.matCost || 0) - rowTotal;
+        const sub = document.getElementById("breakdown-sub");
+        if (sub) {
+          const sfMeta = state.squareFootageMeta;
+          let sfText = `${sfValue.toLocaleString()} SF`;
+          if (sfMeta?.source === "weight_formula") {
+            sfText += ` (from weight: ${fmtLbs(sfMeta.fromWeight || 0)} / 9)`;
+          } else if (sfMeta?.source === "manual") {
+            sfText += " (manual override)";
+          }
+          if (sfMeta?.coverDerivedSqft) {
+            sfText += ` · cover sheet SF: ${Number(sfMeta.coverDerivedSqft).toLocaleString()}`;
+          }
+          sub.textContent =
+            (state.sourceFileName || "Shipper") +
+            " · " +
+            sfText +
+            " · " +
+            fmtLbs(p.totWt || 0) +
+            " lbs";
+        }
+        let html =
+          '<table><thead><tr><th>Category</th><th class="td-r">Weight (lbs)</th><th>Rate</th><th class="td-r">Price</th><th>Notes</th></tr></thead><tbody>';
+        p.rows.forEach((r) => {
+          html += `<tr><td><span class="cat-tag cat-${tagClass(r.tag)}">${r.label}</span></td><td class="td-r">${fmtLbs(r.wt || 0)}</td><td>${r.rate}</td><td class="td-r">${fmt(r.price)}</td><td style="font-size:11px;color:var(--muted)">${r.notes || ""}</td></tr>`;
+        });
+        html += `<tr><td style="color:var(--muted)">Category subtotal (before blend)</td><td></td><td></td><td class="td-r">${fmt(rowTotal)}</td><td style="font-size:11px;color:var(--muted)">Sum of visible category prices</td></tr>`;
+        html += `<tr><td style="color:var(--muted)">Vendor blend adjustment</td><td></td><td>${p.blendLabel || ""}</td><td class="td-r">${fmt(blendAdjustment)}</td><td style="font-size:11px;color:var(--muted)">Quicken/Central blended cost delta</td></tr>`;
+        html += `<tr class="total-row"><td>Material cost (after blend)</td><td class="td-r">${fmtLbs(p.totWt || 0)} lbs</td><td></td><td class="td-r">${fmt(p.matCost)}</td><td style="font-size:11px;color:var(--muted)">Before blend ${fmt(rowTotal)} ${blendAdjustment < 0 ? `- ${fmt(Math.abs(blendAdjustment))}` : `+ ${fmt(blendAdjustment)}`}</td></tr>`;
+        html += `<tr><td style="color:var(--muted)">Freight cost (${p.trucks || 0} trucks)</td><td></td><td></td><td class="td-r">${fmt(p.freight)}</td><td></td></tr>`;
+        if (state.scope !== "supply") {
+          html += `<tr><td style="color:var(--muted)">Install cost</td><td></td><td></td><td class="td-r">${fmt(p.instCost)}</td><td></td></tr>`;
+          html += `<tr class="total-row"><td>Total cost</td><td></td><td></td><td class="td-r">${fmt(p.totCost)}</td><td></td></tr>`;
+          html += `<tr><td style="color:var(--green-light)">Installation sell</td><td></td><td></td><td class="td-r" style="color:var(--green-light)">${fmt(p.instSell)}</td><td></td></tr>`;
+        }
+        html += `<tr class="total-row" style="font-size:15px"><td style="color:var(--blue-light)">Building subtotal (sell)</td><td></td><td></td><td class="td-r" style="color:var(--blue-light)">${fmt(p.totSell)}</td><td style="color:var(--muted);font-size:11px">${fmt(p.sfPrice)}/SF</td></tr>`;
+        html += "</tbody></table>";
+        document.getElementById("breakdown-table").innerHTML = html;
+      }
+
+      function renderStorage() {
+        const sp = state.storagePricing;
+        const sd = state.storageData;
+        if (!sd) return;
+        document.getElementById("storage-metrics").innerHTML = sp
+          ? `
+    <div class="metric info"><div class="metric-label">Grand Total</div><div class="metric-val">${fmt(sp.grandTotal)}</div><div class="metric-sub">${fmt(sp.pricePerSf)}/SF · ${(sp.totalSqft || 0).toLocaleString()} SF</div></div>
+    <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(sp.profit)}</div><div class="metric-sub">${fmtPct(sp.marginPercent)} gross margin</div></div>
+    <div class="metric"><div class="metric-label">Buildings</div><div class="metric-val">${fmt(sp.buildingSell)}</div></div>
+    <div class="metric"><div class="metric-label">Install</div><div class="metric-val">${fmt(sp.installSell)}</div></div>
+  `
+          : "";
+        const buildings = sp?.buildings || sd.buildings || [];
+        let html =
+          '<div class="table-wrap"><table><thead><tr><th>Building</th><th>Dimensions</th><th class="td-r">SF</th><th class="td-r">COGS</th><th class="td-r">Markup</th><th class="td-r">Sell</th></tr></thead><tbody>';
+        buildings.forEach((b) => {
+          const sell =
+            b.sell ?? Math.round((b.cogs || 0) * (1 + (b.markup || 0) / 100));
+          html += `<tr><td>${b.name}</td><td>${b.width}' × ${b.length}' × ${b.loEave || 0}' eave</td><td class="td-r">${(b.sqft || 0).toLocaleString()}</td><td class="td-r">${fmt(b.cogs)}</td><td class="td-r">${b.markup || 0}%</td><td class="td-r">${fmt(sell)}</td></tr>`;
+        });
+        html += "</tbody></table></div>";
+        if ((sd.extras || []).length) {
+          html +=
+            '<div style="padding:14px 0 0"><strong>Options & Add-ons</strong></div><div class="table-wrap"><table><thead><tr><th>Item</th><th class="td-r">COGS</th><th class="td-r">Sell</th><th>Include</th></tr></thead><tbody>';
+          (sd.extras || []).forEach((x) => {
+            html += `<tr><td>${x.item}</td><td class="td-r">${fmt(x.cogs)}</td><td class="td-r">${fmt(x.sale || x.sell)}</td><td>${x.include !== false ? "✓" : "—"}</td></tr>`;
+          });
+          html += "</tbody></table></div>";
+        }
+        if (sp) {
+          const summary = storagePricingSummaryLines(sp);
+          html +=
+            '<div style="padding:14px 0 0"><strong>Pricing Summary</strong></div><div class="table-wrap"><table><tbody>';
+          summary.rows.forEach((row) => {
+            html += `<tr><td>${row.label}</td><td class="td-r">${fmt(row.amount)}</td></tr>`;
+          });
+          html += `<tr class="total-row"><td>Total</td><td class="td-r">${fmt(summary.grandTotal)}</td></tr>`;
+          if (summary.lineSum !== summary.grandTotal) {
+            html += `<tr><td colspan="2" style="color:var(--red);font-size:11px;padding-top:8px">Line items (${fmt(summary.lineSum)}) do not match grand total — recalculate or adjust controls.</td></tr>`;
+          }
+          html += "</tbody></table></div>";
+        }
+        document.getElementById("storage-breakdown").innerHTML = html;
+      }
+
+      function renderStorageQuote() {
+        const sp = state.storagePricing;
+        const sd = state.storageData;
+        const el = document.getElementById("storage-quote-content");
+        if (!el || !sp || !sd) return;
+        const cust =
+          document.getElementById("s-customer-name")?.value ||
+          state.storageCustomer ||
+          "Customer";
+        const loc =
+          document.getElementById("s-job-location")?.value ||
+          state.storageLocation ||
+          "TBD";
+        const addr = document.getElementById("s-customer-address")?.value || "";
+        const today = new Date().toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        });
+        const exp = new Date(Date.now() + 15 * 864e5).toLocaleDateString(
+          "en-US",
+          { year: "numeric", month: "long", day: "numeric" },
+        );
+        const sf = sp.totalSqft || 0;
+        const summary = storagePricingSummaryLines(sp);
+        const grand = summary.grandTotal || 0;
+        const sfPrice =
+          sp.pricePerSf || (sf > 0 ? (grand / sf).toFixed(2) : "—");
+        const buildings = sp.buildings || sd.buildings || [];
+        const summaryRows = summary.rows
+          .map(
+            (row) =>
+              `<tr class="q-sub-row"${row.taxStyle ? ' style="color:#b45309"' : ""}><td>${row.label}</td><td style="text-align:right">${fmt(row.amount)}</td></tr>`,
+          )
+          .join("");
+        const bldRows = buildings
+          .map((b) => {
+            const sell =
+              b.sell ??
+              Math.round((b.cogs || 0) * (1 + (b.markup || 0) / 100));
+            return `<tr><td style="padding:6px 8px;font-weight:600">${b.name}</td><td style="padding:6px 8px;text-align:center">${b.width}' × ${b.length}' × ${b.loEave || 0}' eave</td><td style="padding:6px 8px;text-align:center">${b.slope || ""}</td><td style="padding:6px 8px;text-align:center">${(b.sqft || 0).toLocaleString()} SF</td><td style="padding:6px 8px;text-align:center">Screw-Down</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:#1e3a8a">${fmt(sell)}</td></tr>`;
+          })
+          .join("");
+        el.innerHTML = `<div class="quote-output">
+    <div class="q-logo-bar"><div><div style="font-size:18px;font-weight:800;color:#1e3a8a">STORAGE MATERIALS</div>
+    <div class="q-logo-sub">METAL AND DOORS · Council Bluffs, IA · (888) 968-1222</div></div>
+    <div class="q-header-right"><div class="q-co-name">ESTIMATE</div><div class="q-co-detail">Date: ${today}<br>Expires: ${exp}<br>Business/Tax #: 99-4515145</div></div></div>
+    <div class="q-doc-info">
+      <div class="q-field"><label>Prepared For</label><p>${cust}${addr ? `<br><span style="font-weight:400;font-size:11px;color:#64748b">${addr}<br>${loc}</span>` : ""}</p></div>
+      <div class="q-field"><label>Location</label><p>${loc}</p></div>
+      <div class="q-field"><label>Project</label><p>${buildings.length} self-storage building${buildings.length !== 1 ? "s" : ""} · ${sf.toLocaleString()} total SF</p></div>
+      <div class="q-field"><label>Scope</label><p>Supply, Delivery & Erection</p></div>
+    </div>
+    <div class="q-price-box"><div class="q-price-label">Total Project Investment</div><div class="q-price-val">${fmt(grand)}</div><div class="q-price-sf">${fmt(sfPrice)}/SF · ${sf.toLocaleString()} SF · See Statement of Work for full scope</div></div>
+    <div class="q-section" style="margin-top:16px"><div class="q-section-title">Building Breakdown</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f8f9fb"><th style="padding:6px 8px;text-align:left">Building</th><th style="padding:6px 8px;text-align:center">Dimensions</th><th style="padding:6px 8px;text-align:center">Slope</th><th style="padding:6px 8px;text-align:center">SF</th><th style="padding:6px 8px;text-align:center">Roof Type</th><th style="padding:6px 8px;text-align:right">Price</th></tr></thead>
+    <tbody>${bldRows}</tbody>
+    <tfoot><tr style="font-weight:700;border-top:2px solid #1e3a8a"><td colspan="5" style="padding:8px">Building Subtotal</td><td style="padding:8px;text-align:right;color:#1e3a8a">${fmt(sp.buildingSell)}</td></tr></tfoot></table></div>
+    <div class="q-two-col" style="margin-top:16px"><div class="q-section"><div class="q-section-title">Pricing Summary</div><div class="q-breakdown"><table>
+    ${summaryRows}
+    <tr class="q-total-row"><td>Total</td><td style="text-align:right">${fmt(grand)}</td></tr>
+    </table></div><p style="font-size:11px;color:#64748b;margin-top:8px">${sp.salesTax?.rate ? `Sales tax of ${sp.salesTax.rate}% on materials & doors. Labor/erection not taxed.` : "Sales tax not included — set rate above if applicable."} Freight ${sp.shipping ? "itemized above" : "included in building pricing"}.</p></div>
+    <div class="q-section"><div class="q-section-title">Scope Included</div><ul class="q-list"><li>All ${buildings.length} self-storage metal building system${buildings.length !== 1 ? "s" : ""}</li><li>Primary & secondary structural framing per engineered drawings</li><li>26 GA R-Loc wall panels per specifications</li><li>Delivery & unloading of materials at site</li><li>Full erection of metal building system</li></ul></div></div>
+    </div>`;
+      }
+
+      function updateLaborMarginDisplay() {
+        const cost = state.installCostPerSf,
+          sell = state.sellPerSf;
+        const profit = sell - cost;
+        const margin = sell > 0 ? (profit / sell) * 100 : 0;
+        const color =
+          margin >= 20 ? "#4ade80" : margin >= 10 ? "#fbbf24" : "#f87171";
+        const txt =
+          "Labor profit: $" +
+          profit.toFixed(2) +
+          "/SF (" +
+          margin.toFixed(1) +
+          "%)";
+        const el = document.getElementById("labor-margin-display");
+        const el2 = document.getElementById("inline-labor-margin");
+        if (el) {
+          el.textContent = txt;
+          el.style.color = color;
+        }
+        if (el2) {
+          el2.textContent = txt;
+          el2.style.color = color;
+        }
+      }
+
+      // ─── Controls ───────────────────────────────────────────────────
+      function setJobType(t) {
+        state.jobType = t;
+        document
+          .getElementById("jt-pemb")
+          .classList.toggle("active", t === "PEMB");
+        document
+          .getElementById("jt-storage")
+          .classList.toggle("active", t === "Storage");
+        if (t === "Storage") showPage("storage");
+        else showPage("quote");
+      }
+
+      function setScope(s) {
+        state.scope = s;
+        ["supply", "install", "both"].forEach((x) => {
+          document
+            .getElementById("sc-" + x)
+            ?.classList.toggle("active", x === s);
+          document
+            .querySelectorAll('.sc-btn-inline[data-s="' + x + '"]')
+            .forEach((b) => b.classList.toggle("active", x === s));
+        });
+        debouncedCompute();
+      }
+
+      function onControlChange() {
+        state.roof = document.getElementById("sb-roof").value;
+        state.install = document.getElementById("sb-install").value;
+        state.blendPct = +document.getElementById("sb-blend").value;
+        debouncedCompute();
+      }
+
+      function syncInstallSliders(which, val) {
+        val = parseFloat(val) || 0;
+        if (which === "cost") {
+          state.installCostPerSf = val;
+          ["sb-cost", "live-cost"].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val;
+          });
+          ["sb-cost-val", "live-cost-val"].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = "$" + val.toFixed(2);
+          });
+        } else {
+          state.sellPerSf = val;
+          ["sb-sell", "live-sell"].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val;
+          });
+          ["sb-sell-val", "live-sell-val"].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = "$" + val.toFixed(2);
+          });
+        }
+        updateLaborMarginDisplay();
+        debouncedCompute();
+      }
+
+      function showPage(page, el) {
+        document
+          .querySelectorAll('[id^="page-"]')
+          .forEach((p) => (p.style.display = "none"));
+        document.getElementById("page-" + page).style.display = "block";
+        document
+          .querySelectorAll(".nav-item")
+          .forEach((n) => n.classList.remove("active"));
+        if (el) el.classList.add("active");
+        else
+          document
+            .querySelector('.nav-item[data-page="' + page + '"]')
+            ?.classList.add("active");
+        if (page === "history") loadHistory();
+        if (page === "pricing") loadPricingRules();
+      }
+
+      function showTab(id, btn) {
+        document
+          .querySelectorAll(".tab-content")
+          .forEach((t) => t.classList.remove("active"));
+        document.getElementById("tab-" + id)?.classList.add("active");
+        document
+          .querySelectorAll(".tab-btn")
+          .forEach((b) => b.classList.remove("active"));
+        if (btn) btn.classList.add("active");
+        if (id === "cogs-tab") updateCogsSummary();
+        if (id === "margin-tab") {
+          updateMarginSummary();
+          previewMargin();
+        }
+        if (id === "quote-tab" || id === "sow-tab" || id === "contract-tab") {
+          debouncedLoadPreview();
+        }
+      }
+
+      function updateMarginSummary() {
+        const el = document.getElementById("margin-summary");
+        if (!el) return;
+        const p = state.pricing;
+        if (!p) {
+          el.innerHTML =
+            '<div style="color:var(--muted);font-size:12px;padding:8px 0">Upload shipper to see pricing summary.</div>';
+          return;
+        }
+        const fq = state.fullQuote;
+        const grand = fq?.grandTotal ?? p.totSell;
+        el.innerHTML = `
+      <div class="metric good"><div class="metric-label">Total Sell</div><div class="metric-val">${fmt(grand)}</div><div class="metric-sub">$${p.sfPrice}/SF · ${Number(p.sf || 0).toLocaleString()} SF</div></div>
+      <div class="metric info"><div class="metric-label">Material Sell</div><div class="metric-val">${fmt(p.matSell)}</div><div class="metric-sub">${p.blendLabel || ""}</div></div>
+      <div class="metric"><div class="metric-label">Install Sell</div><div class="metric-val">${fmt(p.instSell)}</div><div class="metric-sub">Cost ${fmt(p.instCost)}</div></div>
+      <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(fq?.grandProfit ?? p.profit)}</div><div class="metric-sub">${fmtPct(fq?.grandMargin ?? p.profPct)} gross margin</div></div>`;
+      }
+
+      function debouncedLoadPreview() {
+        if (!API.token || !hasQuoteForDocuments()) return;
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(() => loadPreview(true), 400);
+      }
+
+      function cogsGetComputed() {
+        const p = state.pricing;
+        if (!p) return null;
+        const cost = (p.matCost || 0) + (p.freight || 0);
+        const sell = p.matSell || 0;
+        const margin = sell > 0 ? ((sell - cost) / sell) * 100 : 0;
+        return { cost, sell, margin, sf: p.sf || 1 };
+      }
+
+      function cogsReadForm() {
+        const costEl = document.getElementById("cogs-cost-dollar");
+        const marginEl = document.getElementById("cogs-margin-val");
+        const sellEl = document.getElementById("cogs-sell-dollar");
+        const pctLabel = document.getElementById("cogs-cost-pct-label");
+        return {
+          costDollar: costEl?.value ? +costEl.value : null,
+          marginPct: marginEl?.value ? +marginEl.value : 20,
+          sellDollar: sellEl?.value ? +sellEl.value : null,
+          costPctAdj: pctLabel?.textContent
+            ? parseFloat(pctLabel.textContent.replace(/[^-\d.]/g, "")) || 0
+            : 0,
+        };
+      }
+
+      function cogsOnCostInput() {
+        const val = parseFloat(document.getElementById("cogs-cost-dollar")?.value);
+        state.cogsOverride.costDollar = Number.isFinite(val) ? val : null;
+        const comp = cogsGetComputed();
+        if (comp && state.cogsOverride.costDollar) {
+          const pct =
+            ((state.cogsOverride.costDollar - comp.cost) / comp.cost) * 100;
+          const slider = document.getElementById("cogs-cost-pct-slider");
+          const label = document.getElementById("cogs-cost-pct-label");
+          if (slider)
+            slider.value = Math.min(50, Math.max(-30, Math.round(pct)));
+          if (label)
+            label.textContent =
+              (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+          state.cogsOverride.costPctAdj = pct;
+        }
+        updateCogsSummary();
+      }
+
+      function cogsOnCostPctSlider(pct) {
+        pct = parseFloat(pct) || 0;
+        state.cogsOverride.costPctAdj = pct;
+        const label = document.getElementById("cogs-cost-pct-label");
+        if (label) label.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+        const comp = cogsGetComputed();
+        if (comp) {
+          const newCost = Math.round(comp.cost * (1 + pct / 100));
+          state.cogsOverride.costDollar = newCost;
+          const costEl = document.getElementById("cogs-cost-dollar");
+          if (costEl) costEl.value = newCost;
+          const resultEl = document.getElementById("cogs-cost-result");
+          if (resultEl) {
+            const diff = newCost - comp.cost;
+            resultEl.textContent =
+              fmt(comp.cost) +
+              " → " +
+              fmt(newCost) +
+              " (" +
+              (diff >= 0 ? "+" : "") +
+              fmt(Math.abs(diff)) +
+              ")";
+          }
+        }
+        updateCogsSummary();
+      }
+
+      function cogsOnMarginSlider(val) {
+        val = parseFloat(val) || 0;
+        state.cogsOverride.marginPct = val;
+        const marginVal = document.getElementById("cogs-margin-val");
+        if (marginVal) marginVal.value = val.toFixed(1);
+        state.cogsOverride.sellDollar = null;
+        const sellEl = document.getElementById("cogs-sell-dollar");
+        if (sellEl) sellEl.value = "";
+        updateCogsSummary();
+      }
+
+      function cogsOnMarginInput(val) {
+        val = parseFloat(val) || 0;
+        state.cogsOverride.marginPct = val;
+        const slider = document.getElementById("cogs-margin-slider");
+        if (slider) slider.value = Math.min(60, Math.max(0, val));
+        state.cogsOverride.sellDollar = null;
+        const sellEl = document.getElementById("cogs-sell-dollar");
+        if (sellEl) sellEl.value = "";
+        updateCogsSummary();
+      }
+
+      function cogsOnSellInput() {
+        const val = parseFloat(document.getElementById("cogs-sell-dollar")?.value);
+        state.cogsOverride.sellDollar = Number.isFinite(val) ? val : null;
+        if (state.cogsOverride.sellDollar) {
+          const comp = cogsGetComputed();
+          const costBase = state.cogsOverride.costDollar || (comp ? comp.cost : 0);
+          if (costBase > 0) {
+            const impliedMargin =
+              ((state.cogsOverride.sellDollar - costBase) /
+                state.cogsOverride.sellDollar) *
+              100;
+            const slider = document.getElementById("cogs-margin-slider");
+            const marginVal = document.getElementById("cogs-margin-val");
+            const clamped = Math.min(60, Math.max(0, impliedMargin));
+            if (slider) slider.value = clamped;
+            if (marginVal) marginVal.value = clamped.toFixed(1);
+            state.cogsOverride.marginPct = clamped;
+          }
+        }
+        updateCogsSummary();
+      }
+
+      function updateCogsSummary() {
+        const comp = cogsGetComputed();
+        const summaryEl = document.getElementById("cogs-summary");
+        if (!summaryEl) return;
+
+        if (!comp) {
+          summaryEl.innerHTML =
+            '<div style="color:var(--muted);font-size:12px;">Generate a quote first to use COGS override.</div>';
+          return;
+        }
+
+        const p = state.pricing;
+        const form = cogsReadForm();
+        const fc = document.getElementById("cogs-from-cost");
+        const fs = document.getElementById("cogs-from-sell");
+        const fm = document.getElementById("cogs-from-margin");
+        const ff = document.getElementById("cogs-from-sf");
+        if (fc) fc.textContent = fmt(comp.cost);
+        if (fs) fs.textContent = fmt(comp.sell);
+        const compMarkup = comp.cost > 0 ? ((comp.sell - comp.cost) / comp.cost) * 100 : 0;
+        if (fm)
+          fm.textContent =
+            comp.margin.toFixed(1) +
+            "% margin (" +
+            compMarkup.toFixed(1) +
+            "% markup)";
+        if (ff)
+          ff.textContent =
+            "$" +
+            (comp.cost / (comp.sf || 1)).toFixed(2) +
+            " cost / $" +
+            (comp.sell / (comp.sf || 1)).toFixed(2) +
+            " sell";
+
+        const adjCost = form.costDollar || comp.cost;
+        let adjSell;
+        if (form.sellDollar) {
+          adjSell = form.sellDollar;
+        } else {
+          const m = form.marginPct / 100;
+          adjSell = m >= 1 ? adjCost * 2 : adjCost / (1 - m);
+        }
+
+        const scopeKey = String(p.scope || state.scope || "both").toLowerCase();
+        const instSell = p.instSell || 0;
+        const instCost = p.instCost || 0;
+        const grandSell =
+          scopeKey === "supply"
+            ? adjSell
+            : scopeKey === "install"
+              ? instSell
+              : adjSell + instSell;
+        const grandCost =
+          scopeKey === "supply"
+            ? adjCost
+            : scopeKey === "install"
+              ? instCost
+              : adjCost + instCost;
+        const profit = grandSell - grandCost;
+        const matProfit = adjSell - adjCost;
+        const matMargin = adjSell > 0 ? (matProfit / adjSell) * 100 : 0;
+        const matMarkup = adjCost > 0 ? (matProfit / adjCost) * 100 : 0;
+        const totalMargin = grandSell > 0 ? (profit / grandSell) * 100 : 0;
+        const sfPrice = comp.sf > 0 ? (grandSell / comp.sf).toFixed(2) : "0";
+        const costDiff = adjCost - comp.cost;
+        const sellDiff = adjSell - comp.sell;
+        const profColor = profit >= 0 ? "#15803d" : "#dc2626";
+        const matColor =
+          matMargin >= 20 ? "#15803d" : matMargin >= 10 ? "#b45309" : "#dc2626";
+        const installNote =
+          scopeKey === "supply"
+            ? "supply only"
+            : scopeKey === "install"
+              ? "install only"
+              : "incl. install";
+
+        summaryEl.innerHTML =
+          '<div class="metric info"><div class="metric-label">Adjusted COGS</div><div class="metric-val">' +
+          fmt(adjCost) +
+          '</div><div class="metric-sub">' +
+          (costDiff >= 0 ? "+" : "") +
+          fmt(Math.abs(costDiff)) +
+          " vs shipper</div></div>" +
+          '<div class="metric" style="border-top:2px solid ' +
+          matColor +
+          '"><div class="metric-label">Material Sell</div><div class="metric-val" style="color:' +
+          matColor +
+          '">' +
+          fmt(adjSell) +
+          '</div><div class="metric-sub">' +
+          matMargin.toFixed(1) +
+          "% margin / " +
+          matMarkup.toFixed(1) +
+          "% markup · " +
+          (sellDiff >= 0 ? "+" : "") +
+          fmt(Math.abs(sellDiff)) +
+          "</div></div>" +
+          '<div class="metric good"><div class="metric-label">Total Sell</div><div class="metric-val">' +
+          fmt(grandSell) +
+          '</div><div class="metric-sub">$' +
+          sfPrice +
+          "/SF · " +
+          installNote +
+          "</div></div>" +
+          '<div class="metric" style="border-top:2px solid ' +
+          profColor +
+          '"><div class="metric-label">Total Profit</div><div class="metric-val" style="color:' +
+          profColor +
+          '">' +
+          fmt(profit) +
+          '</div><div class="metric-sub">' +
+          totalMargin.toFixed(1) +
+          "% overall margin</div></div>";
+
+        state.cogsOverride._pendingSell = Math.round(grandSell);
+        state.cogsOverride._pendingProfit = Math.round(profit);
+        state.cogsOverride._pendingMargin = totalMargin.toFixed(1);
+        state.cogsOverride._pendingSFPrice = sfPrice;
+      }
+
+      // ─── Margin / COGS ──────────────────────────────────────────────
+      async function previewMargin() {
+        if (!state.pricing) return;
+        const labor = document.getElementById("margin-labor").value;
+        const pct = document.getElementById("margin-pct").value;
+        const sellFixed = document.getElementById("margin-sell-fixed").value;
+        try {
+          const data = await apiFetch(
+            "POST",
+            API.estimates + "/margin/preview",
+            {
+              pricingResult: state.pricing,
+              marginOverride: {
+                laborSF: labor ? +labor : null,
+                pct: pct ? +pct : null,
+                sellFixed: sellFixed ? +sellFixed : null,
+                applied: false,
+              },
+            },
+          );
+          const a = data.preview?.adjusted;
+          if (!a) return;
+          document.getElementById("margin-preview").innerHTML = `
+      <div class="metric info"><div class="metric-label">Adjusted Sell</div><div class="metric-val">${fmt(a.totSell)}</div><div class="metric-sub">$${a.sfPrice}/SF</div></div>
+      <div class="metric"><div class="metric-label">Cost</div><div class="metric-val">${fmt(a.totCost)}</div></div>
+      <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(a.profit)}</div><div class="metric-sub">${a.profPct}%</div></div>
+      <div class="metric"><div class="metric-label">Original</div><div class="metric-val">${fmt(data.preview.originalSell)}</div></div>
+    `;
+        } catch (e) {
+          toast("Margin preview: " + e.message, "error");
+        }
+      }
+
+      async function applyMargin() {
+        state.marginOverride = {
+          applied: true,
+          laborSF: document.getElementById("margin-labor").value
+            ? +document.getElementById("margin-labor").value
+            : null,
+          pct: document.getElementById("margin-pct").value
+            ? +document.getElementById("margin-pct").value
+            : null,
+          sellFixed: document.getElementById("margin-sell-fixed").value
+            ? +document.getElementById("margin-sell-fixed").value
+            : null,
+        };
+        await runCompute();
+        debouncedLoadPreview();
+        toast("Margin override applied to quote", "success");
+      }
+
+      function resetMargin() {
+        state.marginOverride = {
+          applied: false,
+          laborSF: null,
+          pct: null,
+          sellFixed: null,
+        };
+        document.getElementById("margin-labor").value = "";
+        document.getElementById("margin-pct").value = "";
+        document.getElementById("margin-sell-fixed").value = "";
+        document.getElementById("margin-preview").innerHTML = "";
+        runCompute();
+      }
+
+      async function applyCogs() {
+        if (!state.pricing)
+          return toast("Generate a quote first", "warn");
+        const form = cogsReadForm();
+        if (
+          !form.costDollar &&
+          !form.sellDollar &&
+          form.marginPct === 20 &&
+          form.costPctAdj === 0
+        ) {
+          return toast("Adjust the cost or margin first before applying.", "warn");
+        }
+        state.cogsOverride = {
+          applied: true,
+          costDollar: form.costDollar,
+          marginPct: form.marginPct,
+          sellDollar: form.sellDollar,
+          costPctAdj: form.costPctAdj,
+        };
+        await runCompute();
+        debouncedLoadPreview();
+        toast("COGS override applied to quote", "success");
+      }
+
+      function resetCogs() {
+        state.cogsOverride = {
+          applied: false,
+          costDollar: null,
+          marginPct: 20,
+          sellDollar: null,
+          costPctAdj: 0,
+        };
+        const resetVal = (id, val) => {
+          const el = document.getElementById(id);
+          if (el) el.value = val;
+        };
+        resetVal("cogs-cost-dollar", "");
+        resetVal("cogs-cost-pct-slider", "0");
+        resetVal("cogs-margin-slider", "20");
+        resetVal("cogs-margin-val", "20");
+        resetVal("cogs-sell-dollar", "");
+        const pctLabel = document.getElementById("cogs-cost-pct-label");
+        if (pctLabel) pctLabel.textContent = "0%";
+        const resultEl = document.getElementById("cogs-cost-result");
+        if (resultEl) resultEl.textContent = "";
+        runCompute();
+        toast("COGS reset to shipper numbers", "success");
+      }
+
+      async function lookupTax() {
+        const zip = document.getElementById("tax-zip").value.trim();
+        if (zip.length !== 5) return toast("Enter 5-digit ZIP", "warn");
+        try {
+          const data = await apiFetch(
+            "GET",
+            API.estimates + "/tax-lookup/" + zip,
+          );
+          document.getElementById("tax-rate").value = data.rate;
+          state.salesTax.rate = data.rate;
+          document.getElementById("tax-status").textContent =
+            data.message || "";
+          debouncedCompute();
+        } catch (e) {
+          toast("Tax lookup: " + e.message, "error");
+        }
+      }
+
+      // ─── Preview & PDF ──────────────────────────────────────────────
+      function hasQuoteForDocuments() {
+        if (state.jobType === "Storage" || state.storagePricing) {
+          return Boolean(state.storagePricing?.grandTotal);
+        }
+        return Boolean(state.pricing?.totSell);
+      }
+
+      function documentPayload() {
+        const isStorage =
+          state.jobType === "Storage" || Boolean(state.storagePricing);
+        const base = {
+          jobType: state.jobType,
+          leadCompanyName:
+            state.leadCompanyName ||
+            state.storageCustomer ||
+            state.storageData?.project?.customer ||
+            "",
+          customerEmail: state.customerEmail,
+          streetAddress: state.streetAddress,
+          cityStateZip:
+            state.cityStateZip ||
+            state.storageLocation ||
+            state.storageData?.project?.location ||
+            "",
+          buildingSize: state.buildingSize,
+          squareFootage:
+            state.squareFootage ||
+            state.storagePricing?.totalSqft ||
+            state.storageData?.totalSqft ||
+            0,
+          jobNumber: state.jobNumber,
+          additionalInfo: state.additionalInfo,
+          extractedDrawingFields: state.extractedDrawingFields,
+          drawingAttachments: storageDrawingAttachmentsForApi(),
+          sections: ["quote", "sow", "contract", "drawings"],
+        };
+        if (isStorage) {
+          return {
+            ...base,
+            storageData: state.storageData,
+            storagePricingResult: state.storagePricing,
+            grandTotal: state.storagePricing?.grandTotal,
+          };
+        }
+        return {
+          ...base,
+          pricingResult: state.pricing,
+          fullQuote: state.fullQuote,
+        };
+      }
+
+      async function loadPreview(silent) {
+        if (!hasQuoteForDocuments()) {
+          if (!silent) toast("Generate a quote first", "warn");
+          return;
+        }
+        try {
+          const data = await apiFetch(
+            "POST",
+            API.estimates + "/documents/preview",
+            documentPayload(),
+          );
+          const assembled =
+            data.assembledHtml ||
+            data.quoteHtml ||
+            "<p>No preview returned</p>";
+          const ap = document.getElementById("assembled-preview");
+          if (ap) ap.innerHTML = assembled;
+          const qh = document.getElementById("quote-html");
+          if (qh) qh.innerHTML = data.quoteHtml || assembled;
+          const sh = document.getElementById("sow-html");
+          if (sh)
+            sh.innerHTML =
+              data.sowHtml ||
+              "<p style='color:var(--muted)'>No SOW returned</p>";
+          const ch = document.getElementById("contract-html");
+          if (ch)
+            ch.innerHTML =
+              data.contractHtml ||
+              "<p style='color:var(--muted)'>No contract returned</p>";
+        } catch (e) {
+          if (!silent) toast("Preview failed: " + e.message, "error");
+        }
+      }
+
+      async function downloadPdf() {
+        if (!hasQuoteForDocuments())
+          return toast("Generate a quote first", "warn");
+        try {
+          const path = state.estimateId
+            ? API.estimates + "/" + state.estimateId + "/documents/pdf"
+            : API.estimates + "/documents/pdf";
+          const data = await apiFetch("POST", path, documentPayload());
+          const a = document.createElement("a");
+          a.href = "data:" + data.mimeType + ";base64," + data.fileBase64;
+          a.download = data.fileName || "quote.pdf";
+          a.click();
+        } catch (e) {
+          toast("PDF failed: " + e.message, "error");
+        }
+      }
+
+      // ─── Save / History ─────────────────────────────────────────────
+      async function saveEstimate() {
+        if (!state.parsedCategories || !state.pricing)
+          return toast("Upload shipper and compute first", "warn");
+        const body = {
+          jobType: "PEMB",
+          scope: state.scope,
+          leadCompanyName: state.leadCompanyName,
+          customerEmail: state.customerEmail,
+          streetAddress: state.streetAddress,
+          cityStateZip: state.cityStateZip,
+          buildingSize: state.buildingSize,
+          squareFootage: state.squareFootage,
+          jobNumber: state.jobNumber,
+          sourceFileName: state.sourceFileName,
+          parsedCategories: state.parsedCategories,
+          tabSummary: state.tabSummary,
+          pricingResult: state.pricing,
+          fullQuoteResult: state.fullQuote,
+          extractedDrawingFields: state.extractedDrawingFields,
+          concreteAddon: state.concrete,
+          insulationAddon: state.insulation,
+          salesTax: state.fullQuote?.salesTax || state.salesTax,
+          additionalInfo: state.additionalInfo,
+          cogsOverride: state.cogsOverride,
+          marginOverride: state.marginOverride,
+          status: "draft",
+        };
+        try {
+          if (state.estimateId) {
+            await apiFetch("PUT", API.estimates + "/" + state.estimateId, body);
+            toast("Estimate updated", "success");
+          } else {
+            const data = await apiFetch("POST", API.estimates, body);
+            state.estimateId = data.estimate?._id || data._id;
+            toast(
+              "Estimate saved (id: " + (state.estimateId || "").slice(-6) + ")",
+              "success",
+            );
+          }
+        } catch (e) {
+          toast("Save failed: " + e.message, "error");
+        }
+      }
+
+      async function saveStorageEstimate() {
+        if (!state.storageData) return toast("Upload COG sheet first", "warn");
+        try {
+          const body = {
+            jobType: "Storage",
+            storageData: state.storageData,
+            storagePricingResult: state.storagePricing,
+            leadCompanyName: state.storageData.project?.customer || "",
+            drawingAttachments: storageDrawingAttachmentsForApi(),
+            status: "draft",
+          };
+          const data = state.estimateId
+            ? await apiFetch(
+                "PUT",
+                API.estimates + "/" + state.estimateId,
+                body,
+              )
+            : await apiFetch("POST", API.estimates, body);
+          state.estimateId = data.estimate?._id || state.estimateId;
+          toast("Storage estimate saved", "success");
+        } catch (e) {
+          toast("Save failed: " + e.message, "error");
+        }
+      }
+
+      async function loadHistory() {
+        if (!API.token) return;
+        try {
+          const [list, summary] = await Promise.all([
+            apiFetch("GET", API.estimates + "?limit=30"),
+            apiFetch("GET", API.estimates + "/history/summary").catch(
+              () => null,
+            ),
+          ]);
+          if (summary) {
+            const all = summary.allTime || summary;
+            document.getElementById("history-summary").innerHTML = `
+        <div class="metric info"><div class="metric-label">Total Quotes</div><div class="metric-val">${all.totalQuotes || 0}</div></div>
+        <div class="metric good"><div class="metric-label">Pipeline Value</div><div class="metric-val">${fmt(all.totalValue)}</div></div>
+        <div class="metric"><div class="metric-label">Total Profit</div><div class="metric-val">${fmt(all.totalProfit)}</div></div>
+      `;
+          }
+          const estimates = list.estimates || list.items || list || [];
+          document.getElementById("history-list").innerHTML = estimates.length
+            ? estimates
+                .map(
+                  (e) => `
+      <div class="history-item" onclick="loadEstimate('${e._id}')">
+        <div class="hi-name">${e.leadCompanyName || "Untitled"} <span style="font-size:11px;color:var(--muted)">${e.jobType || ""} · ${e.status || ""}</span></div>
+        <div class="hi-meta">${new Date(e.updatedAt || e.createdAt).toLocaleDateString()} · ${e.sourceFileName || ""}</div>
+        <div class="hi-price">${fmt(e.grandTotal ?? e.totalSell)}</div>
+      </div>
+    `,
+                )
+                .join("")
+            : '<p style="color:var(--muted)">No saved estimates.</p>';
+        } catch (e) {
+          toast("History: " + e.message, "error");
+        }
+      }
+
+      async function loadEstimate(id) {
+        try {
+          const data = await apiFetch("GET", API.estimates + "/" + id);
+          const e = data.estimate || data;
+          state.estimateId = e._id;
+          state.leadCompanyName = e.leadCompanyName || "";
+          state.customerEmail = e.customerEmail || "";
+          state.streetAddress = e.streetAddress || "";
+          state.cityStateZip = e.cityStateZip || "";
+          state.buildingSize = e.buildingSize || "";
+          state.squareFootage = e.squareFootage || 0;
+          state.jobNumber = e.jobNumber || "";
+          state.parsedCategories = e.parsedCategories;
+          state.tabSummary = e.tabSummary;
+          state.pricing = e.pricingResult;
+          state.fullQuote = e.fullQuoteResult;
+          state.extractedDrawingFields = e.extractedDrawingFields;
+          state.sourceFileName = e.sourceFileName || "";
+          state.scope = (e.scope || "supply").toLowerCase();
+          state.cogsOverride = e.cogsOverride || {
+            applied: false,
+            costDollar: null,
+            marginPct: 20,
+            sellDollar: null,
+            costPctAdj: 0,
+          };
+          state.marginOverride = e.marginOverride || {
+            applied: false,
+            laborSF: null,
+            pct: null,
+            sellFixed: null,
+          };
+          state.concrete = e.concreteAddon || state.concrete;
+          state.insulation = e.insulationAddon || state.insulation;
+          state.additionalInfo = e.additionalInfo || "";
+          state.storageData = e.storageData;
+          state.storagePricing = e.storagePricingResult;
+          setScope(state.scope);
+          document.getElementById("f-company").value = state.leadCompanyName;
+          document.getElementById("f-email").value = state.customerEmail;
+          document.getElementById("f-street").value = state.streetAddress;
+          document.getElementById("f-city").value = state.cityStateZip;
+          document.getElementById("f-size").value = state.buildingSize;
+          document.getElementById("live-sf").value = state.squareFootage;
+          const addInfo = document.getElementById("quote-additional-info");
+          if (addInfo) addInfo.value = state.additionalInfo;
+          if (e.cogsOverride?.costDollar) {
+            const costEl = document.getElementById("cogs-cost-dollar");
+            if (costEl) costEl.value = e.cogsOverride.costDollar;
+          }
+          if (e.cogsOverride?.marginPct != null) {
+            const mv = document.getElementById("cogs-margin-val");
+            const ms = document.getElementById("cogs-margin-slider");
+            if (mv) mv.value = e.cogsOverride.marginPct;
+            if (ms) ms.value = e.cogsOverride.marginPct;
+          }
+          if (e.extractedDrawingFields) {
+            applyExtractedDrawingFields(e.extractedDrawingFields);
+          }
+          if (e.marginOverride?.laborSF != null)
+            document.getElementById("margin-labor").value =
+              e.marginOverride.laborSF;
+          if (e.marginOverride?.pct != null)
+            document.getElementById("margin-pct").value = e.marginOverride.pct;
+          if (e.marginOverride?.sellFixed != null)
+            document.getElementById("margin-sell-fixed").value =
+              e.marginOverride.sellFixed;
+          if (e.jobType === "Storage") {
+            state.storageDrawingFiles = (e.drawingAttachments || []).map((d) => ({
+              name: d.name || "Drawing",
+              data: d.fileBase64 || d.data,
+              includeInPackage: d.includeInQuote !== false,
+            }));
+            const sp = e.storagePricingResult || {};
+            if (sp.installSellPerSf != null) {
+              state.storageInstallSellPerSf = sp.installSellPerSf;
+              const el = document.getElementById("storage-install-val");
+              if (el) el.value = sp.installSellPerSf;
+            }
+            if (sp.installCostPerSf != null) {
+              state.storageInstallCostPerSf = sp.installCostPerSf;
+              const el = document.getElementById("storage-install-cost-val");
+              if (el) el.value = sp.installCostPerSf;
+            }
+            if (sp.shipping != null) {
+              state.storageShipping = sp.shipping;
+              const el = document.getElementById("storage-shipping-val");
+              if (el) el.value = sp.shipping;
+            }
+            if (sp.drawings != null) {
+              state.storageDrawingsFee = sp.drawings;
+              const el = document.getElementById("storage-drawings-val");
+              if (el) el.value = sp.drawings;
+            }
+            const taxRate =
+              sp.salesTax?.rate ?? e.salesTax?.rate ?? state.salesTax.rate;
+            state.salesTax.rate = taxRate;
+            state.salesTax.include = sp.salesTax?.include !== false;
+            const taxEl = document.getElementById("storage-tax-rate");
+            if (taxEl) taxEl.value = taxRate;
+            const taxInc = document.getElementById("storage-tax-include");
+            if (taxInc) taxInc.checked = state.salesTax.include;
+            showPage("storage");
+            document.getElementById("storage-results-area").style.display =
+              "block";
+            await runComputeStorage();
+            storageRenderDrawingGrid();
+          } else {
+            showPage("quote");
+            renderMetrics();
+            renderBreakdown();
+            updateCogsSummary();
+            updateMarginSummary();
+            debouncedLoadPreview();
+          }
+          toast("Loaded: " + (e.leadCompanyName || id.slice(-6)), "success");
+        } catch (e) {
+          toast("Load failed: " + e.message, "error");
+        }
+      }
+
+      // ─── Pricing Rules ──────────────────────────────────────────────
+      async function loadPricingRules() {
+        if (!API.token) return;
+        try {
+          const rulesRes = await apiFetch("GET", API.rules);
+          const rules = rulesRes?.pricingRules || rulesRes || {};
+          state.pricingRules = rules;
+          const fields = [
+            ["steelRatesPerLb.primaryFrames", "Primary $/lb"],
+            ["steelRatesPerLb.secondarySteel", "Secondary $/lb"],
+            ["sheetingRatesPerSf.standardScrewDown", "Sheeting $/SF"],
+            ["sheetingRatesPerSf.standingSeam", "Standing seam $/SF"],
+            ["freight.ratePerLb", "Freight $/lb"],
+            ["markup.pembMultiplier", "PEMB markup"],
+            ["markup.storageMultiplier", "Storage markup"],
+            ["bucketRates.trim.perLb", "Trim $/lb"],
+            ["bucketRates.trim.perSf", "Trim $/SF floor"],
+            ["bucketRates.misc.perLb", "Cables/Bracing/Sealant $/lb"],
+            ["bucketRates.misc.perSf", "Cables/Bracing/Sealant $/SF floor"],
+            ["bucketRates.accessories.perLb", "Accessories $/lb"],
+            ["bucketRates.accessories.perSf", "Accessories $/SF floor"],
+            ["bucketRates.fasteners.perSf", "Fasteners $/SF"],
+          ];
+          let html = '<div class="grid-3" style="padding:14px">';
+          fields.forEach(([path, label]) => {
+            const val = path.split(".").reduce((o, k) => o?.[k], rules) ?? "";
+            html += `<div class="field"><label>${label}</label><input data-path="${path}" value="${val}" type="number" step="0.01"></div>`;
+          });
+          html += "</div>";
+          document.getElementById("pricing-editor").innerHTML = html;
+        } catch (e) {
+          document.getElementById("pricing-editor").innerHTML =
+            '<div style="padding:14px;color:var(--red)">' +
+            e.message +
+            "</div>";
+        }
+      }
+
+      async function savePricingRules() {
+        if (!state.pricingRules) return;
+        document
+          .querySelectorAll("#pricing-editor input[data-path]")
+          .forEach((inp) => {
+            const parts = inp.dataset.path.split(".");
+            let obj = state.pricingRules;
+            for (let i = 0; i < parts.length - 1; i++) {
+              if (!obj[parts[i]]) obj[parts[i]] = {};
+              obj = obj[parts[i]];
+            }
+            obj[parts[parts.length - 1]] = parseFloat(inp.value) || 0;
+          });
+        try {
+          await apiFetch("PUT", API.rules, state.pricingRules);
+          toast(
+            "Pricing rules saved — re-upload shipper or recompute to apply",
+            "success",
+          );
+          if (state.parsedCategories) runCompute();
+        } catch (e) {
+          toast("Save rules: " + e.message, "error");
+        }
+      }
+
+      // ─── Drag & drop ────────────────────────────────────────────────
+      ["shipper-drop", "pdf-drop", "cog-drop"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          el.classList.add("drag-over");
+        });
+        el.addEventListener("dragleave", () =>
+          el.classList.remove("drag-over"),
+        );
+        el.addEventListener("drop", (e) => {
+          e.preventDefault();
+          el.classList.remove("drag-over");
+          const f = e.dataTransfer.files[0];
+          if (!f) return;
+          if (id === "shipper-drop") uploadShipper(f);
+          else if (id === "pdf-drop") uploadDrawing(f);
+          else uploadStorageCog(f);
+        });
+      });
+
+      const storageDrawingDrop = document.getElementById(
+        "storage-drawing-dropzone",
+      );
+      if (storageDrawingDrop) {
+        storageDrawingDrop.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          storageDrawingDrop.classList.add("drag-over");
+        });
+        storageDrawingDrop.addEventListener("dragleave", () => {
+          storageDrawingDrop.classList.remove("drag-over");
+        });
+        storageDrawingDrop.addEventListener("drop", (e) => {
+          e.preventDefault();
+          storageDrawingDrop.classList.remove("drag-over");
+          const files = Array.from(e.dataTransfer?.files || []).filter((f) =>
+            /image\/|pdf/i.test(f.type) || /\.pdf$/i.test(f.name),
+          );
+          if (!files.length) {
+            toast("Drop image or PDF files only", "warn");
+            return;
+          }
+          storageAddDrawingFiles(files);
+          toast(files.length + " drawing file(s) added", "success");
+        });
+      }
+
+      // ─── Init ───────────────────────────────────────────────────────
+      updateAuthStatus();
+      updateLaborMarginDisplay();
+    </script>
+  </body>
+</html>

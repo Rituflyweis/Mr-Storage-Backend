@@ -33,6 +33,7 @@ const { sendSms } = require('../services/sms/sms.service')
 const { sendDeliveryConfirmationEmail, sendDeliveryCallbackRequestEmail } = require('../services/email/mailer')
 const bcrypt = require('bcryptjs')
 const env = require('../config/env')
+const generateMaterialRequestId = require('../utils/generateMaterialRequestId')
 const auditService = require('../services/audit.service')
 const notificationService = require('../services/notification.service')
 const { syncLeadBuildings } = require('../services/leadBuilding.service')
@@ -149,6 +150,54 @@ const computeDueDate = (invoice) => {
   if (invoice.dueDate) return new Date(invoice.dueDate)
   return computeInvoiceDueDate(invoice.date, invoice.daysToPay)
 }
+
+/** DB PaymentSchedule uses `stages`; customer FE contract expects `payments`. */
+const formatCustomerPaymentSchedule = (schedule) => {
+  if (!schedule) return null
+  const payments = (schedule.stages || []).map((stage) => ({
+    _id: stage._id,
+    name: stage.stageName,
+    amount: stage.amount,
+    amountType: stage.amountType,
+    dueDate: stage.dueDate,
+    status: stage.status,
+    invoiceId: stage.invoiceId,
+    paidAt: stage.paidAt,
+  }))
+  return {
+    totalAmount: schedule.totalAmount,
+    payments,
+    stages: schedule.stages || [],
+  }
+}
+
+const paymentScheduleForInvoice = (schedule, invoice) => {
+  if (!schedule) return null
+  const formatted = formatCustomerPaymentSchedule(schedule)
+  if (invoice.paymentScheduleStageId) {
+    const payment = formatted.payments.find(
+      (p) => String(p._id) === String(invoice.paymentScheduleStageId)
+    )
+    if (payment) {
+      return { totalAmount: schedule.totalAmount, payments: [payment] }
+    }
+  }
+  const linked = formatted.payments.filter(
+    (p) => p.invoiceId && String(p.invoiceId) === String(invoice._id)
+  )
+  if (linked.length) {
+    return { totalAmount: schedule.totalAmount, payments: linked }
+  }
+  return null
+}
+
+const PROJECT_DETAIL_LEAD_FIELDS = [
+  'customerId', 'jobId', 'projectName', 'buildingType', 'location', 'city', 'state', 'pincode',
+  'roofStyle', 'sqft', 'width', 'length', 'height', 'numDoors', 'numWindows', 'numInsulation',
+  'notes', 'numberOfBuildings', 'lifecycleStatus', 'lifecycleHistory',
+  'quoteValue', 'documents', 'assignedSales', 'createdAt', 'plannedStartDate', 'endDate',
+  'isRaisedToPO', 'poNumber', 'source', 'isQuoteReady',
+].join(' ')
 
 // ── Profile ───────────────────────────────────────────────────────────────────
 
@@ -459,11 +508,7 @@ exports.getProject = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
   const lead = await Lead.findById(leadId)
-    .select(
-      'customerId jobId projectName buildingType location city state pincode roofStyle sqft ' +
-      'width length height numDoors numWindows numInsulation numberOfBuildings notes source ' +
-      'lifecycleStatus lifecycleHistory quoteValue documents assignedSales createdAt plannedStartDate endDate'
-    )
+    .select(PROJECT_DETAIL_LEAD_FIELDS)
     .populate('assignedSales', 'name email')
     .lean()
 
@@ -472,10 +517,10 @@ exports.getProject = asyncHandler(async (req, res) => {
     return forbidden(res, 'This project does not belong to your account')
   }
 
-  const [quotation, invoices, paymentSchedules, recentOrders, orderCounts, stepDetails, buildingsCount] = await Promise.all([
+  const [quotation, invoices, paymentScheduleDoc, recentOrders, orderCounts, stepDetails, buildingsCount] = await Promise.all([
     Quotation.findOne({ leadId }).sort({ createdAt: -1 }).lean(),
     Invoice.find({ leadId }).select('-paidBy -createdBy -__v').sort({ createdAt: -1 }).lean(),
-    PaymentSchedule.find({ leadId }).lean(),
+    PaymentSchedule.findOne({ leadId }).lean(),
     MaterialRequest.find({ leadId }).sort({ createdAt: -1 }).limit(5).lean(),
     orderCountsForLead(leadId),
     ProjectStepDetail.find({ leadId }).lean(),
@@ -491,20 +536,14 @@ exports.getProject = asyncHandler(async (req, res) => {
   // Strip internalNotes from quotation
   if (quotation) delete quotation.internalNotes
 
-  // Attach paymentSchedule to each invoice, inject dueDate
-  const invoicesWithSchedule = invoices.map(inv => {
-    const schedule = paymentSchedules.find(ps => String(ps.invoiceId) === String(inv._id))
-    return {
-      ...inv,
-      dueDate:         computeDueDate(inv),
-      paymentSchedule: schedule ? { totalAmount: schedule.totalAmount, payments: schedule.payments } : null,
-    }
-  })
+  const formattedPaymentSchedule = formatCustomerPaymentSchedule(paymentScheduleDoc)
 
-  // Expose only first payment schedule at top level (spec shows single paymentSchedule)
-  const firstSchedule = paymentSchedules[0]
-    ? { totalAmount: paymentSchedules[0].totalAmount, payments: paymentSchedules[0].payments }
-    : null
+  // Attach paymentSchedule to each invoice when a stage is linked to that invoice
+  const invoicesWithSchedule = invoices.map((inv) => ({
+    ...inv,
+    dueDate: computeDueDate(inv),
+    paymentSchedule: paymentScheduleForInvoice(paymentScheduleDoc, inv),
+  }))
 
   // Sibling projects (same order as the project list) for the prev/next nav button
   const siblings = await Lead.find({ customerId: req.customer._id })
@@ -522,7 +561,7 @@ exports.getProject = asyncHandler(async (req, res) => {
     quotation,
     quoteSummary,
     invoices: invoicesWithSchedule,
-    paymentSchedule: firstSchedule,
+    paymentSchedule: formattedPaymentSchedule,
     navigation: {
       previous: prev ? { _id: prev._id, jobId: prev.jobId, projectName: prev.projectName } : null,
       next:     next ? { _id: next._id, jobId: next.jobId, projectName: next.projectName } : null,
@@ -619,11 +658,13 @@ exports.getDocuments = asyncHandler(async (req, res) => {
 
   // Fetch DrawingDocuments from the separate collection
   const drawingFilter = { leadId: { $in: leadIds } }
-  // Map drawing type query to DrawingDocument statuses/types vs lead.documents type
-  const drawingDocs = await DrawingDocument.find(drawingFilter)
-    .populate('uploadedBy', 'name')
-    .sort({ createdAt: -1 })
-    .lean()
+  const [drawingDocs, plantBuildings] = await Promise.all([
+    DrawingDocument.find(drawingFilter)
+      .populate('uploadedBy', 'name')
+      .sort({ createdAt: -1 })
+      .lean(),
+    Building.find({ leadId: { $in: leadIds } }).select('leadId buildingNumber drawings uploadedBy').lean(),
+  ])
 
   const drawingsByLead = {}
   for (const d of drawingDocs) {
@@ -644,6 +685,23 @@ exports.getDocuments = asyncHandler(async (req, res) => {
       uploadedAt:   d.createdAt,
       source:       'drawing_document',
     })
+  }
+
+  for (const building of plantBuildings) {
+    const key = String(building.leadId)
+    if (!drawingsByLead[key]) drawingsByLead[key] = []
+    for (const drawing of building.drawings || []) {
+      drawingsByLead[key].push({
+        _id: drawing._id,
+        name: drawing.fileName,
+        url: drawing.fileUrl,
+        type: 'drawing',
+        documentType: 'other',
+        status: mapPlantDrawingStatus(drawing.status),
+        uploadedAt: drawing.uploadedAt,
+        source: 'plant_building',
+      })
+    }
   }
 
   let totalDocuments = 0
@@ -1666,6 +1724,102 @@ exports.getProjectPaymentsSummary = asyncHandler(async (req, res) => {
   })
 })
 
+const BUILDING_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+const buildingLabelFromNumber = (buildingNumber) => {
+  const index = Math.max(0, (buildingNumber || 1) - 1)
+  return `Building ${BUILDING_LETTERS[index] || buildingNumber}`
+}
+
+const buildingNumberFromLabel = (label) => {
+  const normalized = String(label || '').trim()
+  const letterMatch = /^Building\s+([A-Z])$/i.exec(normalized)
+  if (letterMatch) return letterMatch[1].toUpperCase().charCodeAt(0) - 64
+  const numMatch = /^Building\s+(\d+)$/i.exec(normalized)
+  if (numMatch) return parseInt(numMatch[1], 10)
+  return null
+}
+
+const mapPlantDrawingStatus = (status) => {
+  if (status === 'approved') return 'approved'
+  if (status === 'rejected') return 'rejected'
+  if (status === 'pending_review') return 'under_review'
+  return 'pending'
+}
+
+const mapBuildingDrawingToCustomer = (drawing, building, leadId) => ({
+  _id: drawing._id,
+  leadId,
+  buildingLabel: buildingLabelFromNumber(building.buildingNumber),
+  buildingNumber: building.buildingNumber,
+  category: 'drawing',
+  name: drawing.fileName,
+  fileUrl: drawing.fileUrl,
+  fileType: '',
+  fileSize: 0,
+  documentType: 'other',
+  status: mapPlantDrawingStatus(drawing.status),
+  uploadedBy: drawing.uploadedBy,
+  approvedBy: null,
+  approvedAt: drawing.reviewedAt,
+  notes: drawing.rejectionReason || '',
+  revisionNote: '',
+  revisionRequestedAt: null,
+  comments: drawing.comments || [],
+  createdAt: drawing.uploadedAt,
+  updatedAt: drawing.uploadedAt || drawing.reviewedAt,
+  source: 'plant_building',
+  versionNumber: drawing.versionNumber,
+})
+
+const populateDrawingUploaders = async (drawings) => {
+  const ids = [...new Set(drawings.map((d) => d.uploadedBy).filter(Boolean).map(String))]
+  if (!ids.length) return drawings
+  const users = await User.find({ _id: { $in: ids } }).select('name').lean()
+  const byId = Object.fromEntries(users.map((u) => [String(u._id), u]))
+  return drawings.map((d) => ({
+    ...d,
+    uploadedBy: byId[String(d.uploadedBy)] || d.uploadedBy,
+  }))
+}
+
+const fetchPlantBuildingDrawings = async (leadId, { buildingLabel } = {}) => {
+  const targetNumber = buildingLabel ? buildingNumberFromLabel(buildingLabel) : null
+  const buildings = await Building.find({ leadId })
+    .select('buildingNumber drawings')
+    .populate('drawings.comments.commentedBy', 'name')
+    .populate('drawings.comments.commentedByCustomer', 'firstName lastName')
+    .sort({ buildingNumber: 1 })
+    .lean()
+  const rows = []
+  for (const building of buildings) {
+    if (targetNumber != null && building.buildingNumber !== targetNumber) continue
+    for (const drawing of building.drawings || []) {
+      rows.push(mapBuildingDrawingToCustomer(drawing, building, leadId))
+    }
+  }
+  return populateDrawingUploaders(rows)
+}
+
+const findPlantBuildingDrawing = async (leadId, docId) => {
+  const buildings = await Building.find({ leadId }).select('buildingNumber drawings')
+  for (const building of buildings) {
+    const drawing = (building.drawings || []).find((d) => String(d._id) === String(docId))
+    if (drawing) return { building, drawing }
+  }
+  return null
+}
+
+const plantDrawingsMatchTypeFilter = (type) => !type || type === 'other'
+
+const sortDrawingsNewestFirst = (rows) =>
+  [...rows].sort((a, b) => new Date(b.createdAt || b.updatedAt || 0) - new Date(a.createdAt || a.updatedAt || 0))
+
+const buildingLabelsForLead = (lead) => {
+  const count = lead.numberOfBuildings || 1
+  return Array.from({ length: count }, (_, i) => `Building ${BUILDING_LETTERS[i] || i + 1}`)
+}
+
 // GET /projects/:leadId/drawings
 exports.getProjectDrawings = asyncHandler(async (req, res) => {
   const lead = await assertProjectOwner(req)
@@ -1675,17 +1829,24 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
   const filter = { leadId: req.params.leadId }
   if (type) filter.documentType = type
 
-  const drawingDocs = await DrawingDocument.find(filter)
-    .populate('uploadedBy', 'name')
-    .populate('approvedBy', 'name')
-    .populate('comments.commentedBy', 'name')
-    .populate('comments.commentedByCustomer', 'firstName lastName')
-    .lean()
+  const [drawings, plantDrawings, fullLead] = await Promise.all([
+    DrawingDocument.find(filter)
+      .populate('uploadedBy', 'name')
+      .populate('approvedBy', 'name')
+      .populate('comments.commentedBy', 'name')
+      .populate('comments.commentedByCustomer', 'firstName lastName')
+      .sort({ createdAt: -1 })
+      .lean(),
+    plantDrawingsMatchTypeFilter(type)
+      ? fetchPlantBuildingDrawings(req.params.leadId)
+      : Promise.resolve([]),
+    // Also include documents embedded in Lead
+    Lead.findById(req.params.leadId)
+      .select('projectName jobId buildingType location lifecycleStatus numberOfBuildings documents')
+      .lean(),
+  ])
 
-  // Also include documents embedded in Lead
-  const fullLead = await Lead.findById(req.params.leadId)
-    .select('projectName jobId buildingType location lifecycleStatus numberOfBuildings documents')
-    .lean()
+  const mergedDrawings = sortDrawingsNewestFirst([...drawings, ...plantDrawings])
   const embeddedDocs = (fullLead?.documents || []).map(d => ({
     _id: d._id,
     name: d.name,
@@ -1694,22 +1855,6 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
     status: 'approved',
     uploadedAt: d.uploadedAt,
   }))
-
-  // Plant Panel uploads fabrication drawings onto Building.drawings — a separate, per-building
-  // versioned store from DrawingDocument. Mapped onto the same shape/keys as DrawingDocument and
-  // merged into the single `drawings` array below, so the response structure doesn't change.
-  const buildingsForDrawings = await Building.find({ leadId: req.params.leadId })
-    .select('buildingNumber drawings')
-    .populate('drawings.uploadedBy', 'name')
-    .populate('drawings.comments.commentedBy', 'name')
-    .populate('drawings.comments.commentedByCustomer', 'firstName lastName')
-    .lean()
-  const plantDrawingsMapped = buildingsForDrawings.flatMap((b) =>
-    (b.drawings || []).map((d) => mapPlantDrawing(b, d, req.params.leadId))
-  )
-
-  const drawings = [...drawingDocs, ...plantDrawingsMapped]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
   return success(res, {
     project: {
@@ -1721,9 +1866,9 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
       lifecycleStatus: fullLead.lifecycleStatus,
       numberOfBuildings: fullLead.numberOfBuildings || 1,
     },
-    drawings,
+    drawings: mergedDrawings,
     embeddedDocuments: embeddedDocs,
-    total: drawings.length + embeddedDocs.length,
+    total: mergedDrawings.length + embeddedDocs.length,
   })
 })
 
@@ -1734,41 +1879,36 @@ exports.getAllProjectDrawings = asyncHandler(async (req, res) => {
     .lean()
 
   const leadIds = leads.map((l) => l._id)
-  const [docs, buildings] = await Promise.all([
+  const [docs, plantBuildings] = await Promise.all([
     leadIds.length
       ? DrawingDocument.find({ leadId: { $in: leadIds } }).select('leadId category updatedAt').lean()
-      : [],
+      : Promise.resolve([]),
     leadIds.length
-      ? Building.find({ leadId: { $in: leadIds } }).select('leadId drawings').lean()
-      : [],
+      ? Building.find({ leadId: { $in: leadIds } }).select('leadId buildingNumber drawings').lean()
+      : Promise.resolve([]),
   ])
 
-  const plantCountsByLead = new Map()
-  const plantLastUpdateByLead = new Map()
-  for (const b of buildings) {
-    const key = String(b.leadId)
-    const count = (b.drawings || []).length
-    plantCountsByLead.set(key, (plantCountsByLead.get(key) || 0) + count)
-    const lastUpdate = (b.drawings || []).reduce((max, d) => (!max || d.reviewedAt > max || d.uploadedAt > max ? (d.reviewedAt || d.uploadedAt) : max), null)
-    if (lastUpdate && (!plantLastUpdateByLead.get(key) || lastUpdate > plantLastUpdateByLead.get(key))) {
-      plantLastUpdateByLead.set(key, lastUpdate)
-    }
-  }
-
   const projects = leads.map((lead) => {
-    const key = String(lead._id)
-    const forLead = docs.filter((d) => String(d.leadId) === key)
-    let lastUpdate = forLead.reduce((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null)
-    const plantLastUpdate = plantLastUpdateByLead.get(key)
-    if (plantLastUpdate && (!lastUpdate || plantLastUpdate > lastUpdate)) lastUpdate = plantLastUpdate
+    const forLead = docs.filter((d) => String(d.leadId) === String(lead._id))
+    const plantRows = plantBuildings.filter((b) => String(b.leadId) === String(lead._id))
+    const plantDrawingCount = plantRows.reduce((sum, b) => sum + (b.drawings || []).length, 0)
+    const plantLastUpdate = plantRows.reduce((max, b) => {
+      for (const drawing of b.drawings || []) {
+        const ts = drawing.uploadedAt || drawing.reviewedAt
+        if (ts && (!max || ts > max)) max = ts
+      }
+      return max
+    }, null)
+    const docLastUpdate = forLead.reduce((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null)
+    const lastUpdate = [docLastUpdate, plantLastUpdate].filter(Boolean).sort((a, b) => b - a)[0] || null
 
     return {
       leadId: lead._id,
       projectName: lead.projectName,
       jobId: lead.jobId,
       location: lead.location,
-      numberOfBuildings: lead.numberOfBuildings || 1,
-      totalDrawings: forLead.filter((d) => d.category !== 'document').length + (plantCountsByLead.get(key) || 0),
+      numberOfBuildings: Math.max(lead.numberOfBuildings || 1, plantRows.length),
+      totalDrawings: forLead.filter((d) => d.category !== 'document').length + plantDrawingCount,
       lastUpdate,
     }
   })
@@ -1776,14 +1916,9 @@ exports.getAllProjectDrawings = asyncHandler(async (req, res) => {
   return success(res, { projects })
 })
 
-const BUILDING_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-
-const buildingLabelsForLead = (lead) => {
-  const count = lead.numberOfBuildings || 1
-  return Array.from({ length: count }, (_, i) => `Building ${BUILDING_LETTERS[i] || i + 1}`)
-}
-
-const { mapPlantDrawing, resolveDrawingRef } = require('../utils/drawingSources')
+// Comment/approve/revision endpoints below still need to resolve a :docId against either
+// DrawingDocument or a Building.drawings subdocument — done via resolveDrawingRef.
+const { resolveDrawingRef } = require('../utils/drawingSources')
 
 // GET /projects/:leadId/buildings — building breakdown ("Select a building" screen)
 exports.getProjectBuildings = asyncHandler(async (req, res) => {
@@ -1794,25 +1929,34 @@ exports.getProjectBuildings = asyncHandler(async (req, res) => {
     DrawingDocument.find({ leadId: req.params.leadId }).select('buildingLabel category updatedAt').lean(),
     Building.find({ leadId: req.params.leadId }).select('buildingNumber drawings').lean(),
   ])
-  const plantDrawingsFlat = plantBuildings.flatMap((b) =>
-    (b.drawings || []).map((d) => mapPlantDrawing(b, d, req.params.leadId))
-  )
+  const plantByLabel = {}
+  for (const building of plantBuildings) {
+    const label = buildingLabelFromNumber(building.buildingNumber)
+    if (!plantByLabel[label]) plantByLabel[label] = []
+    for (const drawing of building.drawings || []) {
+      plantByLabel[label].push({
+        category: 'drawing',
+        updatedAt: drawing.uploadedAt || drawing.reviewedAt,
+      })
+    }
+  }
 
   const labelsWithDocs = [...new Set(docs.map((d) => d.buildingLabel || 'Building A'))]
-  const labelsWithPlant = [...new Set(plantDrawingsFlat.map((d) => d.buildingLabel))]
-  const allLabels = [...new Set([...buildingLabelsForLead(lead), ...labelsWithDocs, ...labelsWithPlant])]
+  const plantLabels = plantBuildings.map((b) => buildingLabelFromNumber(b.buildingNumber))
+  const allLabels = [...new Set([...buildingLabelsForLead(lead), ...labelsWithDocs, ...plantLabels])]
 
   const buildings = allLabels.map((label) => {
     const forBuilding = docs.filter((d) => (d.buildingLabel || 'Building A') === label)
-    const plantForBuilding = plantDrawingsFlat.filter((d) => d.buildingLabel === label)
-    let lastUpdate = forBuilding.reduce((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null)
-    const plantLastUpdate = plantForBuilding.reduce((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null)
-    if (plantLastUpdate && (!lastUpdate || plantLastUpdate > lastUpdate)) lastUpdate = plantLastUpdate
-
+    const plantRows = plantByLabel[label] || []
+    const combined = [...forBuilding, ...plantRows]
+    const lastUpdate = combined.reduce((max, d) => {
+      const ts = d.updatedAt
+      return ts && (!max || ts > max) ? ts : max
+    }, null)
     return {
       buildingLabel: label,
-      totalDrawings: forBuilding.filter((d) => d.category !== 'document').length + plantForBuilding.length,
-      totalDocuments: forBuilding.filter((d) => d.category === 'document').length,
+      totalDrawings: combined.filter((d) => d.category !== 'document').length,
+      totalDocuments: combined.filter((d) => d.category === 'document').length,
       lastUpdate,
     }
   })
@@ -1829,31 +1973,24 @@ exports.getBuildingDrawings = asyncHandler(async (req, res) => {
   if (!lead) return notFound(res, 'Project not found')
 
   const buildingLabel = decodeURIComponent(req.params.buildingLabel)
-  const [docs, plantBuildings] = await Promise.all([
+  const [docs, plantDrawings] = await Promise.all([
     DrawingDocument.find({ leadId: req.params.leadId, buildingLabel })
       .populate('uploadedBy', 'name')
       .populate('approvedBy', 'name')
       .populate('comments.commentedBy', 'name')
       .populate('comments.commentedByCustomer', 'firstName lastName')
+      .sort({ createdAt: -1 })
       .lean(),
-    Building.find({ leadId: req.params.leadId })
-      .select('buildingNumber drawings')
-      .populate('drawings.uploadedBy', 'name')
-      .populate('drawings.comments.commentedBy', 'name')
-      .populate('drawings.comments.commentedByCustomer', 'firstName lastName')
-      .lean(),
+    fetchPlantBuildingDrawings(req.params.leadId, { buildingLabel }),
   ])
-  const plantDrawingsForBuilding = plantBuildings
-    .flatMap((b) => (b.drawings || []).map((d) => mapPlantDrawing(b, d, req.params.leadId)))
-    .filter((d) => d.buildingLabel === buildingLabel)
-
-  const allDrawings = [...docs.filter((d) => d.category === 'drawing' || d.category === 'photo'), ...plantDrawingsForBuilding]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
   return success(res, {
     project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId, location: lead.location },
     buildingLabel,
-    drawings: allDrawings,
+    drawings: sortDrawingsNewestFirst([
+      ...docs.filter((d) => d.category === 'drawing' || d.category === 'photo'),
+      ...plantDrawings,
+    ]),
     documents: docs.filter((d) => d.category === 'document'),
   })
 })
@@ -2126,6 +2263,7 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
   if (!ref) return notFound(res, 'Drawing not found')
 
   let result
+  let metadata
   if (ref.source === 'document') {
     const { doc } = ref
     if (doc.status === 'approved') return badRequest(res, 'Drawing is already approved')
@@ -2134,6 +2272,7 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
     doc.revisionNote = ''
     await doc.save()
     result = { _id: doc._id, name: doc.name, status: doc.status }
+    metadata = { docId: doc._id, name: doc.name, source: 'drawing_document' }
   } else {
     const { building, drawing } = ref
     if (drawing.status === 'approved') return badRequest(res, 'Drawing is already approved')
@@ -2142,6 +2281,12 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
     drawing.rejectionReason = ''
     await building.save()
     result = { _id: drawing._id, name: drawing.fileName, status: drawing.status }
+    metadata = {
+      docId: drawing._id,
+      name: drawing.fileName,
+      source: 'plant_building',
+      buildingNumber: building.buildingNumber,
+    }
   }
 
   await auditService.log({
@@ -2150,7 +2295,7 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: req.customer._id,
     performedBy: req.customer._id,
-    metadata: { docId: req.params.docId, name: result.name },
+    metadata,
   })
 
   await notificationService.notifyLeadOwner(lead._id, {
@@ -2178,6 +2323,7 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
   if (!ref) return notFound(res, 'Drawing not found')
 
   let result
+  let metadata
   if (ref.source === 'document') {
     const { doc } = ref
     doc.status = 'under_review'
@@ -2185,6 +2331,7 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
     doc.revisionRequestedAt = new Date()
     await doc.save()
     result = { _id: doc._id, name: doc.name, status: doc.status, revisionNote: doc.revisionNote }
+    metadata = { docId: doc._id, name: doc.name, note: note.trim(), source: 'drawing_document' }
   } else {
     const { building, drawing } = ref
     drawing.status = 'rejected'
@@ -2192,6 +2339,13 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
     drawing.reviewedAt = new Date()
     await building.save()
     result = { _id: drawing._id, name: drawing.fileName, status: drawing.status, revisionNote: drawing.rejectionReason }
+    metadata = {
+      docId: drawing._id,
+      name: drawing.fileName,
+      note: note.trim(),
+      source: 'plant_building',
+      buildingNumber: building.buildingNumber,
+    }
   }
 
   await auditService.log({
@@ -2200,7 +2354,7 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: req.customer._id,
     performedBy: req.customer._id,
-    metadata: { docId: req.params.docId, name: result.name, note: note.trim() },
+    metadata,
   })
 
   await notificationService.notifyLeadOwner(lead._id, {
@@ -2259,11 +2413,6 @@ exports.addDrawingComment = asyncHandler(async (req, res) => {
 })
 
 // ── Material Orders ───────────────────────────────────────────────────────────
-
-const generateMaterialRequestId = async () => {
-  const count = await MaterialRequest.countDocuments({})
-  return `MR-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
-}
 
 // Order Details status stepper: new_order -> quotation_received -> quotation_approved -> order_confirmed -> completed
 const computeOrderStage = (order, quotation) => {

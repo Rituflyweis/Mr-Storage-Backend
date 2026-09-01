@@ -5,14 +5,26 @@ const CostSellSchema = new mongoose.Schema(
   { _id: false }
 )
 
+const BucketRateSchema = new mongoose.Schema(
+  { perLb: { type: Number, default: 0 }, perSf: { type: Number, default: 0 } },
+  { _id: false }
+)
+
 const CustomTabRuleSchema = new mongoose.Schema(
   {
+    // Legacy fields (admin API)
     matchAgainst: { type: String, enum: ['Part #', 'Description', 'Tab Name'], default: 'Part #' },
     valueToMatch: { type: String, default: '' },
     category:     { type: String, default: '' },
-    pricingMethod: { type: String, enum: ['per_lb', 'per_sf', 'flat'], default: 'per_lb' },
+    pricingMethod: { type: String, enum: ['per_lb', 'per_sf', 'per_lf', 'flat', 'flat_each', 'flat_total'], default: 'per_lb' },
     rate:         { type: Number, default: 0 },
     label:        { type: String, default: '' },
+    // HTML quoting tool fields
+    matchType:    { type: String, enum: ['tab_name', 'part_number', 'description'], default: 'part_number' },
+    match:        { type: String, default: '' },
+    cat:          { type: String, default: 'trim' },
+    method:       { type: String, enum: ['per_lb', 'per_sf', 'per_lf', 'flat_each', 'flat_total'], default: 'per_lb' },
+    note:         { type: String, default: '' },
   },
   { _id: true }
 )
@@ -25,19 +37,19 @@ const PricingRulesSchema = new mongoose.Schema(
     steelRatesPerLb: {
       primaryFrames:  { type: Number, default: 1.71 },
       secondarySteel: { type: Number, default: 0.88 },
-      hssBeams:       { type: Number, default: 0.88 },
+      hssBeams:       { type: Number, default: 2.05 },
       angles:         { type: Number, default: 1.04 },
       openingsJambs:  { type: Number, default: 1.2 },
       platesClips:    { type: Number, default: 1.2 },
     },
 
     sheetingRatesPerSf: {
-      standardScrewDown: { type: Number, default: 1.71 },
-      standingSeam:      { type: Number, default: 1.04 },
+      standardScrewDown: { type: Number, default: 1.3 },
+      standingSeam:      { type: Number, default: 1.7 },
     },
 
     freight: {
-      ratePerLb:                { type: Number, default: 1.71 },
+      ratePerLb:                { type: Number, default: 0.13 },
       lbsPerTruck:               { type: Number, default: 40000 },
       accessoriesAllowancePerSf: { type: Number, default: 0.1 },
       vendorDeltaPerLb:          { type: Number, default: 0.1 },
@@ -56,6 +68,13 @@ const PricingRulesSchema = new mongoose.Schema(
     markup: {
       pembMultiplier:    { type: Number, default: 1.3 },  // e.g. 1.30 = cost x 1.30 (30%)
       storageMultiplier: { type: Number, default: 1.18 },
+    },
+
+    bucketRates: {
+      trim:        { type: BucketRateSchema, default: () => ({ perLb: 2.8, perSf: 0.65 }) },
+      misc:        { type: BucketRateSchema, default: () => ({ perLb: 3.5, perSf: 0.22 }) },
+      accessories: { type: BucketRateSchema, default: () => ({ perLb: 1.5, perSf: 1.0 }) },
+      fasteners:   { type: BucketRateSchema, default: () => ({ perLb: 0, perSf: 0.48 }) },
     },
 
     customTabRules: { type: [CustomTabRuleSchema], default: [] },

@@ -23,6 +23,7 @@ const NotificationSchema = new mongoose.Schema(
 )
 
 NotificationSchema.index({ userId: 1, createdAt: -1 })
+NotificationSchema.index({ customerId: 1, createdAt: -1 })
 
 module.exports = mongoose.model('Notification', NotificationSchema)
 module.exports.NOTIFICATION_TYPES = NOTIFICATION_TYPES

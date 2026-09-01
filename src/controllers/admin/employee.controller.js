@@ -40,12 +40,13 @@ const buildAssignedProjectsTable = async (leadIds) => {
 const roundRobinService = require('../../services/roundRobin.service')
 const auditService = require('../../services/audit.service')
 const mailer = require('../../services/email/mailer')
-const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
+const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog, getEmployeesAuditLog } = require('../../services/auditActivity.service')
+const EMPLOYEE_BASE_FILTER = { role: { $ne: 'admin' } }
 
 const mapEmployeeLeadRow = (lead) => {
   const jobId = lead.jobId || ''
@@ -64,14 +65,27 @@ const mapEmployeeLeadRow = (lead) => {
   }
 }
 
+const requireMainAdminForAdminMutation = async (req, res) => {
+  const requester = await User.findById(req.user._id).select('_id role isMainAdmin')
+  if (!requester || requester.role !== 'admin') {
+    forbidden(res, 'Only admins can perform this action')
+    return null
+  }
+  if (!requester.isMainAdmin) {
+    forbidden(res, 'Only main admin can create or manage admin users')
+    return null
+  }
+  return requester
+}
+
 exports.getStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
 
   const [total, active, byRole, topPerformerAgg] = await Promise.all([
-    User.countDocuments({ ...dateFilter, role: { $ne: 'admin' } }),
-    User.countDocuments({ ...dateFilter, role: { $ne: 'admin' }, isActive: true }),
+    User.countDocuments({ ...dateFilter, ...EMPLOYEE_BASE_FILTER }),
+    User.countDocuments({ ...dateFilter, ...EMPLOYEE_BASE_FILTER, isActive: true }),
     User.aggregate([
-      { $match: dateFilter },
+      { $match: { ...dateFilter, ...EMPLOYEE_BASE_FILTER } },
       { $group: { _id: '$role', count: { $sum: 1 } } },
     ]),
     Lead.aggregate([
@@ -148,8 +162,8 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
   const { role, isActive, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
 
-  const filter = { ...dateFilter }
-  if (role) filter.role = role
+  const filter = { ...dateFilter, ...EMPLOYEE_BASE_FILTER }
+  if (role && String(role).toLowerCase() !== 'admin') filter.role = role
   if (isActive !== undefined) filter.isActive = isActive === 'true'
 
   const { search } = req.query
@@ -201,16 +215,28 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
 })
 
 exports.createEmployee = asyncHandler(async (req, res) => {
-  const { name, email, phone, role, password } = req.body
+  const { name, email, phone, role, password, department, permissions } = req.body
+  if (String(role || '').toLowerCase() === 'admin') {
+    const requester = await requireMainAdminForAdminMutation(req, res)
+    if (!requester) return
+  }
 
   const exists = await User.findOne({ email: email.toLowerCase().trim() })
   if (exists) return badRequest(res, 'Email already in use')
 
-  const tempPassword = Math.random().toString(36).slice(-6) +
-    Math.random().toString(36).slice(-4).toUpperCase()
-  const hashed = await bcrypt.hash(tempPassword, 12)
-  const { department, permissions } = req.body
-  const user = await User.create({ name, email: email.toLowerCase().trim(), password: hashed, phone, role, department, permissions })
+  const hashed = await bcrypt.hash(password, 12)
+
+  const userPayload = {
+    name,
+    email: email.toLowerCase().trim(),
+    password: hashed,
+    phone,
+    role,
+  }
+  if (department !== undefined) userPayload.department = department
+  if (permissions !== undefined) userPayload.permissions = permissions
+
+  const user = await User.create(userPayload)
 
   if (role === 'sales') await roundRobinService.rebuildTracker()
 
@@ -372,7 +398,7 @@ const getAccountDetail = async (employee) => {
 exports.getEmployeeDetail = asyncHandler(async (req, res) => {
   const { userId } = req.params
 
-  const employee = await User.findById(userId).select('-password').lean()
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER }).select('-password').lean()
   if (!employee) return notFound(res, 'Employee not found')
 
   const roleDetail =
@@ -389,8 +415,19 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   const { userId } = req.params
   const { name, phone, role, isActive, department, permissions } = req.body
 
-  const employee = await User.findById(userId)
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
+  const nextRole = role !== undefined ? String(role).toLowerCase() : undefined
+  if (employee.role === 'admin' || nextRole === 'admin') {
+    const requester = await requireMainAdminForAdminMutation(req, res)
+    if (!requester) return
+    if (employee.isMainAdmin && nextRole && nextRole !== 'admin') {
+      return badRequest(res, 'Main admin role cannot be changed')
+    }
+    if (employee.isMainAdmin && isActive === false) {
+      return badRequest(res, 'Main admin cannot be deactivated')
+    }
+  }
 
   const prevRole = employee.role
   const prevActive = employee.isActive
@@ -425,7 +462,7 @@ exports.getEmployeeAssignedLeads = asyncHandler(async (req, res) => {
   const { userId } = req.params
   const { page = 1, limit = 20 } = req.query
 
-  const employee = await User.findById(userId).select('_id name email role isActive').lean()
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER }).select('_id name email role isActive').lean()
   if (!employee) return notFound(res, 'Employee not found')
 
   const dateFilter = buildDateFilter(req.query)
@@ -471,7 +508,7 @@ exports.getEmployeeTimeline = asyncHandler(async (req, res) => {
   const { userId } = req.params
   const dateFilter = buildDateFilter(req.query, 'createdAt')
 
-  const employee = await User.findById(userId).lean()
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER }).lean()
   if (!employee) return notFound(res, 'Employee not found')
 
   // AuditLog.performedBy is this employee — shows everything they did
@@ -495,7 +532,7 @@ exports.getEmployeeTimeline = asyncHandler(async (req, res) => {
 })
 
 exports.toggleStatus = asyncHandler(async (req, res) => {
-  const employee = await User.findById(req.params.userId)
+  const employee = await User.findOne({ _id: req.params.userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
 
   employee.isActive = !employee.isActive
@@ -509,7 +546,7 @@ exports.toggleStatus = asyncHandler(async (req, res) => {
 exports.deleteEmployee = asyncHandler(async (req, res) => {
   const { userId } = req.params
 
-  const employee = await User.findById(userId)
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
 
   const activeLeadCount = await Lead.countDocuments({ assignedSales: userId, isTerminated: { $ne: true } })
@@ -532,14 +569,27 @@ exports.deleteEmployee = asyncHandler(async (req, res) => {
 })
 
 exports.resetPassword = asyncHandler(async (req, res) => {
-  const employee = await User.findById(req.params.userId)
+  const employee = await User.findOne({ _id: req.params.userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
   if (!employee.isActive) return badRequest(res, 'Cannot reset password for inactive employee')
 
   const tempPassword = Math.random().toString(36).slice(-6) +
     Math.random().toString(36).slice(-4).toUpperCase()
   employee.password = await bcrypt.hash(tempPassword, 12)
+  employee.passwordChangedAt = new Date()
   await employee.save()
+
+  await auditService.log({
+    type: 'user',
+    action: AUDIT_ACTIONS.USER_PASSWORD_RESET,
+    performedBy: req.user._id,
+    metadata: {
+      userId: String(employee._id),
+      email: employee.email,
+      role: employee.role,
+      source: 'admin_employee_reset',
+    },
+  })
 
   await mailer.sendEmployeeCredentials({
     toEmail: employee.email, name: employee.name, role: employee.role, tempPassword

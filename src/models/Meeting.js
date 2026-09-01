@@ -11,6 +11,10 @@ const MeetingSchema = new mongoose.Schema(
     duration:    { type: Number, default: null }, // minutes
     mode:        { type: String, enum: MEETING_MODES, required: true },
     meetingLink: { type: String, default: '' },   // required when mode=online — validated in service
+    reminderMinutes: { type: Number, default: 30 },
+    reminderSms: { type: Boolean, default: true },
+    reminderEmail: { type: Boolean, default: true },
+    reminderSentAt: { type: Date, default: null },
     notes:       { type: String, default: '' },
     status:      { type: String, enum: MEETING_STATUSES, default: 'scheduled' },
     completedAt: { type: Date, default: null },

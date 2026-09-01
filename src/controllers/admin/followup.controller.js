@@ -8,6 +8,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { scheduleFollowUpReminder } = require('../../utils/scheduler/followUpScheduler')
+const { upsertFollowUpEvent, markFollowUpCompleted } = require('../../services/calendar/calendarSync.service')
 
 const isOverdue = (f) => f.status === 'pending' && new Date(f.followUpDate) < new Date()
 
@@ -63,7 +64,18 @@ exports.getUpcoming = asyncHandler(async (req, res) => {
 })
 
 exports.createFollowUp = asyncHandler(async (req, res) => {
-  const { leadId, assignedTo, followUpDate, notes, priority } = req.body
+  const {
+    leadId,
+    assignedTo,
+    followUpDate,
+    notes,
+    priority,
+    modeOfContact,
+    reminderMinutes,
+    notifyCustomer,
+    sendSms,
+    sendEmail,
+  } = req.body
   const lead = await Lead.findById(leadId).select('customerId').lean()
   if (!lead) return notFound(res, 'Lead not found')
   const customerId = lead.customerId
@@ -74,6 +86,11 @@ exports.createFollowUp = asyncHandler(async (req, res) => {
     assignedTo,
     createdBy: req.user._id,
     followUpDate: new Date(followUpDate),
+    modeOfContact: modeOfContact || 'call',
+    reminderMinutes: Number(reminderMinutes ?? 30),
+    notifyCustomer: notifyCustomer !== false,
+    sendSms: sendSms !== false,
+    sendEmail: sendEmail !== false,
     notes: notes || '',
     priority: priority || 'medium',
   })
@@ -84,10 +101,11 @@ exports.createFollowUp = asyncHandler(async (req, res) => {
     leadId,
     customerId,
     performedBy: req.user._id,
-    metadata: { followUpDate, priority, assignedTo },
+    metadata: { followUpDate, priority, assignedTo, modeOfContact, reminderMinutes, notifyCustomer, sendSms, sendEmail },
   })
 
   scheduleFollowUpReminder(followUp)
+  await upsertFollowUpEvent(followUp)
 
   return created(res, { followUp })
 })
@@ -140,6 +158,7 @@ exports.completeFollowUp = asyncHandler(async (req, res) => {
   followUp.status = 'completed'
   followUp.completedAt = new Date()
   await followUp.save()
+  await markFollowUpCompleted(followUp)
 
   await auditService.log({
     type: 'followup',

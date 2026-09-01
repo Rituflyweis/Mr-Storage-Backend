@@ -193,14 +193,8 @@ LeadSchema.pre('save', async function (next) {
   syncLeadScoringTemperature(this.leadScoring)
 
   if (this.isNew && !this.jobId) {
-    // Include soft-deleted leads so jobId sequence never collides
-    const last = await this.constructor
-      .findOne({ jobId: { $exists: true, $ne: null } }, { jobId: 1 })
-      .sort({ createdAt: -1 })
-      .setOptions({ includeDeleted: true })
-      .lean()
-    const num = last?.jobId ? parseInt(last.jobId.split('-')[1], 10) + 1 : 1
-    this.jobId = `PRO-${String(num).padStart(3, '0')}`
+    const generateJobId = require('../utils/generateJobId')
+    this.jobId = await generateJobId()
   }
   next()
 })

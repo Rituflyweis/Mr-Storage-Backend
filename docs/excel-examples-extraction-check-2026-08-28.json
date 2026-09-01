@@ -1,0 +1,68 @@
+[
+  {
+    "file": "#2321 Choctaw Expansion Austin Building B (Shipper).ods",
+    "sheetCount": 26,
+    "extractedTabs": 23,
+    "totalWeightLbs": 18343.5,
+    "detectedWeightLbs": 18343.5,
+    "unmappedWeightLbs": 0,
+    "extractionCoveragePct": 100,
+    "sfFromWeightDiv9": 2038,
+    "unmappedTabs": []
+  },
+  {
+    "file": "#2321 Choctaw Expansion Austin Building E (Shipper).ods",
+    "sheetCount": 29,
+    "extractedTabs": 26,
+    "totalWeightLbs": 72479.8,
+    "detectedWeightLbs": 72479.8,
+    "unmappedWeightLbs": 0,
+    "extractionCoveragePct": 100,
+    "sfFromWeightDiv9": 8053,
+    "unmappedTabs": []
+  },
+  {
+    "file": "#2321 Choctaw Expansion Austin Building F (Shipper).ods",
+    "sheetCount": 31,
+    "extractedTabs": 28,
+    "totalWeightLbs": 59994.2,
+    "detectedWeightLbs": 59994.2,
+    "unmappedWeightLbs": 0,
+    "extractionCoveragePct": 100,
+    "sfFromWeightDiv9": 6666,
+    "unmappedTabs": []
+  },
+  {
+    "file": "1215-USB_SHIPPER (3) (1) (2).xls",
+    "sheetCount": 21,
+    "extractedTabs": 20,
+    "totalWeightLbs": 586580.22,
+    "detectedWeightLbs": 586580.22,
+    "unmappedWeightLbs": 0,
+    "extractionCoveragePct": 100,
+    "sfFromWeightDiv9": 65176,
+    "unmappedTabs": []
+  },
+  {
+    "file": "Bldg-D SHIPPER (2) (1).xlsx",
+    "sheetCount": 11,
+    "extractedTabs": 10,
+    "totalWeightLbs": 20965.15,
+    "detectedWeightLbs": 20965.15,
+    "unmappedWeightLbs": 0,
+    "extractionCoveragePct": 100,
+    "sfFromWeightDiv9": 2329,
+    "unmappedTabs": []
+  },
+  {
+    "file": "_$#6959 Paris, TN expansion (Shipper) (1).xlsx",
+    "sheetCount": 1,
+    "extractedTabs": 0,
+    "totalWeightLbs": 0,
+    "detectedWeightLbs": 0,
+    "unmappedWeightLbs": 0,
+    "extractionCoveragePct": 100,
+    "sfFromWeightDiv9": 0,
+    "unmappedTabs": []
+  }
+]

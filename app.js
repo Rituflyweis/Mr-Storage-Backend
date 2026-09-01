@@ -2,7 +2,7 @@ const express = require('express')
 const cors = require('cors')
 const helmet = require('helmet')
 const rateLimit = require('express-rate-limit')
-const { CLIENT_URL, NODE_ENV } = require('./src/config/env')
+const { NODE_ENV } = require('./src/config/env')
 const errorHandler = require('./src/middleware/errorHandler')
 
 const app = express()
@@ -13,10 +13,10 @@ app.use(helmet())
 // ── CORS ──────────────────────────────────────────────────────────────────────
 app.use(
   cors({
-    origin: "*",
-    credentials: false,
+    origin: true, // allow all origins for now
+    credentials: true,
   })
-);
+)
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }))

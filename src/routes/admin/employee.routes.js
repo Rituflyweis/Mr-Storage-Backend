@@ -15,6 +15,9 @@ router.post('/',
     body('email').isEmail(),
     body('role').notEmpty(),
     body('password').notEmpty().trim(),
+    body('phone').optional().trim(),
+    body('department').optional().trim(),
+    body('permissions').optional().isObject(),
   ],
   validate,
   ctrl.createEmployee
@@ -34,7 +37,18 @@ router.get('/:userId/timeline', ctrl.getEmployeeTimeline)
 router.patch('/:userId/toggle-status', ctrl.toggleStatus)
 router.post('/:userId/reset-password', ctrl.resetPassword)
 router.get('/:userId', ctrl.getEmployeeDetail)
-router.put('/:userId', ctrl.updateEmployee)
+router.put('/:userId',
+  [
+    body('name').optional().notEmpty().trim(),
+    body('phone').optional().trim(),
+    body('role').optional().notEmpty(),
+    body('department').optional().trim(),
+    body('permissions').optional().isObject(),
+    body('isActive').optional().isBoolean(),
+  ],
+  validate,
+  ctrl.updateEmployee
+)
 router.delete('/:userId', ctrl.deleteEmployee)
 
 module.exports = router

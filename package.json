@@ -6,7 +6,8 @@
     "start": "node server.js",
     "dev": "vercel dev",
     "seed": "node scripts/seed.js",
-    "create-user": "node scripts/createUser.js"
+    "create-user": "node scripts/createUser.js",
+    "postinstall": "npx puppeteer browsers install chrome || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -14,6 +15,7 @@
     "@aws-sdk/s3-request-presigner": "^3.0.0",
     "@napi-rs/canvas": "^1.0.0",
     "@sendgrid/mail": "^8.1.6",
+    "@sparticuz/chromium": "^133.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "csv-parse": "^5.6.0",
@@ -35,6 +37,7 @@
     "pdfkit": "^0.19.0",
     "puppeteer": "^24.43.1",
     "socket.io": "^4.7.0",
+    "twilio": "^6.1.0",
     "uuid": "^9.0.0",
     "xlsx": "^0.18.5"
   },

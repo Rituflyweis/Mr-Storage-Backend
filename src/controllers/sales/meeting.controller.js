@@ -6,6 +6,7 @@ const auditService = require('../../services/audit.service')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, MEETING_STATUSES } = require('../../config/constants')
+const { upsertMeetingEvent, syncMeetingStatus } = require('../../services/calendar/calendarSync.service')
 
 // Sales ki assigned lead IDs
 const getSalesLeadIds = async (userId) => {
@@ -51,7 +52,19 @@ exports.getMeetings = asyncHandler(async (req, res) => {
 })
 
 exports.createMeeting = asyncHandler(async (req, res) => {
-  const { customerId, leadId, title, meetingTime, duration, mode, meetingLink, notes } = req.body
+  const {
+    customerId,
+    leadId,
+    title,
+    meetingTime,
+    duration,
+    mode,
+    meetingLink,
+    notes,
+    reminderMinutes,
+    reminderSms,
+    reminderEmail,
+  } = req.body
 
   if (mode === 'online' && !meetingLink) {
     return badRequest(res, 'Meeting link is required for online meetings')
@@ -75,8 +88,12 @@ exports.createMeeting = asyncHandler(async (req, res) => {
     duration,
     mode,
     meetingLink: meetingLink || '',
+    reminderMinutes: Number(reminderMinutes ?? 30),
+    reminderSms: reminderSms !== false,
+    reminderEmail: reminderEmail !== false,
     notes: notes || '',
   })
+  await upsertMeetingEvent(meeting)
 
   await auditService.log({
     type: 'meeting',
@@ -108,12 +125,14 @@ exports.editMeeting = asyncHandler(async (req, res) => {
     return badRequest(res, 'Meeting link required for online meetings')
   }
 
-  const ALLOWED = ['title', 'meetingTime', 'duration', 'mode', 'meetingLink', 'notes', 'status']
+  const ALLOWED = ['title', 'meetingTime', 'duration', 'mode', 'meetingLink', 'notes', 'status', 'reminderMinutes', 'reminderSms', 'reminderEmail']
   ALLOWED.forEach((k) => {
     if (updates[k] === undefined) return
     meeting[k] = k === 'meetingTime' ? new Date(updates[k]) : updates[k]
   })
   await meeting.save()
+  await upsertMeetingEvent(meeting)
+  await syncMeetingStatus(meeting)
 
   await auditService.log({
     type: 'meeting',
@@ -140,6 +159,7 @@ exports.completeMeeting = asyncHandler(async (req, res) => {
   meeting.status = 'completed'
   meeting.completedAt = new Date()
   await meeting.save()
+  await syncMeetingStatus(meeting)
 
   await auditService.log({
     type: 'meeting',

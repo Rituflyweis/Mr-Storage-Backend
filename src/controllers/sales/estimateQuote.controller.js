@@ -1,49 +1,25 @@
-const ExcelJS = require('exceljs')
-const { PDFParse } = require('pdf-parse')
-const EstimateQuote = require('../../models/EstimateQuote')
 const PricingRules = require('../../models/PricingRules')
+const EstimateQuote = require('../../models/EstimateQuote')
 const Lead = require('../../models/Lead')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-
-// Best-effort "TITLE BLOCK" / "BUILDING DIMENSIONS" etc field extraction from a preliminary
-// drawing PDF (page 1 only). Labels vary a lot between vendors' drawings, so this is a
-// starting point for the user to review/edit before applying — never auto-trusted.
-const DRAWING_FIELD_PATTERNS = {
-  purchaserCustomer: /purchaser\s*\/?\s*customer\s*[:\-]?\s*(.+)/i,
-  projectName:       /project\s*name\s*[:\-]?\s*(.+)/i,
-  jobNumber:         /job\s*number\s*[:\-]?\s*(.+)/i,
-  locationCityState: /location\s*\/?\s*city\s*,?\s*state\s*[:\-]?\s*(.+)/i,
-  date:              /^date\s*[:\-]?\s*(.+)/im,
-  width:             /width\s*[:\-]?\s*([\d.']+)/i,
-  length:            /length\s*[:\-]?\s*([\d.']+)/i,
-  eaveHeight:        /eave\s*height\s*[:\-]?\s*([\d.']+)/i,
-  sqFootage:         /sq\.?\s*footage\s*[:\-]?\s*([\d,.']+)/i,
-  baySpacing:        /bay\s*spacing\s*[:\-]?\s*(.+)/i,
-  roofSlope:         /roof\s*slope\s*[:\-]?\s*([\d./:]+)/i,
-  roofDeadLoad:      /roof\s*dead\s*load\s*[:\-]?\s*([\d.]+\s*psf)/i,
-  collateralLoad:    /collateral\s*load\s*[:\-]?\s*([\d.]+\s*psf)/i,
-  roofLiveLoad:      /roof\s*live\s*load\s*[:\-]?\s*([\d.]+\s*psf)/i,
-  roofSnowLoad:      /roof\s*snow\s*load\s*[:\-]?\s*([\d.]+\s*psf)/i,
-  groundSnowLoad:    /ground\s*snow\s*load\s*(?:\(pg\))?\s*[:\-]?\s*([\d.]+\s*psf)/i,
-  basicWindSpeed:    /basic\s*wind\s*speed\s*[:\-]?\s*([\d.]+\s*mph)/i,
-  windExposure:      /wind\s*exposure\s*[:\-]?\s*(exposure\s*[a-c])/i,
-  seismicDesignCat:  /seismic\s*design\s*cat\.?\s*[:\-]?\s*(.+)/i,
-  buildingCode:      /building\s*code\s*[:\-]?\s*(.+)/i,
-}
-
-// Keyword -> canonical weight-by-category bucket, used when no custom tab rule matches.
-const DEFAULT_CATEGORY_KEYWORDS = [
-  { match: /purlin|girt|eave/i,              category: 'Purlins, Girts & Eave Structs', rateKey: 'secondarySteel' },
-  { match: /door|jamb|header/i,              category: 'Door Jambs & Headers',           rateKey: 'openingsJambs' },
-  { match: /roof.*sheet|wall.*sheet|panel/i, category: 'Roof & Wall Sheeting',            rateKey: null, sheeting: true },
-  { match: /connection|plate|clip/i,         category: 'Connection Plates & Clips',       rateKey: 'platesClips' },
-  { match: /trim|flash/i,                    category: 'Trim',                            rateKey: null, bucket: true },
-  { match: /cable|brac|sealant/i,            category: 'Cables, Bracing & Sealant',       rateKey: null, bucket: true },
-  { match: /rigid frame|primary/i,           category: 'Primary Frames',                  rateKey: 'primaryFrames' },
-  { match: /hss|beam/i,                      category: 'HSS Beams',                       rateKey: 'hssBeams' },
-  { match: /angle/i,                         category: 'Angles',                          rateKey: 'angles' },
-]
+const { buildPricingRates } = require('../../services/quoting/pricingRulesAdapter')
+const { parseShipperBuffer, parseShipperCoverSheet } = require('../../services/quoting/shipperParser')
+const { categoriesToWeightByCategory } = require('../../services/quoting/pricingEngine')
+const { extractDrawingPdfBuffer } = require('../../services/quoting/drawingPdfExtractor')
+const { parseStorageCogBuffer } = require('../../services/quoting/storageCogParser')
+const { buildAndComputeFullPembQuote, computeFullPembQuote } = require('../../services/quoting/quotePricingOrchestrator')
+const { computeStoragePricing } = require('../../services/quoting/storagePricingEngine')
+const { previewCogsOverride } = require('../../services/quoting/cogsOverride')
+const { previewMarginOverride } = require('../../services/quoting/marginOverride')
+const { lookupSalesTaxByZip } = require('../../services/quoting/salesTaxLookup')
+const {
+  generateAssembledHtml,
+  generateQuoteHtml,
+  generateSowHtml,
+  generateContractHtml,
+  generateQuotePdf,
+} = require('../../services/quoting/quoteDocumentGenerator')
 
 const getOrCreatePricingRules = async (userId) => {
   let rules = await PricingRules.findOne({ ownerId: userId })
@@ -51,135 +27,281 @@ const getOrCreatePricingRules = async (userId) => {
   return rules
 }
 
-exports.extractDrawingPdf = asyncHandler(async (req, res) => {
-  const { fileBase64, fileName } = req.body
-  if (!fileBase64) return badRequest(res, 'fileBase64 required')
+const decodeBase64File = (fileBase64) => {
+  if (!fileBase64) return null
+  const raw = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64
+  return Buffer.from(raw, 'base64')
+}
 
-  const buffer = Buffer.from(fileBase64, 'base64')
-  const parser = new PDFParse({ data: buffer })
-  const result = await parser.getText({ first: 1, last: 1 }).catch(() => null)
-  await parser.destroy?.()
-
-  const rawText = result?.text || ''
-  const extracted = {}
-  for (const [field, pattern] of Object.entries(DRAWING_FIELD_PATTERNS)) {
-    const m = rawText.match(pattern)
-    if (m) extracted[field] = m[1].trim()
+const toNumber = (value, fallback = 0) => {
+  if (value == null) return fallback
+  if (typeof value === 'bigint') return Number(value)
+  if (typeof value === 'object' && typeof value.toNumber === 'function') return value.toNumber()
+  if (typeof value === 'object' && value._bsontype === 'Decimal128') {
+    return parseFloat(String(value)) || fallback
   }
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
 
-  return success(res, {
-    fileName: fileName || '',
-    extracted,
-    rawTextPreview: rawText.slice(0, 4000),
-    note: 'Best-effort extraction from page 1 text only — labels vary between drawings, please review before applying.',
-  })
+const isPlainObject = (value) =>
+  value != null && typeof value === 'object' && !Array.isArray(value)
+
+const normalizeQuoteOptions = (body = {}) => {
+  const scopeRaw = String(body.scope || 'both').toLowerCase()
+  const scope = ['supply', 'install', 'both'].includes(scopeRaw) ? scopeRaw : 'both'
+  return {
+    jobType: body.jobType || 'PEMB',
+    scope,
+    roof: body.roof || body.roofType || 'screw-down',
+    install: body.install || body.installLevel || 'medium',
+    sf: Number(body.squareFootage || body.sf || body.buildingSf || 0) || 0,
+    blendPct: body.blendPct !== undefined ? Number(body.blendPct) : 50,
+    installCostPerSf: body.installCostPerSf !== undefined ? Number(body.installCostPerSf) : undefined,
+    sellPerSf: body.sellPerSf !== undefined ? Number(body.sellPerSf) : undefined,
+  }
+}
+
+const normalizeFullQuoteExtras = (body = {}) => ({
+  concrete: body.concrete || body.concreteAddon || undefined,
+  insulation: body.insulation || body.insulationAddon || undefined,
+  salesTax: body.salesTax || undefined,
+  cogsOverride: body.cogsOverride || undefined,
+  marginOverride: body.marginOverride || undefined,
 })
 
-exports.extractShipperFile = asyncHandler(async (req, res) => {
-  const { fileBase64, fileName } = req.body
-  if (!fileBase64) return badRequest(res, 'fileBase64 required')
+const extractFirstNumber = (value) => {
+  const m = String(value || '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)
+  return m ? Number(m[0]) : 0
+}
 
-  const rules = await getOrCreatePricingRules(req.user._id)
-  const buffer = Buffer.from(fileBase64, 'base64')
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
-
-  const byCategory = {}
-  let totalWeight = 0
-
-  const resolveCategory = (tabName, partNo, description) => {
-    for (const rule of rules.customTabRules) {
-      const haystack = rule.matchAgainst === 'Tab Name' ? tabName
-        : rule.matchAgainst === 'Part #' ? partNo : description
-      if (rule.valueToMatch && haystack && haystack.toLowerCase().includes(rule.valueToMatch.toLowerCase())) {
-        return { category: rule.category || rule.label, rate: rule.rate }
+const deriveCoverSquareFootage = (cover = {}) => {
+  const map = cover?.labelMap || {}
+  const keys = Object.keys(map)
+  const findByLabel = (patterns = []) => {
+    for (const k of keys) {
+      if (patterns.some((p) => p.test(k))) {
+        const n = extractFirstNumber(map[k])
+        if (n > 0) return n
       }
     }
-    const text = `${tabName} ${partNo} ${description}`
-    for (const kw of DEFAULT_CATEGORY_KEYWORDS) {
-      if (kw.match.test(text)) {
-        const rate = kw.rateKey ? rules.steelRatesPerLb[kw.rateKey]
-          : kw.sheeting ? rules.sheetingRatesPerSf.standardScrewDown
-          : rules.freight.accessoriesAllowancePerSf
-        return { category: kw.category, rate }
-      }
-    }
-    return { category: 'Misc', rate: rules.steelRatesPerLb.primaryFrames }
+    return 0
   }
 
-  workbook.eachSheet((sheet) => {
-    const headerRow = Array.from(sheet.getRow(1).values, v => String(v || '').toLowerCase())
-    const weightCol = headerRow.findIndex(h => h.includes('weight') || h.includes('lbs'))
-    const partCol   = headerRow.findIndex(h => h.includes('part'))
-    const descCol   = headerRow.findIndex(h => h.includes('description') || h.includes('desc'))
-    if (weightCol < 1) return
+  const directSqft = findByLabel([/sq\s*ft/i, /square\s*foot/i, /\bsf\b/i])
+  if (directSqft > 0) return Math.round(directSqft)
 
-    sheet.eachRow((row, rowNum) => {
-      if (rowNum === 1) return
-      const weight = Number(row.getCell(weightCol).value) || 0
-      if (!weight) return
-      const partNo = partCol > 0 ? String(row.getCell(partCol).value || '') : ''
-      const desc = descCol > 0 ? String(row.getCell(descCol).value || '') : ''
+  const width = findByLabel([/^width/i, /\bwidth\b/i])
+  const length = findByLabel([/^length/i, /\blength\b/i])
+  if (width > 0 && length > 0) return Math.round(width * length)
+  return 0
+}
 
-      const { category, rate } = resolveCategory(sheet.name, partNo, desc)
-      if (!byCategory[category]) byCategory[category] = { category, weightLbs: 0, rate, price: 0, notes: '' }
-      byCategory[category].weightLbs += weight
-      totalWeight += weight
-    })
-  })
+const buildPricingPayload = async (userId, { categories, options, fullExtras }) => {
+  const rulesDoc = await getOrCreatePricingRules(userId)
+  const { pr } = buildPricingRates(rulesDoc)
+  const engineOptions = { ...options, PR: pr }
 
-  const weightByCategory = Object.values(byCategory).map(c => ({
-    ...c,
-    price: Math.round(c.weightLbs * c.rate * 100) / 100,
-  }))
+  const extras = fullExtras || {}
+  const hasExtras =
+    extras.concrete ||
+    extras.insulation ||
+    extras.salesTax ||
+    extras.cogsOverride?.applied ||
+    extras.marginOverride?.applied
 
-  return success(res, {
-    fileName: fileName || '',
-    tabs: workbook.worksheets.length,
-    totalWeightLbs: Math.round(totalWeight * 100) / 100,
-    weightByCategory,
-    note: 'Best-effort category classification via pricing-rules custom tab rules + keyword fallback — please review before applying.',
-  })
-})
+  let fullQuote = null
+  let pricing
 
-const computeEstimate = (payload, rules) => {
-  const weightByCategory = (Array.isArray(payload.weightByCategory) ? payload.weightByCategory : []).map(c => ({
-    category: c.category,
-    weightLbs: Number(c.weightLbs) || 0,
-    rate: Number(c.rate) || 0,
-    price: Math.round((Number(c.weightLbs) || 0) * (Number(c.rate) || 0) * 100) / 100,
-    notes: c.notes || '',
-  }))
-  const totalWeightLbs = weightByCategory.reduce((s, c) => s + c.weightLbs, 0)
-  const materialCost = weightByCategory.reduce((s, c) => s + c.price, 0)
+  if (hasExtras) {
+    fullQuote = buildAndComputeFullPembQuote(categories, engineOptions, extras)
+    pricing = fullQuote.pricing
+  } else {
+    const { priceJob } = require('../../services/quoting/pricingEngine')
+    pricing = priceJob(categories, engineOptions)
+    fullQuote = computeFullPembQuote(pricing, { ...extras, sf: engineOptions.sf })
+  }
 
-  const trucksRequired = rules.freight.lbsPerTruck > 0 ? Math.ceil(totalWeightLbs / rules.freight.lbsPerTruck) : 0
-  const freightCost = totalWeightLbs * rules.freight.ratePerLb
-
-  const totalCOGS = materialCost + freightCost
-  const squareFootage = Number(payload.squareFootage) || 0
-  const installCost = squareFootage * (Number(payload.installCostPerSf) || 0)
-
-  const markupMultiplier = payload.jobType === 'Storage' ? rules.markup.storageMultiplier : rules.markup.pembMultiplier
-  const materialSell = materialCost * markupMultiplier
-  const installSell = squareFootage * (Number(payload.sellPerSf) || 0)
-  const totalSell = materialSell + freightCost + installSell
-
-  const profit = totalSell - totalCOGS - installCost
-  const marginPercent = totalSell > 0 ? (profit / totalSell) * 100 : 0
-  const pricePerSf = squareFootage > 0 ? totalSell / squareFootage : null
+  const weightByCategory = categoriesToWeightByCategory(categories, pr)
 
   return {
-    weightByCategory, totalWeightLbs: Math.round(totalWeightLbs * 100) / 100, trucksRequired,
-    materialCost: Math.round(materialCost * 100) / 100,
-    freightCost: Math.round(freightCost * 100) / 100,
-    totalCOGS: Math.round(totalCOGS * 100) / 100,
-    installCost: Math.round(installCost * 100) / 100,
-    totalSell: Math.round(totalSell * 100) / 100,
-    profit: Math.round(profit * 100) / 100,
-    marginPercent: Math.round(marginPercent * 100) / 100,
-    pricePerSf: pricePerSf !== null ? Math.round(pricePerSf * 100) / 100 : null,
+    pricing,
+    weightByCategory,
+    parsedCategories: categories,
+    fullQuote,
   }
+}
+
+const estimateToDocumentPayload = (estimate) => {
+  const grandTotal = resolveEstimateGrandTotal(estimate)
+  return {
+  jobType: estimate.jobType,
+  leadCompanyName: estimate.leadCompanyName,
+  customerEmail: estimate.customerEmail,
+  streetAddress: estimate.streetAddress,
+  cityStateZip: estimate.cityStateZip,
+  buildingSize: estimate.buildingSize,
+  squareFootage: estimate.squareFootage,
+  quoteDate: estimate.quoteDate,
+  additionalInfo: estimate.additionalInfo,
+  pricingResult: estimate.pricingResult,
+  storageData: estimate.storageData,
+  storagePricingResult: estimate.storagePricingResult,
+  grandTotal,
+  fullQuote: estimate.fullQuoteResult || {
+    pricing: estimate.pricingResult,
+    concrete: estimate.concreteAddon,
+    insulation: estimate.insulationAddon,
+    salesTax: estimate.salesTax,
+    grandTotal,
+    pricePerSf: estimate.pricePerSf,
+  },
+  concrete: estimate.concreteAddon,
+  insulation: estimate.insulationAddon,
+  salesTax: estimate.salesTax,
+  contract: estimate.contractDetails,
+  drawingAttachments: estimate.drawingAttachments,
+  customer: {
+    name: estimate.leadCompanyName,
+    address: estimate.streetAddress,
+    location: estimate.cityStateZip,
+    email: estimate.customerEmail,
+  },
+}
+}
+
+const hasDocumentPricing = (payload = {}) =>
+  Boolean(
+    payload.pricingResult ||
+      payload.fullQuote?.pricing ||
+      payload.storagePricingResult ||
+      payload.storagePricing ||
+      payload.jobType === 'Storage'
+  )
+
+const applyStorageEstimateTotals = (estimate, storagePricing) => {
+  if (!storagePricing) return
+  estimate.storagePricingResult = storagePricing
+  estimate.totalSell = Math.round(storagePricing.grandTotal ?? 0)
+  estimate.pricePerSf = storagePricing.pricePerSf ? Number(storagePricing.pricePerSf) : null
+  estimate.profit = storagePricing.profit ?? 0
+  estimate.marginPercent = Number(storagePricing.marginPercent) || 0
+}
+
+/** Quote total shown to customer (building + concrete + insulation + tax). */
+const resolveEstimateGrandTotal = (estimate = {}) => {
+  try {
+    if (estimate.jobType === 'Storage' && estimate.storagePricingResult?.grandTotal != null) {
+      return Math.round(toNumber(estimate.storagePricingResult.grandTotal))
+    }
+    if (estimate.fullQuoteResult?.grandTotal != null) {
+      return Math.round(toNumber(estimate.fullQuoteResult.grandTotal))
+    }
+    if (isPlainObject(estimate.pricingResult)) {
+      const full = computeFullPembQuote(estimate.pricingResult, {
+        concrete: estimate.concreteAddon,
+        insulation: estimate.insulationAddon,
+        salesTax: estimate.salesTax,
+        cogsOverride: estimate.cogsOverride,
+        marginOverride: estimate.marginOverride,
+        sf: toNumber(estimate.squareFootage),
+      })
+      return Math.round(
+        toNumber(full.grandTotal, toNumber(estimate.pricingResult.totSell, estimate.totalSell))
+      )
+    }
+    return Math.round(toNumber(estimate.totalSell))
+  } catch (err) {
+    console.error('[resolveEstimateGrandTotal]', estimate._id, err.message)
+    return Math.round(toNumber(estimate.totalSell))
+  }
+}
+
+/** Building subtotal before concrete, insulation, and tax. */
+const resolveEstimateBuildingSubtotal = (estimate = {}) => {
+  try {
+    if (estimate.jobType === 'Storage' && estimate.storagePricingResult) {
+      const sp = estimate.storagePricingResult
+      return Math.round(
+        toNumber(sp.buildingSell) +
+          toNumber(sp.doorSell) +
+          toNumber(sp.extrasSell) +
+          toNumber(sp.installSell) +
+          toNumber(sp.shipping) +
+          toNumber(sp.drawings)
+      )
+    }
+    if (estimate.fullQuoteResult?.buildingSubtotal != null) {
+      return Math.round(toNumber(estimate.fullQuoteResult.buildingSubtotal))
+    }
+    return Math.round(
+      toNumber(estimate.pricingResult?.totSell, estimate.totalSell)
+    )
+  } catch (err) {
+    console.error('[resolveEstimateBuildingSubtotal]', estimate._id, err.message)
+    return Math.round(toNumber(estimate.totalSell))
+  }
+}
+
+const withEstimateTotals = (estimate) => ({
+  ...estimate,
+  grandTotal: resolveEstimateGrandTotal(estimate),
+  buildingSubtotal: resolveEstimateBuildingSubtotal(estimate),
+})
+
+const withEstimateListTotals = (estimate) => {
+  const {
+    drawingAttachments: _drawings,
+    parsedCategories: _parsed,
+    breakdownRows: _rows,
+    tabSummary: _tabs,
+    storageData: _storage,
+    weightByCategory: _weights,
+    ...rest
+  } = estimate
+  return {
+    ...rest,
+    grandTotal: resolveEstimateGrandTotal(estimate),
+    buildingSubtotal: resolveEstimateBuildingSubtotal(estimate),
+    drawingCount: Array.isArray(_drawings) ? _drawings.length : 0,
+  }
+}
+
+const applyEstimateTotals = (estimate, payload) => {
+  const { pricing, fullQuote: incomingFullQuote } = payload
+  if (!pricing) return
+
+  estimate.pricingResult = pricing
+  estimate.breakdownRows = pricing.rows || []
+  estimate.totalWeightLbs = pricing.totWt ?? 0
+  estimate.trucksRequired = pricing.trucks ?? 0
+  estimate.materialCost = pricing.matCost ?? 0
+  estimate.freightCost = pricing.freight ?? 0
+  estimate.totalCOGS = pricing.totCost ?? 0
+  estimate.installCost = pricing.instCost ?? 0
+  estimate.profit = pricing.profit ?? 0
+  estimate.marginPercent = Number(pricing.profPct) || 0
+  estimate.vendorBlendSavings = pricing.vendorBlendSavings ?? 0
+
+  const fullQuote =
+    incomingFullQuote ||
+    computeFullPembQuote(pricing, {
+      concrete: estimate.concreteAddon,
+      insulation: estimate.insulationAddon,
+      salesTax: estimate.salesTax,
+      cogsOverride: estimate.cogsOverride,
+      marginOverride: estimate.marginOverride,
+      sf: estimate.squareFootage,
+    })
+
+  estimate.fullQuoteResult = fullQuote
+  estimate.concreteAddon = fullQuote.concrete
+  estimate.insulationAddon = fullQuote.insulation
+  estimate.salesTax = fullQuote.salesTax
+  estimate.totalSell = fullQuote.grandTotal ?? pricing.totSell ?? 0
+  estimate.pricePerSf = fullQuote.pricePerSf ? Number(fullQuote.pricePerSf) : null
+  estimate.profit = fullQuote.totalProfit ?? estimate.profit
+  estimate.marginPercent = fullQuote.grandMargin ?? estimate.marginPercent
 }
 
 const checkLeadAccess = async (leadId, user) => {
@@ -192,89 +314,393 @@ const checkLeadAccess = async (leadId, user) => {
   return { lead }
 }
 
+const assertEstimateAccess = (estimate, user) => {
+  if (!estimate) return { error: 'Estimate not found', code: 404 }
+  if (user.role === 'sales' && String(estimate.createdBy) !== String(user._id)) {
+    return { error: 'Access denied', code: 403 }
+  }
+  return {}
+}
+
+exports.extractDrawingPdf = asyncHandler(async (req, res) => {
+  const buffer = decodeBase64File(req.body.fileBase64)
+  if (!buffer?.length) return badRequest(res, 'fileBase64 required')
+
+  const result = await extractDrawingPdfBuffer(buffer, { fileName: req.body.fileName || '' })
+  return success(res, result)
+})
+
+exports.extractShipperFile = asyncHandler(async (req, res) => {
+  const buffer = decodeBase64File(req.body.fileBase64)
+  if (!buffer?.length) return badRequest(res, 'fileBase64 required')
+
+  const options = normalizeQuoteOptions(req.body)
+  const fullExtras = normalizeFullQuoteExtras(req.body)
+  const rulesDoc = await getOrCreatePricingRules(req.user._id)
+  const { customTabRules } = buildPricingRates(rulesDoc)
+
+  const parsed = parseShipperBuffer(buffer, { sf: options.sf, customTabRules })
+  const cover = parseShipperCoverSheet(parsed.workbook)
+  const coverSqft = deriveCoverSquareFootage(cover)
+
+  const autoSf =
+    parsed.totalWeightLbs > 0 ? Math.round(parsed.totalWeightLbs / 9) : 0
+  // Fresh shipper upload: derive SF from weight unless client explicitly locked manual SF
+  const manualSfEnabled = Boolean(req.body.useManualSquareFootage && options.sf > 0)
+  const sf =
+    manualSfEnabled
+      ? options.sf
+      : autoSf || options.sf || 0
+
+  const payload = await buildPricingPayload(req.user._id, {
+    categories: parsed.categories,
+    options: { ...options, sf },
+    fullExtras,
+  })
+
+  return success(res, {
+    fileName: req.body.fileName || '',
+    sheetCount: parsed.sheetCount,
+    tabSummary: parsed.tabSummary,
+    totalWeightLbs: Math.round(parsed.totalWeightLbs * 100) / 100,
+    detectedWeightLbs: Math.round((parsed.detectedWeightLbs || parsed.totalWeightLbs) * 100) / 100,
+    unmappedWeightLbs: Math.round((parsed.unmappedWeightLbs || 0) * 100) / 100,
+    extractionCoveragePct: parsed.extractionCoveragePct ?? 100,
+    unmappedTabs: parsed.unmappedTabs || [],
+    squareFootage: sf,
+    squareFootageMeta: {
+      selected: sf,
+      source: manualSfEnabled ? 'manual' : 'weight_formula',
+      formula: 'round(totalWeightLbs / 9)',
+      fromWeight: autoSf,
+      coverDerivedSqft: coverSqft,
+      inputSf: options.sf || 0,
+    },
+    parsedCategories: parsed.categories,
+    coverSheet: cover.coverName
+      ? { coverName: cover.coverName, labelMap: cover.labelMap, preview: cover.allText.substring(0, 2000) }
+      : null,
+    weightByCategory: payload.weightByCategory,
+    pricing: payload.pricing,
+    fullQuote: payload.fullQuote,
+    note: 'Parsed using Storage Materials quoting tool rules — review categories and pricing before saving.',
+  })
+})
+
+exports.extractStorageCog = asyncHandler(async (req, res) => {
+  const buffer = decodeBase64File(req.body.fileBase64)
+  if (!buffer?.length) return badRequest(res, 'fileBase64 required')
+
+  const data = parseStorageCogBuffer(buffer)
+  const storagePricing = computeStoragePricing(
+    {
+      buildings: data.buildings,
+      doors: data.doors,
+      extras: data.extras,
+      shipping: data.shippingDefault ?? 0,
+      installSellPerSf: req.body.installSellPerSf ?? 3.25,
+      installCostPerSf: req.body.installCostPerSf ?? 2.5,
+    },
+    normalizeFullQuoteExtras(req.body)
+  )
+
+  return success(res, {
+    fileName: req.body.fileName || '',
+    ...data,
+    storagePricing,
+    note:
+      data.format === 'vendor_cog'
+        ? 'Vendor COG quote parsed (manufacturer + COGS tab) — review buildings, extras, and markup before saving.'
+        : 'Storage COG sheet parsed — review buildings, doors, and extras before saving.',
+  })
+})
+
+exports.computeQuote = asyncHandler(async (req, res) => {
+  const { parsedCategories, categories } = req.body
+  const cats = parsedCategories || categories
+  if (!cats) return badRequest(res, 'parsedCategories required')
+
+  const options = normalizeQuoteOptions(req.body)
+  const fullExtras = normalizeFullQuoteExtras(req.body)
+  const payload = await buildPricingPayload(req.user._id, {
+    categories: cats,
+    options,
+    fullExtras,
+  })
+
+  return success(res, {
+    weightByCategory: payload.weightByCategory,
+    pricing: payload.pricing,
+    fullQuote: payload.fullQuote,
+  })
+})
+
+exports.computeStorageQuote = asyncHandler(async (req, res) => {
+  const storageData = req.body.storageData
+  if (!storageData?.buildings?.length) {
+    return badRequest(res, 'storageData.buildings required')
+  }
+
+  const fullExtras = normalizeFullQuoteExtras(req.body)
+  const storagePricing = computeStoragePricing(storageData, {
+    ...fullExtras,
+    shipping: req.body.shipping ?? storageData.shipping,
+    drawings: req.body.drawings ?? storageData.drawings,
+    installSellPerSf: req.body.installSellPerSf ?? storageData.installSellPerSf,
+    installCostPerSf: req.body.installCostPerSf ?? storageData.installCostPerSf,
+    totalSqft: req.body.squareFootage ?? req.body.sf,
+  })
+
+  return success(res, { storagePricing })
+})
+
+exports.previewCogsOverride = asyncHandler(async (req, res) => {
+  const pricing = req.body.pricingResult || req.body.pricing
+  if (!pricing) return badRequest(res, 'pricingResult required')
+
+  const preview = previewCogsOverride(pricing, req.body.cogsOverride || req.body)
+  return success(res, { preview })
+})
+
+exports.previewMarginOverride = asyncHandler(async (req, res) => {
+  const pricing = req.body.pricingResult || req.body.pricing
+  if (!pricing) return badRequest(res, 'pricingResult required')
+
+  const preview = previewMarginOverride(pricing, req.body.marginOverride || req.body)
+  return success(res, { preview })
+})
+
+exports.lookupTaxRate = asyncHandler(async (req, res) => {
+  const zip = req.params.zip || req.query.zip
+  if (!zip) return badRequest(res, 'zip required')
+  const result = await lookupSalesTaxByZip(zip)
+  if (result.error) return badRequest(res, result.error)
+  return success(res, result)
+})
+
+exports.previewDocuments = asyncHandler(async (req, res) => {
+  let payload = req.body
+
+  if (req.body.estimateId) {
+    const estimate = await EstimateQuote.findById(req.body.estimateId).lean()
+    if (!estimate) return notFound(res, 'Estimate not found')
+    const access = assertEstimateAccess(estimate, req.user)
+    if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+    payload = estimateToDocumentPayload(estimate)
+  }
+
+  if (!hasDocumentPricing(payload)) {
+    return badRequest(res, 'pricingResult, storagePricingResult, or fullQuote required')
+  }
+
+  const sections = req.body.sections || ['quote', 'sow', 'contract', 'drawings']
+  return success(res, {
+    quoteHtml: sections.includes('quote') ? generateQuoteHtml(payload) : null,
+    sowHtml: sections.includes('sow') ? generateSowHtml(payload) : null,
+    contractHtml: sections.includes('contract') ? generateContractHtml(payload) : null,
+    assembledHtml: generateAssembledHtml({ ...payload, sections }),
+  })
+})
+
+exports.generateQuotePdf = asyncHandler(async (req, res) => {
+  let payload = req.body
+
+  if (req.body.estimateId) {
+    const estimate = await EstimateQuote.findById(req.body.estimateId).lean()
+    if (!estimate) return notFound(res, 'Estimate not found')
+    const access = assertEstimateAccess(estimate, req.user)
+    if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+    payload = estimateToDocumentPayload(estimate)
+  }
+
+  if (!hasDocumentPricing(payload)) {
+    return badRequest(res, 'pricingResult, storagePricingResult, or estimateId required')
+  }
+
+  try {
+    const pdfBuffer = await generateQuotePdf({
+      ...payload,
+      sections: req.body.sections || ['quote', 'sow', 'contract', 'drawings'],
+    })
+    return success(res, {
+      fileName: `${payload.leadCompanyName || 'quote'}-assembled.pdf`.replace(/[^\w.-]+/g, '_'),
+      mimeType: 'application/pdf',
+      fileBase64: pdfBuffer.toString('base64'),
+      sizeBytes: pdfBuffer.length,
+    })
+  } catch (err) {
+    return badRequest(res, `PDF generation failed: ${err.message}`)
+  }
+})
+
 exports.createEstimateQuote = asyncHandler(async (req, res) => {
   const { leadId } = req.body
   const { error, code } = await checkLeadAccess(leadId, req.user)
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
 
-  const rules = await getOrCreatePricingRules(req.user._id)
-  const computed = computeEstimate(req.body, rules)
+  const options = normalizeQuoteOptions(req.body)
+  const fullExtras = normalizeFullQuoteExtras(req.body)
+  let pricing = req.body.pricingResult || null
+  let weightByCategory = req.body.weightByCategory || []
+  let parsedCategories = req.body.parsedCategories || null
+  let fullQuote = req.body.fullQuoteResult || req.body.fullQuote || null
 
-  const estimate = await EstimateQuote.create({
+  if (parsedCategories && !pricing) {
+    const built = await buildPricingPayload(req.user._id, {
+      categories: parsedCategories,
+      options,
+      fullExtras,
+    })
+    pricing = built.pricing
+    weightByCategory = built.weightByCategory
+    fullQuote = built.fullQuote
+  } else if (pricing) {
+    fullQuote =
+      req.body.fullQuoteResult ||
+      req.body.fullQuote ||
+      computeFullPembQuote(pricing, { ...fullExtras, sf: options.sf })
+  }
+
+  const estimateData = {
     createdBy: req.user._id,
     leadId: leadId || null,
-    jobType: req.body.jobType,
-    scope: req.body.scope,
-    roofType: req.body.roofType,
-    leadCompanyName: req.body.leadCompanyName,
-    customerEmail: req.body.customerEmail,
-    streetAddress: req.body.streetAddress,
-    cityStateZip: req.body.cityStateZip,
-    buildingSize: req.body.buildingSize,
-    squareFootage: req.body.squareFootage,
-    jobNumber: req.body.jobNumber,
+    jobType: options.jobType,
+    scope: options.scope === 'supply' ? 'Supply' : options.scope === 'install' ? 'Install' : 'Both',
+    roofType: options.roof,
+    installLevel: options.install,
+    blendPct: options.blendPct,
+    leadCompanyName: req.body.leadCompanyName || '',
+    customerEmail: req.body.customerEmail || '',
+    streetAddress: req.body.streetAddress || '',
+    cityStateZip: req.body.cityStateZip || '',
+    buildingSize: req.body.buildingSize || '',
+    squareFootage: options.sf,
+    jobNumber: req.body.jobNumber || '',
     quoteDate: req.body.quoteDate,
-    installCostPerSf: req.body.installCostPerSf,
-    sellPerSf: req.body.sellPerSf,
-    sourceFileName: req.body.sourceFileName || '',
-    extractedDrawingFields: req.body.extractedDrawingFields || null,
+    installCostPerSf: options.installCostPerSf ?? req.body.installCostPerSf ?? 0,
+    sellPerSf: options.sellPerSf ?? req.body.sellPerSf ?? 0,
+    sourceFileName: req.body.sourceFileName || req.body.fileName || '',
+    extractedDrawingFields: req.body.extractedDrawingFields || req.body.extracted || null,
+    parsedCategories,
+    tabSummary: req.body.tabSummary || [],
+    breakdownRows: pricing?.rows || req.body.breakdownRows || [],
+    pricingResult: pricing,
+    storageData: req.body.storageData || null,
+    storagePricingResult: req.body.storagePricingResult || req.body.storagePricing || null,
+    concreteAddon: fullQuote?.concrete || req.body.concreteAddon || null,
+    insulationAddon: fullQuote?.insulation || req.body.insulationAddon || null,
+    salesTax: fullQuote?.salesTax || req.body.salesTax || null,
+    cogsOverride: req.body.cogsOverride || null,
+    marginOverride: req.body.marginOverride || null,
+    contractDetails: req.body.contractDetails || req.body.contract || null,
+    drawingAttachments: req.body.drawingAttachments || req.body.drawings || [],
+    additionalInfo: req.body.additionalInfo || '',
+    fullQuoteResult: fullQuote,
+    weightByCategory,
     statementOfWork: req.body.statementOfWork || [],
     exclusions: req.body.exclusions || [],
-    ...computed,
-  })
+    status: req.body.status || 'draft',
+  }
 
-  return created(res, { estimate })
+  const estimate = await EstimateQuote.create(estimateData)
+  if (estimate.jobType === 'Storage' && estimate.storagePricingResult) {
+    applyStorageEstimateTotals(estimate, estimate.storagePricingResult)
+  } else {
+    applyEstimateTotals(estimate, { pricing, fullQuote })
+  }
+  await estimate.save()
+
+  return created(res, { estimate: withEstimateTotals(estimate.toObject()) })
 })
 
 exports.getEstimateQuote = asyncHandler(async (req, res) => {
   const estimate = await EstimateQuote.findById(req.params.estimateId).lean()
   if (!estimate) return notFound(res, 'Estimate not found')
-  if (req.user.role === 'sales' && String(estimate.createdBy) !== String(req.user._id)) {
-    return forbidden(res, 'Access denied')
-  }
-  return success(res, { estimate })
+  const access = assertEstimateAccess(estimate, req.user)
+  if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+  return success(res, { estimate: withEstimateTotals(estimate) })
 })
 
 exports.updateEstimateQuote = asyncHandler(async (req, res) => {
   const estimate = await EstimateQuote.findById(req.params.estimateId)
   if (!estimate) return notFound(res, 'Estimate not found')
-  if (req.user.role === 'sales' && String(estimate.createdBy) !== String(req.user._id)) {
-    return forbidden(res, 'Access denied')
-  }
+  const access = assertEstimateAccess(estimate, req.user)
+  if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
   if (estimate.status !== 'draft') return badRequest(res, 'Only draft estimates can be edited')
 
-  const rules = await getOrCreatePricingRules(req.user._id)
-  const merged = { ...estimate.toObject(), ...req.body }
-  const computed = computeEstimate(merged, rules)
+  const options = normalizeQuoteOptions({ ...estimate.toObject(), ...req.body })
+  const fullExtras = normalizeFullQuoteExtras(req.body)
 
   const EDITABLE = [
-    'jobType', 'scope', 'roofType', 'leadCompanyName', 'customerEmail', 'streetAddress',
-    'cityStateZip', 'buildingSize', 'squareFootage', 'jobNumber', 'quoteDate',
-    'installCostPerSf', 'sellPerSf', 'sourceFileName', 'extractedDrawingFields',
+    'jobType', 'scope', 'roofType', 'installLevel', 'blendPct', 'leadCompanyName', 'customerEmail',
+    'streetAddress', 'cityStateZip', 'buildingSize', 'squareFootage', 'jobNumber', 'quoteDate',
+    'installCostPerSf', 'sellPerSf', 'sourceFileName', 'extractedDrawingFields', 'parsedCategories',
+    'tabSummary', 'breakdownRows', 'pricingResult', 'storageData', 'storagePricingResult',
+    'concreteAddon', 'insulationAddon', 'salesTax', 'cogsOverride', 'marginOverride',
+    'contractDetails', 'drawingAttachments', 'additionalInfo', 'fullQuoteResult',
     'statementOfWork', 'exclusions', 'status',
   ]
-  EDITABLE.forEach((k) => { if (req.body[k] !== undefined) estimate[k] = req.body[k] })
-  Object.assign(estimate, computed)
+  EDITABLE.forEach((k) => {
+    if (req.body[k] !== undefined) estimate[k] = req.body[k]
+  })
+
+  if (req.body.roof !== undefined) estimate.roofType = req.body.roof
+  if (req.body.install !== undefined) estimate.installLevel = req.body.install
+  if (req.body.sf !== undefined) estimate.squareFootage = Number(req.body.sf) || 0
+  if (req.body.contract !== undefined) estimate.contractDetails = req.body.contract
+  if (req.body.drawings !== undefined) estimate.drawingAttachments = req.body.drawings
+
+  const cats = req.body.parsedCategories || estimate.parsedCategories
+  if (cats) {
+    const payload = await buildPricingPayload(req.user._id, {
+      categories: cats,
+      options,
+      fullExtras,
+    })
+    estimate.parsedCategories = cats
+    estimate.weightByCategory = payload.weightByCategory
+    applyEstimateTotals(estimate, payload)
+  } else if (req.body.storageData || req.body.storagePricingResult) {
+    const storagePricing =
+      req.body.storagePricingResult ||
+      computeStoragePricing(req.body.storageData || estimate.storageData, {
+        ...fullExtras,
+        shipping: req.body.shipping,
+        drawings: req.body.drawings,
+        installSellPerSf: req.body.installSellPerSf,
+        installCostPerSf: req.body.installCostPerSf,
+      })
+    applyStorageEstimateTotals(estimate, storagePricing)
+  } else if (req.body.pricingResult) {
+    const fullQuote =
+      req.body.fullQuoteResult ||
+      computeFullPembQuote(req.body.pricingResult, {
+        ...fullExtras,
+        sf: options.sf,
+      })
+    applyEstimateTotals(estimate, { pricing: req.body.pricingResult, fullQuote })
+  }
 
   await estimate.save()
-  return success(res, { estimate })
+  return success(res, { estimate: withEstimateTotals(estimate.toObject()) })
 })
 
 exports.deleteEstimateQuote = asyncHandler(async (req, res) => {
   const estimate = await EstimateQuote.findById(req.params.estimateId)
   if (!estimate) return notFound(res, 'Estimate not found')
-  if (req.user.role === 'sales' && String(estimate.createdBy) !== String(req.user._id)) {
-    return forbidden(res, 'Access denied')
-  }
+  const access = assertEstimateAccess(estimate, req.user)
+  if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
   await EstimateQuote.findByIdAndDelete(req.params.estimateId)
   return success(res, {}, 'Estimate deleted')
 })
 
 exports.listEstimateQuotes = asyncHandler(async (req, res) => {
-  const { jobType, status, search, page = 1, limit = 20 } = req.query
-  const filter = { createdBy: req.user._id }
+  const { jobType, status, search, leadId, page = 1, limit = 20 } = req.query
+  const filter = {}
+  if (req.user.role === 'sales') filter.createdBy = req.user._id
   if (jobType) filter.jobType = jobType
   if (status) filter.status = status
+  if (leadId) filter.leadId = leadId
   if (search) filter.leadCompanyName = { $regex: search, $options: 'i' }
 
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
@@ -282,18 +708,29 @@ exports.listEstimateQuotes = asyncHandler(async (req, res) => {
   const skip = (parsedPage - 1) * parsedLimit
 
   const [estimates, total] = await Promise.all([
-    EstimateQuote.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit).lean(),
+    EstimateQuote.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .select('-drawingAttachments -parsedCategories -breakdownRows -tabSummary -storageData -weightByCategory')
+      .lean(),
     EstimateQuote.countDocuments(filter),
   ])
 
-  return success(res, { estimates, total, page: parsedPage, limit: parsedLimit })
+  return success(res, {
+    estimates: estimates.map(withEstimateListTotals),
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
 })
 
 const rangeStats = async (userId, from) => {
-  const filter = { createdBy: userId, ...(from ? { createdAt: { $gte: from } } : {}) }
-  const rows = await EstimateQuote.find(filter, { totalSell: 1, profit: 1, marginPercent: 1 }).lean()
+  const filter = { ...(from ? { createdAt: { $gte: from } } : {}) }
+  if (userId) filter.createdBy = userId
+  const rows = await EstimateQuote.find(filter).lean()
   const totalQuotes = rows.length
-  const totalValue = rows.reduce((s, r) => s + (r.totalSell || 0), 0)
+  const totalValue = rows.reduce((s, r) => s + toNumber(resolveEstimateGrandTotal(r)), 0)
   const totalProfit = rows.reduce((s, r) => s + (r.profit || 0), 0)
   const avgMargin = totalQuotes > 0 ? rows.reduce((s, r) => s + (r.marginPercent || 0), 0) / totalQuotes : 0
   return {
@@ -306,24 +743,28 @@ const rangeStats = async (userId, from) => {
 
 exports.getQuoteHistorySummary = asyncHandler(async (req, res) => {
   const now = new Date()
+  const userFilter = req.user.role === 'sales' ? req.user._id : null
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const startOfQuarter = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)
   const startOfYear = new Date(now.getFullYear(), 0, 1)
 
   const [thisMonth, thisQuarter, ytd, allTime] = await Promise.all([
-    rangeStats(req.user._id, startOfMonth),
-    rangeStats(req.user._id, startOfQuarter),
-    rangeStats(req.user._id, startOfYear),
-    rangeStats(req.user._id, null),
+    rangeStats(userFilter, startOfMonth),
+    rangeStats(userFilter, startOfQuarter),
+    rangeStats(userFilter, startOfYear),
+    rangeStats(userFilter, null),
   ])
 
   const mongoose = require('mongoose')
+  const match = userFilter ? { createdBy: new mongoose.Types.ObjectId(userFilter) } : {}
   const byJobType = await EstimateQuote.aggregate([
-    { $match: { createdBy: new mongoose.Types.ObjectId(req.user._id) } },
+    { $match: match },
     { $group: { _id: '$jobType', totalProfit: { $sum: '$profit' }, count: { $sum: 1 } } },
   ])
-  const profitByCategory = byJobType.map(r => ({
-    jobType: r._id, totalProfit: Math.round(r.totalProfit * 100) / 100, count: r.count,
+  const profitByCategory = byJobType.map((r) => ({
+    jobType: r._id,
+    totalProfit: Math.round(r.totalProfit * 100) / 100,
+    count: r.count,
   }))
 
   return success(res, { thisMonth, thisQuarter, ytd, allTime, profitByCategory })

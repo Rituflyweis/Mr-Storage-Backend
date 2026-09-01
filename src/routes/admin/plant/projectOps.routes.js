@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body } = require('express-validator')
+const { body, param } = require('express-validator')
 const ctrl = require('../../../controllers/plant/project.controller')
 const bundlePlanCtrl = require('../../../controllers/plant/bundlePlan.controller')
 const packingListPlanCtrl = require('../../../controllers/plant/packingListPlan.controller')
@@ -8,9 +8,14 @@ const validate = require('../../../middleware/validate')
 const { BOM_FILE_FORMATS, TRUCK_TYPES } = require('../../../config/constants')
 
 router.get('/:leadId/buildings', ctrl.getProjectBuildings)
-router.get('/:leadId/drawings', ctrl.getProjectDrawings)
+router.get('/:leadId/drawings',
+  [param('leadId').isMongoId()],
+  validate,
+  ctrl.getProjectDrawings
+)
 router.post('/:leadId/drawings',
   [
+    param('leadId').isMongoId(),
     body('drawings').isArray({ min: 1 }),
     body('drawings.*.buildingId').isMongoId(),
     body('drawings.*.fileUrl').notEmpty().trim(),

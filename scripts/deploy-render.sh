@@ -66,6 +66,7 @@ echo "Branch: ${BRANCH}"
 ENV_FLAGS=(
   --env-var "NODE_ENV=production"
   --env-var "MONGO_URI=${MONGO_URI}"
+  --env-var "PUPPETEER_CACHE_DIR=/opt/render/.cache/puppeteer"
 )
 
 for key in \
@@ -96,7 +97,7 @@ render services create \
   --region oregon \
   --repo "${REPO_URL}" \
   --branch "${BRANCH}" \
-  --build-command "npm install" \
+  --build-command "npm install && npx puppeteer browsers install chrome" \
   --start-command "npm start" \
   "${ENV_FLAGS[@]}" \
   --output text \

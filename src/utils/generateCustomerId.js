@@ -1,15 +1,18 @@
 const Customer = require('../models/Customer')
+const { allocateSequentialId } = require('./allocateSequentialId')
 
-const generateCustomerId = async () => {
-  const last = await Customer.findOne({}, { customerId: 1 })
-    .sort({ createdAt: -1 })
-    .lean()
+const CUSTOMER_ID_PATTERN = /^CUS(?:T)?-(\d+)$/i
 
-  if (!last || !last.customerId) return 'CUST-0001'
-
-  const num = parseInt(last.customerId.split('-')[1], 10)
-  const next = num + 1
-  return `CUST-${String(next).padStart(4, '0')}`
-}
+/**
+ * Next display id: CUS-00001, CUS-00002, …
+ * Uses the highest numeric suffix across all CUS-/CUST- ids (not latest createdAt).
+ */
+const generateCustomerId = async () =>
+  allocateSequentialId({
+    model: Customer,
+    field: 'customerId',
+    parsePattern: CUSTOMER_ID_PATTERN,
+    format: (n) => `CUS-${String(n).padStart(5, '0')}`,
+  })
 
 module.exports = generateCustomerId

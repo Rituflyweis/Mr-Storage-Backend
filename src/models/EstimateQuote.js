@@ -40,6 +40,25 @@ const EstimateQuoteSchema = new mongoose.Schema(
 
     sourceFileName: { type: String, default: '' },
     extractedDrawingFields: { type: mongoose.Schema.Types.Mixed, default: null },
+    blendPct: { type: Number, default: 50 },
+    installLevel: { type: String, default: 'medium' },
+
+    parsedCategories: { type: mongoose.Schema.Types.Mixed, default: null },
+    tabSummary: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    breakdownRows: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    pricingResult: { type: mongoose.Schema.Types.Mixed, default: null },
+    storageData: { type: mongoose.Schema.Types.Mixed, default: null },
+    storagePricingResult: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    concreteAddon: { type: mongoose.Schema.Types.Mixed, default: null },
+    insulationAddon: { type: mongoose.Schema.Types.Mixed, default: null },
+    salesTax: { type: mongoose.Schema.Types.Mixed, default: null },
+    cogsOverride: { type: mongoose.Schema.Types.Mixed, default: null },
+    marginOverride: { type: mongoose.Schema.Types.Mixed, default: null },
+    contractDetails: { type: mongoose.Schema.Types.Mixed, default: null },
+    drawingAttachments: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    additionalInfo: { type: String, default: '' },
+    fullQuoteResult: { type: mongoose.Schema.Types.Mixed, default: null },
 
     weightByCategory: { type: [WeightByCategorySchema], default: [] },
     totalWeightLbs:   { type: Number, default: 0 },

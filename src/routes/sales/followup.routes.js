@@ -38,7 +38,11 @@ router.post('/',
   [
     body('leadId').notEmpty(),
     body('followUpDate').isISO8601(),
-    body('modeOfContact').optional().isIn(['call', 'email', 'meeting']),
+    body('modeOfContact').optional().isIn(['call', 'email', 'meeting', 'sms']),
+    body('reminderMinutes').optional().isInt({ min: 0, max: 10080 }),
+    body('notifyCustomer').optional().isBoolean(),
+    body('sendSms').optional().isBoolean(),
+    body('sendEmail').optional().isBoolean(),
   ],
   validate,
   ctrl.createFollowUp
