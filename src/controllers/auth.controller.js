@@ -75,9 +75,21 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   user.resetOtpVerified = false
   await user.save()
 
-  await sendOtp({ toEmail: user.email, name: user.name, otp, expiresInMinutes: OTP_EXPIRY_MINUTES })
+  let otpDelivery = { sent: true, warning: null }
+  try {
+    await sendOtp({ toEmail: user.email, name: user.name, otp, expiresInMinutes: OTP_EXPIRY_MINUTES })
+  } catch (err) {
+    otpDelivery = { sent: false, warning: err.message || 'otp_send_failed' }
+    console.error('[Auth forgotPassword] OTP send failed:', otpDelivery.warning)
+  }
 
-  return success(res, {}, 'If that email exists, an OTP has been sent')
+  return success(
+    res,
+    otpDelivery,
+    otpDelivery.sent
+      ? 'If that email exists, an OTP has been sent'
+      : 'If that email exists, OTP delivery is delayed. Please try again shortly'
+  )
 })
 
 exports.verifyOtp = asyncHandler(async (req, res) => {

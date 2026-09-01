@@ -15,6 +15,7 @@ const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog, getEmployeesAuditLog } = require('../../services/auditActivity.service')
 const EMPLOYEE_BASE_FILTER = { role: { $ne: 'admin' } }
+const EMAIL_SEND_TIMEOUT_MS = 5000
 
 const mapEmployeeLeadRow = (lead) => {
   const jobId = lead.jobId || ''
@@ -135,14 +136,15 @@ exports.createEmployee = asyncHandler(async (req, res) => {
     if (!requester) return
   }
 
-  const exists = await User.findOne({ email: email.toLowerCase().trim() })
+  const normalizedEmail = String(email || '').toLowerCase().trim()
+  const exists = await User.findOne({ email: normalizedEmail })
   if (exists) return badRequest(res, 'Email already in use')
 
   const hashed = await bcrypt.hash(password, 12)
 
   const userPayload = {
     name,
-    email: email.toLowerCase().trim(),
+    email: normalizedEmail,
     password: hashed,
     phone,
     role,
@@ -154,18 +156,49 @@ exports.createEmployee = asyncHandler(async (req, res) => {
 
   if (role === 'sales') await roundRobinService.rebuildTracker()
 
-  await mailer.sendEmployeeCredentials({
-    toEmail: user.email, name: user.name, role: user.role, tempPassword: password,
-  })
+  let credentialsEmailSent = true
+  let credentialsEmailWarning = null
+  try {
+    const emailSendResult = await Promise.race([
+      mailer
+        .sendEmployeeCredentials({
+          toEmail: user.email, name: user.name, role: user.role, tempPassword: password,
+        })
+        .then(() => ({ ok: true }))
+        .catch((err) => ({ ok: false, err })),
+      new Promise((resolve) =>
+        setTimeout(
+          () => resolve({ ok: false, err: new Error('Credentials email timed out') }),
+          EMAIL_SEND_TIMEOUT_MS
+        )
+      ),
+    ])
+
+    if (!emailSendResult?.ok) {
+      credentialsEmailSent = false
+      credentialsEmailWarning = emailSendResult?.err?.message || 'Failed to send credentials email'
+      console.error('[Employee] send credentials failed:', credentialsEmailWarning)
+    }
+  } catch (err) {
+    credentialsEmailSent = false
+    credentialsEmailWarning = err.message || 'Failed to send credentials email'
+    console.error('[Employee] send credentials failed:', credentialsEmailWarning)
+  }
 
   await auditService.log({
     type: 'user',
     action: AUDIT_ACTIONS.USER_CREATED,
     performedBy: req.user._id,
-    metadata: { name, email, role },
+    metadata: { name, email, role, credentialsEmailSent, credentialsEmailWarning },
   })
 
-  return created(res, { user })
+  return created(
+    res,
+    { user, credentialsEmailSent, credentialsEmailWarning },
+    credentialsEmailSent
+      ? 'Employee created successfully'
+      : 'Employee created, but credentials email could not be sent'
+  )
 })
 
 exports.getEmployeeDetail = asyncHandler(async (req, res) => {
@@ -243,7 +276,7 @@ exports.getEmployeeDetail = asyncHandler(async (req, res) => {
 
 exports.updateEmployee = asyncHandler(async (req, res) => {
   const { userId } = req.params
-  const { name, phone, role, isActive, department, permissions } = req.body
+  const { name, email, phone, role, isActive, department, permissions } = req.body
 
   const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
@@ -261,8 +294,20 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
 
   const prevRole = employee.role
   const prevActive = employee.isActive
+  const prevEmail = String(employee.email || '').toLowerCase().trim()
+
+  let nextEmail = undefined
+  if (email !== undefined) {
+    nextEmail = String(email || '').toLowerCase().trim()
+    if (!nextEmail) return badRequest(res, 'Email is required')
+    if (nextEmail !== prevEmail) {
+      const duplicate = await User.findOne({ email: nextEmail, _id: { $ne: employee._id } }).select('_id')
+      if (duplicate) return badRequest(res, 'Email already in use')
+    }
+  }
 
   if (name !== undefined)       employee.name       = name
+  if (nextEmail !== undefined)  employee.email      = nextEmail
   if (phone !== undefined)      employee.phone      = phone
   if (role !== undefined)       employee.role       = role
   if (isActive !== undefined)   employee.isActive   = isActive
@@ -282,7 +327,7 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
     type: 'user',
     action: AUDIT_ACTIONS.USER_UPDATED,
     performedBy: req.user._id,
-    metadata: { userId, changes: { name, phone, role, isActive } },
+    metadata: { userId, changes: { name, email: nextEmail, phone, role, isActive } },
   })
 
   return success(res, { employee })
@@ -421,9 +466,23 @@ exports.resetPassword = asyncHandler(async (req, res) => {
     },
   })
 
-  await mailer.sendEmployeeCredentials({
-    toEmail: employee.email, name: employee.name, role: employee.role, tempPassword
-  })
+  let credentialsEmailSent = true
+  let credentialsEmailWarning = null
+  try {
+    await mailer.sendEmployeeCredentials({
+      toEmail: employee.email, name: employee.name, role: employee.role, tempPassword
+    })
+  } catch (err) {
+    credentialsEmailSent = false
+    credentialsEmailWarning = err.message || 'Failed to send credentials email'
+    console.error('[Employee] reset credentials email failed:', credentialsEmailWarning)
+  }
 
-  return success(res, {}, 'New credentials sent to employee email')
+  return success(
+    res,
+    { credentialsEmailSent, credentialsEmailWarning },
+    credentialsEmailSent
+      ? 'New credentials sent to employee email'
+      : 'Password reset complete, but credentials email could not be sent'
+  )
 })

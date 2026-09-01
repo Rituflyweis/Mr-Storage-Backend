@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Automation Configuration UI</title>
+    <style>
+      :root {
+        --bg: #f5f8ff;
+        --card: #ffffff;
+        --text: #10213e;
+        --muted: #63718a;
+        --line: #d8e0f0;
+        --blue: #2f6cf6;
+        --blue-dark: #1f4ebe;
+        --green: #198754;
+        --chip: #eef4ff;
+        --chip-active: #d8e8ff;
+        --shadow: 0 12px 28px rgba(18, 43, 92, 0.08);
+      }
+      * { box-sizing: border-box; font-family: Inter, "Segoe UI", Arial, sans-serif; }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 10% 0%, #e6edff 0, rgba(230, 237, 255, 0) 40%),
+          radial-gradient(circle at 90% 100%, #e8fff2 0, rgba(232, 255, 242, 0) 36%),
+          var(--bg);
+        color: var(--text);
+      }
+      .wrap { max-width: 1180px; margin: 24px auto 36px; padding: 0 16px; }
+      .hero {
+        background: linear-gradient(135deg, #2f6cf6 0%, #153f9f 100%);
+        color: #fff;
+        border-radius: 18px;
+        padding: 22px;
+        box-shadow: var(--shadow);
+      }
+      .hero h1 { margin: 0 0 8px; font-size: 24px; }
+      .hero p { margin: 0; opacity: 0.94; }
+      .heroTag {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 5px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 999px;
+        font-size: 12px;
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .layout { margin-top: 16px; display: grid; gap: 14px; grid-template-columns: 1.55fr 1fr; }
+      @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--card);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .panelHead {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+        background: #f9fbff;
+      }
+      .panelHead h2 { margin: 0; font-size: 17px; }
+      .panelHead p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+      .panelBody { padding: 14px; display: grid; gap: 12px; }
+      .infoStrip {
+        border: 1px solid #cfe0ff;
+        background: #f4f8ff;
+        border-radius: 12px;
+        padding: 10px;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(3, 1fr);
+      }
+      @media (max-width: 760px) { .infoStrip { grid-template-columns: 1fr; } }
+      .infoStep {
+        border: 1px solid #d9e6ff;
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 8px;
+      }
+      .infoStepNum { font-size: 11px; color: #4b69a1; font-weight: 700; }
+      .infoStepText { margin-top: 2px; font-size: 12px; color: #1d3e76; line-height: 1.25; }
+
+      .section {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .section h3 { margin: 0 0 6px; font-size: 15px; }
+      .sub { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 150px;
+        gap: 10px;
+        align-items: center;
+        margin: 8px 0;
+      }
+      .row label { font-size: 13px; }
+      .row input[type="number"], .row input[type="text"], .row select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        color: var(--text);
+      }
+      .row input[type="checkbox"] { transform: scale(1.1); }
+
+      .cadenceWrap { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+      @media (max-width: 760px) { .cadenceWrap { grid-template-columns: 1fr; } }
+      .cadenceCard {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        background: #fcfdff;
+      }
+      .cadenceCard h4 { margin: 0 0 8px; font-size: 14px; }
+      .badge {
+        font-size: 11px;
+        border-radius: 999px;
+        padding: 2px 8px;
+        margin-left: 6px;
+      }
+      .warm { background: #fff2d6; color: #8a6000; }
+      .cold { background: #e4f4ff; color: #085a86; }
+      .chipRow { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+      .chipBtn {
+        border: 1px solid #d8e3f8;
+        background: var(--chip);
+        color: #19407f;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 120ms ease;
+      }
+      .chipBtn.active {
+        background: #cfe3ff;
+        border-color: #5d8fe8;
+        box-shadow: 0 0 0 2px rgba(93, 143, 232, 0.2);
+        color: #0f3270;
+        font-weight: 700;
+      }
+      .cadenceHelp { color: var(--muted); font-size: 12px; margin-top: 6px; }
+      .timelinePills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+      .timelinePill {
+        background: #eef4ff;
+        border: 1px solid #d0def7;
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 12px;
+        color: #24467f;
+      }
+      .timelineCallout {
+        margin-top: 10px;
+        border: 1px dashed #bfd3f6;
+        background: #f6faff;
+        border-radius: 10px;
+        padding: 8px 10px;
+        color: #3f5f95;
+        font-size: 12px;
+      }
+      .outcomeBox {
+        margin-top: 8px;
+        border: 1px solid #dce7fb;
+        background: #f8fbff;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        color: #2f4f87;
+        line-height: 1.3;
+      }
+      .presetGrid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .presetCard {
+        border: 1px solid #d8e3f8;
+        border-radius: 10px;
+        background: #f7faff;
+        color: #123a79;
+        text-align: left;
+        padding: 9px 10px;
+        cursor: pointer;
+        transition: all 120ms ease;
+      }
+      .presetCard:hover { border-color: #8eb1ef; background: #eef5ff; }
+      .presetCard.active {
+        border-color: #5d8fe8;
+        background: #dce9ff;
+        box-shadow: 0 0 0 2px rgba(93, 143, 232, 0.2);
+      }
+      .presetTitle { font-size: 13px; font-weight: 700; line-height: 1.2; }
+      .presetHint { font-size: 11px; margin-top: 3px; color: #436291; line-height: 1.25; }
+      .attemptGroup { margin-top: 8px; }
+      .attemptLabel { color: #63718a; font-size: 12px; margin-bottom: 6px; }
+      .attemptChips { display: flex; gap: 6px; flex-wrap: wrap; }
+      .attemptChip {
+        border: 1px solid #d4def3;
+        background: #f3f7ff;
+        color: #1c427f;
+        border-radius: 999px;
+        padding: 5px 9px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .attemptChip.active { background: #dce9ff; border-color: #5d8fe8; color: #0f3270; }
+
+      .customCadence {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .hidden { display: none !important; }
+
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      button {
+        border: none;
+        border-radius: 9px;
+        padding: 9px 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .primary { background: var(--blue); color: #fff; }
+      .primary:hover { background: var(--blue-dark); }
+      .neutral { background: #eaf0ff; color: #1e4284; }
+      .success { background: var(--green); color: #fff; }
+
+      .stats { display: grid; gap: 8px; grid-template-columns: repeat(3, 1fr); }
+      .stat {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        background: #fbfdff;
+      }
+      .k { color: var(--muted); font-size: 12px; }
+      .v { margin-top: 3px; font-size: 18px; font-weight: 700; }
+
+      pre {
+        margin: 0;
+        max-height: 520px;
+        overflow: auto;
+        background: #0f1728;
+        color: #d8e8ff;
+        padding: 12px;
+        border-radius: 10px;
+        font-size: 12px;
+      }
+      .tiny { color: var(--muted); font-size: 12px; line-height: 1.4; }
+      code { background: #edf3ff; color: #1a3d79; padding: 2px 6px; border-radius: 6px; }
+      .summaryGrid { display: grid; gap: 8px; grid-template-columns: 1fr; }
+      .summaryCard {
+        border: 1px solid #d8e3f5;
+        border-radius: 10px;
+        background: #f8fbff;
+        padding: 10px;
+      }
+      .summaryTitle { font-size: 12px; color: #567099; font-weight: 700; }
+      .summaryValue { margin-top: 4px; font-size: 13px; color: #16376e; line-height: 1.35; }
+      details {
+        border: 1px solid #d8e3f5;
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 8px 10px;
+      }
+      summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #244680; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <section class="hero">
+        <h1>Admin Follow-Up Automation Settings</h1>
+        <p>Human-friendly scheduling controls for warm/cold lead cadence, chat drop-off, and reminder defaults.</p>
+        <span class="heroTag">Mapped to: <strong>PUT /api/followup-automation/config</strong></span>
+      </section>
+
+      <div class="layout">
+        <section class="panel">
+          <div class="panelHead">
+            <h2>Configuration Form</h2>
+            <p>Client-friendly configuration only. Internal backend guards are handled silently.</p>
+          </div>
+          <div class="panelBody">
+            <div class="infoStrip">
+              <div class="infoStep">
+                <div class="infoStepNum">STEP 1</div>
+                <div class="infoStepText">Choose a cadence card for warm, cold, and chat follow-up.</div>
+              </div>
+              <div class="infoStep">
+                <div class="infoStepNum">STEP 2</div>
+                <div class="infoStepText">Set max attempts to control how many reminders go out.</div>
+              </div>
+              <div class="infoStep">
+                <div class="infoStepNum">STEP 3</div>
+                <div class="infoStepText">Check “What will happen” to confirm exact reminder timing.</div>
+              </div>
+            </div>
+            <div class="section">
+              <h3>Global Delivery Channels</h3>
+              <div class="row">
+                <label for="channelSms">Enable SMS channel</label>
+                <input id="channelSms" type="checkbox" checked />
+              </div>
+              <div class="row">
+                <label for="channelEmail">Enable Email channel</label>
+                <input id="channelEmail" type="checkbox" checked />
+              </div>
+              <div class="row">
+                <label for="timezone">Timezone</label>
+                <input id="timezone" type="text" value="UTC" />
+              </div>
+            </div>
+
+            <div class="section">
+              <h3>Lead Follow-Up Cadence</h3>
+              <p class="sub">Use natural language cadence. Supports standard presets and custom schedules.</p>
+
+              <div class="cadenceWrap">
+                <div class="cadenceCard">
+                  <h4>Warm Lead Cadence <span class="badge warm">WARM</span></h4>
+                  <div class="presetGrid" id="warmPresetChips"></div>
+                  <div class="customCadence hidden" id="warmCustom">
+                    <input id="warmCustomValue" type="number" min="1" value="3" />
+                    <select id="warmCustomUnit">
+                      <option value="days">Days</option>
+                      <option value="weeks">Weeks</option>
+                      <option value="months">Months</option>
+                    </select>
+                  </div>
+                  <div class="row">
+                    <label for="warmMax">Max attempts</label>
+                    <input id="warmMax" type="number" min="1" value="4" />
+                  </div>
+                  <div class="attemptGroup">
+                    <div class="attemptLabel">Quick select attempts</div>
+                    <div class="attemptChips" id="warmMaxChips"></div>
+                  </div>
+                  <div class="outcomeBox" id="warmOutcome"></div>
+                  <div class="cadenceHelp" id="warmSummary"></div>
+                  <div class="timelinePills" id="warmPills"></div>
+                </div>
+
+                <div class="cadenceCard">
+                  <h4>Cold Lead Cadence <span class="badge cold">COLD</span></h4>
+                  <div class="presetGrid" id="coldPresetChips"></div>
+                  <div class="customCadence hidden" id="coldCustom">
+                    <input id="coldCustomValue" type="number" min="1" value="15" />
+                    <select id="coldCustomUnit">
+                      <option value="days">Days</option>
+                      <option value="weeks">Weeks</option>
+                      <option value="months">Months</option>
+                    </select>
+                  </div>
+                  <div class="row">
+                    <label for="coldMax">Max attempts</label>
+                    <input id="coldMax" type="number" min="1" value="4" />
+                  </div>
+                  <div class="attemptGroup">
+                    <div class="attemptLabel">Quick select attempts</div>
+                    <div class="attemptChips" id="coldMaxChips"></div>
+                  </div>
+                  <div class="row">
+                    <label for="coldEnabled">Enable cold-lead automation</label>
+                    <input id="coldEnabled" type="checkbox" checked />
+                  </div>
+                  <div class="outcomeBox" id="coldOutcome"></div>
+                  <div class="cadenceHelp" id="coldSummary"></div>
+                  <div class="timelinePills" id="coldPills"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <h3>Chat Drop-off Settings</h3>
+              <p class="sub">Backend handles internal eligibility checks automatically (quote-ready and handoff states).</p>
+              <div class="row">
+                <label for="chatEnabled">Enabled</label>
+                <input id="chatEnabled" type="checkbox" checked />
+              </div>
+              <div class="row">
+                <label for="chatInactivity">Inactivity minutes</label>
+                <input id="chatInactivity" type="number" min="0" value="30" />
+              </div>
+              <div class="row">
+                <label for="chatMax">Max attempts</label>
+                <input id="chatMax" type="number" min="1" value="3" />
+              </div>
+              <div class="attemptGroup">
+                <div class="attemptLabel">Quick select attempts</div>
+                <div class="attemptChips" id="chatMaxChips"></div>
+              </div>
+              <div class="row" style="grid-template-columns: 1fr;">
+                <label>Follow-up cadence</label>
+                <div class="presetGrid" id="chatPresetChips"></div>
+              </div>
+              <div class="customCadence hidden" id="chatCustom">
+                <input id="chatCustomValue" type="number" min="1" value="30" />
+                <select id="chatCustomUnit">
+                  <option value="minutes">Minutes</option>
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                </select>
+              </div>
+              <div class="outcomeBox" id="chatOutcome"></div>
+              <div class="cadenceHelp" id="chatSummary"></div>
+              <div class="timelinePills" id="chatPills"></div>
+              <div class="timelineCallout" id="chatCallout"></div>
+            </div>
+
+            <div class="section">
+              <h3>Manual Reminder Defaults</h3>
+              <div class="row">
+                <label for="manualDefaultMinutes">Default reminder minutes</label>
+                <input id="manualDefaultMinutes" type="number" min="0" value="30" />
+              </div>
+              <div class="row">
+                <label for="manualDueNow">Enable due reminder flow</label>
+                <input id="manualDueNow" type="checkbox" checked />
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="primary" onclick="renderPayload()">Preview payload</button>
+              <button class="neutral" onclick="copyPayload()">Copy JSON</button>
+              <button class="success" onclick="saveHint()">Save configuration</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panelHead">
+            <h2>What Will Happen</h2>
+            <p>Live plain-language preview of your current settings.</p>
+          </div>
+          <div class="panelBody">
+            <div class="stats">
+              <div class="stat">
+                <div class="k">Reminder default</div>
+                <div class="v"><span id="statReminder">30</span> min</div>
+              </div>
+              <div class="stat">
+                <div class="k">Warm cadence</div>
+                <div class="v" id="statWarm">4</div>
+              </div>
+              <div class="stat">
+                <div class="k">Cold cadence</div>
+                <div class="v" id="statCold">4</div>
+              </div>
+            </div>
+            <div class="summaryGrid">
+              <div class="summaryCard">
+                <div class="summaryTitle">Warm Lead Follow-Up</div>
+                <div class="summaryValue" id="summaryWarm"></div>
+              </div>
+              <div class="summaryCard">
+                <div class="summaryTitle">Cold Lead Follow-Up</div>
+                <div class="summaryValue" id="summaryCold"></div>
+              </div>
+              <div class="summaryCard">
+                <div class="summaryTitle">Chat Drop-off Recovery</div>
+                <div class="summaryValue" id="summaryChat"></div>
+              </div>
+            </div>
+            <details>
+              <summary>Raw API payload (advanced)</summary>
+              <pre id="payloadOut"></pre>
+            </details>
+            <div class="tiny">
+              Invoice reminder settings are intentionally removed from this screen.
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const DAY = 1;
+      const UNIT_TO_DAYS = { days: 1, weeks: 7, months: 30 };
+      const UNIT_TO_MINUTES = { minutes: 1, hours: 60, days: 1440, weeks: 10080 };
+
+      const PRESETS = {
+        warm: [
+          { id: "twice_week", label: "Twice a week", hint: "Balanced follow-up rhythm", intervalsDays: [3, 7, 10, 14] },
+          { id: "weekly", label: "Weekly", hint: "One follow-up every 7 days", intervalsDays: [7, 14, 21, 28] },
+          { id: "d7_15_30", label: "7, 15, 30 days", hint: "Standard milestone cadence", intervalsDays: [7, 15, 30] },
+          { id: "custom", label: "Custom", hint: "Define your own cadence" },
+        ],
+        cold: [
+          { id: "d7_15_30", label: "7, 15, 30 days", hint: "Early + later nudges", intervalsDays: [7, 15, 30] },
+          { id: "every_15", label: "Every 15 days", hint: "Consistent bi-month cadence", intervalsDays: [15, 30, 45] },
+          { id: "monthly", label: "Monthly", hint: "Long-cycle low pressure", intervalsDays: [30, 60, 90] },
+          { id: "custom", label: "Custom", hint: "Define your own cadence" },
+        ],
+        chat: [
+          { id: "default", label: "30 mins -> 3 hrs -> 1 day", hint: "Fast rescue sequence", intervalsMinutes: [30, 180, 1440] },
+          { id: "twice_day", label: "Twice a day", hint: "Morning + evening rhythm", intervalsMinutes: [720, 1440, 2160] },
+          { id: "daily", label: "Every day", hint: "Simple daily reminders", intervalsMinutes: [1440, 2880, 4320] },
+          { id: "custom", label: "Custom", hint: "Define your own cadence" },
+        ],
+      };
+
+      const state = {
+        warmPreset: "twice_week",
+        coldPreset: "d7_15_30",
+        chatPreset: "default",
+      };
+
+      const generateRepeatedIntervals = (value, unit, maxAttempts) => {
+        const unitDays = UNIT_TO_DAYS[unit] || DAY;
+        const step = Math.max(1, Number(value || 1)) * unitDays;
+        const attempts = Math.max(1, Number(maxAttempts || 1));
+        return Array.from({ length: attempts }, (_, i) => Math.round((step * (i + 1)) * 100) / 100);
+      };
+
+      const getCadence = (type) => {
+        const presetId = type === "warm" ? state.warmPreset : state.coldPreset;
+        const maxAttempts = Number(document.getElementById(`${type}Max`).value || 1);
+        const preset = PRESETS[type].find((p) => p.id === presetId);
+        if (!preset) return [];
+        if (preset.id === "custom") {
+          const value = Number(document.getElementById(`${type}CustomValue`).value || 1);
+          const unit = document.getElementById(`${type}CustomUnit`).value;
+          return generateRepeatedIntervals(value, unit, maxAttempts);
+        }
+        return (preset.intervalsDays || []).slice(0, maxAttempts);
+      };
+
+      const chatCadenceIntervalsMinutes = () => {
+        const mode = state.chatPreset;
+        const maxAttempts = Math.max(1, Number(document.getElementById("chatMax").value || 1));
+        const preset = PRESETS.chat.find((p) => p.id === mode);
+        if (preset && preset.id !== "custom") {
+          return (preset.intervalsMinutes || []).slice(0, maxAttempts);
+        }
+        const value = Number(document.getElementById("chatCustomValue").value || 1);
+        const unit = document.getElementById("chatCustomUnit").value;
+        const step = value * (UNIT_TO_MINUTES[unit] || 60);
+        return Array.from({ length: maxAttempts }, (_, i) => Math.round(step * (i + 1)));
+      };
+
+      const renderPresetChips = (type) => {
+        const root = document.getElementById(`${type}PresetChips`);
+        root.innerHTML = "";
+        PRESETS[type].forEach((preset) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `presetCard ${state[`${type}Preset`] === preset.id ? "active" : ""}`;
+          btn.innerHTML = `<div class="presetTitle">${preset.label}</div><div class="presetHint">${preset.hint || ""}</div>`;
+          btn.onclick = () => {
+            state[`${type}Preset`] = preset.id;
+            document.getElementById(`${type}Custom`).classList.toggle("hidden", preset.id !== "custom");
+            renderPresetChips(type);
+            renderPayload();
+          };
+          root.appendChild(btn);
+        });
+        const isCustom = state[`${type}Preset`] === "custom";
+        document.getElementById(`${type}Custom`).classList.toggle("hidden", !isCustom);
+      };
+
+      const renderChatPresetChips = () => {
+        const root = document.getElementById("chatPresetChips");
+        root.innerHTML = "";
+        PRESETS.chat.forEach((preset) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `presetCard ${state.chatPreset === preset.id ? "active" : ""}`;
+          btn.innerHTML = `<div class="presetTitle">${preset.label}</div><div class="presetHint">${preset.hint || ""}</div>`;
+          btn.onclick = () => {
+            state.chatPreset = preset.id;
+            document.getElementById("chatCustom").classList.toggle("hidden", preset.id !== "custom");
+            renderChatPresetChips();
+            renderPayload();
+          };
+          root.appendChild(btn);
+        });
+        document.getElementById("chatCustom").classList.toggle("hidden", state.chatPreset !== "custom");
+      };
+      const renderAttemptChips = (inputId, chipsId) => {
+        const input = document.getElementById(inputId);
+        const root = document.getElementById(chipsId);
+        if (!input || !root) return;
+        const current = Math.max(1, Number(input.value || 1));
+        root.innerHTML = "";
+        [1, 2, 3, 4, 5, 6].forEach((n) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `attemptChip ${current === n ? "active" : ""}`;
+          btn.textContent = String(n);
+          btn.onclick = () => {
+            input.value = String(n);
+            renderAttemptChips(inputId, chipsId);
+            renderPayload();
+          };
+          root.appendChild(btn);
+        });
+      };
+
+      const cfgPayload = () => {
+        const warmIntervals = getCadence("warm");
+        const coldIntervals = getCadence("cold");
+        const warmMax = Math.max(1, Number(document.getElementById("warmMax").value || 1));
+        const coldMax = Math.max(1, Number(document.getElementById("coldMax").value || 1));
+
+        return {
+          channels: {
+            sms: document.getElementById("channelSms").checked,
+            email: document.getElementById("channelEmail").checked,
+          },
+          timezone: document.getElementById("timezone").value || "UTC",
+          chatDropOff: {
+            enabled: document.getElementById("chatEnabled").checked,
+            inactivityMinutes: Number(document.getElementById("chatInactivity").value || 0),
+            maxAttempts: Math.max(1, Number(document.getElementById("chatMax").value || 1)),
+            attemptIntervalsMinutes: chatCadenceIntervalsMinutes(),
+            requireNotQuoteReady: true,
+            requireNotHandedToSales: true,
+          },
+          coldLead: {
+            enabled: document.getElementById("coldEnabled").checked,
+            maxAttempts: coldMax,
+            intervalsDays: coldIntervals,
+          },
+          manualReminder: {
+            defaultReminderMinutes: Number(document.getElementById("manualDefaultMinutes").value || 30),
+            sendDueNowReminder: document.getElementById("manualDueNow").checked,
+          },
+          leadFrequency: {
+            warm: {
+              maxAttempts: warmMax,
+              intervalsDays: warmIntervals,
+              preset: state.warmPreset,
+            },
+            cold: {
+              maxAttempts: coldMax,
+              intervalsDays: coldIntervals,
+              preset: state.coldPreset,
+            },
+          },
+        };
+      };
+
+      const cadenceText = (arr) => (arr.length ? arr.map((v) => `Day ${v}`).join(", ") : "No intervals selected");
+      const formatDayLabel = (value) => {
+        const n = Number(value || 0);
+        if (!Number.isFinite(n) || n <= 0) return "N/A";
+        if (n === 1) return "Day 1";
+        if (n % 7 === 0) return `Week ${Math.round(n / 7)}`;
+        return `Day ${n}`;
+      };
+      const formatMinutesLabel = (value) => {
+        const n = Number(value || 0);
+        if (!Number.isFinite(n) || n <= 0) return "Now";
+        if (n % 1440 === 0) {
+          const d = n / 1440;
+          return d === 1 ? "1 day" : `${d} days`;
+        }
+        if (n % 60 === 0) {
+          const h = n / 60;
+          return h === 1 ? "1 hour" : `${h} hours`;
+        }
+        return n === 1 ? "1 minute" : `${n} minutes`;
+      };
+      const renderPills = (targetId, labels = []) => {
+        const root = document.getElementById(targetId);
+        if (!root) return;
+        root.innerHTML = "";
+        labels.forEach((label) => {
+          const el = document.createElement("span");
+          el.className = "timelinePill";
+          el.textContent = label;
+          root.appendChild(el);
+        });
+      };
+      const lastItem = (arr = []) => (arr.length ? arr[arr.length - 1] : null);
+      const toDayList = (arr = []) => arr.map((n) => `Day ${n}`).join(", ");
+      const toMinuteList = (arr = []) => arr.map((n) => formatMinutesLabel(n)).join(", ");
+
+      function renderPayload() {
+        const payload = cfgPayload();
+        document.getElementById("payloadOut").textContent = JSON.stringify(payload, null, 2);
+        document.getElementById("statReminder").textContent = payload.manualReminder.defaultReminderMinutes;
+        document.getElementById("statWarm").textContent = payload.leadFrequency.warm.intervalsDays.length;
+        document.getElementById("statCold").textContent = payload.leadFrequency.cold.intervalsDays.length;
+        document.getElementById("warmSummary").textContent = `Warm lead follow-ups will trigger on: ${cadenceText(payload.leadFrequency.warm.intervalsDays)}`;
+        document.getElementById("coldSummary").textContent = `Cold lead follow-ups will trigger on: ${cadenceText(payload.leadFrequency.cold.intervalsDays)}`;
+        document.getElementById("chatSummary").textContent = `Chat drop-off reminders will go out after: ${payload.chatDropOff.attemptIntervalsMinutes.map(formatMinutesLabel).join(" -> ")}`;
+        document.getElementById("chatCallout").textContent = `With current settings, the first reminder is sent after ${formatMinutesLabel(payload.chatDropOff.attemptIntervalsMinutes[0])}, up to ${payload.chatDropOff.maxAttempts} attempt(s).`;
+        document.getElementById("warmOutcome").textContent = `Sends ${payload.leadFrequency.warm.intervalsDays.length} warm reminder(s). Last reminder on ${formatDayLabel(lastItem(payload.leadFrequency.warm.intervalsDays))}.`;
+        document.getElementById("coldOutcome").textContent = payload.coldLead.enabled
+          ? `Cold automation is ON. Sends ${payload.leadFrequency.cold.intervalsDays.length} reminder(s). Last reminder on ${formatDayLabel(lastItem(payload.leadFrequency.cold.intervalsDays))}.`
+          : "Cold automation is OFF. No cold follow-up reminders will be sent.";
+        document.getElementById("chatOutcome").textContent = payload.chatDropOff.enabled
+          ? `Chat recovery is ON. First message after ${formatMinutesLabel(payload.chatDropOff.attemptIntervalsMinutes[0])}.`
+          : "Chat recovery is OFF. No chat drop-off reminders will be sent.";
+
+        document.getElementById("summaryWarm").textContent =
+          payload.leadFrequency.warm.intervalsDays.length
+            ? `${payload.leadFrequency.warm.intervalsDays.length} reminder(s): ${toDayList(payload.leadFrequency.warm.intervalsDays)}.`
+            : "No warm reminders configured.";
+        document.getElementById("summaryCold").textContent =
+          payload.coldLead.enabled
+            ? `${payload.leadFrequency.cold.intervalsDays.length} reminder(s): ${toDayList(payload.leadFrequency.cold.intervalsDays)}.`
+            : "Disabled.";
+        document.getElementById("summaryChat").textContent =
+          payload.chatDropOff.enabled
+            ? `${payload.chatDropOff.maxAttempts} attempt(s), starting after ${formatMinutesLabel(payload.chatDropOff.attemptIntervalsMinutes[0])}. Cadence: ${toMinuteList(payload.chatDropOff.attemptIntervalsMinutes)}.`
+            : "Disabled.";
+
+        renderPills("warmPills", payload.leadFrequency.warm.intervalsDays.map(formatDayLabel));
+        renderPills("coldPills", payload.leadFrequency.cold.intervalsDays.map(formatDayLabel));
+        renderPills("chatPills", payload.chatDropOff.attemptIntervalsMinutes.map(formatMinutesLabel));
+      }
+
+      function copyPayload() {
+        navigator.clipboard.writeText(JSON.stringify(cfgPayload(), null, 2)).then(() => {
+          alert("Payload copied.");
+        });
+      }
+
+      function saveHint() {
+        alert("Wire this to PUT /api/followup-automation/config with auth token.");
+      }
+
+      document.querySelectorAll("input,select").forEach((el) => {
+        el.addEventListener("input", renderPayload);
+        el.addEventListener("change", renderPayload);
+      });
+      ["warmMax", "coldMax", "chatMax"].forEach((id) => {
+        const el = document.getElementById(id);
+        el.addEventListener("input", () => {
+          renderAttemptChips("warmMax", "warmMaxChips");
+          renderAttemptChips("coldMax", "coldMaxChips");
+          renderAttemptChips("chatMax", "chatMaxChips");
+        });
+      });
+
+      renderPresetChips("warm");
+      renderPresetChips("cold");
+      renderChatPresetChips();
+      renderAttemptChips("warmMax", "warmMaxChips");
+      renderAttemptChips("coldMax", "coldMaxChips");
+      renderAttemptChips("chatMax", "chatMaxChips");
+      renderPayload();
+    </script>
+  </body>
+</html>

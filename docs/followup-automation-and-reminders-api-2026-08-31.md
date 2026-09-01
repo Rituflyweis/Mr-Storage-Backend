@@ -89,10 +89,26 @@ Response:
   "data": {
     "config": {
       "key": "global",
-      "chatDropOff": { "enabled": true, "inactivityMinutes": 30, "maxAttempts": 3, "attemptIntervalsMinutes": [30, 180, 1440] },
-      "coldLead": { "enabled": true, "intervalsDays": [1, 3, 7, 14], "maxAttempts": 4 },
-      "invoiceReminder": { "enabled": true, "intervalsHours": [24, 72, 168], "maxAttempts": 3 },
-      "manualReminder": { "defaultReminderMinutes": 30, "sendDueNowReminder": true },
+      "chatDropOff": {
+        "enabled": true,
+        "inactivityMinutes": 30,
+        "maxAttempts": 3,
+        "attemptIntervalsMinutes": [30, 180, 1440]
+      },
+      "coldLead": {
+        "enabled": true,
+        "intervalsDays": [1, 3, 7, 14],
+        "maxAttempts": 4
+      },
+      "invoiceReminder": {
+        "enabled": true,
+        "intervalsHours": [24, 72, 168],
+        "maxAttempts": 3
+      },
+      "manualReminder": {
+        "defaultReminderMinutes": 30,
+        "sendDueNowReminder": true
+      },
       "channels": { "sms": true, "email": true },
       "timezone": "UTC"
     }
@@ -187,6 +203,11 @@ Request body:
 
 `PUT /api/admin/followups/:followUpId/complete`
 
+Admin behavior:
+
+- Admin can create follow-ups on behalf of any sales user using `assignedTo` in `POST /api/admin/followups`.
+- Admin follow-up listing endpoints return follow-ups across users (with query filters like `employeeId`, `status`, date range).
+
 New optional request fields on both:
 
 ```json
@@ -203,6 +224,11 @@ New optional request fields on both:
 ## Existing Meeting APIs (enhanced fields)
 
 `POST/PUT /api/sales/meetings` and `POST/PUT /api/admin/meetings`
+
+Meeting visibility behavior:
+
+- Sales sees only meetings tied to their assigned leads.
+- Admin can view meetings across users/projects (with optional filters like `leadId`, `status`, `search`).
 
 New optional request fields:
 
@@ -246,6 +272,108 @@ Request body:
 ```
 
 This updates both calendar event reminder settings and the linked source record (`Meeting`/`FollowUp`).
+
+## Realtime socket events for reminders (frontend contract)
+
+### Namespace and room
+
+- Namespace: `/admin`
+- Room: `user:<loggedInUserId>`
+- Frontend should join the user room after socket connect (existing `join_user_room` flow).
+
+### Event to listen
+
+- `followup:reminder`
+
+### Payload shape
+
+```json
+{
+  "_id": "66f4d94c8d6c0b4f1f9a6c2e",
+  "notificationId": "66f4d94c8d6c0b4f1f9a6c2f",
+  "type": "followup_reminder",
+  "followUpId": "66f4d94c8d6c0b4f1f9a6c2e",
+  "leadId": "66f4d94c8d6c0b4f1f9a6c10",
+  "followUpDate": "2026-08-31T10:00:00.000Z",
+  "modeOfContact": "call",
+  "reminderMinutes": 30,
+  "message": "Follow-up is scheduled at 8/31/2026, 10:00:00 AM and is due in 30 minutes."
+}
+```
+
+### Notes
+
+- This socket event is emitted for follow-up reminder scheduler notifications.
+- Reminder records are also persisted in `Notification`, so UI can recover missed realtime events from notification APIs.
+- Calendar events can be fetched via `GET /api/calendar/events` to render scheduled items in the in-app calendar UI.
+
+## All reminder types and frontend handling matrix
+
+Use this as the single source of truth for admin/sales reminder UX.
+
+### 1) Manual/Scheduled follow-up reminder
+
+- Trigger: `followUpDate - reminderMinutes`
+- Audience: assigned sales user (and optional customer SMS/email if enabled)
+- Realtime socket:
+  - `followup:reminder` on `/admin` namespace, `user:<userId>` room
+- Persisted notification:
+  - yes (`Notification` with `type: "followup"`)
+- External channels:
+  - SMS/email based on follow-up toggles + global channel config
+
+### 2) Meeting reminder
+
+- Trigger: `meetingTime - reminderMinutes`
+- Audience: meeting creator (admin/sales)
+- Realtime socket:
+  - currently none (frontend should read notifications list + calendar events)
+- Persisted notification:
+  - currently no dedicated meeting notification row from automation runner
+- External channels:
+  - SMS/email based on meeting reminder toggles + global channel config
+
+### 3) Chat drop-off auto follow-up reminder
+
+- Trigger: based on chat inactivity + configured interval attempts
+- Audience: lead customer (plus follow-up gets created for assigned sales)
+- Realtime socket:
+  - currently none
+- Persisted notification:
+  - follow-up records/logs are created; fetch follow-up lists/activity for admin/sales UI
+- External channels:
+  - SMS/email to customer based on config
+
+### 4) Cold lead auto follow-up reminder
+
+- Trigger: based on configured day intervals and max attempts
+- Audience: lead customer (plus follow-up gets created for assigned sales)
+- Realtime socket:
+  - currently none
+- Persisted notification:
+  - follow-up records/logs are created; fetch follow-up lists/activity for admin/sales UI
+- External channels:
+  - SMS/email to customer based on config
+
+### 5) Invoice reminder automation
+
+- Trigger: configured hour intervals from invoice `sentAt`/`createdAt`
+- Audience: customer (plus follow-up record linked to invoice)
+- Realtime socket:
+  - currently none
+- Persisted notification:
+  - follow-up records/logs are created; fetch follow-up/invoice views for UI
+- External channels:
+  - SMS/email to customer based on config
+
+### Frontend recommendation
+
+- Listen to realtime socket event: `followup:reminder`
+- Also poll/read:
+  - `GET /api/calendar/events`
+  - follow-up listing/activity endpoints
+  - notifications endpoints
+- This ensures no reminder is missed even if socket disconnects or a reminder type is non-realtime.
 
 ## Automation Runtime Behavior
 

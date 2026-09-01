@@ -12,7 +12,7 @@ router.get('/', ctrl.getAllEmployees)
 router.post('/',
   [
     body('name').notEmpty().trim(),
-    body('email').isEmail(),
+    body('email').isEmail().normalizeEmail(),
     body('role').notEmpty(),
     body('password').notEmpty().trim(),
     body('phone').optional().trim(),
@@ -40,6 +40,7 @@ router.get('/:userId', ctrl.getEmployeeDetail)
 router.put('/:userId',
   [
     body('name').optional().notEmpty().trim(),
+    body('email').optional().isEmail().normalizeEmail(),
     body('phone').optional().trim(),
     body('role').optional().notEmpty(),
     body('department').optional().trim(),

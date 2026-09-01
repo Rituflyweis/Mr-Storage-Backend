@@ -57,6 +57,9 @@ const fillDefaults = (cfg = {}) => ({
   chatDropOff: {
     ...DEFAULT_AUTOMATION_CONFIG.chatDropOff,
     ...(cfg.chatDropOff || {}),
+    // Always enforce internal eligibility checks server-side.
+    requireNotQuoteReady: true,
+    requireNotHandedToSales: true,
   },
   coldLead: {
     ...DEFAULT_AUTOMATION_CONFIG.coldLead,
@@ -310,8 +313,8 @@ const processChatDropOff = async (config) => {
   let sent = 0
   for (const lead of leads) {
     if (!lead.assignedSales) continue
-    if (config.chatDropOff.requireNotQuoteReady && lead.isQuoteReady) continue
-    if (config.chatDropOff.requireNotHandedToSales && lead.isHandedToSales) continue
+    if (lead.isQuoteReady) continue
+    if (lead.isHandedToSales) continue
 
     const lastMsgAt = lastMessageMap.get(String(lead._id)) || lead.createdAt
     const inactiveMs = now - new Date(lastMsgAt).getTime()

@@ -36,10 +36,23 @@ exports.updateConfig = asyncHandler(async (req, res) => {
   delete payload.createdAt
   delete payload.updatedAt
 
-  const config = await FollowUpAutomationConfig.findOneAndUpdate(
+  await FollowUpAutomationConfig.findOneAndUpdate(
     { key: 'global' },
     { $set: { ...payload, updatedBy: req.user._id } },
     { upsert: true, new: true }
+  )
+
+  // Enforce internal business rules in a separate update to avoid
+  // dot-path conflicts when payload includes chatDropOff object.
+  const config = await FollowUpAutomationConfig.findOneAndUpdate(
+    { key: 'global' },
+    {
+      $set: {
+        'chatDropOff.requireNotQuoteReady': true,
+        'chatDropOff.requireNotHandedToSales': true,
+      },
+    },
+    { new: true }
   )
 
   await auditService.log({
