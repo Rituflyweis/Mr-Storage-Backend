@@ -24,26 +24,23 @@ Auth: admin token required for `PUT`.
     "maxAttempts": 3,
     "attemptIntervalsMinutes": [30, 180, 1440]
   },
-  "coldLead": {
-    "enabled": true,
-    "maxAttempts": 4,
-    "intervalsDays": [7, 15, 30]
-  },
-  "manualReminder": {
-    "defaultReminderMinutes": 30,
-    "sendDueNowReminder": true
-  },
-  "leadFrequency": {
+  "leadFollowUp": {
     "warm": {
+      "enabled": true,
       "preset": "twice_week",
       "maxAttempts": 4,
       "intervalsDays": [3, 7, 10, 14]
     },
     "cold": {
+      "enabled": true,
       "preset": "d7_15_30",
       "maxAttempts": 4,
       "intervalsDays": [7, 15, 30]
     }
+  },
+  "manualReminder": {
+    "defaultReminderMinutes": 30,
+    "sendDueNowReminder": true
   }
 }
 ```
@@ -55,11 +52,14 @@ Auth: admin token required for `PUT`.
 - `chatDropOff.inactivityMinutes`: number, `>= 0`.
 - `chatDropOff.maxAttempts`: number, recommended `1..6`.
 - `chatDropOff.attemptIntervalsMinutes`: positive number array, ascending.
-- `coldLead.maxAttempts`: number, recommended `1..6`.
-- `coldLead.intervalsDays`: positive number array, ascending.
+- `leadFollowUp.warm.enabled`: boolean.
+- `leadFollowUp.warm.maxAttempts`: number, recommended `1..6`.
+- `leadFollowUp.warm.intervalsDays`: positive number array, ascending.
+- `leadFollowUp.cold.enabled`: boolean.
+- `leadFollowUp.cold.maxAttempts`: number, recommended `1..6`.
+- `leadFollowUp.cold.intervalsDays`: positive number array, ascending.
 - `manualReminder.defaultReminderMinutes`: number, `>= 0`.
 - `manualReminder.sendDueNowReminder`: boolean.
-- `leadFrequency`: optional UI metadata block for frontend/state persistence.
 
 ## Important Backend Behavior (Must Know)
 
@@ -110,18 +110,13 @@ export interface FollowupAutomationConfigPayload {
     maxAttempts: number;
     attemptIntervalsMinutes: number[];
   };
-  coldLead: {
-    enabled: boolean;
-    maxAttempts: number;
-    intervalsDays: number[];
+  leadFollowUp: {
+    warm: { enabled: boolean; preset?: WarmPreset; maxAttempts: number; intervalsDays: number[] };
+    cold: { enabled: boolean; preset?: ColdPreset; maxAttempts: number; intervalsDays: number[] };
   };
   manualReminder: {
     defaultReminderMinutes: number;
     sendDueNowReminder: boolean;
-  };
-  leadFrequency?: {
-    warm?: { preset?: WarmPreset; maxAttempts?: number; intervalsDays?: number[] };
-    cold?: { preset?: ColdPreset; maxAttempts?: number; intervalsDays?: number[] };
   };
 }
 ```
@@ -133,4 +128,9 @@ export interface FollowupAutomationConfigPayload {
 - Example anchor on Tuesday:
   - next attempt at `+3 days` (Friday),
   - then `+7 days` (next Tuesday).
+
+## Migration Note (old key support)
+
+- Old key `coldLead` is still accepted for backward compatibility.
+- New integrations should use only `leadFollowUp.warm` and `leadFollowUp.cold` as the single source of truth.
 

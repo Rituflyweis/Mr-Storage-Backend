@@ -30,10 +30,26 @@ if (SENDGRID_API_KEY) {
 
 const resolvedMailFrom = SENDGRID_FROM || MAIL_FROM;
 
-const isEmailConfigured = () => Boolean(SENDGRID_API_KEY && resolvedMailFrom);
-const isSmtpConfigured = isEmailConfigured;
+const isSmtpConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
+const isEmailConfigured = () =>
+  Boolean(
+    (SENDGRID_API_KEY && resolvedMailFrom) ||
+      (isSmtpConfigured() && (SMTP_MAIL_FROM || MAIL_FROM)),
+  );
 const isEnquiryNotificationConfigured = () =>
   Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && SMTP_MAIL_FROM);
+
+const smtpTransporter = isSmtpConfigured()
+  ? nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS,
+      },
+    })
+  : null;
 
 const enquiryTransporter = isEnquiryNotificationConfigured()
   ? nodemailer.createTransport({
@@ -61,22 +77,59 @@ const normalizeAttachmentsForSendGrid = (attachments = []) =>
 
 const transporter = {
   sendMail: async (mailOptions = {}) => {
-    if (!SENDGRID_API_KEY) {
-      throw new Error("Email service is not configured. Set SENDGRID_API_KEY.");
-    }
-
     const payload = {
       ...mailOptions,
-      from: mailOptions.from || resolvedMailFrom,
+      from: mailOptions.from || resolvedMailFrom || SMTP_MAIL_FROM || MAIL_FROM,
     };
 
-    if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
-      payload.attachments = normalizeAttachmentsForSendGrid(
-        payload.attachments,
+    const hasSendGrid = Boolean(SENDGRID_API_KEY);
+    const hasSmtp = Boolean(smtpTransporter);
+    if (!hasSendGrid && !hasSmtp) {
+      throw new Error(
+        "Email service is not configured. Set SENDGRID_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS.",
       );
     }
 
-    await sgMail.send(payload);
+    if (hasSendGrid) {
+      try {
+        const sgPayload = { ...payload };
+        if (
+          Array.isArray(sgPayload.attachments) &&
+          sgPayload.attachments.length > 0
+        ) {
+          sgPayload.attachments = normalizeAttachmentsForSendGrid(
+            sgPayload.attachments,
+          );
+        }
+        await sgMail.send(sgPayload);
+        return { provider: "sendgrid" };
+      } catch (sendgridErr) {
+        console.error(
+          `[Mailer] SendGrid send failed, trying SMTP fallback: ${
+            sendgridErr?.message || "unknown_sendgrid_error"
+          }`,
+        );
+        if (!hasSmtp) {
+          throw sendgridErr;
+        }
+      }
+    }
+
+    // Fallback path (or primary when SendGrid is unavailable).
+    try {
+      const smtpPayload = {
+        ...payload,
+        from: payload.from || SMTP_MAIL_FROM || MAIL_FROM,
+      };
+      await smtpTransporter.sendMail(smtpPayload);
+      return { provider: "smtp_fallback" };
+    } catch (smtpErr) {
+      throw new Error(
+        `[Mailer] Email delivery failed on SMTP fallback: ${
+          smtpErr?.message || "unknown_smtp_error"
+        }`,
+      );
+    }
   },
 };
 

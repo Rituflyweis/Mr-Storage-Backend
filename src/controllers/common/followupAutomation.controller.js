@@ -22,6 +22,50 @@ const normalizePhone = (countryCode, phone) => {
   return digits ? `+${digits}` : ''
 }
 
+const normalizeLeadFollowUpPayload = (payload = {}) => {
+  const warmFromLeadFrequency = payload.leadFrequency?.warm || {}
+  const coldFromLeadFrequency = payload.leadFrequency?.cold || {}
+  const coldLegacy = payload.coldLead || {}
+
+  const leadFollowUp = payload.leadFollowUp || {}
+  payload.leadFollowUp = {
+    warm: {
+      enabled: leadFollowUp.warm?.enabled ?? true,
+      maxAttempts:
+        leadFollowUp.warm?.maxAttempts ??
+        warmFromLeadFrequency.maxAttempts ??
+        4,
+      intervalsDays:
+        leadFollowUp.warm?.intervalsDays ??
+        warmFromLeadFrequency.intervalsDays ??
+        [3, 7, 10, 14],
+      ...(leadFollowUp.warm?.preset ? { preset: leadFollowUp.warm.preset } : {}),
+    },
+    cold: {
+      enabled:
+        leadFollowUp.cold?.enabled ??
+        coldLegacy.enabled ??
+        true,
+      maxAttempts:
+        leadFollowUp.cold?.maxAttempts ??
+        coldLegacy.maxAttempts ??
+        coldFromLeadFrequency.maxAttempts ??
+        4,
+      intervalsDays:
+        leadFollowUp.cold?.intervalsDays ??
+        coldLegacy.intervalsDays ??
+        coldFromLeadFrequency.intervalsDays ??
+        [7, 15, 30],
+      ...(leadFollowUp.cold?.preset ? { preset: leadFollowUp.cold.preset } : {}),
+    },
+  }
+
+  // Remove older/duplicate keys to keep one source of truth.
+  delete payload.leadFrequency
+  delete payload.coldLead
+  return payload
+}
+
 exports.getConfig = asyncHandler(async (req, res) => {
   const config = await getOrCreateConfig()
   return success(res, { config })
@@ -35,6 +79,7 @@ exports.updateConfig = asyncHandler(async (req, res) => {
   delete payload._id
   delete payload.createdAt
   delete payload.updatedAt
+  normalizeLeadFollowUpPayload(payload)
 
   await FollowUpAutomationConfig.findOneAndUpdate(
     { key: 'global' },

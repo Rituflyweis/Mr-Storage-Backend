@@ -4,7 +4,7 @@ const FollowUpDispatchLogSchema = new mongoose.Schema(
   {
     kind: {
       type: String,
-      enum: ['chat_dropoff', 'cold_lead', 'invoice_reminder', 'manual_followup', 'meeting_reminder'],
+      enum: ['chat_dropoff', 'warm_lead', 'cold_lead', 'invoice_reminder', 'manual_followup', 'meeting_reminder'],
       required: true,
       index: true,
     },

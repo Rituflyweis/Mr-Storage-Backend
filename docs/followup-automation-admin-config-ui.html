@@ -624,26 +624,23 @@
             requireNotQuoteReady: true,
             requireNotHandedToSales: true,
           },
-          coldLead: {
-            enabled: document.getElementById("coldEnabled").checked,
-            maxAttempts: coldMax,
-            intervalsDays: coldIntervals,
-          },
-          manualReminder: {
-            defaultReminderMinutes: Number(document.getElementById("manualDefaultMinutes").value || 30),
-            sendDueNowReminder: document.getElementById("manualDueNow").checked,
-          },
-          leadFrequency: {
+          leadFollowUp: {
             warm: {
+              enabled: true,
               maxAttempts: warmMax,
               intervalsDays: warmIntervals,
               preset: state.warmPreset,
             },
             cold: {
+              enabled: document.getElementById("coldEnabled").checked,
               maxAttempts: coldMax,
               intervalsDays: coldIntervals,
               preset: state.coldPreset,
             },
+          },
+          manualReminder: {
+            defaultReminderMinutes: Number(document.getElementById("manualDefaultMinutes").value || 30),
+            sendDueNowReminder: document.getElementById("manualDueNow").checked,
           },
         };
       };
@@ -688,35 +685,35 @@
         const payload = cfgPayload();
         document.getElementById("payloadOut").textContent = JSON.stringify(payload, null, 2);
         document.getElementById("statReminder").textContent = payload.manualReminder.defaultReminderMinutes;
-        document.getElementById("statWarm").textContent = payload.leadFrequency.warm.intervalsDays.length;
-        document.getElementById("statCold").textContent = payload.leadFrequency.cold.intervalsDays.length;
-        document.getElementById("warmSummary").textContent = `Warm lead follow-ups will trigger on: ${cadenceText(payload.leadFrequency.warm.intervalsDays)}`;
-        document.getElementById("coldSummary").textContent = `Cold lead follow-ups will trigger on: ${cadenceText(payload.leadFrequency.cold.intervalsDays)}`;
+        document.getElementById("statWarm").textContent = payload.leadFollowUp.warm.intervalsDays.length;
+        document.getElementById("statCold").textContent = payload.leadFollowUp.cold.intervalsDays.length;
+        document.getElementById("warmSummary").textContent = `Warm lead follow-ups will trigger on: ${cadenceText(payload.leadFollowUp.warm.intervalsDays)}`;
+        document.getElementById("coldSummary").textContent = `Cold lead follow-ups will trigger on: ${cadenceText(payload.leadFollowUp.cold.intervalsDays)}`;
         document.getElementById("chatSummary").textContent = `Chat drop-off reminders will go out after: ${payload.chatDropOff.attemptIntervalsMinutes.map(formatMinutesLabel).join(" -> ")}`;
         document.getElementById("chatCallout").textContent = `With current settings, the first reminder is sent after ${formatMinutesLabel(payload.chatDropOff.attemptIntervalsMinutes[0])}, up to ${payload.chatDropOff.maxAttempts} attempt(s).`;
-        document.getElementById("warmOutcome").textContent = `Sends ${payload.leadFrequency.warm.intervalsDays.length} warm reminder(s). Last reminder on ${formatDayLabel(lastItem(payload.leadFrequency.warm.intervalsDays))}.`;
-        document.getElementById("coldOutcome").textContent = payload.coldLead.enabled
-          ? `Cold automation is ON. Sends ${payload.leadFrequency.cold.intervalsDays.length} reminder(s). Last reminder on ${formatDayLabel(lastItem(payload.leadFrequency.cold.intervalsDays))}.`
+        document.getElementById("warmOutcome").textContent = `Sends ${payload.leadFollowUp.warm.intervalsDays.length} warm reminder(s). Last reminder on ${formatDayLabel(lastItem(payload.leadFollowUp.warm.intervalsDays))}.`;
+        document.getElementById("coldOutcome").textContent = payload.leadFollowUp.cold.enabled
+          ? `Cold automation is ON. Sends ${payload.leadFollowUp.cold.intervalsDays.length} reminder(s). Last reminder on ${formatDayLabel(lastItem(payload.leadFollowUp.cold.intervalsDays))}.`
           : "Cold automation is OFF. No cold follow-up reminders will be sent.";
         document.getElementById("chatOutcome").textContent = payload.chatDropOff.enabled
           ? `Chat recovery is ON. First message after ${formatMinutesLabel(payload.chatDropOff.attemptIntervalsMinutes[0])}.`
           : "Chat recovery is OFF. No chat drop-off reminders will be sent.";
 
         document.getElementById("summaryWarm").textContent =
-          payload.leadFrequency.warm.intervalsDays.length
-            ? `${payload.leadFrequency.warm.intervalsDays.length} reminder(s): ${toDayList(payload.leadFrequency.warm.intervalsDays)}.`
+          payload.leadFollowUp.warm.intervalsDays.length
+            ? `${payload.leadFollowUp.warm.intervalsDays.length} reminder(s): ${toDayList(payload.leadFollowUp.warm.intervalsDays)}.`
             : "No warm reminders configured.";
         document.getElementById("summaryCold").textContent =
-          payload.coldLead.enabled
-            ? `${payload.leadFrequency.cold.intervalsDays.length} reminder(s): ${toDayList(payload.leadFrequency.cold.intervalsDays)}.`
+          payload.leadFollowUp.cold.enabled
+            ? `${payload.leadFollowUp.cold.intervalsDays.length} reminder(s): ${toDayList(payload.leadFollowUp.cold.intervalsDays)}.`
             : "Disabled.";
         document.getElementById("summaryChat").textContent =
           payload.chatDropOff.enabled
             ? `${payload.chatDropOff.maxAttempts} attempt(s), starting after ${formatMinutesLabel(payload.chatDropOff.attemptIntervalsMinutes[0])}. Cadence: ${toMinuteList(payload.chatDropOff.attemptIntervalsMinutes)}.`
             : "Disabled.";
 
-        renderPills("warmPills", payload.leadFrequency.warm.intervalsDays.map(formatDayLabel));
-        renderPills("coldPills", payload.leadFrequency.cold.intervalsDays.map(formatDayLabel));
+        renderPills("warmPills", payload.leadFollowUp.warm.intervalsDays.map(formatDayLabel));
+        renderPills("coldPills", payload.leadFollowUp.cold.intervalsDays.map(formatDayLabel));
         renderPills("chatPills", payload.chatDropOff.attemptIntervalsMinutes.map(formatMinutesLabel));
       }
 

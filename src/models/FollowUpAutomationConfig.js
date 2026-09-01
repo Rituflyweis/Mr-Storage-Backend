@@ -21,6 +21,24 @@ const ColdLeadSchema = new mongoose.Schema(
   { _id: false }
 )
 
+const LeadCadenceSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    preset: { type: String, default: '' },
+    intervalsDays: { type: [Number], default: [1, 3, 7, 14] },
+    maxAttempts: { type: Number, default: 4 },
+  },
+  { _id: false }
+)
+
+const LeadFollowUpSchema = new mongoose.Schema(
+  {
+    warm: { type: LeadCadenceSchema, default: () => ({ enabled: true, intervalsDays: [3, 7, 10, 14], maxAttempts: 4 }) },
+    cold: { type: LeadCadenceSchema, default: () => ({ enabled: true, intervalsDays: [7, 15, 30], maxAttempts: 4 }) },
+  },
+  { _id: false }
+)
+
 const InvoiceReminderSchema = new mongoose.Schema(
   {
     enabled: { type: Boolean, default: true },
@@ -43,6 +61,7 @@ const FollowUpAutomationConfigSchema = new mongoose.Schema(
     key: { type: String, unique: true, default: 'global' },
     chatDropOff: { type: ChatDropOffSchema, default: () => ({}) },
     coldLead: { type: ColdLeadSchema, default: () => ({}) },
+    leadFollowUp: { type: LeadFollowUpSchema, default: () => ({}) },
     invoiceReminder: { type: InvoiceReminderSchema, default: () => ({}) },
     manualReminder: { type: ManualReminderSchema, default: () => ({}) },
     timezone: { type: String, default: 'UTC' },

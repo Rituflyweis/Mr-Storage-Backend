@@ -2799,6 +2799,7 @@
 
       function renderBreakdown() {
         const p = state.pricing;
+        const fq = state.fullQuote || {};
         if (!p?.rows?.length) return;
         const tagClass = (t) => (t || "").replace("cat-", "");
         const sfValue = Number(p.sf || state.squareFootage || 0);
@@ -2849,6 +2850,32 @@
           html += `<tr><td style="color:var(--green-light)">Installation sell</td><td></td><td></td><td class="td-r" style="color:var(--green-light)">${fmt(p.instSell)}</td><td></td></tr>`;
         }
         html += `<tr class="total-row" style="font-size:15px"><td style="color:var(--blue-light)">Building subtotal (sell)</td><td></td><td></td><td class="td-r" style="color:var(--blue-light)">${fmt(p.totSell)}</td><td style="color:var(--muted);font-size:11px">${fmt(p.sfPrice)}/SF</td></tr>`;
+
+        const concrete = fq.concrete || {};
+        const insulation = fq.insulation || {};
+        const concreteSell =
+          concrete.include && Number(concrete.appliedSell || 0) > 0
+            ? Number(concrete.appliedSell || 0)
+            : 0;
+        const insulationSell =
+          insulation.include && Number(insulation.appliedSell || 0) > 0
+            ? Number(insulation.appliedSell || 0)
+            : 0;
+        if (concreteSell) {
+          const cLabel = `${concrete.thickness || 4}" · ${concrete.psi || "3500"} PSI`;
+          html += `<tr><td style="color:var(--green-light)">Concrete add-on (sell)</td><td></td><td>${cLabel}</td><td class="td-r" style="color:var(--green-light)">${fmt(concreteSell)}</td><td style="font-size:11px;color:var(--muted)">${fmt(concrete.sellSF || 0)}/SF</td></tr>`;
+        }
+        if (insulationSell) {
+          const iLabel = `${insulation.rRoof || "R-13"} roof / ${insulation.rWall || "R-13"} wall`;
+          html += `<tr><td style="color:var(--green-light)">Insulation add-on (sell)</td><td></td><td>${iLabel}</td><td class="td-r" style="color:var(--green-light)">${fmt(insulationSell)}</td><td style="font-size:11px;color:var(--muted)">${insulation.systemLabel || ""}</td></tr>`;
+        }
+        if (Number(fq?.salesTax?.amount || 0) > 0) {
+          html += `<tr><td style="color:#b45309">Sales tax</td><td></td><td>${fq.salesTax.rate || 0}%</td><td class="td-r" style="color:#b45309">${fmt(fq.salesTax.amount)}</td><td style="font-size:11px;color:var(--muted)">Tax on material & insulation</td></tr>`;
+        }
+        const grand = Number(fq.grandTotal || 0);
+        if (grand > 0 && grand !== Number(p.totSell || 0)) {
+          html += `<tr class="total-row" style="font-size:16px"><td style="color:var(--blue-light)">Grand total (sell)</td><td></td><td></td><td class="td-r" style="color:var(--blue-light)">${fmt(grand)}</td><td style="color:var(--muted);font-size:11px">${fmt(fq.pricePerSf || p.sfPrice)}/SF</td></tr>`;
+        }
         html += "</tbody></table>";
         document.getElementById("breakdown-table").innerHTML = html;
       }

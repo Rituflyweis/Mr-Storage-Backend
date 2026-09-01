@@ -35,6 +35,20 @@ const DEFAULT_AUTOMATION_CONFIG = {
     intervalsDays: [1, 3, 7, 14],
     maxAttempts: 4,
   },
+  leadFollowUp: {
+    warm: {
+      enabled: true,
+      preset: 'twice_week',
+      intervalsDays: [3, 7, 10, 14],
+      maxAttempts: 4,
+    },
+    cold: {
+      enabled: true,
+      preset: 'd7_15_30',
+      intervalsDays: [7, 15, 30],
+      maxAttempts: 4,
+    },
+  },
   invoiceReminder: {
     enabled: true,
     intervalsHours: [24, 72, 168],
@@ -64,6 +78,16 @@ const fillDefaults = (cfg = {}) => ({
   coldLead: {
     ...DEFAULT_AUTOMATION_CONFIG.coldLead,
     ...(cfg.coldLead || {}),
+  },
+  leadFollowUp: {
+    warm: {
+      ...DEFAULT_AUTOMATION_CONFIG.leadFollowUp.warm,
+      ...(cfg.leadFollowUp?.warm || {}),
+    },
+    cold: {
+      ...DEFAULT_AUTOMATION_CONFIG.leadFollowUp.cold,
+      ...(cfg.leadFollowUp?.cold || cfg.coldLead || {}),
+    },
   },
   invoiceReminder: {
     ...DEFAULT_AUTOMATION_CONFIG.invoiceReminder,
@@ -351,40 +375,48 @@ const processChatDropOff = async (config) => {
   return { scanned: leads.length, sent }
 }
 
-const processColdLeadFollowUp = async (config) => {
-  if (!config?.coldLead?.enabled) return { scanned: 0, sent: 0 }
+const processTemperatureLeadFollowUp = async ({
+  config,
+  temperature,
+  source,
+  kind,
+  message,
+  subject,
+  fallbackCfg = {},
+}) => {
+  const leadCfg = config?.leadFollowUp?.[temperature] || fallbackCfg
+  if (!leadCfg?.enabled) return { scanned: 0, sent: 0 }
   const now = Date.now()
 
   const leads = await Lead.find({
     isTerminated: { $ne: true },
     lifecycleStatus: { $nin: ['won', 'lost'] },
     assignedSales: { $ne: null },
-    'leadScoring.temperature': 'cold',
+    'leadScoring.temperature': temperature,
   })
     .select('_id customerId assignedSales createdAt')
     .lean()
 
   let sent = 0
-  const intervals = (config.coldLead.intervalsDays || []).slice(0, config.coldLead.maxAttempts)
+  const intervals = (leadCfg.intervalsDays || []).slice(0, leadCfg.maxAttempts)
   for (const lead of leads) {
-    const attempts = await countAttemptsForLeadKind('cold_lead_auto', lead._id)
+    const attempts = await countAttemptsForLeadKind(source, lead._id)
     if (attempts >= intervals.length) continue
 
     const dueAt = new Date(lead.createdAt).getTime() + intervals[attempts] * DAY
     if (now < dueAt) continue
-    const lastAutoAt = await getLastAutoFollowUpAt({ source: 'cold_lead_auto', leadId: lead._id })
+    const lastAutoAt = await getLastAutoFollowUpAt({ source, leadId: lead._id })
     if (lastAutoAt && now - lastAutoAt < 24 * HOUR) continue
     const customer = await Customer.findById(lead.customerId).lean()
     if (!customer) continue
 
     await sendLeadAutomation({
-      kind: 'cold_lead',
+      kind,
       lead,
       customer,
-      message:
-        'Hi, just following up on your storage building inquiry. We can help finalize your quote whenever you are ready.',
-      subject: 'Checking in on your quote request',
-      followUpSource: 'cold_lead_auto',
+      message,
+      subject,
+      followUpSource: source,
       config,
     })
     sent += 1
@@ -392,6 +424,30 @@ const processColdLeadFollowUp = async (config) => {
 
   return { scanned: leads.length, sent }
 }
+
+const processColdLeadFollowUp = async (config) =>
+  processTemperatureLeadFollowUp({
+    config,
+    temperature: 'cold',
+    source: 'cold_lead_auto',
+    kind: 'cold_lead',
+    message:
+      'Hi, just following up on your storage building inquiry. We can help finalize your quote whenever you are ready.',
+    subject: 'Checking in on your quote request',
+    fallbackCfg: config?.coldLead || {},
+  })
+
+const processWarmLeadFollowUp = async (config) =>
+  processTemperatureLeadFollowUp({
+    config,
+    temperature: 'warm',
+    source: 'warm_lead_auto',
+    kind: 'warm_lead',
+    message:
+      'Hi, quick follow-up on your project. If you are ready, we can move your quote forward today.',
+    subject: 'Quick follow-up on your quote',
+    fallbackCfg: { enabled: false, intervalsDays: [], maxAttempts: 0 },
+  })
 
 const processInvoiceReminders = async (config) => {
   if (!config?.invoiceReminder?.enabled) return { scanned: 0, sent: 0 }
@@ -561,14 +617,15 @@ const processMeetingReminders = async (config) => {
 
 const runAutomationSweep = async () => {
   const config = await getOrCreateConfig()
-  const [chatDropOff, coldLead, invoiceReminder, manualReminder, meetingReminder] = await Promise.all([
+  const [chatDropOff, warmLead, coldLead, invoiceReminder, manualReminder, meetingReminder] = await Promise.all([
     processChatDropOff(config),
+    processWarmLeadFollowUp(config),
     processColdLeadFollowUp(config),
     processInvoiceReminders(config),
     processDueManualFollowUps(config),
     processMeetingReminders(config),
   ])
-  return { chatDropOff, coldLead, invoiceReminder, manualReminder, meetingReminder }
+  return { chatDropOff, warmLead, coldLead, invoiceReminder, manualReminder, meetingReminder }
 }
 
 const startAutomationRunner = () => {

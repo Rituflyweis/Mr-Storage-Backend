@@ -36,7 +36,7 @@ const FollowUpSchema = new mongoose.Schema(
     reminderSentAt: { type: Date, default: null },
     source: {
       type: String,
-      enum: ["manual", "cold_lead_auto", "chat_dropoff_auto", "invoice_auto"],
+      enum: ["manual", "warm_lead_auto", "cold_lead_auto", "chat_dropoff_auto", "invoice_auto"],
       default: "manual",
     },
     relatedInvoiceId: {
