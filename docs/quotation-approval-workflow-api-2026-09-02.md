@@ -1,0 +1,152 @@
+# Quotation Approval Workflow API (Before Client Send)
+
+This document defines the quotation approval flow for frontend integration.
+
+It applies to quotations created from your quoting process (including data extracted from XLSX/PDF flows) before the quotation is sent to the customer.
+
+## Objective
+
+- Sales can create/edit quotations.
+- Sales cannot send quotation to customer until admin approval.
+- Admin can approve/reject quotations.
+- If quotation changes after approval, it must be re-submitted.
+
+---
+
+## Quotation Fields Added
+
+Quotation now includes:
+
+- `approval.status`: `not_submitted | pending_approval | approved | rejected`
+- `approval.submittedBy`, `approval.submittedAt`
+- `approval.reviewedBy`, `approval.reviewedAt`
+- `approval.rejectionReason`
+- `approval.approvedVersionNumber`
+- `approval.history[]` with `{ status, note, by, at }`
+- `workflowStatus` (computed response field): `draft | pending_approval | approved | rejected | sent`
+
+Existing `versionNumber` is used for stale-approval protection.
+
+---
+
+## Endpoint Summary
+
+Base: `/api/quotations`
+
+### Create quotation
+
+`POST /api/quotations`
+
+Behavior:
+- Sales-created quotation -> auto `pending_approval`
+- Admin-created quotation -> auto `approved`
+
+---
+
+### Submit for approval
+
+`POST /api/quotations/:quotationId/submit-approval`
+
+Body (optional):
+
+```json
+{ "note": "Please review this quote" }
+```
+
+---
+
+### Approve quotation (admin only)
+
+`PUT /api/quotations/:quotationId/approve`
+
+Body (optional):
+
+```json
+{ "note": "Approved for customer send" }
+```
+
+Rules:
+- only when `approval.status = pending_approval`
+- sets `approvedVersionNumber = versionNumber`
+
+---
+
+### Reject quotation (admin only)
+
+`PUT /api/quotations/:quotationId/reject`
+
+Body:
+
+```json
+{ "reason": "Update dimensions and resend" }
+```
+
+Rules:
+- only when `approval.status = pending_approval`
+
+---
+
+### Pending approvals list (admin only)
+
+`GET /api/quotations/approval/pending`
+
+Optional query:
+- `leadId`
+
+---
+
+### Send quotation (existing endpoint with new gate)
+
+`POST /api/quotations/:quotationId/send`
+
+Now blocked unless:
+- `approval.status = approved`
+- `approval.approvedVersionNumber === versionNumber`
+
+If changed after approval, API returns error asking to re-submit.
+
+On successful send, response includes:
+- `data.emailProvider` -> `sendgrid` or `smtp_fallback` (provider used for delivery attempt).
+
+---
+
+## Edit Behavior
+
+`PUT /api/quotations/:quotationId`
+
+When edited:
+- `versionNumber` increments
+- if approval was `pending_approval/approved/rejected`, it resets to `not_submitted`
+- sales must submit again via `submit-approval`
+
+---
+
+## Response Behavior for Frontend
+
+Use `workflowStatus` for UI badge and button state:
+
+- `draft`: can edit and submit
+- `pending_approval`: waiting for admin
+- `approved`: send enabled
+- `rejected`: show rejection reason; edit + resubmit
+- `sent`: completed
+
+---
+
+## Suggested UI Logic
+
+- Disable **Send** button unless `workflowStatus === "approved"`.
+- Show rejection message from `approval.rejectionReason` when rejected.
+- Show timeline from `approval.history`.
+- On edit success, if status changes to `not_submitted`, show CTA: **Submit for Approval**.
+
+---
+
+## Audit Trail
+
+New audit actions:
+- `quotation.submitted_for_approval`
+- `quotation.approved`
+- `quotation.approval_rejected`
+
+These are in addition to existing quotation create/edit/send/delete actions.

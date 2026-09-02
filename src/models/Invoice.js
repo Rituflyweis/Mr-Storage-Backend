@@ -38,6 +38,38 @@ const LineItemSchema = new mongoose.Schema(
   { _id: true }
 )
 
+const InvoiceApprovalHistorySchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ['not_submitted', 'pending_approval', 'approved', 'rejected', 'sent'],
+      required: true,
+    },
+    note: { type: String, default: '' },
+    by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    at: { type: Date, default: Date.now },
+  },
+  { _id: false }
+)
+
+const InvoiceApprovalSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ['not_submitted', 'pending_approval', 'approved', 'rejected'],
+      default: 'not_submitted',
+    },
+    submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    submittedAt: { type: Date, default: null },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    reviewedAt: { type: Date, default: null },
+    rejectionReason: { type: String, default: '' },
+    approvedRevision: { type: Number, default: null },
+    history: { type: [InvoiceApprovalHistorySchema], default: [] },
+  },
+  { _id: false }
+)
+
 const InvoiceSchema = new mongoose.Schema(
   {
     leadId:            { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', required: true },
@@ -65,6 +97,8 @@ const InvoiceSchema = new mongoose.Schema(
 
     status:  { type: String, enum: INVOICE_STATUSES, default: 'draft' },
     sentAt:  { type: Date, default: null },
+    revision: { type: Number, default: 1 },
+    approval: { type: InvoiceApprovalSchema, default: () => ({}) },
 
     // Mark as paid — stores who did it and when
     paidBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

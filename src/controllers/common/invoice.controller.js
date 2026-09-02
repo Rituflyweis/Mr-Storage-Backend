@@ -32,6 +32,28 @@ const INVOICE_BODY_FIELDS = [
 ]
 
 const INVOICE_EDITABLE_STATUSES = ['draft', 'sent']
+const APPROVAL_STATUSES = ['not_submitted', 'pending_approval', 'approved', 'rejected']
+
+const pushApprovalHistory = (invoice, { status, note = '', by = null, at = new Date() }) => {
+  invoice.approval = invoice.approval || {}
+  invoice.approval.history = Array.isArray(invoice.approval.history) ? invoice.approval.history : []
+  invoice.approval.history.push({ status, note, by, at })
+}
+
+const getWorkflowStatus = (invoice) => {
+  if (invoice.status === 'sent') return 'sent'
+  const approval = invoice.approval?.status || 'not_submitted'
+  if (approval === 'pending_approval') return 'pending_approval'
+  if (approval === 'approved') return 'approved'
+  if (approval === 'rejected') return 'rejected'
+  return 'draft'
+}
+
+const ensureApprovalState = (invoice) => {
+  if (!invoice.approval) invoice.approval = {}
+  if (!invoice.approval.status) invoice.approval.status = 'not_submitted'
+  if (!Array.isArray(invoice.approval.history)) invoice.approval.history = []
+}
 
 const checkLeadAccess = async (leadId, user) => {
   const lead = await Lead.findById(leadId)
@@ -161,6 +183,25 @@ exports.createInvoice = asyncHandler(async (req, res) => {
         quotationId: null,
         paymentScheduleId,
         paymentScheduleStageId: paymentScheduleStageId || null,
+        approval:
+          req.user.role === 'sales'
+            ? {
+                status: 'pending_approval',
+                submittedBy: req.user._id,
+                submittedAt: new Date(),
+                history: [{
+                  status: 'pending_approval',
+                  note: 'Invoice submitted for admin approval on create',
+                  by: req.user._id,
+                  at: new Date(),
+                }],
+              }
+            : { status: 'approved', reviewedBy: req.user._id, reviewedAt: new Date(), approvedRevision: 1, history: [{
+              status: 'approved',
+              note: 'Admin-created invoice auto-approved',
+              by: req.user._id,
+              at: new Date(),
+            }] },
       })
       break
     } catch (err) {
@@ -181,10 +222,35 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     leadId,
     customerId: lead.customerId,
     performedBy: req.user._id,
-    metadata: { invoiceNumber, totalAmount: invoice.totalAmount },
+    metadata: {
+      invoiceNumber,
+      totalAmount: invoice.totalAmount,
+      approvalStatus: invoice.approval?.status || 'not_submitted',
+    },
   })
+  if (req.user.role === 'sales') {
+    await auditService.log({
+      type: 'invoice',
+      action: AUDIT_ACTIONS.INVOICE_SUBMITTED_FOR_APPROVAL,
+      leadId,
+      customerId: lead.customerId,
+      performedBy: req.user._id,
+      metadata: { invoiceId: invoice._id, invoiceNumber, source: 'create_invoice' },
+    })
+  } else {
+    await auditService.log({
+      type: 'invoice',
+      action: AUDIT_ACTIONS.INVOICE_APPROVED,
+      leadId,
+      customerId: lead.customerId,
+      performedBy: req.user._id,
+      metadata: { invoiceId: invoice._id, invoiceNumber, source: 'create_invoice_admin' },
+    })
+  }
 
-  return created(res, { invoice })
+  const invoiceObj = invoice.toObject()
+  invoiceObj.workflowStatus = getWorkflowStatus(invoiceObj)
+  return created(res, { invoice: invoiceObj })
 })
 
 exports.getInvoice = asyncHandler(async (req, res) => {
@@ -198,7 +264,7 @@ exports.getInvoice = asyncHandler(async (req, res) => {
   if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
 
   const paymentSchedule = await PaymentSchedule.findOne({ leadId: invoice.leadId }).lean()
-  return success(res, { invoice, paymentSchedule })
+  return success(res, { invoice: { ...invoice, workflowStatus: getWorkflowStatus(invoice) }, paymentSchedule })
 })
 
 exports.updateInvoice = asyncHandler(async (req, res) => {
@@ -211,6 +277,7 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
 
   const hasPaymentStageUpdate = req.body.paymentScheduleStageId !== undefined
   const hasBodyFieldUpdates = INVOICE_BODY_FIELDS.some(k => req.body[k] !== undefined)
+  ensureApprovalState(invoice)
 
   if (hasBodyFieldUpdates && !INVOICE_EDITABLE_STATUSES.includes(invoice.status)) {
     return badRequest(res, 'Only draft and sent invoices can be edited')
@@ -218,6 +285,22 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
 
   if (hasBodyFieldUpdates) {
     applyInvoiceBodyFields(invoice, req.body)
+    invoice.revision = Number(invoice.revision || 1) + 1
+    if (invoice.status !== 'sent' && invoice.status !== 'paid' && invoice.status !== 'cancelled') {
+      const prevApproval = invoice.approval?.status || 'not_submitted'
+      if (['pending_approval', 'approved', 'rejected'].includes(prevApproval)) {
+        invoice.approval.status = 'not_submitted'
+        invoice.approval.reviewedBy = null
+        invoice.approval.reviewedAt = null
+        invoice.approval.rejectionReason = ''
+        invoice.approval.approvedRevision = null
+        pushApprovalHistory(invoice, {
+          status: 'not_submitted',
+          note: `Approval reset after invoice edit (from ${prevApproval})`,
+          by: req.user._id,
+        })
+      }
+    }
   }
 
   if (hasPaymentStageUpdate) {
@@ -236,22 +319,38 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
     leadId: invoice.leadId,
     customerId: invoice.customerId,
     performedBy: req.user._id,
-    metadata: { invoiceId: invoice._id },
+    metadata: {
+      invoiceId: invoice._id,
+      revision: invoice.revision,
+      approvalStatus: invoice.approval?.status || 'not_submitted',
+    },
   })
 
-  return success(res, { invoice })
+  const invoiceObj = invoice.toObject()
+  invoiceObj.workflowStatus = getWorkflowStatus(invoiceObj)
+  return success(res, { invoice: invoiceObj })
 })
 
 
 exports.sendInvoice = asyncHandler(async (req, res) => {
-  if (!mailer.isSmtpConfigured()) {
-    return badRequest(res, 'Email service is not configured. Set SENDGRID_API_KEY (and optional SENDGRID_FROM).')
+  if (!mailer.isEmailConfigured()) {
+    return badRequest(res, 'Email service is not configured. Set SENDGRID or SMTP credentials.')
   }
 
   const invoice = await Invoice.findById(req.params.invoiceId)
   if (!invoice) return notFound(res, 'Invoice not found')
   if (invoice.status === 'paid') return badRequest(res, 'Paid invoices cannot be sent')
   if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoices cannot be sent')
+  ensureApprovalState(invoice)
+  if (invoice.approval.status !== 'approved') {
+    return badRequest(res, 'Invoice must be approved by admin before sending')
+  }
+  if (
+    invoice.approval.approvedRevision != null &&
+    Number(invoice.approval.approvedRevision) !== Number(invoice.revision || 1)
+  ) {
+    return badRequest(res, 'Invoice was edited after approval. Please resubmit for admin approval.')
+  }
 
   const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
   if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
@@ -283,6 +382,11 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
 
   invoice.status = 'sent'
   invoice.sentAt = new Date()
+  pushApprovalHistory(invoice, {
+    status: 'sent',
+    note: `Invoice sent to customer (${customer.email})`,
+    by: req.user._id,
+  })
   await invoice.save()
 
   await auditService.log({
@@ -306,12 +410,148 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
     : 'Invoice sent successfully (PDF attachment could not be generated; HTML email delivered)'
 
   return success(res, {
-    invoice,
+    invoice: { ...invoice.toObject(), workflowStatus: getWorkflowStatus(invoice) },
     pdfAttached: emailResult.pdfAttached,
     pdfWarning: emailResult.pdfError || null,
     paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
     paymentScheduleStageCount: emailResult.paymentScheduleStageCount,
   }, message)
+})
+
+exports.submitInvoiceForApproval = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId)
+  if (!invoice) return notFound(res, 'Invoice not found')
+  if (invoice.status === 'sent') return badRequest(res, 'Sent invoice cannot be submitted for approval')
+  if (invoice.status === 'paid') return badRequest(res, 'Paid invoice cannot be submitted for approval')
+  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoice cannot be submitted for approval')
+
+  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
+
+  ensureApprovalState(invoice)
+  invoice.approval.status = 'pending_approval'
+  invoice.approval.submittedBy = req.user._id
+  invoice.approval.submittedAt = new Date()
+  invoice.approval.reviewedBy = null
+  invoice.approval.reviewedAt = null
+  invoice.approval.rejectionReason = ''
+  invoice.approval.approvedRevision = null
+  pushApprovalHistory(invoice, {
+    status: 'pending_approval',
+    note: req.body?.note || 'Submitted for admin approval',
+    by: req.user._id,
+  })
+  await invoice.save()
+
+  await auditService.log({
+    type: 'invoice',
+    action: AUDIT_ACTIONS.INVOICE_SUBMITTED_FOR_APPROVAL,
+    leadId: invoice.leadId,
+    customerId: invoice.customerId,
+    performedBy: req.user._id,
+    metadata: { invoiceId: invoice._id, invoiceNumber: invoice.invoiceNumber, revision: invoice.revision },
+  })
+
+  return success(res, { invoice: { ...invoice.toObject(), workflowStatus: getWorkflowStatus(invoice) } }, 'Invoice submitted for approval')
+})
+
+exports.approveInvoice = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') return forbidden(res, 'Only admin can approve invoices')
+  const invoice = await Invoice.findById(req.params.invoiceId)
+  if (!invoice) return notFound(res, 'Invoice not found')
+  if (invoice.status === 'sent') return badRequest(res, 'Sent invoice cannot be approved')
+  if (invoice.status === 'paid') return badRequest(res, 'Paid invoice cannot be approved')
+  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoice cannot be approved')
+
+  ensureApprovalState(invoice)
+  if (invoice.approval.status !== 'pending_approval') {
+    return badRequest(res, 'Only pending approval invoices can be approved')
+  }
+
+  invoice.approval.status = 'approved'
+  invoice.approval.reviewedBy = req.user._id
+  invoice.approval.reviewedAt = new Date()
+  invoice.approval.rejectionReason = ''
+  invoice.approval.approvedRevision = Number(invoice.revision || 1)
+  pushApprovalHistory(invoice, {
+    status: 'approved',
+    note: req.body?.note || 'Approved by admin',
+    by: req.user._id,
+  })
+  await invoice.save()
+
+  await auditService.log({
+    type: 'invoice',
+    action: AUDIT_ACTIONS.INVOICE_APPROVED,
+    leadId: invoice.leadId,
+    customerId: invoice.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      invoiceId: invoice._id,
+      invoiceNumber: invoice.invoiceNumber,
+      approvedRevision: invoice.approval.approvedRevision,
+    },
+  })
+
+  return success(res, { invoice: { ...invoice.toObject(), workflowStatus: getWorkflowStatus(invoice) } }, 'Invoice approved')
+})
+
+exports.rejectInvoice = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') return forbidden(res, 'Only admin can reject invoices')
+  const invoice = await Invoice.findById(req.params.invoiceId)
+  if (!invoice) return notFound(res, 'Invoice not found')
+  if (invoice.status === 'sent') return badRequest(res, 'Sent invoice cannot be rejected')
+  if (invoice.status === 'paid') return badRequest(res, 'Paid invoice cannot be rejected')
+  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoice cannot be rejected')
+
+  ensureApprovalState(invoice)
+  if (invoice.approval.status !== 'pending_approval') {
+    return badRequest(res, 'Only pending approval invoices can be rejected')
+  }
+
+  const reason = String(req.body?.reason || req.body?.note || '').trim()
+  if (!reason) return badRequest(res, 'Rejection reason is required')
+
+  invoice.approval.status = 'rejected'
+  invoice.approval.reviewedBy = req.user._id
+  invoice.approval.reviewedAt = new Date()
+  invoice.approval.rejectionReason = reason
+  invoice.approval.approvedRevision = null
+  pushApprovalHistory(invoice, {
+    status: 'rejected',
+    note: reason,
+    by: req.user._id,
+  })
+  await invoice.save()
+
+  await auditService.log({
+    type: 'invoice',
+    action: AUDIT_ACTIONS.INVOICE_REJECTED,
+    leadId: invoice.leadId,
+    customerId: invoice.customerId,
+    performedBy: req.user._id,
+    metadata: { invoiceId: invoice._id, invoiceNumber: invoice.invoiceNumber, reason },
+  })
+
+  return success(res, { invoice: { ...invoice.toObject(), workflowStatus: getWorkflowStatus(invoice) } }, 'Invoice rejected')
+})
+
+exports.getPendingInvoiceApprovals = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') return forbidden(res, 'Only admin can view pending approvals')
+  const invoices = await Invoice.find({
+    status: { $nin: ['sent', 'paid', 'cancelled'] },
+    'approval.status': 'pending_approval',
+  })
+    .populate('createdBy', 'name email')
+    .sort({ 'approval.submittedAt': 1, createdAt: 1 })
+    .lean()
+
+  return success(res, {
+    invoices: invoices.map((inv) => ({
+      ...inv,
+      workflowStatus: getWorkflowStatus(inv),
+    })),
+  })
 })
 
 exports.markAsPaid = asyncHandler(async (req, res) => {
@@ -465,7 +705,9 @@ exports.getLeadInvoices = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .lean()
 
-  return success(res, { invoices })
+  return success(res, {
+    invoices: invoices.map((inv) => ({ ...inv, workflowStatus: getWorkflowStatus(inv) })),
+  })
 })
 
 exports.getInvoiceStats = asyncHandler(async (req, res) => {
@@ -508,7 +750,7 @@ exports.getInvoiceStats = asyncHandler(async (req, res) => {
 })
 
 exports.listInvoices = asyncHandler(async (req, res) => {
-  const { status, leadId, search, page = 1, limit = 20 } = req.query
+  const { status, approvalStatus, leadId, search, page = 1, limit = 20 } = req.query
   const parsedPage = Math.max(1, Number(page) || 1)
   const parsedLimit = Math.min(Math.max(1, Number(limit) || 20), 100)
   const skip = (parsedPage - 1) * parsedLimit
@@ -516,10 +758,14 @@ exports.listInvoices = asyncHandler(async (req, res) => {
   if (status && !INVOICE_STATUSES.includes(status)) {
     return badRequest(res, `Invalid status. Use: ${INVOICE_STATUSES.join(', ')}`)
   }
+  if (approvalStatus && !APPROVAL_STATUSES.includes(approvalStatus)) {
+    return badRequest(res, `Invalid approvalStatus. Use: ${APPROVAL_STATUSES.join(', ')}`)
+  }
 
   const { leadIds } = await resolveInvoiceLeadIds(req.user, { search, leadId })
   const filter = { ...buildDateFilter(req.query, 'createdAt') }
   if (status) filter.status = status
+  if (approvalStatus) filter['approval.status'] = approvalStatus
 
   if (leadIds !== null) {
     if (leadIds.length === 0) {
@@ -551,6 +797,8 @@ exports.listInvoices = asyncHandler(async (req, res) => {
     dueDate: inv.dueDate,
     amount: inv.totalAmount,
     status: inv.status,
+    approvalStatus: inv.approval?.status || 'not_submitted',
+    workflowStatus: getWorkflowStatus(inv),
     invoice: inv,
   }))
 

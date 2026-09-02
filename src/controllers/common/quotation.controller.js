@@ -12,10 +12,12 @@ const {
   notFound,
   badRequest,
   forbidden,
+  error,
 } = require("../../utils/apiResponse");
 const asyncHandler = require("../../utils/asyncHandler");
 const { buildDateFilter } = require("../../utils/dateRange");
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require("../../config/constants");
+const QUOTATION_APPROVAL_STATUSES = ["not_submitted", "pending_approval", "approved", "rejected"];
 
 // Server-side auto-calculations per spec (admin_panel_sales_panel_v2.md lines 604-609).
 // Never trust client values for these fields.
@@ -54,6 +56,26 @@ const checkLeadAccess = async (leadId, user) => {
   return { lead };
 };
 
+const ensureApprovalState = (quotation) => {
+  if (!quotation.approval) quotation.approval = {};
+  if (!quotation.approval.status) quotation.approval.status = "not_submitted";
+  if (!Array.isArray(quotation.approval.history)) quotation.approval.history = [];
+};
+
+const pushApprovalHistory = (quotation, { status, note = "", by = null, at = new Date() }) => {
+  ensureApprovalState(quotation);
+  quotation.approval.history.push({ status, note, by, at });
+};
+
+const getWorkflowStatus = (quotation) => {
+  if (quotation.status === "sent") return "sent";
+  const approvalStatus = quotation.approval?.status || "not_submitted";
+  if (approvalStatus === "pending_approval") return "pending_approval";
+  if (approvalStatus === "approved") return "approved";
+  if (approvalStatus === "rejected") return "rejected";
+  return "draft";
+};
+
 exports.createQuotation = asyncHandler(async (req, res) => {
   const { leadId } = req.body;
   const { lead, error, code } = await checkLeadAccess(leadId, req.user);
@@ -70,6 +92,35 @@ exports.createQuotation = asyncHandler(async (req, res) => {
     ...pricing,
     quoteNumber,
     createdBy: req.user._id,
+    approval:
+      req.user.role === "sales"
+        ? {
+            status: "pending_approval",
+            submittedBy: req.user._id,
+            submittedAt: new Date(),
+            history: [
+              {
+                status: "pending_approval",
+                note: "Quotation submitted for admin approval on create",
+                by: req.user._id,
+                at: new Date(),
+              },
+            ],
+          }
+        : {
+            status: "approved",
+            reviewedBy: req.user._id,
+            reviewedAt: new Date(),
+            approvedVersionNumber: 1,
+            history: [
+              {
+                status: "approved",
+                note: "Admin-created quotation auto-approved",
+                by: req.user._id,
+                at: new Date(),
+              },
+            ],
+          },
   });
 
   // Sync lead — mark quote ready and update quoteValue
@@ -83,16 +134,41 @@ exports.createQuotation = asyncHandler(async (req, res) => {
     leadId,
     customerId: lead.customerId,
     performedBy: req.user._id,
-    metadata: { quotationId: quotation._id, basePrice: quotation.basePrice },
+    metadata: {
+      quotationId: quotation._id,
+      basePrice: quotation.basePrice,
+      approvalStatus: quotation.approval?.status || "not_submitted",
+    },
   });
+  if (req.user.role === "sales") {
+    await auditService.log({
+      type: "quotation",
+      action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
+      leadId,
+      customerId: lead.customerId,
+      performedBy: req.user._id,
+      metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, source: "create_quotation" },
+    });
+  } else {
+    await auditService.log({
+      type: "quotation",
+      action: AUDIT_ACTIONS.QUOTATION_APPROVED,
+      leadId,
+      customerId: lead.customerId,
+      performedBy: req.user._id,
+      metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, source: "create_quotation_admin" },
+    });
+  }
 
-  return created(res, { quotation });
+  const quotationObj = quotation.toObject();
+  quotationObj.workflowStatus = getWorkflowStatus(quotationObj);
+  return created(res, { quotation: quotationObj });
 });
 
 exports.getQuotation = asyncHandler(async (req, res) => {
   const quotation = await Quotation.findById(req.params.quotationId).lean();
   if (!quotation) return notFound(res, "Quotation not found");
-  return success(res, { quotation });
+  return success(res, { quotation: { ...quotation, workflowStatus: getWorkflowStatus(quotation) } });
 });
 
 exports.updateQuotation = asyncHandler(async (req, res) => {
@@ -100,6 +176,8 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
   if (!quotation) return notFound(res, "Quotation not found");
   if (quotation.status !== "draft")
     return badRequest(res, "Only draft quotations can be edited");
+  const { error: accessError, code } = await checkLeadAccess(quotation.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
 
   // Per spec line 614: same fields as POST except quoteNumber (never editable)
   const ALLOWED = [
@@ -176,6 +254,22 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
 
   // Per spec line 615: auto-increment versionNumber on every save
   quotation.versionNumber = (quotation.versionNumber || 1) + 1;
+  ensureApprovalState(quotation);
+  if (
+    ["pending_approval", "approved", "rejected"].includes(quotation.approval.status)
+  ) {
+    const prevApproval = quotation.approval.status;
+    quotation.approval.status = "not_submitted";
+    quotation.approval.reviewedBy = null;
+    quotation.approval.reviewedAt = null;
+    quotation.approval.rejectionReason = "";
+    quotation.approval.approvedVersionNumber = null;
+    pushApprovalHistory(quotation, {
+      status: "not_submitted",
+      note: `Approval reset after quotation edit (from ${prevApproval})`,
+      by: req.user._id,
+    });
+  }
 
   await quotation.save();
 
@@ -195,27 +289,58 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
     leadId: quotation.leadId,
     customerId: quotation.customerId,
     performedBy: req.user._id,
-    metadata: { quotationId: quotation._id },
+    metadata: {
+      quotationId: quotation._id,
+      versionNumber: quotation.versionNumber,
+      approvalStatus: quotation.approval?.status || "not_submitted",
+    },
   });
 
-  return success(res, { quotation });
+  return success(res, { quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) } });
 });
 
 exports.sendQuotation = asyncHandler(async (req, res) => {
+  if (!mailer.isEmailConfigured()) {
+    return badRequest(res, "Email service is not configured. Set SENDGRID or SMTP credentials.");
+  }
   const quotation = await Quotation.findById(req.params.quotationId);
   if (!quotation) return notFound(res, "Quotation not found");
+  const { error: accessError, code } = await checkLeadAccess(quotation.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+  ensureApprovalState(quotation);
+  if (quotation.approval.status !== "approved") {
+    return badRequest(res, "Quotation must be approved by admin before sending");
+  }
+  if (
+    quotation.approval.approvedVersionNumber != null &&
+    Number(quotation.approval.approvedVersionNumber) !== Number(quotation.versionNumber || 1)
+  ) {
+    return badRequest(res, "Quotation was edited after approval. Please resubmit for admin approval.");
+  }
 
   const customer = await Customer.findById(quotation.customerId);
   if (!customer) return notFound(res, "Customer not found");
+  if (!customer.email) return badRequest(res, "Customer has no email address on file");
 
-  await mailer.sendQuotation({
-    toEmail: customer.email,
-    customerName: customer.firstName,
-    quotation,
-  });
+  let emailResult = { provider: "unknown" };
+  try {
+    emailResult = await mailer.sendQuotation({
+      toEmail: customer.email,
+      customerName: customer.firstName,
+      quotation,
+    });
+  } catch (err) {
+    console.error("[sendQuotation] Email failed for quotation", quotation.quoteNumber, err.message);
+    return error(res, `Failed to send quotation email: ${err.message}`, 502);
+  }
 
   quotation.status = "sent";
   quotation.sentAt = new Date();
+  pushApprovalHistory(quotation, {
+    status: "sent",
+    note: `Quotation sent to customer (${customer.email})`,
+    by: req.user._id,
+  });
   await quotation.save();
 
   // Only advance lifecycle — never regress a stage already reached
@@ -243,7 +368,11 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
     leadId: quotation.leadId,
     customerId: quotation.customerId,
     performedBy: req.user._id,
-    metadata: { quotationId: quotation._id, sentTo: customer.email },
+    metadata: {
+      quotationId: quotation._id,
+      sentTo: customer.email,
+      provider: emailResult?.provider || "unknown",
+    },
   });
 
   // Fire-and-forget: generate AI summary
@@ -251,7 +380,141 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
     .generateAndSave(quotation, quotation.leadId, quotation.customerId)
     .catch((err) => console.error("[QuoteSummary]", err.message));
 
-  return success(res, { quotation }, "Quotation sent successfully");
+  return success(
+    res,
+    {
+      quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) },
+      emailProvider: emailResult?.provider || "unknown",
+    },
+    "Quotation sent successfully",
+  );
+});
+
+exports.submitQuotationForApproval = asyncHandler(async (req, res) => {
+  const quotation = await Quotation.findById(req.params.quotationId);
+  if (!quotation) return notFound(res, "Quotation not found");
+  if (quotation.status === "sent") return badRequest(res, "Sent quotation cannot be submitted for approval");
+  const { error: accessError, code } = await checkLeadAccess(quotation.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+
+  ensureApprovalState(quotation);
+  quotation.approval.status = "pending_approval";
+  quotation.approval.submittedBy = req.user._id;
+  quotation.approval.submittedAt = new Date();
+  quotation.approval.reviewedBy = null;
+  quotation.approval.reviewedAt = null;
+  quotation.approval.rejectionReason = "";
+  quotation.approval.approvedVersionNumber = null;
+  pushApprovalHistory(quotation, {
+    status: "pending_approval",
+    note: req.body?.note || "Submitted for admin approval",
+    by: req.user._id,
+  });
+  await quotation.save();
+
+  await auditService.log({
+    type: "quotation",
+    action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
+    leadId: quotation.leadId,
+    customerId: quotation.customerId,
+    performedBy: req.user._id,
+    metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, versionNumber: quotation.versionNumber },
+  });
+
+  return success(res, { quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) } }, "Quotation submitted for approval");
+});
+
+exports.approveQuotation = asyncHandler(async (req, res) => {
+  if (req.user.role !== "admin") return forbidden(res, "Only admin can approve quotations");
+  const quotation = await Quotation.findById(req.params.quotationId);
+  if (!quotation) return notFound(res, "Quotation not found");
+  if (quotation.status === "sent") return badRequest(res, "Sent quotation cannot be approved");
+
+  ensureApprovalState(quotation);
+  if (quotation.approval.status !== "pending_approval") {
+    return badRequest(res, "Only pending approval quotations can be approved");
+  }
+  quotation.approval.status = "approved";
+  quotation.approval.reviewedBy = req.user._id;
+  quotation.approval.reviewedAt = new Date();
+  quotation.approval.rejectionReason = "";
+  quotation.approval.approvedVersionNumber = Number(quotation.versionNumber || 1);
+  pushApprovalHistory(quotation, {
+    status: "approved",
+    note: req.body?.note || "Approved by admin",
+    by: req.user._id,
+  });
+  await quotation.save();
+
+  await auditService.log({
+    type: "quotation",
+    action: AUDIT_ACTIONS.QUOTATION_APPROVED,
+    leadId: quotation.leadId,
+    customerId: quotation.customerId,
+    performedBy: req.user._id,
+    metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, approvedVersionNumber: quotation.approval.approvedVersionNumber },
+  });
+
+  return success(res, { quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) } }, "Quotation approved");
+});
+
+exports.rejectQuotationApproval = asyncHandler(async (req, res) => {
+  if (req.user.role !== "admin") return forbidden(res, "Only admin can reject quotations");
+  const quotation = await Quotation.findById(req.params.quotationId);
+  if (!quotation) return notFound(res, "Quotation not found");
+  if (quotation.status === "sent") return badRequest(res, "Sent quotation cannot be rejected");
+
+  ensureApprovalState(quotation);
+  if (quotation.approval.status !== "pending_approval") {
+    return badRequest(res, "Only pending approval quotations can be rejected");
+  }
+  const reason = String(req.body?.reason || req.body?.note || "").trim();
+  if (!reason) return badRequest(res, "Rejection reason is required");
+
+  quotation.approval.status = "rejected";
+  quotation.approval.reviewedBy = req.user._id;
+  quotation.approval.reviewedAt = new Date();
+  quotation.approval.rejectionReason = reason;
+  quotation.approval.approvedVersionNumber = null;
+  pushApprovalHistory(quotation, {
+    status: "rejected",
+    note: reason,
+    by: req.user._id,
+  });
+  await quotation.save();
+
+  await auditService.log({
+    type: "quotation",
+    action: AUDIT_ACTIONS.QUOTATION_APPROVAL_REJECTED,
+    leadId: quotation.leadId,
+    customerId: quotation.customerId,
+    performedBy: req.user._id,
+    metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, reason },
+  });
+
+  return success(res, { quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) } }, "Quotation rejected");
+});
+
+exports.getPendingQuotationApprovals = asyncHandler(async (req, res) => {
+  if (req.user.role !== "admin") return forbidden(res, "Only admin can view pending quotation approvals");
+  const { leadId } = req.query;
+  const filter = {
+    status: { $ne: "sent" },
+    "approval.status": "pending_approval",
+  };
+  if (leadId) filter.leadId = leadId;
+
+  const quotations = await Quotation.find(filter)
+    .populate("createdBy", "name email")
+    .sort({ "approval.submittedAt": 1, createdAt: 1 })
+    .lean();
+
+  return success(res, {
+    quotations: quotations.map((q) => ({
+      ...q,
+      workflowStatus: getWorkflowStatus(q),
+    })),
+  });
 });
 
 exports.getQuoteSummary = asyncHandler(async (req, res) => {
@@ -293,5 +556,14 @@ exports.getLeadQuotations = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .lean();
 
-  return success(res, { quotations });
+  const { status, approvalStatus } = req.query;
+  let rows = quotations;
+  if (status) rows = rows.filter((q) => q.status === status);
+  if (approvalStatus && QUOTATION_APPROVAL_STATUSES.includes(approvalStatus)) {
+    rows = rows.filter((q) => (q.approval?.status || "not_submitted") === approvalStatus);
+  }
+
+  return success(res, {
+    quotations: rows.map((q) => ({ ...q, workflowStatus: getWorkflowStatus(q) })),
+  });
 });

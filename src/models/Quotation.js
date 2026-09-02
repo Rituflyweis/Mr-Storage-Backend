@@ -1,6 +1,38 @@
 const mongoose = require("mongoose");
 const { QUOTATION_STATUSES, PRIORITY_LEVELS } = require("../config/constants");
 
+const QuotationApprovalHistorySchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ["not_submitted", "pending_approval", "approved", "rejected", "sent"],
+      required: true,
+    },
+    note: { type: String, default: "" },
+    by: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    at: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
+const QuotationApprovalSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ["not_submitted", "pending_approval", "approved", "rejected"],
+      default: "not_submitted",
+    },
+    submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    submittedAt: { type: Date, default: null },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    reviewedAt: { type: Date, default: null },
+    rejectionReason: { type: String, default: "" },
+    approvedVersionNumber: { type: Number, default: null },
+    history: { type: [QuotationApprovalHistorySchema], default: [] },
+  },
+  { _id: false },
+);
+
 const QuotationSchema = new mongoose.Schema(
   {
     leadId: {
@@ -136,6 +168,7 @@ const QuotationSchema = new mongoose.Schema(
     priorityLevel: { type: String, enum: PRIORITY_LEVELS, default: "medium" },
     status: { type: String, enum: QUOTATION_STATUSES, default: "draft" },
     sentAt: { type: Date, default: null },
+    approval: { type: QuotationApprovalSchema, default: () => ({}) },
 
     // Versioning
     versionNumber: { type: Number, default: 1 },

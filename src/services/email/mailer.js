@@ -503,12 +503,13 @@ const sendQuotation = async ({ toEmail, customerName, quotation }) => {
     ROOF_STYLE: quotation.roofStyle || "",
   });
 
-  await transporter.sendMail({
+  const result = await transporter.sendMail({
     from: MAIL_FROM,
     to: toEmail,
     subject: `Your Quotation for ${quotation.buildingType || "Construction Project"}`,
     html,
   });
+  return { provider: result?.provider || "unknown" };
 };
 
 const sendInvoice = async ({
