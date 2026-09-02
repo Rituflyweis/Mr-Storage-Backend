@@ -94,12 +94,38 @@ exports.createAdmin = asyncHandler(async (req, res) => {
 
   const user = await User.create(userPayload)
 
-  await mailer.sendEmployeeCredentials({
-    toEmail: user.email,
-    name: user.name,
-    role: user.role,
-    tempPassword: password,
-  })
+  const EMAIL_SEND_TIMEOUT_MS = 5000
+  let credentialsEmailSent = true
+  let credentialsEmailWarning = null
+  try {
+    const emailSendResult = await Promise.race([
+      mailer
+        .sendEmployeeCredentials({
+          toEmail: user.email,
+          name: user.name,
+          role: user.role,
+          tempPassword: password,
+        })
+        .then(() => ({ ok: true }))
+        .catch((err) => ({ ok: false, err })),
+      new Promise((resolve) =>
+        setTimeout(
+          () => resolve({ ok: false, err: new Error('Admin credentials email timed out') }),
+          EMAIL_SEND_TIMEOUT_MS
+        )
+      ),
+    ])
+
+    if (!emailSendResult?.ok) {
+      credentialsEmailSent = false
+      credentialsEmailWarning = emailSendResult?.err?.message || 'Failed to send admin credentials email'
+      console.error('[AdminManagement] send credentials failed:', credentialsEmailWarning)
+    }
+  } catch (err) {
+    credentialsEmailSent = false
+    credentialsEmailWarning = err.message || 'Failed to send admin credentials email'
+    console.error('[AdminManagement] send credentials failed:', credentialsEmailWarning)
+  }
 
   await auditService.log({
     type: 'user',
@@ -110,10 +136,18 @@ exports.createAdmin = asyncHandler(async (req, res) => {
       email: user.email,
       name: user.name,
       isActive: user.isActive,
+      credentialsEmailSent,
+      credentialsEmailWarning,
     },
   })
 
-  return created(res, { admin: user }, 'Admin user created')
+  return created(
+    res,
+    { admin: user, credentialsEmailSent, credentialsEmailWarning },
+    credentialsEmailSent
+      ? 'Admin user created'
+      : 'Admin user created, but credentials email could not be sent'
+  )
 })
 
 exports.updateAdmin = asyncHandler(async (req, res) => {
