@@ -711,7 +711,10 @@ exports.getItemCostList = asyncHandler(async (req, res) => {
   // apparently being sent through `search` instead, which only matches partName/description,
   // so a "category" pick behaved like a name search rather than an exact category filter.
   // `sort=latest` is new — orders by createdAt desc instead of the default alphabetical sort.
-  const { search, category, sort, page = 1, limit = 20 } = req.query
+  // `status` (active|inactive|all) and `frameType` (frame|non_frame|all) were previously not
+  // accepted at all — the list was always hardcoded to isActive:true with no way to see
+  // inactive items or narrow to just frame/non-frame parts.
+  const { search, category, sort, status, frameType, page = 1, limit = 20 } = req.query
 
   const activeVersion = await getActiveCostVersion()
   if (!activeVersion) {
@@ -721,7 +724,12 @@ exports.getItemCostList = asyncHandler(async (req, res) => {
     })
   }
 
-  const filter = { costVersionId: activeVersion._id, isActive: true }
+  const filter = { costVersionId: activeVersion._id }
+  if (status === 'inactive') filter.isActive = false
+  else if (status === 'all') { /* no isActive filter */ }
+  else filter.isActive = true
+  if (frameType === 'frame') filter.isFrameType = true
+  else if (frameType === 'non_frame') filter.isFrameType = false
   if (category) filter.category = category
   if (search) filter.$or = [
     { partName: { $regex: search, $options: 'i' } },
@@ -826,9 +834,15 @@ exports.updateItemCost = asyncHandler(async (req, res) => {
 
 // GET /costing/export
 exports.exportItemCostListExcel = asyncHandler(async (req, res) => {
-  const { search, category, sort } = req.query
+  const { search, category, sort, status, frameType } = req.query
   const activeVersion = await getActiveCostVersion()
-  const filter = activeVersion ? { costVersionId: activeVersion._id, isActive: true } : { _id: null }
+  const filter = activeVersion ? { costVersionId: activeVersion._id } : { _id: null }
+  if (activeVersion) {
+    if (status === 'inactive') filter.isActive = false
+    else if (status !== 'all') filter.isActive = true
+    if (frameType === 'frame') filter.isFrameType = true
+    else if (frameType === 'non_frame') filter.isFrameType = false
+  }
   if (category) filter.category = category
   if (search) filter.$or = [
     { partName: { $regex: search, $options: 'i' } },
