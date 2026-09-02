@@ -38,17 +38,28 @@ const isEmailConfigured = () =>
 const isEnquiryNotificationConfigured = () =>
   Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && SMTP_MAIL_FROM);
 
+const buildSmtpTransporter = ({ port, secure }) =>
+  nodemailer.createTransport({
+    host: SMTP_HOST,
+    port,
+    secure,
+    family: 4,
+    connectionTimeout: 15000,
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+  });
+
 const smtpTransporter = isSmtpConfigured()
-  ? nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      family: 4,
-      connectionTimeout: 15000,
-      auth: {
-        user: SMTP_USER,
-        pass: SMTP_PASS,
-      },
+  ? buildSmtpTransporter({ port: SMTP_PORT, secure: SMTP_PORT === 465 })
+  : null;
+
+const smtpAltPort = SMTP_PORT === 465 ? 587 : 465;
+const smtpAltTransporter = isSmtpConfigured()
+  ? buildSmtpTransporter({
+      port: smtpAltPort,
+      secure: smtpAltPort === 465,
     })
   : null;
 
@@ -127,6 +138,27 @@ const transporter = {
       await smtpTransporter.sendMail(smtpPayload);
       return { provider: "smtp_fallback" };
     } catch (smtpErr) {
+      if (smtpAltTransporter) {
+        try {
+          console.warn(
+            `[Mailer] SMTP primary failed on port ${SMTP_PORT}, trying alternate port ${smtpAltPort}: ${
+              smtpErr?.message || "unknown_smtp_error"
+            }`,
+          );
+          const altPayload = {
+            ...payload,
+            from: payload.from || SMTP_MAIL_FROM || MAIL_FROM,
+          };
+          await smtpAltTransporter.sendMail(altPayload);
+          return { provider: "smtp_fallback_alt_port" };
+        } catch (smtpAltErr) {
+          throw new Error(
+            `[Mailer] Email delivery failed on SMTP fallback: ${
+              smtpAltErr?.message || smtpErr?.message || "unknown_smtp_error"
+            }`,
+          );
+        }
+      }
       throw new Error(
         `[Mailer] Email delivery failed on SMTP fallback: ${
           smtpErr?.message || "unknown_smtp_error"
