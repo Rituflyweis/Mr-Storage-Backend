@@ -29,13 +29,12 @@ if (SENDGRID_API_KEY) {
 }
 
 const resolvedMailFrom = SENDGRID_FROM || MAIL_FROM;
+// Temporary ops mode: keep delivery on SMTP only and skip SendGrid attempts.
+const SENDGRID_ENABLED = false;
 
 const isSmtpConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 const isEmailConfigured = () =>
-  Boolean(
-    (SENDGRID_API_KEY && resolvedMailFrom) ||
-      (isSmtpConfigured() && (SMTP_MAIL_FROM || MAIL_FROM)),
-  );
+  Boolean(isSmtpConfigured() && (SMTP_MAIL_FROM || MAIL_FROM));
 const isEnquiryNotificationConfigured = () =>
   Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && SMTP_MAIL_FROM);
 
@@ -82,7 +81,7 @@ const transporter = {
       from: mailOptions.from || resolvedMailFrom || SMTP_MAIL_FROM || MAIL_FROM,
     };
 
-    const hasSendGrid = Boolean(SENDGRID_API_KEY);
+    const hasSendGrid = SENDGRID_ENABLED && Boolean(SENDGRID_API_KEY);
     const hasSmtp = Boolean(smtpTransporter);
     if (!hasSendGrid && !hasSmtp) {
       throw new Error(
