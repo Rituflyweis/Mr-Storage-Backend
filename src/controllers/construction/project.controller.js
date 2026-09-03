@@ -1,6 +1,8 @@
 const Lead = require('../../models/Lead')
 const Delivery = require('../../models/Delivery')
 const Task = require('../../models/Task')
+const Building = require('../../models/Building')
+const { getLatestBomJobsByBuilding } = require('../../utils/plantBomAccess')
 const { success, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -99,4 +101,36 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
   ])
 
   return success(res, { project: lead, deliveries: upcomingDeliveries, tasks })
+})
+
+// GET /projects/:leadId/bom — "View BOM File" button on the Project & Calendar screen.
+// Reuses the same per-building latest-BOM-job lookup the Plant Panel uses — the construction
+// tablet app only needs to view/download the file, not the plant BOM review workflow.
+exports.getProjectBom = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+
+  const lead = await Lead.findById(leadId).select('projectName jobId').lean()
+  if (!lead) return notFound(res, 'Project not found')
+
+  const [bomJobMap, buildings] = await Promise.all([
+    getLatestBomJobsByBuilding(leadId),
+    Building.find({ leadId }).select('buildingNumber').lean(),
+  ])
+  const buildingNumberById = new Map(buildings.map((b) => [String(b._id), b.buildingNumber]))
+
+  const bomFiles = [...bomJobMap.values()].map((j) => ({
+    buildingId: j.buildingId,
+    buildingNumber: buildingNumberById.get(String(j.buildingId)) ?? null,
+    bomJobId: j._id,
+    fileName: j.fileName || '',
+    fileUrl: j.fileUrl || '',
+    fileFormat: j.fileFormat,
+    status: j.status,
+    uploadedAt: j.createdAt,
+    totalItems: j.totalItems ?? 0,
+    matchedItems: j.matchedItems ?? 0,
+    unmatchedItems: j.unmatchedItems ?? 0,
+  })).sort((a, b) => (a.buildingNumber ?? 0) - (b.buildingNumber ?? 0))
+
+  return success(res, { project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId }, bomFiles })
 })

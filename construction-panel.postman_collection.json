@@ -235,6 +235,31 @@
 							]
 						}
 					}
+				},
+				{
+					"name": "Get Project BOM Files",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/projects/{{leadId}}/bom",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"projects",
+								"{{leadId}}",
+								"bom"
+							]
+						}
+					},
+					"_postman_note": "Returns the latest confirmed BOM file per building (same BOMJob data the Plant Panel uses). Use each bomFiles[].fileUrl directly to view/download — it's a direct S3 link, no separate download endpoint needed. bomFiles is [] if no BOM has been uploaded for the project yet."
 				}
 			]
 		},

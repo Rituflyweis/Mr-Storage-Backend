@@ -23,6 +23,7 @@ router.get('/dashboard', dashCtrl.getDashboard)
 router.get('/projects', projectCtrl.getProjects)
 router.get('/projects/calendar', projectCtrl.getProjectCalendar)
 router.get('/projects/:leadId/progress', taskCtrl.getProjectProgress)
+router.get('/projects/:leadId/bom', projectCtrl.getProjectBom)
 router.post('/projects/:leadId/milestones', taskCtrl.createMilestone)
 router.get('/projects/:leadId', projectCtrl.getProjectDetail)
 
