@@ -1,5 +1,6 @@
 const auditService = require('../services/audit.service')
 const { AUDIT_ACTIONS } = require('../config/constants')
+const { logLeadTemperatureTransition } = require('../services/leadTemperatureTransition.service')
 
 /**
  * Persist manual lead temperature (sets temperatureManual so AI re-score won't overwrite).
@@ -13,6 +14,16 @@ const setLeadTemperatureManual = async (lead, temperature, performedBy) => {
   lead.leadScoring.temperature = temperature
   lead.leadScoring.temperatureManual = true
   await lead.save()
+
+  await logLeadTemperatureTransition({
+    leadId: lead._id,
+    customerId: lead.customerId,
+    fromTemperature: previous,
+    toTemperature: lead.leadScoring.temperature,
+    source: 'manual_override',
+    changedBy: performedBy,
+    metadata: { reason: 'manual_temperature_update' },
+  })
 
   await auditService.log({
     type: 'lead',

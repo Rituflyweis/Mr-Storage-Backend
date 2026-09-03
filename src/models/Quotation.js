@@ -35,6 +35,12 @@ const QuotationApprovalSchema = new mongoose.Schema(
 
 const QuotationSchema = new mongoose.Schema(
   {
+    sourceEstimateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "EstimateQuote",
+      default: null,
+      index: true,
+    },
     leadId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Lead",

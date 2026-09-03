@@ -13,6 +13,7 @@ const { isInvoiceOverdue, resolveInvoiceLeadIds, getScopedLeadIds } = require('.
 const { AUDIT_ACTIONS, INVOICE_STATUSES, INVOICE_CREATE_MIN_LIFECYCLE_STAGE } = require('../../config/constants')
 const { isLifecycleAtLeast } = require('../../utils/leadLifecycle.util')
 const { generateInvoiceListExcel, generateInvoiceListPdf } = require('../../utils/exportInvoices')
+const INVOICE_USER_FIELDS = 'name email role'
 
 const loadPaymentScheduleForInvoice = async (invoice) => {
   const leadId = invoice.leadId?._id || invoice.leadId
@@ -47,6 +48,25 @@ const getWorkflowStatus = (invoice) => {
   if (approval === 'approved') return 'approved'
   if (approval === 'rejected') return 'rejected'
   return 'draft'
+}
+
+const getUnifiedInvoiceStatus = (invoice) => {
+  if (invoice.status === 'paid') return 'paid'
+  if (invoice.status === 'cancelled') return 'cancelled'
+  if (invoice.status === 'overdue') return 'overdue'
+  if (invoice.status === 'sent') return 'sent'
+  return getWorkflowStatus(invoice)
+}
+
+const decorateInvoiceForResponse = (invoiceLike) => {
+  if (!invoiceLike) return invoiceLike
+  const invoice = typeof invoiceLike.toObject === 'function' ? invoiceLike.toObject() : { ...invoiceLike }
+  invoice.approvalStatus = invoice.approval?.status || 'not_submitted'
+  invoice.paymentStatus = invoice.status
+  invoice.workflowStatus = getWorkflowStatus(invoice)
+  // Frontend-friendly single status across approval + payment stages.
+  invoice.invoiceStatus = getUnifiedInvoiceStatus(invoice)
+  return invoice
 }
 
 const ensureApprovalState = (invoice) => {
@@ -248,15 +268,16 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     })
   }
 
-  const invoiceObj = invoice.toObject()
-  invoiceObj.workflowStatus = getWorkflowStatus(invoiceObj)
-  return created(res, { invoice: invoiceObj })
+  return created(res, { invoice: decorateInvoiceForResponse(invoice) })
 })
 
 exports.getInvoice = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findById(req.params.invoiceId)
-    .populate('createdBy')
-    .populate('paidBy')
+    .populate('createdBy', INVOICE_USER_FIELDS)
+    .populate('paidBy', INVOICE_USER_FIELDS)
+    .populate('approval.submittedBy', INVOICE_USER_FIELDS)
+    .populate('approval.reviewedBy', INVOICE_USER_FIELDS)
+    .populate('approval.history.by', INVOICE_USER_FIELDS)
     .lean()
   if (!invoice) return notFound(res, 'Invoice not found')
 
@@ -264,7 +285,7 @@ exports.getInvoice = asyncHandler(async (req, res) => {
   if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
 
   const paymentSchedule = await PaymentSchedule.findOne({ leadId: invoice.leadId }).lean()
-  return success(res, { invoice: { ...invoice, workflowStatus: getWorkflowStatus(invoice) }, paymentSchedule })
+  return success(res, { invoice: decorateInvoiceForResponse(invoice), paymentSchedule })
 })
 
 exports.updateInvoice = asyncHandler(async (req, res) => {
@@ -326,9 +347,7 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
     },
   })
 
-  const invoiceObj = invoice.toObject()
-  invoiceObj.workflowStatus = getWorkflowStatus(invoiceObj)
-  return success(res, { invoice: invoiceObj })
+  return success(res, { invoice: decorateInvoiceForResponse(invoice) })
 })
 
 
@@ -410,7 +429,7 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
     : 'Invoice sent successfully (PDF attachment could not be generated; HTML email delivered)'
 
   return success(res, {
-    invoice: { ...invoice.toObject(), workflowStatus: getWorkflowStatus(invoice) },
+    invoice: decorateInvoiceForResponse(invoice),
     pdfAttached: emailResult.pdfAttached,
     pdfWarning: emailResult.pdfError || null,
     paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
@@ -452,7 +471,7 @@ exports.submitInvoiceForApproval = asyncHandler(async (req, res) => {
     metadata: { invoiceId: invoice._id, invoiceNumber: invoice.invoiceNumber, revision: invoice.revision },
   })
 
-  return success(res, { invoice: { ...invoice.toObject(), workflowStatus: getWorkflowStatus(invoice) } }, 'Invoice submitted for approval')
+  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Invoice submitted for approval')
 })
 
 exports.approveInvoice = asyncHandler(async (req, res) => {
@@ -493,7 +512,7 @@ exports.approveInvoice = asyncHandler(async (req, res) => {
     },
   })
 
-  return success(res, { invoice: { ...invoice.toObject(), workflowStatus: getWorkflowStatus(invoice) } }, 'Invoice approved')
+  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Invoice approved')
 })
 
 exports.rejectInvoice = asyncHandler(async (req, res) => {
@@ -533,7 +552,7 @@ exports.rejectInvoice = asyncHandler(async (req, res) => {
     metadata: { invoiceId: invoice._id, invoiceNumber: invoice.invoiceNumber, reason },
   })
 
-  return success(res, { invoice: { ...invoice.toObject(), workflowStatus: getWorkflowStatus(invoice) } }, 'Invoice rejected')
+  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Invoice rejected')
 })
 
 exports.getPendingInvoiceApprovals = asyncHandler(async (req, res) => {
@@ -542,15 +561,15 @@ exports.getPendingInvoiceApprovals = asyncHandler(async (req, res) => {
     status: { $nin: ['sent', 'paid', 'cancelled'] },
     'approval.status': 'pending_approval',
   })
-    .populate('createdBy', 'name email')
+    .populate('createdBy', INVOICE_USER_FIELDS)
+    .populate('approval.submittedBy', INVOICE_USER_FIELDS)
+    .populate('approval.reviewedBy', INVOICE_USER_FIELDS)
+    .populate('approval.history.by', INVOICE_USER_FIELDS)
     .sort({ 'approval.submittedAt': 1, createdAt: 1 })
     .lean()
 
   return success(res, {
-    invoices: invoices.map((inv) => ({
-      ...inv,
-      workflowStatus: getWorkflowStatus(inv),
-    })),
+    invoices: invoices.map((inv) => decorateInvoiceForResponse(inv)),
   })
 })
 
@@ -606,7 +625,7 @@ exports.markAsPaid = asyncHandler(async (req, res) => {
     },
   })
 
-  return success(res, { invoice }, 'Invoice marked as paid')
+  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Invoice marked as paid')
 })
 
 // GET /invoices/payment-proofs/pending — queue of customer-submitted receipts awaiting review
@@ -663,7 +682,7 @@ exports.verifyPaymentProof = asyncHandler(async (req, res) => {
     metadata: { invoiceId: invoice._id },
   })
 
-  return success(res, { invoice }, 'Payment receipt verified — invoice marked as paid')
+  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Payment receipt verified — invoice marked as paid')
 })
 
 // PUT /invoices/:invoiceId/payment-proof/reject — sends the receipt back, invoice stays unpaid
@@ -692,7 +711,7 @@ exports.rejectPaymentProof = asyncHandler(async (req, res) => {
     metadata: { invoiceId: invoice._id, reason: req.body.reviewNotes },
   })
 
-  return success(res, { invoice }, 'Payment receipt rejected — customer can resubmit')
+  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Payment receipt rejected — customer can resubmit')
 })
 
 exports.getLeadInvoices = asyncHandler(async (req, res) => {
@@ -700,13 +719,16 @@ exports.getLeadInvoices = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
 
   const invoices = await Invoice.find({ leadId, ...dateFilter })
-    .populate('createdBy')
-    .populate('paidBy')
+    .populate('createdBy', INVOICE_USER_FIELDS)
+    .populate('paidBy', INVOICE_USER_FIELDS)
+    .populate('approval.submittedBy', INVOICE_USER_FIELDS)
+    .populate('approval.reviewedBy', INVOICE_USER_FIELDS)
+    .populate('approval.history.by', INVOICE_USER_FIELDS)
     .sort({ createdAt: -1 })
     .lean()
 
   return success(res, {
-    invoices: invoices.map((inv) => ({ ...inv, workflowStatus: getWorkflowStatus(inv) })),
+    invoices: invoices.map((inv) => decorateInvoiceForResponse(inv)),
   })
 })
 
@@ -755,17 +777,27 @@ exports.listInvoices = asyncHandler(async (req, res) => {
   const parsedLimit = Math.min(Math.max(1, Number(limit) || 20), 100)
   const skip = (parsedPage - 1) * parsedLimit
 
-  if (status && !INVOICE_STATUSES.includes(status)) {
+  let resolvedStatus = status
+  let resolvedApprovalStatus = approvalStatus
+
+  // Backward compatibility:
+  // some clients send approval workflow values in `status`.
+  if (resolvedStatus && !INVOICE_STATUSES.includes(resolvedStatus) && APPROVAL_STATUSES.includes(resolvedStatus)) {
+    resolvedApprovalStatus = resolvedApprovalStatus || resolvedStatus
+    resolvedStatus = undefined
+  }
+
+  if (resolvedStatus && !INVOICE_STATUSES.includes(resolvedStatus)) {
     return badRequest(res, `Invalid status. Use: ${INVOICE_STATUSES.join(', ')}`)
   }
-  if (approvalStatus && !APPROVAL_STATUSES.includes(approvalStatus)) {
+  if (resolvedApprovalStatus && !APPROVAL_STATUSES.includes(resolvedApprovalStatus)) {
     return badRequest(res, `Invalid approvalStatus. Use: ${APPROVAL_STATUSES.join(', ')}`)
   }
 
   const { leadIds } = await resolveInvoiceLeadIds(req.user, { search, leadId })
   const filter = { ...buildDateFilter(req.query, 'createdAt') }
-  if (status) filter.status = status
-  if (approvalStatus) filter['approval.status'] = approvalStatus
+  if (resolvedStatus) filter.status = resolvedStatus
+  if (resolvedApprovalStatus) filter['approval.status'] = resolvedApprovalStatus
 
   if (leadIds !== null) {
     if (leadIds.length === 0) {
@@ -776,8 +808,11 @@ exports.listInvoices = asyncHandler(async (req, res) => {
 
   const [invoices, total] = await Promise.all([
     Invoice.find(filter)
-      .populate('createdBy', 'name email')
-      .populate('paidBy', 'name email')
+      .populate('createdBy', INVOICE_USER_FIELDS)
+      .populate('paidBy', INVOICE_USER_FIELDS)
+      .populate('approval.submittedBy', INVOICE_USER_FIELDS)
+      .populate('approval.reviewedBy', INVOICE_USER_FIELDS)
+      .populate('approval.history.by', INVOICE_USER_FIELDS)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -799,7 +834,9 @@ exports.listInvoices = asyncHandler(async (req, res) => {
     status: inv.status,
     approvalStatus: inv.approval?.status || 'not_submitted',
     workflowStatus: getWorkflowStatus(inv),
-    invoice: inv,
+    invoiceStatus: getUnifiedInvoiceStatus(inv),
+    paymentStatus: inv.status,
+    invoice: decorateInvoiceForResponse(inv),
   }))
 
   return success(res, {
@@ -812,16 +849,27 @@ exports.listInvoices = asyncHandler(async (req, res) => {
 
 
 exports.exportInvoices = asyncHandler(async (req, res) => {
-  const { format = 'excel', status, leadId, search } = req.query
+  const { format = 'excel', status, approvalStatus, leadId, search } = req.query
 
-  if (status && !INVOICE_STATUSES.includes(status)) {
+  let resolvedStatus = status
+  let resolvedApprovalStatus = approvalStatus
+  if (resolvedStatus && !INVOICE_STATUSES.includes(resolvedStatus) && APPROVAL_STATUSES.includes(resolvedStatus)) {
+    resolvedApprovalStatus = resolvedApprovalStatus || resolvedStatus
+    resolvedStatus = undefined
+  }
+
+  if (resolvedStatus && !INVOICE_STATUSES.includes(resolvedStatus)) {
     return badRequest(res, `Invalid status. Use: ${INVOICE_STATUSES.join(', ')}`)
+  }
+  if (resolvedApprovalStatus && !APPROVAL_STATUSES.includes(resolvedApprovalStatus)) {
+    return badRequest(res, `Invalid approvalStatus. Use: ${APPROVAL_STATUSES.join(', ')}`)
   }
 
   // ✅ Same filter logic as listInvoices (no pagination)
   const { leadIds } = await resolveInvoiceLeadIds(req.user, { search, leadId })
   const filter = { ...buildDateFilter(req.query, 'createdAt') }
-  if (status) filter.status = status
+  if (resolvedStatus) filter.status = resolvedStatus
+  if (resolvedApprovalStatus) filter['approval.status'] = resolvedApprovalStatus
 
   if (leadIds !== null) {
     if (leadIds.length === 0) {

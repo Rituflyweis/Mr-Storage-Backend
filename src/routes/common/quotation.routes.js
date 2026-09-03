@@ -1,9 +1,15 @@
 const router = require("express").Router();
-const { body } = require("express-validator");
+const { body, param } = require("express-validator");
 const ctrl = require("../../controllers/common/quotation.controller");
 const validate = require("../../middleware/validate");
 
 router.post("/", [body("leadId").notEmpty()], validate, ctrl.createQuotation);
+router.post(
+  "/from-estimate/:estimateId",
+  [param("estimateId").isMongoId()],
+  validate,
+  ctrl.createQuotationFromEstimate
+);
 
 router.get("/approval/pending", ctrl.getPendingQuotationApprovals);
 router.get("/:quotationId", ctrl.getQuotation);

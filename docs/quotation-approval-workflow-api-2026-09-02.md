@@ -13,6 +13,19 @@ It applies to quotations created from your quoting process (including data extra
 
 ---
 
+## Enum Reference (Frontend)
+
+- `quotation.status`: `draft | sent | accepted | rejected`
+- `quotation.approval.status`: `not_submitted | pending_approval | approved | rejected`
+- `quotation.workflowStatus` (computed): `draft | pending_approval | approved | rejected | sent`
+- `quotation.approval.history[].status`: `not_submitted | pending_approval | approved | rejected | sent`
+- `quotation.priorityLevel`: `low | medium | high | urgent`
+- `quotation.insulation[].insulationType`: `roof | wall`
+- `quotation.doors[].doorCategory`: `rolling | personnel`
+- `send response data.emailProvider`: `sendgrid | smtp_fallback | smtp_fallback_alt_port`
+
+---
+
 ## Quotation Fields Added
 
 Quotation now includes:
@@ -32,6 +45,12 @@ Existing `versionNumber` is used for stale-approval protection.
 ## Endpoint Summary
 
 Base: `/api/quotations`
+
+If your UI flow starts from estimate APIs (`/api/sales/estimates/*`), first convert estimate into a quotation record using:
+
+`POST /api/quotations/from-estimate/:estimateId`
+
+Then continue approval/send flow with the returned `quotationId`.
 
 ### Create quotation
 
@@ -106,7 +125,7 @@ Now blocked unless:
 If changed after approval, API returns error asking to re-submit.
 
 On successful send, response includes:
-- `data.emailProvider` -> `sendgrid` or `smtp_fallback` (provider used for delivery attempt).
+- `data.emailProvider` -> `sendgrid` or `smtp_fallback` or `smtp_fallback_alt_port` (provider used for delivery attempt).
 
 ---
 
@@ -130,6 +149,22 @@ Use `workflowStatus` for UI badge and button state:
 - `approved`: send enabled
 - `rejected`: show rejection reason; edit + resubmit
 - `sent`: completed
+
+Single quotation responses now also include:
+
+- `approvalStatus` (alias of `approval.status`)
+- `sourceEstimate` (when quotation was created from estimate)
+- `documentMeta` (where to regenerate preview/PDF)
+
+Use:
+
+- `GET /api/quotations/:quotationId?includeEstimate=true&includeDocuments=true`
+
+Approval user refs are populated on read/list endpoints:
+
+- `approval.submittedBy` -> `{ _id, name, email, role }`
+- `approval.reviewedBy` -> `{ _id, name, email, role }`
+- `approval.history[].by` -> `{ _id, name, email, role }` (or `null`)
 
 ---
 

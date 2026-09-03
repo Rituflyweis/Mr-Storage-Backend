@@ -1,5 +1,22 @@
 # Follow-Up Automation and Reminders API (2026-08-31)
 
+## Enum Reference (Frontend)
+
+Use these enums in frontend constants/dropdowns:
+
+- `followUp.status` (stored): `pending | completed`
+- `followUp.computedStatus` (frontend/read-time): `pending | completed | overdue`
+- `followUp.modeOfContact`: `call | email | meeting | sms`
+- `followUp.source`: `manual | warm_lead_auto | cold_lead_auto | chat_dropoff_auto | invoice_auto`
+- `dispatchLog.kind`: `chat_dropoff | warm_lead | cold_lead | invoice_reminder | manual_followup | meeting_reminder`
+- `dispatchLog.channel`: `sms | email`
+- `dispatchLog.status`: `sent | failed | skipped`
+- `calendar.kind`: `meeting | followup`
+- `calendar.status`: `scheduled | completed | cancelled`
+- `meeting.mode`: `online | offline`
+- `meeting.status`: `scheduled | completed | cancelled | rescheduled`
+- `lead.temperature`: `hot | warm | cold`
+
 ## What was added
 
 - Global admin-configurable automation for:
@@ -43,7 +60,7 @@ Singleton document (`key: "global"`):
 
 Per-attempt outbound history:
 
-- `kind`: `chat_dropoff | cold_lead | invoice_reminder | manual_followup | meeting_reminder`
+- `kind`: `chat_dropoff | warm_lead | cold_lead | invoice_reminder | manual_followup | meeting_reminder`
 - `channel`: `sms | email`
 - `status`: `sent | failed | skipped`
 - `leadId`, `customerId`, `invoiceId`, `followUpId`, `meetingId`
@@ -60,7 +77,7 @@ Added:
 - `sendSms` (default `true`)
 - `sendEmail` (default `true`)
 - `reminderSentAt`
-- `source`: `manual | cold_lead_auto | chat_dropoff_auto | invoice_auto`
+- `source`: `manual | warm_lead_auto | cold_lead_auto | chat_dropoff_auto | invoice_auto`
 - `relatedInvoiceId`
 
 ## `Meeting`

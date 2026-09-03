@@ -1,4 +1,5 @@
 const Quotation = require("../../models/Quotation");
+const EstimateQuote = require("../../models/EstimateQuote");
 const QuoteSummary = require("../../models/QuoteSummary");
 const Lead = require("../../models/Lead");
 const Customer = require("../../models/Customer");
@@ -18,6 +19,14 @@ const asyncHandler = require("../../utils/asyncHandler");
 const { buildDateFilter } = require("../../utils/dateRange");
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require("../../config/constants");
 const QUOTATION_APPROVAL_STATUSES = ["not_submitted", "pending_approval", "approved", "rejected"];
+const QUOTATION_USER_FIELDS = "name email role";
+
+const populateQuotationUsers = (query) =>
+  query
+    .populate("createdBy", QUOTATION_USER_FIELDS)
+    .populate("approval.submittedBy", QUOTATION_USER_FIELDS)
+    .populate("approval.reviewedBy", QUOTATION_USER_FIELDS)
+    .populate("approval.history.by", QUOTATION_USER_FIELDS);
 
 // Server-side auto-calculations per spec (admin_panel_sales_panel_v2.md lines 604-609).
 // Never trust client values for these fields.
@@ -74,6 +83,191 @@ const getWorkflowStatus = (quotation) => {
   if (approvalStatus === "approved") return "approved";
   if (approvalStatus === "rejected") return "rejected";
   return "draft";
+};
+
+const toBoolean = (value, fallback = false) => {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === "boolean") return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "y"].includes(normalized)) return true;
+  if (["0", "false", "no", "n"].includes(normalized)) return false;
+  return fallback;
+};
+
+const toNumber = (value, fallback = 0) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const resolveEstimateGrandTotal = (estimate = {}) => {
+  if (estimate.storagePricingResult?.grandTotal != null) {
+    return Math.round(toNumber(estimate.storagePricingResult.grandTotal));
+  }
+  if (estimate.fullQuoteResult?.grandTotal != null) {
+    return Math.round(toNumber(estimate.fullQuoteResult.grandTotal));
+  }
+  if (estimate.totalSell != null) {
+    return Math.round(toNumber(estimate.totalSell));
+  }
+  return Math.round(toNumber(estimate.pricingResult?.totSell));
+};
+
+const mapEstimateSummary = (estimate) => {
+  if (!estimate) return null;
+  return {
+    _id: estimate._id,
+    leadId: estimate.leadId || null,
+    status: estimate.status || "draft",
+    jobType: estimate.jobType || "",
+    squareFootage: toNumber(estimate.squareFootage, 0),
+    grandTotal: resolveEstimateGrandTotal(estimate),
+    updatedAt: estimate.updatedAt || estimate.createdAt || null,
+  };
+};
+
+const buildQuotationDocumentMeta = (quotation = {}, estimate = null) => {
+  const estimateId = quotation.sourceEstimateId || estimate?._id || null;
+  const hasPricingData = Boolean(
+    estimate?.pricingResult ||
+      estimate?.fullQuoteResult?.pricing ||
+      estimate?.storagePricingResult
+  );
+  return {
+    source: estimateId ? "estimate" : "quotation",
+    sourceEstimateId: estimateId || null,
+    hasPricingData,
+    previewEndpoint: estimateId ? "/api/sales/estimates/documents/preview" : null,
+    pdfEndpoint: estimateId
+      ? `/api/sales/estimates/${estimateId}/documents/pdf`
+      : null,
+    defaultSections: ["quote", "sow", "contract", "drawings"],
+  };
+};
+
+const decorateQuotationResponse = async (
+  quotationLike,
+  { includeEstimate = false, includeDocuments = false } = {}
+) => {
+  if (!quotationLike) return null;
+  const quotation =
+    typeof quotationLike.toObject === "function"
+      ? quotationLike.toObject()
+      : { ...quotationLike };
+
+  quotation.approvalStatus = quotation.approval?.status || "not_submitted";
+  quotation.workflowStatus = getWorkflowStatus(quotation);
+
+  let estimate = null;
+  if (includeEstimate && quotation.sourceEstimateId) {
+    estimate = await EstimateQuote.findById(quotation.sourceEstimateId)
+      .select(
+        "_id leadId status jobType squareFootage totalSell pricingResult fullQuoteResult storagePricingResult updatedAt createdAt"
+      )
+      .lean();
+  }
+
+  if (includeEstimate) {
+    quotation.sourceEstimate = mapEstimateSummary(estimate);
+  }
+
+  if (includeDocuments) {
+    quotation.documentMeta = buildQuotationDocumentMeta(quotation, estimate);
+  }
+
+  return quotation;
+};
+
+const mapEstimateToQuotationPayload = (estimate = {}, lead, reqUser) => {
+  const sqft = toNumber(estimate.squareFootage, 0);
+  const materialCost = toNumber(estimate.materialCost, 0);
+  const freightCost = toNumber(estimate.freightCost, 0);
+  const totalCOGS = toNumber(estimate.totalCOGS, materialCost + freightCost);
+  const finalPrice = resolveEstimateGrandTotal(estimate);
+  const markupValue = Math.max(0, finalPrice - totalCOGS);
+  const markupPercent = totalCOGS > 0 ? Number(((markupValue / totalCOGS) * 100).toFixed(2)) : 0;
+
+  const includedMaterials = Array.isArray(estimate.weightByCategory)
+    ? estimate.weightByCategory.map((row = {}) => ({
+        name: row.category || "",
+        description: row.notes || "",
+        quantity: toNumber(row.weightLbs, 0),
+      }))
+    : [];
+
+  const optionalAddOns = [];
+  const concreteSell = toNumber(estimate.concreteAddon?.totSell, 0);
+  if (concreteSell > 0) {
+    optionalAddOns.push({
+      name: "Concrete Add-on",
+      description: "Imported from estimate concrete add-on",
+      price: concreteSell,
+    });
+  }
+  const insulationSell = toNumber(estimate.insulationAddon?.totSell, 0);
+  if (insulationSell > 0) {
+    optionalAddOns.push({
+      name: "Insulation Add-on",
+      description: "Imported from estimate insulation add-on",
+      price: insulationSell,
+    });
+  }
+
+  return {
+    sourceEstimateId: estimate._id,
+    leadId: lead._id,
+    customerId: lead.customerId,
+    createdBy: reqUser._id,
+    proposalDate: estimate.quoteDate || new Date(),
+    preparedBy: reqUser.name || "",
+    companyName: estimate.leadCompanyName || "",
+    location: estimate.cityStateZip || "",
+    buildingType: estimate.jobType || "",
+    sqft: sqft > 0 ? String(sqft) : "",
+    totalArea: sqft > 0 ? sqft : null,
+    specialNote: estimate.additionalInfo || "",
+    clientNotes: estimate.additionalInfo || "",
+    exclusions: Array.isArray(estimate.exclusions) ? estimate.exclusions : [],
+    includedMaterials,
+    optionalAddOns,
+    materialCost,
+    freightCost,
+    totalCOGS,
+    markupPercent,
+    markupValue,
+    basePrice: finalPrice,
+    maxPrice: finalPrice,
+    finalPrice,
+    psf: sqft > 0 ? Number((finalPrice / sqft).toFixed(2)) : null,
+    approval:
+      reqUser.role === "sales"
+        ? {
+            status: "pending_approval",
+            submittedBy: reqUser._id,
+            submittedAt: new Date(),
+            history: [
+              {
+                status: "pending_approval",
+                note: "Quotation submitted for admin approval on create from estimate",
+                by: reqUser._id,
+                at: new Date(),
+              },
+            ],
+          }
+        : {
+            status: "approved",
+            reviewedBy: reqUser._id,
+            reviewedAt: new Date(),
+            approvedVersionNumber: 1,
+            history: [
+              {
+                status: "approved",
+                note: "Admin-created quotation auto-approved from estimate",
+                by: reqUser._id,
+                at: new Date(),
+              },
+            ],
+          },
+  };
 };
 
 exports.createQuotation = asyncHandler(async (req, res) => {
@@ -161,14 +355,113 @@ exports.createQuotation = asyncHandler(async (req, res) => {
   }
 
   const quotationObj = quotation.toObject();
-  quotationObj.workflowStatus = getWorkflowStatus(quotationObj);
-  return created(res, { quotation: quotationObj });
+  return created(res, {
+    quotation: await decorateQuotationResponse(quotationObj, {
+      includeEstimate: true,
+      includeDocuments: true,
+    }),
+  });
+});
+
+exports.createQuotationFromEstimate = asyncHandler(async (req, res) => {
+  const { estimateId } = req.params;
+  const estimate = await EstimateQuote.findById(estimateId);
+  if (!estimate) return notFound(res, "Estimate not found");
+
+  if (!estimate.leadId) {
+    return badRequest(res, "Estimate is not linked to a lead. leadId is required to convert.");
+  }
+
+  const { lead, error: accessError, code } = await checkLeadAccess(estimate.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+
+  const quoteNumber = await generateQuoteNumber();
+  const quotationPayload = mapEstimateToQuotationPayload(estimate.toObject(), lead, req.user);
+  const quotation = await Quotation.create({
+    ...quotationPayload,
+    quoteNumber,
+  });
+
+  await Lead.findByIdAndUpdate(lead._id, {
+    isQuoteReady: true,
+    quoteValue: quotation.basePrice || 0,
+  });
+
+  await auditService.log({
+    type: "quotation",
+    action: AUDIT_ACTIONS.QUOTATION_CREATED,
+    leadId: lead._id,
+    customerId: lead.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      quotationId: quotation._id,
+      quoteNumber: quotation.quoteNumber,
+      source: "estimate_conversion",
+      sourceEstimateId: estimate._id,
+      approvalStatus: quotation.approval?.status || "not_submitted",
+    },
+  });
+
+  if (req.user.role === "sales") {
+    await auditService.log({
+      type: "quotation",
+      action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
+      leadId: lead._id,
+      customerId: lead.customerId,
+      performedBy: req.user._id,
+      metadata: {
+        quotationId: quotation._id,
+        quoteNumber: quotation.quoteNumber,
+        source: "estimate_conversion",
+      },
+    });
+  } else {
+    await auditService.log({
+      type: "quotation",
+      action: AUDIT_ACTIONS.QUOTATION_APPROVED,
+      leadId: lead._id,
+      customerId: lead.customerId,
+      performedBy: req.user._id,
+      metadata: {
+        quotationId: quotation._id,
+        quoteNumber: quotation.quoteNumber,
+        source: "estimate_conversion_admin",
+      },
+    });
+  }
+
+  const quotationObj = await decorateQuotationResponse(quotation.toObject(), {
+    includeEstimate: true,
+    includeDocuments: true,
+  });
+  return created(
+    res,
+    {
+      quotation: quotationObj,
+      sourceEstimate: {
+        _id: estimate._id,
+        status: estimate.status,
+        leadId: estimate.leadId,
+      },
+    },
+    "Quotation created from estimate"
+  );
 });
 
 exports.getQuotation = asyncHandler(async (req, res) => {
-  const quotation = await Quotation.findById(req.params.quotationId).lean();
+  const quotation = await populateQuotationUsers(Quotation.findById(req.params.quotationId)).lean();
   if (!quotation) return notFound(res, "Quotation not found");
-  return success(res, { quotation: { ...quotation, workflowStatus: getWorkflowStatus(quotation) } });
+  const { error: accessError, code } = await checkLeadAccess(quotation.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+
+  const includeEstimate = toBoolean(req.query.includeEstimate, true);
+  const includeDocuments = toBoolean(req.query.includeDocuments, true);
+  return success(res, {
+    quotation: await decorateQuotationResponse(quotation, {
+      includeEstimate,
+      includeDocuments,
+    }),
+  });
 });
 
 exports.updateQuotation = asyncHandler(async (req, res) => {
@@ -296,7 +589,12 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
     },
   });
 
-  return success(res, { quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) } });
+  return success(res, {
+    quotation: await decorateQuotationResponse(quotation.toObject(), {
+      includeEstimate: true,
+      includeDocuments: true,
+    }),
+  });
 });
 
 exports.sendQuotation = asyncHandler(async (req, res) => {
@@ -383,7 +681,10 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
   return success(
     res,
     {
-      quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) },
+      quotation: await decorateQuotationResponse(quotation.toObject(), {
+        includeEstimate: true,
+        includeDocuments: true,
+      }),
       emailProvider: emailResult?.provider || "unknown",
     },
     "Quotation sent successfully",
@@ -421,7 +722,16 @@ exports.submitQuotationForApproval = asyncHandler(async (req, res) => {
     metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, versionNumber: quotation.versionNumber },
   });
 
-  return success(res, { quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) } }, "Quotation submitted for approval");
+  return success(
+    res,
+    {
+      quotation: await decorateQuotationResponse(quotation.toObject(), {
+        includeEstimate: true,
+        includeDocuments: true,
+      }),
+    },
+    "Quotation submitted for approval"
+  );
 });
 
 exports.approveQuotation = asyncHandler(async (req, res) => {
@@ -455,7 +765,16 @@ exports.approveQuotation = asyncHandler(async (req, res) => {
     metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, approvedVersionNumber: quotation.approval.approvedVersionNumber },
   });
 
-  return success(res, { quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) } }, "Quotation approved");
+  return success(
+    res,
+    {
+      quotation: await decorateQuotationResponse(quotation.toObject(), {
+        includeEstimate: true,
+        includeDocuments: true,
+      }),
+    },
+    "Quotation approved"
+  );
 });
 
 exports.rejectQuotationApproval = asyncHandler(async (req, res) => {
@@ -492,7 +811,16 @@ exports.rejectQuotationApproval = asyncHandler(async (req, res) => {
     metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, reason },
   });
 
-  return success(res, { quotation: { ...quotation.toObject(), workflowStatus: getWorkflowStatus(quotation) } }, "Quotation rejected");
+  return success(
+    res,
+    {
+      quotation: await decorateQuotationResponse(quotation.toObject(), {
+        includeEstimate: true,
+        includeDocuments: true,
+      }),
+    },
+    "Quotation rejected"
+  );
 });
 
 exports.getPendingQuotationApprovals = asyncHandler(async (req, res) => {
@@ -505,13 +833,17 @@ exports.getPendingQuotationApprovals = asyncHandler(async (req, res) => {
   if (leadId) filter.leadId = leadId;
 
   const quotations = await Quotation.find(filter)
-    .populate("createdBy", "name email")
+    .populate("createdBy", QUOTATION_USER_FIELDS)
+    .populate("approval.submittedBy", QUOTATION_USER_FIELDS)
+    .populate("approval.reviewedBy", QUOTATION_USER_FIELDS)
+    .populate("approval.history.by", QUOTATION_USER_FIELDS)
     .sort({ "approval.submittedAt": 1, createdAt: 1 })
     .lean();
 
   return success(res, {
     quotations: quotations.map((q) => ({
       ...q,
+      approvalStatus: q.approval?.status || "not_submitted",
       workflowStatus: getWorkflowStatus(q),
     })),
   });
@@ -552,7 +884,10 @@ exports.getLeadQuotations = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query);
 
   const quotations = await Quotation.find({ leadId, ...dateFilter })
-    .populate("createdBy")
+    .populate("createdBy", QUOTATION_USER_FIELDS)
+    .populate("approval.submittedBy", QUOTATION_USER_FIELDS)
+    .populate("approval.reviewedBy", QUOTATION_USER_FIELDS)
+    .populate("approval.history.by", QUOTATION_USER_FIELDS)
     .sort({ createdAt: -1 })
     .lean();
 
@@ -564,6 +899,10 @@ exports.getLeadQuotations = asyncHandler(async (req, res) => {
   }
 
   return success(res, {
-    quotations: rows.map((q) => ({ ...q, workflowStatus: getWorkflowStatus(q) })),
+    quotations: rows.map((q) => ({
+      ...q,
+      approvalStatus: q.approval?.status || "not_submitted",
+      workflowStatus: getWorkflowStatus(q),
+    })),
   });
 });

@@ -9,6 +9,25 @@ Use this guide to wire the React admin screen to backend config APIs with the ex
 
 Auth: admin token required for `PUT`.
 
+## Enum Reference (Frontend)
+
+For this config API and its connected reminder flows, use:
+
+- `channels`: `sms | email` (boolean toggles)
+- `leadFollowUp.warm.preset`: `twice_week | weekly | d7_15_30 | custom`
+- `leadFollowUp.cold.preset`: `d7_15_30 | every_15 | monthly | custom`
+- `chatDropOff` UI preset id: `default | twice_day | daily | custom`
+
+Related enums used by follow-up/reminder records (for activity screens):
+
+- `followUp.source`: `manual | warm_lead_auto | cold_lead_auto | chat_dropoff_auto | invoice_auto`
+- `followUp.status` (stored): `pending | completed`
+- `followUp.computedStatus` (frontend/computed): `pending | completed | overdue`
+- `followUp.modeOfContact`: `call | email | meeting | sms`
+- `dispatchLog.kind`: `chat_dropoff | warm_lead | cold_lead | invoice_reminder | manual_followup | meeting_reminder`
+- `dispatchLog.channel`: `sms | email`
+- `dispatchLog.status`: `sent | failed | skipped`
+
 ## Payload Contract (PUT)
 
 ```json

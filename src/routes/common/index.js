@@ -68,5 +68,6 @@ router.use("/activity", require("./pageActivity.routes"));
 router.use("/notifications", ...notifGuard, require("./notification.routes"));
 router.use("/followup-automation", require("./followupAutomation.routes"));
 router.use("/calendar", ...guard, require("./calendar.routes"));
+router.use("/followups", ...guard, require("./followupInsights.routes"));
 
 module.exports = router;

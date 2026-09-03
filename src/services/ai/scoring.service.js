@@ -3,6 +3,7 @@ const Lead = require('../../models/Lead')
 const env = require('../../config/env')
 const { resolveLeadTemperatureFromScore } = require('../../config/constants')
 const leadListSocket = require('../leadListSocket.service')
+const { logLeadTemperatureTransition } = require('../leadTemperatureTransition.service')
 
 const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
 
@@ -122,8 +123,24 @@ const updateLeadScore = async (leadId, messages, leadName = '') => {
     const lead = await Lead.findById(leadId)
     if (!lead) return
 
+    const previousTemperature = lead.leadScoring?.temperature || 'cold'
+    const previousScore = Number(lead.leadScoring?.score || 0)
     applyScoreToLead(lead, scoreData)
     await lead.save()
+
+    await logLeadTemperatureTransition({
+      leadId: lead._id,
+      customerId: lead.customerId,
+      fromTemperature: previousTemperature,
+      toTemperature: lead.leadScoring?.temperature || 'cold',
+      source: 'ai_scoring',
+      changedBy: null,
+      metadata: {
+        scoreBefore: previousScore,
+        scoreAfter: Number(lead.leadScoring?.score || 0),
+        reason: 'ai_scoring_update',
+      },
+    })
 
     if (global.io) {
       global.io.of('/admin').to('admin_room').emit('lead_score_updated', {

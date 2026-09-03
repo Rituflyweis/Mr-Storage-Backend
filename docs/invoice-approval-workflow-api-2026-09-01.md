@@ -11,6 +11,66 @@ This document is for frontend integration of the new invoice approval workflow.
 
 ---
 
+## Enum Reference (Frontend)
+
+- `invoice.status` (financial/delivery): `draft | sent | paid | overdue | cancelled`
+- `invoice.approval.status`: `not_submitted | pending_approval | approved | rejected`
+- `invoice.workflowStatus` (computed): `draft | pending_approval | approved | rejected | sent`
+- `invoice.invoiceStatus` (single UI status): `draft | pending_approval | approved | rejected | sent | paid | overdue | cancelled`
+- `invoice.paymentStatus` (alias of `invoice.status`): `draft | sent | paid | overdue | cancelled`
+- `invoice.approvalStatus` (alias of `invoice.approval.status`): `not_submitted | pending_approval | approved | rejected`
+- `invoice.approval.history[].status`: `not_submitted | pending_approval | approved | rejected | sent`
+- `invoice.paymentProof.status`: `none | pending_review | verified | rejected`
+- `invoice.lineItems[].markupType`: `percentage | amount`
+- `invoice.lineItems[].taxType`: `percentage | amount`
+
+Query filters on `GET /api/invoices`:
+
+- `status` accepts invoice status enum above.
+- `approvalStatus` accepts approval status enum above.
+- Backward compatibility: if frontend sends `status=pending_approval|approved|rejected|not_submitted`, backend maps it to `approvalStatus` automatically.
+
+---
+
+## How Two Statuses Work
+
+Yes, both are handled and should both be used:
+
+- `approvalStatus` -> approval workflow state (admin review flow)
+- `paymentStatus` -> payment/delivery state (draft/sent/paid/overdue/cancelled)
+
+For convenience, API now also returns one combined `invoiceStatus` for UI badges.
+
+### State Matrix (important)
+
+- Pending admin review:
+  - `approvalStatus = pending_approval`
+  - `paymentStatus = draft`
+  - `invoiceStatus = pending_approval`
+- Admin approved (not yet sent):
+  - `approvalStatus = approved`
+  - `paymentStatus = draft`
+  - `invoiceStatus = approved`
+- Sent to customer:
+  - `approvalStatus = approved`
+  - `paymentStatus = sent`
+  - `invoiceStatus = sent`
+- Paid:
+  - `approvalStatus = approved` (or historical approval state)
+  - `paymentStatus = paid`
+  - `invoiceStatus = paid`
+- Overdue:
+  - `paymentStatus = overdue`
+  - `invoiceStatus = overdue`
+- Cancelled:
+  - `paymentStatus = cancelled`
+  - `invoiceStatus = cancelled`
+
+`invoiceStatus` priority in backend is:
+`paid > cancelled > overdue > sent > approval-flow(draft/pending_approval/approved/rejected)`.
+
+---
+
 ## Data Contract (invoice fields)
 
 The invoice now includes:
@@ -141,6 +201,25 @@ For admin:
 - `approved` -> "Approved"
 - `rejected` -> "Rejected"
 - `sent` -> "Sent"
+
+---
+
+## Populated User Fields In Response
+
+On invoice read/list endpoints, approval user references are populated:
+
+- `approval.submittedBy` -> `{ _id, name, email, role }`
+- `approval.reviewedBy` -> `{ _id, name, email, role }`
+- `approval.history[].by` -> `{ _id, name, email, role }` (or `null`)
+- `createdBy` -> `{ _id, name, email, role }`
+- `paidBy` -> `{ _id, name, email, role }` (or `null`)
+
+Applied on:
+
+- `GET /api/invoices/:invoiceId`
+- `GET /api/invoices`
+- `GET /api/invoices/approval/pending`
+- `GET /api/leads/:leadId/invoices`
 
 ---
 
