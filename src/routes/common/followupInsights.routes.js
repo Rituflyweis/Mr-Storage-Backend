@@ -11,6 +11,7 @@ router.get(
     query('leadId').optional().isMongoId(),
     query('status').optional().isIn(ctrl.VALID_STATUS),
     query('modeOfContact').optional().isIn(ctrl.VALID_MODES),
+    query('transitionState').optional().isIn(ctrl.VALID_TRANSITION_STATES),
     query('page').optional().isInt({ min: 1 }),
     query('limit').optional().isInt({ min: 1, max: 200 }),
     query('startDate').optional().isISO8601(),

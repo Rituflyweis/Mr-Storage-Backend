@@ -6,7 +6,7 @@ const validate = require("../../middleware/validate");
 router.post("/", [body("leadId").notEmpty()], validate, ctrl.createQuotation);
 router.post(
   "/from-estimate/:estimateId",
-  [param("estimateId").isMongoId()],
+  [param("estimateId").isMongoId(), body("leadId").optional().isMongoId()],
   validate,
   ctrl.createQuotationFromEstimate
 );
@@ -17,7 +17,11 @@ router.put("/:quotationId", ctrl.updateQuotation);
 router.delete("/:quotationId", ctrl.deleteQuotation);
 router.post(
   "/:quotationId/submit-approval",
-  [body("note").optional().isString(), body("estimateId").optional().isMongoId()],
+  [
+    body("note").optional().isString(),
+    body("estimateId").optional().isMongoId(),
+    body("leadId").optional().isMongoId(),
+  ],
   validate,
   ctrl.submitQuotationForApproval
 );

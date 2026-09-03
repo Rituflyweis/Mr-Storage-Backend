@@ -37,6 +37,7 @@ Use these enums as fixed constants in UI/API clients.
 - `followUp.source`: `manual | warm_lead_auto | cold_lead_auto | chat_dropoff_auto | invoice_auto`
 - `transition.temperature`: `hot | warm | cold`
 - `transition.source`: `manual_override | ai_scoring | system`
+- `transitionState` filter enum: `hot_to_warm | hot_to_cold | warm_to_hot | warm_to_cold | cold_to_hot | cold_to_warm`
 
 Transition summary response always uses these keys:
 
@@ -64,6 +65,7 @@ Transition summary response always uses these keys:
 - `limit`: number (default `20`, max `200`)
 - `status`: optional filter (`pending | completed | overdue`)
 - `modeOfContact`: optional filter (`call | email | meeting | sms`)
+- `transitionState`: optional filter (`hot_to_warm | hot_to_cold | warm_to_hot | warm_to_cold | cold_to_hot | cold_to_warm`)
 
 ### Scope Behavior
 
@@ -116,7 +118,10 @@ Automatic sources:
         "lead": {
           "_id": "66f1a9...",
           "jobId": "PRO-019",
+          "customerName": "John",
           "projectName": "Paris Expansion",
+          "location": "Paris, TN",
+          "quoteValue": 12500,
           "lifecycleStatus": "proposal_sent",
           "assignedSales": {
             "_id": "66e0...",
@@ -131,7 +136,18 @@ Automatic sources:
         "completedCount": 2,
         "overdueCount": 1,
         "lastFollowUpAt": "2026-09-27T15:00:00.000Z",
-        "lastFollowUpStatus": "pending"
+        "lastFollowUpStatus": "pending",
+        "transition": {
+          "transitionState": "warm_to_hot",
+          "transitionFrom": "warm",
+          "transitionTo": "hot",
+          "transitionAt": "2026-09-27T11:30:00.000Z",
+          "transitionSource": "ai_scoring",
+          "scoreBefore": 62,
+          "scoreAfter": 79,
+          "scoreDelta": 17,
+          "transitionReason": "ai_scoring_update"
+        }
       }
     ],
     "pagination": {
@@ -156,7 +172,10 @@ Automatic sources:
     "lead": {
       "_id": "66f1a9...",
       "jobId": "PRO-019",
+      "customerName": "John",
       "projectName": "Paris Expansion",
+      "location": "Paris, TN",
+      "quoteValue": 12500,
       "lifecycleStatus": "proposal_sent",
       "assignedSales": {
         "_id": "66e0...",
@@ -194,6 +213,17 @@ Automatic sources:
         "completedAt": null
       }
     ],
+    "transition": {
+      "transitionState": "warm_to_hot",
+      "transitionFrom": "warm",
+      "transitionTo": "hot",
+      "transitionAt": "2026-09-27T11:30:00.000Z",
+      "transitionSource": "ai_scoring",
+      "scoreBefore": 62,
+      "scoreAfter": 79,
+      "scoreDelta": 17,
+      "transitionReason": "ai_scoring_update"
+    },
     "pagination": {
       "page": 1,
       "limit": 20,
@@ -293,6 +323,16 @@ Automatic sources:
 
 ---
 
+## Activity API Transition Behavior
+
+- When `startDate` / `endDate` is passed, activity API includes latest transition data in each table row (`leads[].transition`).
+- Activity lead object includes `/by-score` compatible fields: `lead.customerName`, `lead.location`, `lead.quoteValue`.
+- When `transitionState` is passed, table rows are filtered to leads with at least one matching transition in the selected date range.
+- For score-state UI, transition payload also includes: `scoreBefore`, `scoreAfter`, `scoreDelta`, `transitionReason`.
+- `view=detail` also returns a lead-level `transition` snapshot using the same filter/date window.
+
+---
+
 ## Planned Validation Rules
 
 - `view=detail` requires valid `leadId`.
@@ -300,6 +340,7 @@ Automatic sources:
 - `view` enum: `summary | detail`.
 - `status` enum: `pending | completed | overdue`.
 - `modeOfContact` enum: `call | email | meeting | sms`.
+- `transitionState` enum: `hot_to_warm | hot_to_cold | warm_to_hot | warm_to_cold | cold_to_hot | cold_to_warm`.
 - `from/to/source` enums validated on transition drilldown API.
 - Date filters support existing date range helper pattern used in current APIs.
 

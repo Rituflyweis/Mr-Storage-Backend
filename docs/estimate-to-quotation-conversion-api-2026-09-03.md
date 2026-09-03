@@ -26,10 +26,18 @@ Auth roles:
 Request body:
 
 ```json
-{}
+{
+  "leadId": "optional MongoId"
+}
 ```
 
-No required body fields for now.
+Body fields:
+
+- `leadId` (optional): fallback lead link when estimate has no `leadId`.
+  - Backend will use this lead to convert estimate to quotation.
+  - If omitted, backend tries:
+    1) `estimate.leadId`
+    2) `estimate.jobNumber` -> `Lead.jobId`
 
 ---
 
@@ -94,7 +102,10 @@ Note:
 `400 Estimate not linked to lead`
 
 ```json
-{ "success": false, "message": "Estimate is not linked to a lead. leadId is required to convert." }
+{
+  "success": false,
+  "message": "Estimate is not linked to a lead. Provide body.leadId, or ensure estimate.jobNumber matches Lead.jobId."
+}
 ```
 
 `403 Sales access denied`
@@ -158,6 +169,7 @@ Two ways to use:
 2. Estimate shortcut:
    - pass `:quotationId` as the `estimateId` directly, OR
    - pass body `{ "estimateId": "<estimateId>" }`
+   - optional fallback: add `{ "leadId": "<leadId>" }` if estimate has no direct lead link
 
 Behavior:
 

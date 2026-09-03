@@ -71,7 +71,8 @@ Body (optional):
 ```json
 {
   "note": "Please review this quote",
-  "estimateId": "66f1a9..."
+  "estimateId": "66f1a9...",
+  "leadId": "66f1b2..."
 }
 ```
 
@@ -79,6 +80,7 @@ Shortcut behavior:
 
 - If `:quotationId` is not found but matches an `EstimateQuote` id, backend auto-creates quotation from estimate and submits in same call.
 - You can also pass `estimateId` in body for the same single-call behavior.
+- If estimate has no `leadId`, pass `leadId` in body (or keep `estimate.jobNumber` equal to `Lead.jobId`) so conversion can resolve lead.
 
 ---
 

@@ -11,6 +11,14 @@ const VALID_STATUS = ['pending', 'completed', 'overdue']
 const VALID_MODES = ['call', 'email', 'meeting', 'sms']
 const VALID_TEMPERATURES = ['hot', 'warm', 'cold']
 const VALID_TRANSITION_SOURCES = ['manual_override', 'ai_scoring', 'system']
+const VALID_TRANSITION_STATES = [
+  'hot_to_warm',
+  'hot_to_cold',
+  'warm_to_hot',
+  'warm_to_cold',
+  'cold_to_hot',
+  'cold_to_warm',
+]
 
 const parsePagination = (query = {}) => {
   const page = Math.max(1, parseInt(query.page, 10) || 1)
@@ -22,6 +30,63 @@ const computeStatus = (row, now = new Date()) => {
   if (row.status === 'completed') return 'completed'
   if (row.status === 'pending' && new Date(row.followUpDate) < now) return 'overdue'
   return 'pending'
+}
+
+const parseTransitionState = (transitionState) => {
+  if (!transitionState || !VALID_TRANSITION_STATES.includes(transitionState)) return null
+  const [fromTemperature, toTemperature] = String(transitionState).split('_to_')
+  if (!fromTemperature || !toTemperature) return null
+  return { fromTemperature, toTemperature }
+}
+
+const shouldAttachTransitionData = (query = {}) =>
+  Boolean(query.startDate || query.endDate || query.transitionState)
+
+const buildLeadTransitionSnapshot = async ({ req, leadIds = [] }) => {
+  if (!leadIds.length) return { latestByLead: new Map(), matchedLeadSet: new Set() }
+
+  const transitionPair = parseTransitionState(req.query.transitionState)
+  const match = {
+    leadId: { $in: leadIds },
+  }
+  const dateFilter = buildDateFilter(req.query, 'changedAt')
+  if (dateFilter.changedAt) match.changedAt = dateFilter.changedAt
+  if (transitionPair) {
+    match.fromTemperature = transitionPair.fromTemperature
+    match.toTemperature = transitionPair.toTemperature
+  }
+
+  const transitionRows = await LeadTemperatureTransition.find(match)
+    .select('leadId fromTemperature toTemperature source changedAt metadata')
+    .sort({ changedAt: -1, createdAt: -1 })
+    .lean()
+
+  const latestByLead = new Map()
+  const matchedLeadSet = new Set()
+  for (const row of transitionRows) {
+    const key = String(row.leadId)
+    matchedLeadSet.add(key)
+    const scoreBefore = Number(row.metadata?.scoreBefore)
+    const scoreAfter = Number(row.metadata?.scoreAfter)
+    if (!latestByLead.has(key)) {
+      latestByLead.set(key, {
+        transitionState: `${row.fromTemperature}_to_${row.toTemperature}`,
+        transitionFrom: row.fromTemperature,
+        transitionTo: row.toTemperature,
+        transitionAt: row.changedAt,
+        transitionSource: row.source || null,
+        scoreBefore: Number.isFinite(scoreBefore) ? scoreBefore : null,
+        scoreAfter: Number.isFinite(scoreAfter) ? scoreAfter : null,
+        scoreDelta:
+          Number.isFinite(scoreBefore) && Number.isFinite(scoreAfter)
+            ? Number((scoreAfter - scoreBefore).toFixed(2))
+            : null,
+        transitionReason: row.metadata?.reason || null,
+      })
+    }
+  }
+
+  return { latestByLead, matchedLeadSet }
 }
 
 const buildFollowUpMatch = async (req, { kind, leadId }) => {
@@ -66,10 +131,21 @@ const buildFollowUpMatch = async (req, { kind, leadId }) => {
 const getLeadMap = async (leadIds = []) => {
   if (!leadIds.length) return new Map()
   const leads = await Lead.find({ _id: { $in: leadIds } })
-    .select('_id jobId projectName lifecycleStatus assignedSales leadScoring')
+    .select('_id jobId projectName location quoteValue lifecycleStatus assignedSales leadScoring customerId')
+    .populate({ path: 'customerId', select: '_id firstName' })
     .populate({ path: 'assignedSales', select: '_id name email' })
     .lean()
-  return new Map(leads.map((l) => [String(l._id), l]))
+  return new Map(
+    leads.map((l) => [
+      String(l._id),
+      {
+        ...l,
+        customerName: l.customerId?.firstName || '',
+        location: l.location || '',
+        quoteValue: l.quoteValue ?? 0,
+      },
+    ])
+  )
 }
 
 exports.getFollowUpActivity = asyncHandler(async (req, res) => {
@@ -83,6 +159,12 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
   if (req.query.modeOfContact && !VALID_MODES.includes(String(req.query.modeOfContact))) {
     return badRequest(res, 'Invalid modeOfContact. Use: call, email, meeting, sms')
   }
+  if (req.query.transitionState && !VALID_TRANSITION_STATES.includes(String(req.query.transitionState))) {
+    return badRequest(
+      res,
+      `Invalid transitionState. Use: ${VALID_TRANSITION_STATES.join(', ')}`
+    )
+  }
 
   const { page, limit, skip } = parsePagination(req.query)
 
@@ -91,10 +173,14 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
     if (!leadId) return badRequest(res, 'leadId is required for detail view')
 
     const lead = await Lead.findById(leadId)
-      .select('_id jobId projectName lifecycleStatus assignedSales leadScoring')
+      .select('_id jobId projectName location quoteValue lifecycleStatus assignedSales leadScoring customerId')
+      .populate({ path: 'customerId', select: '_id firstName' })
       .populate({ path: 'assignedSales', select: '_id name email' })
       .lean()
     if (!lead) return notFound(res, 'Lead not found')
+    lead.customerName = lead.customerId?.firstName || ''
+    lead.location = lead.location || ''
+    lead.quoteValue = lead.quoteValue ?? 0
     if (req.user.role === 'sales' && String(lead.assignedSales?._id || lead.assignedSales) !== String(req.user._id)) {
       return forbidden(res, 'Access denied for this lead')
     }
@@ -142,12 +228,30 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
       completedAt: row.completedAt || null,
     }))
 
+    let transition = null
+    if (shouldAttachTransitionData(req.query)) {
+      const snapshot = await buildLeadTransitionSnapshot({ req, leadIds: [leadId] })
+      transition = snapshot.latestByLead.get(String(leadId)) || null
+      if (req.query.transitionState && !transition) {
+        return success(res, {
+          kind,
+          view,
+          lead,
+          totals,
+          history: [],
+          transition: null,
+          pagination: { page, limit, totalHistory: 0 },
+        })
+      }
+    }
+
     return success(res, {
       kind,
       view,
       lead,
       totals,
       history,
+      transition,
       pagination: { page, limit, totalHistory },
     })
   }
@@ -198,9 +302,34 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
     totals.overdueCount += row.overdueCount
   }
 
-  const grouped = [...leadSummaryMap.values()].sort(
+  let grouped = [...leadSummaryMap.values()].sort(
     (a, b) => new Date(b.lastFollowUpAt || 0).getTime() - new Date(a.lastFollowUpAt || 0).getTime()
   )
+
+  let transitionSnapshot = { latestByLead: new Map(), matchedLeadSet: new Set() }
+  if (shouldAttachTransitionData(req.query)) {
+    transitionSnapshot = await buildLeadTransitionSnapshot({
+      req,
+      leadIds: grouped.map((r) => r.leadId),
+    })
+    if (req.query.transitionState) {
+      grouped = grouped.filter((row) =>
+        transitionSnapshot.matchedLeadSet.has(String(row.leadId))
+      )
+      totals.leadCount = grouped.length
+      totals.followUpCount = 0
+      totals.pendingCount = 0
+      totals.completedCount = 0
+      totals.overdueCount = 0
+      for (const row of grouped) {
+        totals.followUpCount += row.followUpCount
+        totals.pendingCount += row.pendingCount
+        totals.completedCount += row.completedCount
+        totals.overdueCount += row.overdueCount
+      }
+    }
+  }
+
   const pageRows = grouped.slice(skip, skip + limit)
   const leadMap = await getLeadMap(pageRows.map((r) => r.leadId))
 
@@ -212,6 +341,11 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
     overdueCount: row.overdueCount,
     lastFollowUpAt: row.lastFollowUpAt,
     lastFollowUpStatus: row.lastFollowUpStatus,
+    ...(shouldAttachTransitionData(req.query)
+      ? {
+          transition: transitionSnapshot.latestByLead.get(String(row.leadId)) || null,
+        }
+      : {}),
   }))
 
   return success(res, {
@@ -222,6 +356,7 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
       endDate: req.query.endDate || null,
       status: req.query.status || null,
       modeOfContact: req.query.modeOfContact || null,
+      transitionState: req.query.transitionState || null,
     },
     totals,
     leads,
@@ -328,4 +463,5 @@ module.exports = {
   VALID_MODES,
   VALID_TEMPERATURES,
   VALID_TRANSITION_SOURCES,
+  VALID_TRANSITION_STATES,
 }

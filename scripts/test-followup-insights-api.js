@@ -159,6 +159,11 @@ const run = async () => {
         fromTemperature: 'warm',
         toTemperature: 'hot',
         source: 'ai_scoring',
+        metadata: {
+          scoreBefore: 55,
+          scoreAfter: 78,
+          reason: 'ai_scoring_update',
+        },
       },
       {
         leadId: leadA._id,
@@ -228,6 +233,32 @@ const run = async () => {
       assert(r.status === 200, `Expected 200, got ${r.status}`)
       const total = Number(r.json?.data?.totals?.totalTransitions || 0)
       assert(total === 2, `Expected 2 transitions for sales-owned lead, got ${total}`)
+    })
+
+    await scenario('Activity summary returns by-score lead fields and transition score state', async () => {
+      const startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+      const endDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const r = await callApi({
+        path: `/followups/activity?kind=manual&view=summary&startDate=${encodeURIComponent(
+          startDate
+        )}&endDate=${encodeURIComponent(endDate)}&transitionState=warm_to_hot`,
+        token: adminToken,
+      })
+      assert(r.status === 200, `Expected 200, got ${r.status}`)
+      const leads = r.json?.data?.leads || []
+      assert(leads.length >= 1, 'Expected at least one lead for transitionState filter')
+      const withTransition = leads.find((row) => row?.transition)
+      assert(withTransition, 'Expected transition column in at least one summary row')
+      assert(typeof withTransition?.lead?.customerName === 'string', 'Expected lead.customerName field')
+      assert(typeof withTransition?.lead?.location === 'string', 'Expected lead.location field')
+      assert(typeof withTransition?.lead?.quoteValue === 'number', 'Expected lead.quoteValue field')
+      assert(
+        leads.every((row) => row?.transition?.transitionState === 'warm_to_hot'),
+        'Expected filtered rows to match transitionState'
+      )
+      assert(withTransition?.transition?.scoreBefore === 55, 'Expected transition scoreBefore from metadata')
+      assert(withTransition?.transition?.scoreAfter === 78, 'Expected transition scoreAfter from metadata')
+      assert(withTransition?.transition?.scoreDelta === 23, 'Expected transition scoreDelta')
     })
 
     await scenario('Transition drilldown query works', async () => {

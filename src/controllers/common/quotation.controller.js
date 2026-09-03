@@ -270,25 +270,76 @@ const mapEstimateToQuotationPayload = (estimate = {}, lead, reqUser) => {
   };
 };
 
+const resolveLeadForEstimateConversion = async ({
+  estimate,
+  reqUser,
+  explicitLeadId = null,
+}) => {
+  if (explicitLeadId) {
+    const explicitAccess = await checkLeadAccess(explicitLeadId, reqUser);
+    if (explicitAccess.error) {
+      return { error: explicitAccess.error, code: explicitAccess.code || 400 };
+    }
+    return {
+      lead: explicitAccess.lead,
+      resolvedLeadId: explicitAccess.lead?._id || explicitLeadId,
+      resolutionSource: "request_body_leadId",
+    };
+  }
+
+  if (estimate.leadId) {
+    const direct = await checkLeadAccess(estimate.leadId, reqUser);
+    if (direct.error) return { error: direct.error, code: direct.code || 400 };
+    return {
+      lead: direct.lead,
+      resolvedLeadId: direct.lead?._id || estimate.leadId,
+      resolutionSource: "estimate_leadId",
+    };
+  }
+
+  const jobNumber = String(estimate.jobNumber || "").trim();
+  if (jobNumber) {
+    const leadByJobNumber = await Lead.findOne({ jobId: jobNumber })
+      .select("_id")
+      .lean();
+    if (leadByJobNumber?._id) {
+      const byJob = await checkLeadAccess(leadByJobNumber._id, reqUser);
+      if (byJob.error) return { error: byJob.error, code: byJob.code || 400 };
+      return {
+        lead: byJob.lead,
+        resolvedLeadId: byJob.lead?._id || leadByJobNumber._id,
+        resolutionSource: "estimate_jobNumber",
+      };
+    }
+  }
+
+  return {
+    error:
+      "Estimate is not linked to a lead. Provide body.leadId, or ensure estimate.jobNumber matches Lead.jobId.",
+    code: 400,
+  };
+};
+
 const findOrCreateQuotationFromEstimate = async ({
   estimateId,
   reqUser,
   forceNotSubmitted = false,
+  explicitLeadId = null,
 }) => {
   const estimate = await EstimateQuote.findById(estimateId);
   if (!estimate) return { error: "Estimate not found", code: 404 };
-  if (!estimate.leadId) {
-    return {
-      error: "Estimate is not linked to a lead. leadId is required to convert.",
-      code: 400,
-    };
-  }
+  const resolvedLead = await resolveLeadForEstimateConversion({
+    estimate,
+    reqUser,
+    explicitLeadId,
+  });
+  if (resolvedLead.error) return { error: resolvedLead.error, code: resolvedLead.code };
+  const lead = resolvedLead.lead;
 
-  const { lead, error: accessError, code } = await checkLeadAccess(
-    estimate.leadId,
-    reqUser
-  );
-  if (accessError) return { error: accessError, code };
+  if (lead && String(estimate.leadId || "") !== String(lead._id || "")) {
+    estimate.leadId = lead._id;
+    await estimate.save();
+  }
 
   const existing = await Quotation.findOne({ sourceEstimateId: estimate._id })
     .sort({ createdAt: -1 })
@@ -468,9 +519,11 @@ exports.createQuotation = asyncHandler(async (req, res) => {
 
 exports.createQuotationFromEstimate = asyncHandler(async (req, res) => {
   const { estimateId } = req.params;
+  const explicitLeadId = req.body?.leadId || null;
   const resolved = await findOrCreateQuotationFromEstimate({
     estimateId,
     reqUser: req.user,
+    explicitLeadId,
   });
   if (resolved.error) {
     if (resolved.code === 404) return notFound(res, resolved.error);
@@ -743,6 +796,7 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
 exports.submitQuotationForApproval = asyncHandler(async (req, res) => {
   const routeId = req.params.quotationId;
   const bodyEstimateId = req.body?.estimateId;
+  const explicitLeadId = req.body?.leadId || null;
   let quotation = await Quotation.findById(routeId);
 
   if (!quotation && bodyEstimateId) {
@@ -750,6 +804,7 @@ exports.submitQuotationForApproval = asyncHandler(async (req, res) => {
       estimateId: bodyEstimateId,
       reqUser: req.user,
       forceNotSubmitted: true,
+      explicitLeadId,
     });
     if (resolved.error) {
       if (resolved.code === 404) return notFound(res, resolved.error);
@@ -764,6 +819,7 @@ exports.submitQuotationForApproval = asyncHandler(async (req, res) => {
       estimateId: routeId,
       reqUser: req.user,
       forceNotSubmitted: true,
+      explicitLeadId,
     });
     if (!resolved.error) {
       quotation = resolved.quotation;
