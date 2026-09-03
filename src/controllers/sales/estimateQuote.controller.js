@@ -1,5 +1,6 @@
 const PricingRules = require('../../models/PricingRules')
 const EstimateQuote = require('../../models/EstimateQuote')
+const Quotation = require('../../models/Quotation')
 const Lead = require('../../models/Lead')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -264,6 +265,40 @@ const withEstimateListTotals = (estimate) => {
     grandTotal: resolveEstimateGrandTotal(estimate),
     buildingSubtotal: resolveEstimateBuildingSubtotal(estimate),
     drawingCount: Array.isArray(_drawings) ? _drawings.length : 0,
+  }
+}
+
+const buildEstimateConversionMeta = (quotation) => {
+  if (!quotation) {
+    return {
+      isConvertedToQuotation: false,
+      quotationId: null,
+      quoteNumber: null,
+      quotationStatus: null,
+      approvalStatus: null,
+      workflowStatus: null,
+      convertedAt: null,
+    }
+  }
+  const approvalStatus = quotation.approval?.status || 'not_submitted'
+  const workflowStatus =
+    quotation.status === 'sent'
+      ? 'sent'
+      : approvalStatus === 'pending_approval'
+        ? 'pending_approval'
+        : approvalStatus === 'approved'
+          ? 'approved'
+          : approvalStatus === 'rejected'
+            ? 'rejected'
+            : 'draft'
+  return {
+    isConvertedToQuotation: true,
+    quotationId: quotation._id,
+    quoteNumber: quotation.quoteNumber || null,
+    quotationStatus: quotation.status || 'draft',
+    approvalStatus,
+    workflowStatus,
+    convertedAt: quotation.createdAt || null,
   }
 }
 
@@ -618,7 +653,16 @@ exports.getEstimateQuote = asyncHandler(async (req, res) => {
   if (!estimate) return notFound(res, 'Estimate not found')
   const access = assertEstimateAccess(estimate, req.user)
   if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-  return success(res, { estimate: withEstimateTotals(estimate) })
+  const quotation = await Quotation.findOne({ sourceEstimateId: estimate._id })
+    .select('_id quoteNumber status approval createdAt')
+    .sort({ createdAt: -1 })
+    .lean()
+  return success(res, {
+    estimate: {
+      ...withEstimateTotals(estimate),
+      conversion: buildEstimateConversionMeta(quotation),
+    },
+  })
 })
 
 exports.updateEstimateQuote = asyncHandler(async (req, res) => {
@@ -717,8 +761,27 @@ exports.listEstimateQuotes = asyncHandler(async (req, res) => {
     EstimateQuote.countDocuments(filter),
   ])
 
+  const estimateIds = estimates.map((row) => row._id)
+  const quotations = estimateIds.length
+    ? await Quotation.find({ sourceEstimateId: { $in: estimateIds } })
+        .select('_id sourceEstimateId quoteNumber status approval createdAt')
+        .sort({ createdAt: -1 })
+        .lean()
+    : []
+  const quotationByEstimateId = new Map()
+  for (const row of quotations) {
+    const key = String(row.sourceEstimateId || '')
+    if (!key || quotationByEstimateId.has(key)) continue
+    quotationByEstimateId.set(key, row)
+  }
+
   return success(res, {
-    estimates: estimates.map(withEstimateListTotals),
+    estimates: estimates.map((estimate) => ({
+      ...withEstimateListTotals(estimate),
+      conversion: buildEstimateConversionMeta(
+        quotationByEstimateId.get(String(estimate._id))
+      ),
+    })),
     total,
     page: parsedPage,
     limit: parsedLimit,

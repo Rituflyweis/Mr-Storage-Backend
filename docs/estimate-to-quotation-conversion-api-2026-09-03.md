@@ -2,6 +2,10 @@
 
 Use this API when frontend generates/finalizes an estimate (`EstimateQuote`) and needs a real `Quotation` record for approval and send flow.
 
+Related doc:
+
+- `docs/estimate-history-conversion-redirect-api-2026-09-03.md` (history-table converted badge + redirect contract)
+
 ---
 
 ## Why this endpoint exists
@@ -153,6 +157,30 @@ Grand total source priority:
    - `PUT /api/quotations/:quotationId/approve`
    - `PUT /api/quotations/:quotationId/reject`
    - `POST /api/quotations/:quotationId/send`
+
+---
+
+## Estimate History Redirect Support
+
+To show whether an estimate is already converted (and redirect to that quotation), estimate read/list APIs now include:
+
+- `estimate.conversion.isConvertedToQuotation`
+- `estimate.conversion.quotationId`
+- `estimate.conversion.quoteNumber`
+- `estimate.conversion.quotationStatus`
+- `estimate.conversion.approvalStatus`
+- `estimate.conversion.workflowStatus`
+- `estimate.conversion.convertedAt`
+
+Available on:
+
+- `GET /api/sales/estimates`
+- `GET /api/sales/estimates/:estimateId`
+
+Frontend usage:
+
+- If `isConvertedToQuotation=true`, show "Converted to Quote" badge.
+- Redirect using `quotationId` to quotation detail/approval screen.
 
 ---
 

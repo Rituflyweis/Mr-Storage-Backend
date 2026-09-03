@@ -4,6 +4,11 @@ This document defines the quotation approval flow for frontend integration.
 
 It applies to quotations created from your quoting process (including data extracted from XLSX/PDF flows) before the quotation is sent to the customer.
 
+Related docs:
+
+- `docs/estimate-to-quotation-conversion-api-2026-09-03.md`
+- `docs/estimate-history-conversion-redirect-api-2026-09-03.md` (how estimate history knows converted quotation + redirect id)
+
 ## Objective
 
 - Sales can create/edit quotations.
