@@ -15,7 +15,12 @@ router.get("/approval/pending", ctrl.getPendingQuotationApprovals);
 router.get("/:quotationId", ctrl.getQuotation);
 router.put("/:quotationId", ctrl.updateQuotation);
 router.delete("/:quotationId", ctrl.deleteQuotation);
-router.post("/:quotationId/submit-approval", [body("note").optional().isString()], validate, ctrl.submitQuotationForApproval);
+router.post(
+  "/:quotationId/submit-approval",
+  [body("note").optional().isString(), body("estimateId").optional().isMongoId()],
+  validate,
+  ctrl.submitQuotationForApproval
+);
 router.put("/:quotationId/approve", [body("note").optional().isString()], validate, ctrl.approveQuotation);
 router.put("/:quotationId/reject", [body("reason").optional().isString(), body("note").optional().isString()], validate, ctrl.rejectQuotationApproval);
 router.post("/:quotationId/send", ctrl.sendQuotation);

@@ -9,6 +9,21 @@ Use this guide to wire the React admin screen to backend config APIs with the ex
 
 Auth: admin token required for `PUT`.
 
+## Single Source Of Truth (Important)
+
+Use only this object for lead cadence config:
+
+- `leadFollowUp.warm`
+- `leadFollowUp.cold`
+- No auto cadence is configured for `hot` leads.
+
+Do **not** send these legacy keys from new frontend:
+
+- `coldLead`
+- `leadFrequency`
+
+Backend still accepts legacy keys for backward compatibility, but frontend should treat them as deprecated.
+
 ## Enum Reference (Frontend)
 
 For this config API and its connected reminder flows, use:
@@ -151,5 +166,6 @@ export interface FollowupAutomationConfigPayload {
 ## Migration Note (old key support)
 
 - Old key `coldLead` is still accepted for backward compatibility.
+- Old key `leadFrequency` is also accepted for backward compatibility.
 - New integrations should use only `leadFollowUp.warm` and `leadFollowUp.cold` as the single source of truth.
 

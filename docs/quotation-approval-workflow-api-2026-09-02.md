@@ -69,8 +69,16 @@ Behavior:
 Body (optional):
 
 ```json
-{ "note": "Please review this quote" }
+{
+  "note": "Please review this quote",
+  "estimateId": "66f1a9..."
+}
 ```
+
+Shortcut behavior:
+
+- If `:quotationId` is not found but matches an `EstimateQuote` id, backend auto-creates quotation from estimate and submits in same call.
+- You can also pass `estimateId` in body for the same single-call behavior.
 
 ---
 

@@ -145,6 +145,37 @@ Grand total source priority:
 
 ---
 
+## One-call submit approval option (estimateId aware)
+
+To reduce multi-button/concurrent-call risk, submit endpoint now supports estimate-first input:
+
+`POST /api/quotations/:quotationId/submit-approval`
+
+Two ways to use:
+
+1. Standard:
+   - `:quotationId` is an actual quotation id
+2. Estimate shortcut:
+   - pass `:quotationId` as the `estimateId` directly, OR
+   - pass body `{ "estimateId": "<estimateId>" }`
+
+Behavior:
+
+- If quotation exists -> submit that quotation.
+- If quotation does not exist but estimate is valid -> backend auto-creates quotation from estimate and submits in the same request.
+- If already pending -> returns success with message `Quotation already pending approval`.
+
+Example:
+
+```json
+POST /api/quotations/6a990f2958090fe0fc2ad2d2/submit-approval
+{
+  "note": "Please review"
+}
+```
+
+---
+
 ## Quotation Read API (estimate + document context)
 
 To load a full quotation detail page with estimate linkage and document actions:

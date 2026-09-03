@@ -270,6 +270,109 @@ const mapEstimateToQuotationPayload = (estimate = {}, lead, reqUser) => {
   };
 };
 
+const findOrCreateQuotationFromEstimate = async ({
+  estimateId,
+  reqUser,
+  forceNotSubmitted = false,
+}) => {
+  const estimate = await EstimateQuote.findById(estimateId);
+  if (!estimate) return { error: "Estimate not found", code: 404 };
+  if (!estimate.leadId) {
+    return {
+      error: "Estimate is not linked to a lead. leadId is required to convert.",
+      code: 400,
+    };
+  }
+
+  const { lead, error: accessError, code } = await checkLeadAccess(
+    estimate.leadId,
+    reqUser
+  );
+  if (accessError) return { error: accessError, code };
+
+  const existing = await Quotation.findOne({ sourceEstimateId: estimate._id })
+    .sort({ createdAt: -1 })
+    .lean();
+  if (existing) return { quotation: await Quotation.findById(existing._id), estimate, lead, created: false };
+
+  const quoteNumber = await generateQuoteNumber();
+  const quotationPayload = mapEstimateToQuotationPayload(
+    estimate.toObject(),
+    lead,
+    reqUser
+  );
+
+  if (forceNotSubmitted) {
+    quotationPayload.approval = {
+      status: "not_submitted",
+      submittedBy: null,
+      submittedAt: null,
+      reviewedBy: null,
+      reviewedAt: null,
+      rejectionReason: "",
+      approvedVersionNumber: null,
+      history: [],
+    };
+  }
+
+  const quotation = await Quotation.create({
+    ...quotationPayload,
+    quoteNumber,
+  });
+
+  await Lead.findByIdAndUpdate(lead._id, {
+    isQuoteReady: true,
+    quoteValue: quotation.basePrice || 0,
+  });
+
+  await auditService.log({
+    type: "quotation",
+    action: AUDIT_ACTIONS.QUOTATION_CREATED,
+    leadId: lead._id,
+    customerId: lead.customerId,
+    performedBy: reqUser._id,
+    metadata: {
+      quotationId: quotation._id,
+      quoteNumber: quotation.quoteNumber,
+      source: "estimate_conversion",
+      sourceEstimateId: estimate._id,
+      approvalStatus: quotation.approval?.status || "not_submitted",
+    },
+  });
+
+  if (!forceNotSubmitted) {
+    if (reqUser.role === "sales") {
+      await auditService.log({
+        type: "quotation",
+        action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
+        leadId: lead._id,
+        customerId: lead.customerId,
+        performedBy: reqUser._id,
+        metadata: {
+          quotationId: quotation._id,
+          quoteNumber: quotation.quoteNumber,
+          source: "estimate_conversion",
+        },
+      });
+    } else {
+      await auditService.log({
+        type: "quotation",
+        action: AUDIT_ACTIONS.QUOTATION_APPROVED,
+        leadId: lead._id,
+        customerId: lead.customerId,
+        performedBy: reqUser._id,
+        metadata: {
+          quotationId: quotation._id,
+          quoteNumber: quotation.quoteNumber,
+          source: "estimate_conversion_admin",
+        },
+      });
+    }
+  }
+
+  return { quotation, estimate, lead, created: true };
+};
+
 exports.createQuotation = asyncHandler(async (req, res) => {
   const { leadId } = req.body;
   const { lead, error, code } = await checkLeadAccess(leadId, req.user);
@@ -365,70 +468,16 @@ exports.createQuotation = asyncHandler(async (req, res) => {
 
 exports.createQuotationFromEstimate = asyncHandler(async (req, res) => {
   const { estimateId } = req.params;
-  const estimate = await EstimateQuote.findById(estimateId);
-  if (!estimate) return notFound(res, "Estimate not found");
-
-  if (!estimate.leadId) {
-    return badRequest(res, "Estimate is not linked to a lead. leadId is required to convert.");
+  const resolved = await findOrCreateQuotationFromEstimate({
+    estimateId,
+    reqUser: req.user,
+  });
+  if (resolved.error) {
+    if (resolved.code === 404) return notFound(res, resolved.error);
+    if (resolved.code === 403) return forbidden(res, resolved.error);
+    return badRequest(res, resolved.error);
   }
-
-  const { lead, error: accessError, code } = await checkLeadAccess(estimate.leadId, req.user);
-  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
-
-  const quoteNumber = await generateQuoteNumber();
-  const quotationPayload = mapEstimateToQuotationPayload(estimate.toObject(), lead, req.user);
-  const quotation = await Quotation.create({
-    ...quotationPayload,
-    quoteNumber,
-  });
-
-  await Lead.findByIdAndUpdate(lead._id, {
-    isQuoteReady: true,
-    quoteValue: quotation.basePrice || 0,
-  });
-
-  await auditService.log({
-    type: "quotation",
-    action: AUDIT_ACTIONS.QUOTATION_CREATED,
-    leadId: lead._id,
-    customerId: lead.customerId,
-    performedBy: req.user._id,
-    metadata: {
-      quotationId: quotation._id,
-      quoteNumber: quotation.quoteNumber,
-      source: "estimate_conversion",
-      sourceEstimateId: estimate._id,
-      approvalStatus: quotation.approval?.status || "not_submitted",
-    },
-  });
-
-  if (req.user.role === "sales") {
-    await auditService.log({
-      type: "quotation",
-      action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
-      leadId: lead._id,
-      customerId: lead.customerId,
-      performedBy: req.user._id,
-      metadata: {
-        quotationId: quotation._id,
-        quoteNumber: quotation.quoteNumber,
-        source: "estimate_conversion",
-      },
-    });
-  } else {
-    await auditService.log({
-      type: "quotation",
-      action: AUDIT_ACTIONS.QUOTATION_APPROVED,
-      leadId: lead._id,
-      customerId: lead.customerId,
-      performedBy: req.user._id,
-      metadata: {
-        quotationId: quotation._id,
-        quoteNumber: quotation.quoteNumber,
-        source: "estimate_conversion_admin",
-      },
-    });
-  }
+  const { quotation, estimate } = resolved;
 
   const quotationObj = await decorateQuotationResponse(quotation.toObject(), {
     includeEstimate: true,
@@ -692,13 +741,53 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
 });
 
 exports.submitQuotationForApproval = asyncHandler(async (req, res) => {
-  const quotation = await Quotation.findById(req.params.quotationId);
+  const routeId = req.params.quotationId;
+  const bodyEstimateId = req.body?.estimateId;
+  let quotation = await Quotation.findById(routeId);
+
+  if (!quotation && bodyEstimateId) {
+    const resolved = await findOrCreateQuotationFromEstimate({
+      estimateId: bodyEstimateId,
+      reqUser: req.user,
+      forceNotSubmitted: true,
+    });
+    if (resolved.error) {
+      if (resolved.code === 404) return notFound(res, resolved.error);
+      if (resolved.code === 403) return forbidden(res, resolved.error);
+      return badRequest(res, resolved.error);
+    }
+    quotation = resolved.quotation;
+  }
+
+  if (!quotation) {
+    const resolved = await findOrCreateQuotationFromEstimate({
+      estimateId: routeId,
+      reqUser: req.user,
+      forceNotSubmitted: true,
+    });
+    if (!resolved.error) {
+      quotation = resolved.quotation;
+    }
+  }
+
   if (!quotation) return notFound(res, "Quotation not found");
   if (quotation.status === "sent") return badRequest(res, "Sent quotation cannot be submitted for approval");
   const { error: accessError, code } = await checkLeadAccess(quotation.leadId, req.user);
   if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
 
   ensureApprovalState(quotation);
+  if (quotation.approval.status === "pending_approval") {
+    return success(
+      res,
+      {
+        quotation: await decorateQuotationResponse(quotation.toObject(), {
+          includeEstimate: true,
+          includeDocuments: true,
+        }),
+      },
+      "Quotation already pending approval"
+    );
+  }
   quotation.approval.status = "pending_approval";
   quotation.approval.submittedBy = req.user._id;
   quotation.approval.submittedAt = new Date();
