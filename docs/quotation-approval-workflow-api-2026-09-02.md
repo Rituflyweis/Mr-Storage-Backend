@@ -165,6 +165,14 @@ Use `workflowStatus` for UI badge and button state:
 - `rejected`: show rejection reason; edit + resubmit
 - `sent`: completed
 
+Sales quotation list endpoint alignment:
+
+- `GET /api/sales/quotations?page=1&limit=20` now returns:
+  - `status` = workflow-aware status (`draft | pending_approval | approved | rejected | sent`)
+  - `approvalStatus` = raw approval state
+  - `workflowStatus` = same workflow-aware state
+  - `quotationStatus` = raw quotation model status (`draft | sent | accepted | rejected`)
+
 Single quotation responses now also include:
 
 - `approvalStatus` (alias of `approval.status`)

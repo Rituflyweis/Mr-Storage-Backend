@@ -566,16 +566,67 @@ exports.updatePaymentFollowUpStatus = asyncHandler(async (req, res) => {
 // Figma "Quotation" screen shows status labels Approved/Pending Approval/Rejected/Quote Sent —
 // best-effort mapping onto the model's draft/sent/accepted/rejected enum.
 const QUOTATION_STATUS_LABELS = { draft: 'Draft', sent: 'Pending Approval', accepted: 'Approved', rejected: 'Rejected' }
+const APPROVAL_STATUSES = ['not_submitted', 'pending_approval', 'approved', 'rejected']
+
+const resolveQuotationWorkflowStatus = (quotation = {}) => {
+  if (quotation.status === 'sent') return 'sent'
+  const approvalStatus = quotation.approval?.status || 'not_submitted'
+  if (approvalStatus === 'pending_approval') return 'pending_approval'
+  if (approvalStatus === 'approved') return 'approved'
+  if (approvalStatus === 'rejected') return 'rejected'
+  return 'draft'
+}
+
+const applySalesQuotationStatusFilter = (filter, statusRaw) => {
+  const status = String(statusRaw || '').trim().toLowerCase()
+  if (!status) return
+
+  if (status === 'sent') {
+    filter.status = 'sent'
+    return
+  }
+
+  if (status === 'approved') {
+    filter.$or = [{ 'approval.status': 'approved' }, { status: 'accepted' }]
+    return
+  }
+
+  if (status === 'rejected') {
+    filter.$or = [{ 'approval.status': 'rejected' }, { status: 'rejected' }]
+    return
+  }
+
+  if (status === 'draft') {
+    filter.status = { $ne: 'sent' }
+    filter.$or = [
+      { approval: { $exists: false } },
+      { 'approval.status': { $exists: false } },
+      { 'approval.status': 'not_submitted' },
+    ]
+    return
+  }
+
+  if (APPROVAL_STATUSES.includes(status)) {
+    filter['approval.status'] = status
+    return
+  }
+
+  filter.status = status
+}
 
 exports.getMyQuotations = asyncHandler(async (req, res) => {
   const Quotation = require("../../models/Quotation");
-  const { status, search, buildingType, minValue, maxValue, page = 1, limit = 20 } = req.query;
+  const { status, approvalStatus, search, buildingType, minValue, maxValue, page = 1, limit = 20 } = req.query;
   const dateFilter = buildDateFilter(req.query);
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1);
 
   const filter = { createdBy: req.user._id, ...dateFilter };
-  if (status) filter.status = status;
+  if (status) applySalesQuotationStatusFilter(filter, status);
+  const normalizedApprovalStatus = String(approvalStatus || '').trim().toLowerCase()
+  if (normalizedApprovalStatus && APPROVAL_STATUSES.includes(normalizedApprovalStatus)) {
+    filter['approval.status'] = normalizedApprovalStatus
+  }
   if (buildingType) filter.buildingType = buildingType;
   if (minValue || maxValue) {
     filter.finalPrice = {};
@@ -596,25 +647,33 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
     Quotation.countDocuments(filter),
   ]);
 
-  const result = quotations.map((q) => ({
-    _id: q._id,
-    quoteNumber: q.quoteNumber || "",
-    versionNumber: q.versionNumber || 1,
-    status: q.status,
-    finalPrice: q.finalPrice || 0,
-    leadId: q.leadId
-      ? { _id: q.leadId._id, projectName: q.leadId.projectName }
-      : null,
-    customerId: q.customerId
-      ? {
-          _id: q.customerId._id,
-          firstName: q.customerId.firstName,
-          email: q.customerId.email,
-        }
-      : null,
-    createdAt: q.createdAt,
-    sentAt: q.sentAt || null,
-  }));
+  const result = quotations.map((q) => {
+    const approval = q.approval || {}
+    const approvalStatusValue = approval.status || 'not_submitted'
+    const workflowStatus = resolveQuotationWorkflowStatus(q)
+    return {
+      _id: q._id,
+      quoteNumber: q.quoteNumber || "",
+      versionNumber: q.versionNumber || 1,
+      status: workflowStatus,
+      quotationStatus: q.status || 'draft',
+      approvalStatus: approvalStatusValue,
+      workflowStatus,
+      finalPrice: q.finalPrice || 0,
+      leadId: q.leadId
+        ? { _id: q.leadId._id, projectName: q.leadId.projectName }
+        : null,
+      customerId: q.customerId
+        ? {
+            _id: q.customerId._id,
+            firstName: q.customerId.firstName,
+            email: q.customerId.email,
+          }
+        : null,
+      createdAt: q.createdAt,
+      sentAt: q.sentAt || null,
+    }
+  });
 
   return success(res, {
     quotations: result,
