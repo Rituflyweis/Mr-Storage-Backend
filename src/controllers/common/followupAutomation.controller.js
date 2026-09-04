@@ -12,6 +12,8 @@ const { sendFollowUpNudgeEmail, isEmailConfigured } = require('../../services/em
 const { success, badRequest, forbidden, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
+const MAX_ATTEMPTS_LIMIT = 4
+
 const normalizePhone = (countryCode, phone) => {
   const cc = String(countryCode || '').trim()
   const pn = String(phone || '').trim().replace(/\s+/g, '')
@@ -66,6 +68,79 @@ const normalizeLeadFollowUpPayload = (payload = {}) => {
   return payload
 }
 
+const validateAttemptConfig = (label, intervals, maxAttempts) => {
+  const max = Number(maxAttempts)
+  if (!Number.isInteger(max) || max < 1 || max > MAX_ATTEMPTS_LIMIT) {
+    return `${label}.maxAttempts must be an integer between 1 and ${MAX_ATTEMPTS_LIMIT}`
+  }
+
+  if (intervals === undefined) return null
+  if (!Array.isArray(intervals) || intervals.length === 0) {
+    return `${label} intervals must be a non-empty array`
+  }
+
+  for (const value of intervals) {
+    const n = Number(value)
+    if (!Number.isFinite(n) || n <= 0) {
+      return `${label} intervals must contain only numbers greater than 0`
+    }
+  }
+
+  if (intervals.length > max) {
+    return `${label} intervals count (${intervals.length}) cannot exceed maxAttempts (${max})`
+  }
+
+  return null
+}
+
+const validateConfigPayload = (payload = {}, currentConfig = {}) => {
+  const errors = []
+
+  const chatMaxAttempts =
+    payload.chatDropOff?.maxAttempts ??
+    currentConfig.chatDropOff?.maxAttempts
+  if (payload.chatDropOff?.attemptIntervalsMinutes !== undefined || payload.chatDropOff?.maxAttempts !== undefined) {
+    const err = validateAttemptConfig(
+      'chatDropOff.attemptIntervalsMinutes',
+      payload.chatDropOff?.attemptIntervalsMinutes,
+      chatMaxAttempts
+    )
+    if (err) errors.push(err)
+  }
+
+  const invoiceMaxAttempts =
+    payload.invoiceReminder?.maxAttempts ??
+    currentConfig.invoiceReminder?.maxAttempts
+  if (payload.invoiceReminder?.intervalsHours !== undefined || payload.invoiceReminder?.maxAttempts !== undefined) {
+    const err = validateAttemptConfig(
+      'invoiceReminder.intervalsHours',
+      payload.invoiceReminder?.intervalsHours,
+      invoiceMaxAttempts
+    )
+    if (err) errors.push(err)
+  }
+
+  if (payload.leadFollowUp?.warm) {
+    const err = validateAttemptConfig(
+      'leadFollowUp.warm.intervalsDays',
+      payload.leadFollowUp.warm?.intervalsDays,
+      payload.leadFollowUp.warm?.maxAttempts
+    )
+    if (err) errors.push(err)
+  }
+
+  if (payload.leadFollowUp?.cold) {
+    const err = validateAttemptConfig(
+      'leadFollowUp.cold.intervalsDays',
+      payload.leadFollowUp.cold?.intervalsDays,
+      payload.leadFollowUp.cold?.maxAttempts
+    )
+    if (err) errors.push(err)
+  }
+
+  return errors
+}
+
 exports.getConfig = asyncHandler(async (req, res) => {
   const config = await getOrCreateConfig()
   return success(res, { config })
@@ -81,7 +156,12 @@ exports.updateConfig = asyncHandler(async (req, res) => {
   delete payload._id
   delete payload.createdAt
   delete payload.updatedAt
+  const currentConfig = await getOrCreateConfig()
   normalizeLeadFollowUpPayload(payload)
+  const validationErrors = validateConfigPayload(payload, currentConfig)
+  if (validationErrors.length) {
+    return badRequest(res, validationErrors.join('; '))
+  }
 
   await FollowUpAutomationConfig.findOneAndUpdate(
     { key: 'global' },

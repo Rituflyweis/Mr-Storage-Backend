@@ -219,6 +219,37 @@ const sendChannels = async ({
   }
 }
 
+const resolveAutomationAssignee = async (lead) => {
+  if (lead?.assignedSales) return lead.assignedSales
+
+  const salesUser = await User.findOne({
+    role: 'sales',
+    isActive: true,
+  })
+    .sort({ createdAt: 1 })
+    .select('_id')
+    .lean()
+  if (salesUser?._id) return salesUser._id
+
+  const mainAdmin = await User.findOne({
+    role: 'admin',
+    isMainAdmin: true,
+    isActive: true,
+  })
+    .select('_id')
+    .lean()
+  if (mainAdmin?._id) return mainAdmin._id
+
+  const anyAdmin = await User.findOne({
+    role: 'admin',
+    isActive: true,
+  })
+    .sort({ createdAt: 1 })
+    .select('_id')
+    .lean()
+  return anyAdmin?._id || null
+}
+
 const countAttemptsForLeadKind = async (source, leadId) =>
   FollowUp.countDocuments({ leadId, source })
 
@@ -247,13 +278,14 @@ const getLastCustomerMessageMap = async (leadIds) => {
 
 const createAutomatedFollowUp = async ({
   lead,
+  ownerId = null,
   source,
   message,
   modeOfContact = 'sms',
   relatedInvoiceId = null,
   reminderMinutes = 0,
 }) => {
-  const assignedTo = lead.assignedSales || null
+  const assignedTo = ownerId || lead.assignedSales || null
   if (!assignedTo) return null
   return FollowUp.create({
     leadId: lead._id,
@@ -283,8 +315,10 @@ const sendLeadAutomation = async ({
   relatedInvoiceId = null,
   config,
 }) => {
+  const ownerId = await resolveAutomationAssignee(lead)
   const followUp = await createAutomatedFollowUp({
     lead,
+    ownerId,
     source: followUpSource,
     message,
     modeOfContact,
@@ -299,7 +333,7 @@ const sendLeadAutomation = async ({
     leadId: lead._id,
     followUpId: followUp?._id || null,
     invoiceId: relatedInvoiceId,
-    sentBy: lead.assignedSales || null,
+    sentBy: ownerId || null,
     config,
     useSms: true,
     useEmail: true,
@@ -316,8 +350,13 @@ const sendLeadAutomation = async ({
     action: AUDIT_ACTIONS.FOLLOWUP_AUTO_SENT,
     leadId: lead._id,
     customerId: lead.customerId,
-    performedBy: lead.assignedSales || null,
-    metadata: { kind, followUpId: followUp?._id || null, message },
+    performedBy: ownerId || null,
+    metadata: {
+      kind,
+      followUpId: followUp?._id || null,
+      message,
+      ownerResolvedFrom: lead.assignedSales ? 'assigned_sales' : ownerId ? 'fallback_user' : 'none',
+    },
   })
 }
 
@@ -338,7 +377,6 @@ const processChatDropOff = async (config) => {
 
   let sent = 0
   for (const lead of leads) {
-    if (!lead.assignedSales) continue
     if (lead.isQuoteReady) continue
     if (lead.isHandedToSales) continue
 
