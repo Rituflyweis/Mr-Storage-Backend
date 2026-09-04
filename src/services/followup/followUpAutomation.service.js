@@ -11,6 +11,7 @@ const Notification = require('../../models/Notification')
 const { upsertFollowUpEvent } = require('../calendar/calendarSync.service')
 const auditService = require('../audit.service')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const { INACTIVE_LIFECYCLE_STAGES } = require('../../utils/activeLeadScope')
 const { sendSms } = require('../sms/sms.service')
 const { sendFollowUpNudgeEmail, isEmailConfigured } = require('../email/mailer')
 
@@ -325,7 +326,8 @@ const processChatDropOff = async (config) => {
   const now = Date.now()
   const leads = await Lead.find({
     isTerminated: { $ne: true },
-    lifecycleStatus: { $nin: ['won', 'lost'] },
+    isRaisedToPO: { $ne: true },
+    lifecycleStatus: { $nin: INACTIVE_LIFECYCLE_STAGES },
     isChatEnded: { $ne: true },
   })
     .select('_id customerId assignedSales isQuoteReady isHandedToSales createdAt')
@@ -390,7 +392,8 @@ const processTemperatureLeadFollowUp = async ({
 
   const leads = await Lead.find({
     isTerminated: { $ne: true },
-    lifecycleStatus: { $nin: ['won', 'lost'] },
+    isRaisedToPO: { $ne: true },
+    lifecycleStatus: { $nin: INACTIVE_LIFECYCLE_STAGES },
     assignedSales: { $ne: null },
     'leadScoring.temperature': temperature,
   })

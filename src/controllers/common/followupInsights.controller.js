@@ -1,6 +1,10 @@
 const FollowUp = require("../../models/FollowUp");
 const Lead = require("../../models/Lead");
 const LeadTemperatureTransition = require("../../models/LeadTemperatureTransition");
+const {
+  buildActiveLeadMatch,
+  isLeadActive,
+} = require("../../utils/activeLeadScope");
 const asyncHandler = require("../../utils/asyncHandler");
 const {
   success,
@@ -55,6 +59,17 @@ const parseTransitionState = (transitionState) => {
 
 const shouldAttachTransitionData = (query = {}) =>
   Boolean(query.startDate || query.endDate || query.transitionState);
+
+const filterGroupedToActiveLeads = async (grouped = []) => {
+  if (!grouped.length) return grouped;
+  const leadIds = grouped.map((row) => row.leadId).filter(Boolean);
+  const activeLeadIds = await Lead.find({
+    ...buildActiveLeadMatch(),
+    _id: { $in: leadIds },
+  }).distinct("_id");
+  const activeSet = new Set(activeLeadIds.map((id) => String(id)));
+  return grouped.filter((row) => activeSet.has(String(row.leadId)));
+};
 
 const buildLeadTransitionSnapshot = async ({ req, leadIds = [] }) => {
   if (!leadIds.length)
@@ -227,6 +242,12 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
       .populate({ path: "assignedSales", select: "_id name email" })
       .lean();
     if (!lead) return notFound(res, "Lead not found");
+    if (!isLeadActive(lead)) {
+      return badRequest(
+        res,
+        "Lead is closed (PO-raised or plant-stage) and excluded from follow-up activity",
+      );
+    }
     lead.customerName = lead.customerId?.firstName || "";
     lead.location = lead.location || "";
     lead.quoteValue = lead.quoteValue ?? 0;
@@ -367,7 +388,9 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
     totals.overdueCount += row.overdueCount;
   }
 
-  let grouped = [...leadSummaryMap.values()].sort(
+  let grouped = [...leadSummaryMap.values()];
+  grouped = await filterGroupedToActiveLeads(grouped);
+  grouped = grouped.sort(
     (a, b) =>
       new Date(b.lastActivityAt || 0).getTime() -
       new Date(a.lastActivityAt || 0).getTime(),

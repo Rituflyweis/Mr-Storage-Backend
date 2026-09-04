@@ -4,6 +4,7 @@ const POOrder = require('../../models/POOrder')
 const { success } = require('../../utils/apiResponse')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const asyncHandler = require('../../utils/asyncHandler')
+const { buildActiveLeadMatch } = require('../../utils/activeLeadScope')
 
 const buildCustomerSearchFilter = (search) => {
   if (!search || !search.trim()) return {}
@@ -87,7 +88,7 @@ exports.listLeads = asyncHandler(async (req, res) => {
   const parsedLimit = Math.min(Math.max(1, Number(limit) || 20), 100)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const filter = {}
+  const filter = req.user.role === 'plant' ? {} : { ...buildActiveLeadMatch() }
   if (req.user.role === 'sales') {
     filter.assignedSales = req.user._id
   } else if (req.user.role === 'plant') {

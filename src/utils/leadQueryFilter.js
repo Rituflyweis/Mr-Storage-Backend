@@ -1,6 +1,7 @@
 const Customer = require('../models/Customer')
 const { buildDateFilter } = require('./dateRange')
 const { LEAD_TEMPERATURES, resolveLeadTemperatureFromScore } = require('../config/constants')
+const { buildActiveLeadMatch } = require('./activeLeadScope')
 
 // buildDateFilter only understands explicit startDate/endDate — a quick-filter pill sending
 // `period=today` (the convention already used on the Account Dashboard) was silently ignored
@@ -39,7 +40,7 @@ const buildAdminLeadFilter = async (query = {}) => {
   } = query
   const dateFilter = buildLeadDateFilter(query)
 
-  const filter = { isDeleted: { $ne: true }, ...dateFilter }
+  const filter = { ...buildActiveLeadMatch(), ...dateFilter }
   if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
   if (assignedSales) filter.assignedSales = assignedSales
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
@@ -67,7 +68,7 @@ const buildSalesLeadFilter = async (query = {}, salesId) => {
   const { search, buildingType, lifecycleStatus, isQuoteReady } = query
   const dateFilter = buildLeadDateFilter(query)
 
-  const filter = { assignedSales: salesId, isDeleted: { $ne: true }, ...dateFilter }
+  const filter = { assignedSales: salesId, ...buildActiveLeadMatch(), ...dateFilter }
   if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
   if (isQuoteReady !== undefined) filter.isQuoteReady = isQuoteReady === 'true'
@@ -92,7 +93,7 @@ const buildSalesLeadFilter = async (query = {}, salesId) => {
  * Query `status` is accepted as an alias for `temperature` (hot | warm | cold).
  */
 const buildLeadsByScoreFilter = async (query = {}, { assignedSales } = {}) => {
-  const filter = { isDeleted: { $ne: true }, ...buildLeadDateFilter(query, 'updatedAt') }
+  const filter = { ...buildActiveLeadMatch(), ...buildLeadDateFilter(query, 'updatedAt') }
   if (assignedSales) filter.assignedSales = assignedSales
 
   const temperature = query.temperature || query.status
