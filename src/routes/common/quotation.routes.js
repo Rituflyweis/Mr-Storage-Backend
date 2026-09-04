@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const { body, param } = require("express-validator");
+const { body, param, query } = require("express-validator");
 const ctrl = require("../../controllers/common/quotation.controller");
 const validate = require("../../middleware/validate");
 
@@ -11,7 +11,25 @@ router.post(
   ctrl.createQuotationFromEstimate
 );
 
-router.get("/approval/pending", ctrl.getPendingQuotationApprovals);
+router.get(
+  "/approval/pending",
+  [
+    query("leadId").optional().isMongoId(),
+    query("approvalStatus")
+      .optional()
+      .isIn(["not_submitted", "pending_approval", "approved", "rejected"]),
+    query("status")
+      .optional()
+      .isIn(["draft", "pending", "pending_approval", "approved", "rejected", "sent", "accepted"]),
+    query("sort").optional().isIn(["latest", "oldest"]),
+    query("startDate").optional().isISO8601(),
+    query("endDate").optional().isISO8601(),
+    query("page").optional().isInt({ min: 1 }),
+    query("limit").optional().isInt({ min: 1, max: 200 }),
+  ],
+  validate,
+  ctrl.getPendingQuotationApprovals
+);
 router.get("/:quotationId", ctrl.getQuotation);
 router.put("/:quotationId", ctrl.updateQuotation);
 router.delete("/:quotationId", ctrl.deleteQuotation);

@@ -18,6 +18,7 @@ router.post('/',
     body('phone').optional().trim(),
     body('department').optional().trim(),
     body('permissions').optional().isObject(),
+    body('isActive').optional().isBoolean(),
   ],
   validate,
   ctrl.createEmployee

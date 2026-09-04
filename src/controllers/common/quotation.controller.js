@@ -19,6 +19,8 @@ const asyncHandler = require("../../utils/asyncHandler");
 const { buildDateFilter } = require("../../utils/dateRange");
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require("../../config/constants");
 const QUOTATION_APPROVAL_STATUSES = ["not_submitted", "pending_approval", "approved", "rejected"];
+const QUOTATION_STATUS_FILTERS = ["draft", "pending", "pending_approval", "approved", "rejected", "sent", "accepted"];
+const QUOTATION_SORT_VALUES = ["latest", "oldest"];
 const QUOTATION_USER_FIELDS = "name email role";
 
 const populateQuotationUsers = (query) =>
@@ -144,6 +146,11 @@ const buildQuotationDocumentMeta = (quotation = {}, estimate = null) => {
   };
 };
 
+const buildQuotationPdfLink = (quotation = {}, estimate = null) => {
+  const estimateId = quotation.sourceEstimateId || estimate?._id || null;
+  return estimateId ? `/api/sales/estimates/${estimateId}/documents/pdf` : null;
+};
+
 const decorateQuotationResponse = async (
   quotationLike,
   { includeEstimate = false, includeDocuments = false } = {}
@@ -173,6 +180,7 @@ const decorateQuotationResponse = async (
   if (includeDocuments) {
     quotation.documentMeta = buildQuotationDocumentMeta(quotation, estimate);
   }
+  quotation.pdfLink = buildQuotationPdfLink(quotation, estimate);
 
   return quotation;
 };
@@ -970,27 +978,99 @@ exports.rejectQuotationApproval = asyncHandler(async (req, res) => {
 
 exports.getPendingQuotationApprovals = asyncHandler(async (req, res) => {
   if (req.user.role !== "admin") return forbidden(res, "Only admin can view pending quotation approvals");
-  const { leadId } = req.query;
-  const filter = {
-    status: { $ne: "sent" },
-    "approval.status": "pending_approval",
-  };
-  if (leadId) filter.leadId = leadId;
+  const {
+    leadId,
+    status,
+    approvalStatus,
+    search,
+    buildingType,
+    startDate,
+    endDate,
+    page = 1,
+    limit = 20,
+    sort = "latest",
+  } = req.query;
+  const dateFilter = buildDateFilter({ startDate, endDate });
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
+  const skip = (parsedPage - 1) * parsedLimit;
 
-  const quotations = await Quotation.find(filter)
-    .populate("createdBy", QUOTATION_USER_FIELDS)
-    .populate("approval.submittedBy", QUOTATION_USER_FIELDS)
-    .populate("approval.reviewedBy", QUOTATION_USER_FIELDS)
-    .populate("approval.history.by", QUOTATION_USER_FIELDS)
-    .sort({ "approval.submittedAt": 1, createdAt: 1 })
-    .lean();
+  const filter = { ...dateFilter };
+  if (leadId) filter.leadId = leadId;
+  if (buildingType) filter.buildingType = buildingType;
+  if (search) filter.quoteNumber = { $regex: String(search).trim(), $options: "i" };
+
+  const normalizedApprovalStatus = String(approvalStatus || "").trim().toLowerCase();
+  if (normalizedApprovalStatus && !QUOTATION_APPROVAL_STATUSES.includes(normalizedApprovalStatus)) {
+    return badRequest(
+      res,
+      `Invalid approvalStatus. Use: ${QUOTATION_APPROVAL_STATUSES.join(", ")}`
+    );
+  }
+  if (normalizedApprovalStatus) {
+    filter["approval.status"] = normalizedApprovalStatus;
+  }
+
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  if (normalizedStatus) {
+    if (!QUOTATION_STATUS_FILTERS.includes(normalizedStatus)) {
+      return badRequest(
+        res,
+        `Invalid status. Use: ${QUOTATION_STATUS_FILTERS.join(", ")}`
+      );
+    }
+    if (normalizedStatus === "pending_approval") filter["approval.status"] = "pending_approval";
+    else if (normalizedStatus === "pending") filter["approval.status"] = "pending_approval";
+    else if (normalizedStatus === "approved") filter["approval.status"] = "approved";
+    else if (normalizedStatus === "rejected") filter["approval.status"] = "rejected";
+    else if (normalizedStatus === "draft") filter["approval.status"] = "not_submitted";
+    else if (["sent", "accepted"].includes(normalizedStatus)) filter.status = normalizedStatus;
+  }
+
+  const normalizedSort = String(sort || "latest").trim().toLowerCase();
+  if (!QUOTATION_SORT_VALUES.includes(normalizedSort)) {
+    return badRequest(
+      res,
+      `Invalid sort. Use: ${QUOTATION_SORT_VALUES.join(", ")}`
+    );
+  }
+  const sortQuery = normalizedSort === "oldest" ? { createdAt: 1 } : { createdAt: -1 };
+
+  const [quotations, total] = await Promise.all([
+    Quotation.find(filter)
+      .populate("createdBy", QUOTATION_USER_FIELDS)
+      .populate("approval.submittedBy", QUOTATION_USER_FIELDS)
+      .populate("approval.reviewedBy", QUOTATION_USER_FIELDS)
+      .populate("approval.history.by", QUOTATION_USER_FIELDS)
+      .sort(sortQuery)
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    Quotation.countDocuments(filter),
+  ]);
 
   return success(res, {
     quotations: quotations.map((q) => ({
       ...q,
       approvalStatus: q.approval?.status || "not_submitted",
       workflowStatus: getWorkflowStatus(q),
+      pdfLink: buildQuotationPdfLink(q),
     })),
+    pagination: {
+      page: parsedPage,
+      limit: parsedLimit,
+      total,
+    },
+    filters: {
+      leadId: leadId || null,
+      status: normalizedStatus || null,
+      approvalStatus: normalizedApprovalStatus || null,
+      buildingType: buildingType || null,
+      search: search || null,
+      startDate: startDate || null,
+      endDate: endDate || null,
+      sort: normalizedSort,
+    },
   });
 });
 
@@ -1048,6 +1128,7 @@ exports.getLeadQuotations = asyncHandler(async (req, res) => {
       ...q,
       approvalStatus: q.approval?.status || "not_submitted",
       workflowStatus: getWorkflowStatus(q),
+      pdfLink: buildQuotationPdfLink(q),
     })),
   });
 });

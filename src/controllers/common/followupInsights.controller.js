@@ -245,10 +245,14 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
       }
     }
 
+    const detailLead = shouldAttachTransitionData(req.query)
+      ? { ...lead, transition }
+      : lead
+
     return success(res, {
       kind,
       view,
-      lead,
+      lead: detailLead,
       totals,
       history,
       transition,

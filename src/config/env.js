@@ -93,4 +93,11 @@ module.exports = {
   INVOICE_COMPANY_EMAIL: process.env.INVOICE_COMPANY_EMAIL || "",
   INVOICE_COMPANY_WEBSITE: process.env.INVOICE_COMPANY_WEBSITE || "",
   INVOICE_LOGO_URL: process.env.INVOICE_LOGO_URL || "",
+
+  ADMIN_LOGIN_URL:
+    process.env.ADMIN_LOGIN_URL || "https://admin.storagematerials.org/sign-in/",
+  SALES_LOGIN_URL:
+    process.env.SALES_LOGIN_URL || "https://sales.storagematerials.org/sign-in/",
+  PLANT_LOGIN_URL:
+    process.env.PLANT_LOGIN_URL || "https://plant.storagematerials.org/login",
 };

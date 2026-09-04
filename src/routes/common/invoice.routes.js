@@ -10,7 +10,14 @@ router.get('/stats', [
 router.get('/export', ctrl.exportInvoices)
 router.get('/payment-proofs/pending', ctrl.getPendingPaymentProofs)
 router.get('/approval/pending', ctrl.getPendingInvoiceApprovals)
-router.get('/', ctrl.listInvoices)
+router.get(
+  '/',
+  [
+    query('pending').optional().isIn(['true', 'false', '1', '0', 'yes', 'no', 'y', 'n']),
+  ],
+  validate,
+  ctrl.listInvoices
+)
 router.get('/:invoiceId', ctrl.getInvoice)
 router.put('/:invoiceId', invoiceBodyValidators, validate, ctrl.updateInvoice)
 router.post('/:invoiceId/submit-approval', [body('note').optional().isString()], validate, ctrl.submitInvoiceForApproval)

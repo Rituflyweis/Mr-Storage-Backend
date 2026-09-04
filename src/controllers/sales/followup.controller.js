@@ -651,6 +651,10 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
     const approval = q.approval || {}
     const approvalStatusValue = approval.status || 'not_submitted'
     const workflowStatus = resolveQuotationWorkflowStatus(q)
+    const approvalHistory = Array.isArray(approval.history) ? approval.history : []
+    const latestApprovalEvent = approvalHistory.length
+      ? approvalHistory[approvalHistory.length - 1]
+      : null
     return {
       _id: q._id,
       quoteNumber: q.quoteNumber || "",
@@ -659,6 +663,9 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
       quotationStatus: q.status || 'draft',
       approvalStatus: approvalStatusValue,
       workflowStatus,
+      rejectionReason: approval.rejectionReason || '',
+      approvalMessage: latestApprovalEvent?.note || '',
+      approvalReviewedAt: approval.reviewedAt || null,
       finalPrice: q.finalPrice || 0,
       leadId: q.leadId
         ? { _id: q.leadId._id, projectName: q.leadId.projectName }

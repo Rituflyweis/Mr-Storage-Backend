@@ -9,6 +9,9 @@ const {
   SMTP_USER,
   SMTP_PASS,
   SMTP_MAIL_FROM,
+  ADMIN_LOGIN_URL,
+  SALES_LOGIN_URL,
+  PLANT_LOGIN_URL,
 } = require("../../config/env");
 const { getInvoiceCompany } = require("../../config/invoiceCompany");
 const { computeInvoiceDueDate } = require("../../utils/invoiceDueDate");
@@ -678,9 +681,9 @@ const sendFollowUpNudgeEmail = async ({
 };
 
 const EMPLOYEE_LOGIN_URLS = {
-  admin: "https://admin.storagematerials.org/sign-in/",
-  sales: "https://sales.storagematerials.org/sign-in/",
-  plant: "https://plant.storagematerials.org/login",
+  admin: ADMIN_LOGIN_URL,
+  sales: SALES_LOGIN_URL,
+  plant: PLANT_LOGIN_URL,
 };
 
 const sendEmployeeCredentials = async ({
@@ -692,6 +695,14 @@ const sendEmployeeCredentials = async ({
   const normalizedRole = String(role || "").toLowerCase();
   const loginUrl =
     EMPLOYEE_LOGIN_URLS[normalizedRole] || EMPLOYEE_LOGIN_URLS.admin;
+  const roleLabel =
+    normalizedRole === "admin"
+      ? "Admin"
+      : normalizedRole === "sales"
+        ? "Sales"
+        : normalizedRole === "plant"
+          ? "Plant"
+          : "Employee";
 
   const template = loadTemplate("employee-credentials");
   const html = fillTemplate(template, {
@@ -705,7 +716,7 @@ const sendEmployeeCredentials = async ({
   await transporter.sendMail({
     from: MAIL_FROM,
     to: toEmail,
-    subject: "Your CRM Login Credentials",
+    subject: `Your ${roleLabel} Login Credentials`,
     html,
   });
 };

@@ -34,6 +34,14 @@ const INVOICE_BODY_FIELDS = [
 
 const INVOICE_EDITABLE_STATUSES = ['draft', 'sent']
 const APPROVAL_STATUSES = ['not_submitted', 'pending_approval', 'approved', 'rejected']
+const PENDING_APPROVAL_ALIASES = ['pending', 'pending_approval']
+
+const toBooleanQuery = (value) => {
+  if (value === undefined || value === null) return false
+  if (typeof value === 'boolean') return value
+  const normalized = String(value).trim().toLowerCase()
+  return ['1', 'true', 'yes', 'y'].includes(normalized)
+}
 
 const pushApprovalHistory = (invoice, { status, note = '', by = null, at = new Date() }) => {
   invoice.approval = invoice.approval || {}
@@ -772,13 +780,26 @@ exports.getInvoiceStats = asyncHandler(async (req, res) => {
 })
 
 exports.listInvoices = asyncHandler(async (req, res) => {
-  const { status, approvalStatus, leadId, search, page = 1, limit = 20 } = req.query
+  const { status, approvalStatus, leadId, search, page = 1, limit = 20, pending } = req.query
   const parsedPage = Math.max(1, Number(page) || 1)
   const parsedLimit = Math.min(Math.max(1, Number(limit) || 20), 100)
   const skip = (parsedPage - 1) * parsedLimit
 
-  let resolvedStatus = status
-  let resolvedApprovalStatus = approvalStatus
+  let resolvedStatus = status ? String(status).trim().toLowerCase() : undefined
+  let resolvedApprovalStatus = approvalStatus ? String(approvalStatus).trim().toLowerCase() : undefined
+  const pendingOnly = toBooleanQuery(pending)
+
+  if (PENDING_APPROVAL_ALIASES.includes(resolvedStatus)) {
+    resolvedApprovalStatus = resolvedApprovalStatus || 'pending_approval'
+    resolvedStatus = undefined
+  }
+  if (resolvedApprovalStatus === 'pending') {
+    resolvedApprovalStatus = 'pending_approval'
+  }
+  if (pendingOnly) {
+    resolvedApprovalStatus = 'pending_approval'
+    resolvedStatus = undefined
+  }
 
   // Backward compatibility:
   // some clients send approval workflow values in `status`.
@@ -798,6 +819,7 @@ exports.listInvoices = asyncHandler(async (req, res) => {
   const filter = { ...buildDateFilter(req.query, 'createdAt') }
   if (resolvedStatus) filter.status = resolvedStatus
   if (resolvedApprovalStatus) filter['approval.status'] = resolvedApprovalStatus
+  if (pendingOnly) filter.status = { $nin: ['sent', 'paid', 'cancelled'] }
 
   if (leadIds !== null) {
     if (leadIds.length === 0) {
@@ -849,10 +871,24 @@ exports.listInvoices = asyncHandler(async (req, res) => {
 
 
 exports.exportInvoices = asyncHandler(async (req, res) => {
-  const { format = 'excel', status, approvalStatus, leadId, search } = req.query
+  const { format = 'excel', status, approvalStatus, leadId, search, pending } = req.query
 
-  let resolvedStatus = status
-  let resolvedApprovalStatus = approvalStatus
+  let resolvedStatus = status ? String(status).trim().toLowerCase() : undefined
+  let resolvedApprovalStatus = approvalStatus ? String(approvalStatus).trim().toLowerCase() : undefined
+  const pendingOnly = toBooleanQuery(pending)
+
+  if (PENDING_APPROVAL_ALIASES.includes(resolvedStatus)) {
+    resolvedApprovalStatus = resolvedApprovalStatus || 'pending_approval'
+    resolvedStatus = undefined
+  }
+  if (resolvedApprovalStatus === 'pending') {
+    resolvedApprovalStatus = 'pending_approval'
+  }
+  if (pendingOnly) {
+    resolvedApprovalStatus = 'pending_approval'
+    resolvedStatus = undefined
+  }
+
   if (resolvedStatus && !INVOICE_STATUSES.includes(resolvedStatus) && APPROVAL_STATUSES.includes(resolvedStatus)) {
     resolvedApprovalStatus = resolvedApprovalStatus || resolvedStatus
     resolvedStatus = undefined
@@ -870,6 +906,7 @@ exports.exportInvoices = asyncHandler(async (req, res) => {
   const filter = { ...buildDateFilter(req.query, 'createdAt') }
   if (resolvedStatus) filter.status = resolvedStatus
   if (resolvedApprovalStatus) filter['approval.status'] = resolvedApprovalStatus
+  if (pendingOnly) filter.status = { $nin: ['sent', 'paid', 'cancelled'] }
 
   if (leadIds !== null) {
     if (leadIds.length === 0) {

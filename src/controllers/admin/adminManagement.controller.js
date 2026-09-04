@@ -5,6 +5,16 @@ const mailer = require('../../services/email/mailer')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const EMAIL_SEND_TIMEOUT_MS = 5000
+
+const toBoolean = (value, fallback = false) => {
+  if (value === undefined || value === null) return fallback
+  if (typeof value === 'boolean') return value
+  const normalized = String(value).trim().toLowerCase()
+  if (['1', 'true', 'yes', 'y'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'n'].includes(normalized)) return false
+  return fallback
+}
 
 const getRequester = async (req) =>
   User.findById(req.user._id).select('_id role isMainAdmin name email isActive')
@@ -90,11 +100,10 @@ exports.createAdmin = asyncHandler(async (req, res) => {
   }
   if (department !== undefined) userPayload.department = department
   if (permissions !== undefined) userPayload.permissions = permissions
-  if (isActive !== undefined) userPayload.isActive = Boolean(isActive)
+  if (isActive !== undefined) userPayload.isActive = toBoolean(isActive, true)
 
   const user = await User.create(userPayload)
 
-  const EMAIL_SEND_TIMEOUT_MS = 5000
   let credentialsEmailSent = true
   let credentialsEmailWarning = null
   try {
@@ -189,11 +198,53 @@ exports.updateAdmin = asyncHandler(async (req, res) => {
     changes.permissionsUpdated = true
   }
   if (isActive !== undefined) {
-    if (admin.isMainAdmin && isActive === false) {
+    const nextIsActive = toBoolean(isActive, true)
+    if (admin.isMainAdmin && nextIsActive === false) {
       return badRequest(res, 'Main admin cannot be deactivated')
     }
-    admin.isActive = Boolean(isActive)
-    changes.isActive = Boolean(isActive)
+    admin.isActive = nextIsActive
+    changes.isActive = nextIsActive
+  }
+
+  let credentialsEmailSent = true
+  let credentialsEmailWarning = null
+  if (changes.email) {
+    const tempPassword =
+      Math.random().toString(36).slice(-6) +
+      Math.random().toString(36).slice(-4).toUpperCase()
+    admin.password = await bcrypt.hash(tempPassword, 12)
+    admin.passwordChangedAt = new Date()
+    changes.credentialsRegenerated = true
+
+    try {
+      const emailSendResult = await Promise.race([
+        mailer
+          .sendEmployeeCredentials({
+            toEmail: admin.email,
+            name: admin.name,
+            role: admin.role,
+            tempPassword,
+          })
+          .then(() => ({ ok: true }))
+          .catch((err) => ({ ok: false, err })),
+        new Promise((resolve) =>
+          setTimeout(
+            () => resolve({ ok: false, err: new Error('Updated credentials email timed out') }),
+            EMAIL_SEND_TIMEOUT_MS
+          )
+        ),
+      ])
+
+      if (!emailSendResult?.ok) {
+        credentialsEmailSent = false
+        credentialsEmailWarning = emailSendResult?.err?.message || 'Failed to send updated credentials email'
+        console.error('[AdminManagement] send updated credentials failed:', credentialsEmailWarning)
+      }
+    } catch (err) {
+      credentialsEmailSent = false
+      credentialsEmailWarning = err.message || 'Failed to send updated credentials email'
+      console.error('[AdminManagement] send updated credentials failed:', credentialsEmailWarning)
+    }
   }
 
   await admin.save()
@@ -205,10 +256,18 @@ exports.updateAdmin = asyncHandler(async (req, res) => {
     metadata: {
       adminUserId: String(admin._id),
       changes,
+      credentialsEmailSent,
+      credentialsEmailWarning,
     },
   })
 
-  return success(res, { admin }, 'Admin user updated')
+  return success(
+    res,
+    { admin, credentialsEmailSent, credentialsEmailWarning },
+    credentialsEmailSent
+      ? 'Admin user updated'
+      : 'Admin user updated, but updated credentials email could not be sent'
+  )
 })
 
 exports.toggleAdminStatus = asyncHandler(async (req, res) => {

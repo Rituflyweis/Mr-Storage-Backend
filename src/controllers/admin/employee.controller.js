@@ -16,6 +16,14 @@ const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog, getEmployeesAuditLog } = require('../../services/auditActivity.service')
 const EMPLOYEE_BASE_FILTER = { role: { $ne: 'admin' } }
 const EMAIL_SEND_TIMEOUT_MS = 5000
+const toBoolean = (value, fallback = false) => {
+  if (value === undefined || value === null) return fallback
+  if (typeof value === 'boolean') return value
+  const normalized = String(value).trim().toLowerCase()
+  if (['1', 'true', 'yes', 'y'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'n'].includes(normalized)) return false
+  return fallback
+}
 
 const mapEmployeeLeadRow = (lead) => {
   const jobId = lead.jobId || ''
@@ -130,7 +138,7 @@ exports.getAllEmployees = asyncHandler(async (req, res) => {
 })
 
 exports.createEmployee = asyncHandler(async (req, res) => {
-  const { name, email, phone, role, password, department, permissions } = req.body
+  const { name, email, phone, role, password, department, permissions, isActive } = req.body
   if (String(role || '').toLowerCase() === 'admin') {
     const requester = await requireMainAdminForAdminMutation(req, res)
     if (!requester) return
@@ -151,6 +159,7 @@ exports.createEmployee = asyncHandler(async (req, res) => {
   }
   if (department !== undefined) userPayload.department = department
   if (permissions !== undefined) userPayload.permissions = permissions
+  if (isActive !== undefined) userPayload.isActive = toBoolean(isActive, true)
 
   const user = await User.create(userPayload)
 
@@ -281,13 +290,14 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER })
   if (!employee) return notFound(res, 'Employee not found')
   const nextRole = role !== undefined ? String(role).toLowerCase() : undefined
+  const normalizedIsActive = isActive !== undefined ? toBoolean(isActive, employee.isActive) : undefined
   if (employee.role === 'admin' || nextRole === 'admin') {
     const requester = await requireMainAdminForAdminMutation(req, res)
     if (!requester) return
     if (employee.isMainAdmin && nextRole && nextRole !== 'admin') {
       return badRequest(res, 'Main admin role cannot be changed')
     }
-    if (employee.isMainAdmin && isActive === false) {
+    if (employee.isMainAdmin && normalizedIsActive === false) {
       return badRequest(res, 'Main admin cannot be deactivated')
     }
   }
@@ -310,16 +320,56 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   if (nextEmail !== undefined)  employee.email      = nextEmail
   if (phone !== undefined)      employee.phone      = phone
   if (role !== undefined)       employee.role       = role
-  if (isActive !== undefined)   employee.isActive   = isActive
+  if (normalizedIsActive !== undefined) employee.isActive = normalizedIsActive
   if (department !== undefined) employee.department = department
   if (permissions !== undefined) employee.permissions = permissions
+
+  let credentialsEmailSent = true
+  let credentialsEmailWarning = null
+  if (nextEmail !== undefined && nextEmail !== prevEmail) {
+    const tempPassword =
+      Math.random().toString(36).slice(-6) +
+      Math.random().toString(36).slice(-4).toUpperCase()
+    employee.password = await bcrypt.hash(tempPassword, 12)
+    employee.passwordChangedAt = new Date()
+
+    try {
+      const emailSendResult = await Promise.race([
+        mailer
+          .sendEmployeeCredentials({
+            toEmail: nextEmail,
+            name: employee.name,
+            role: employee.role,
+            tempPassword,
+          })
+          .then(() => ({ ok: true }))
+          .catch((err) => ({ ok: false, err })),
+        new Promise((resolve) =>
+          setTimeout(
+            () => resolve({ ok: false, err: new Error('Updated credentials email timed out') }),
+            EMAIL_SEND_TIMEOUT_MS
+          )
+        ),
+      ])
+
+      if (!emailSendResult?.ok) {
+        credentialsEmailSent = false
+        credentialsEmailWarning = emailSendResult?.err?.message || 'Failed to send updated credentials email'
+        console.error('[Employee] updated credentials email failed:', credentialsEmailWarning)
+      }
+    } catch (err) {
+      credentialsEmailSent = false
+      credentialsEmailWarning = err.message || 'Failed to send updated credentials email'
+      console.error('[Employee] updated credentials email failed:', credentialsEmailWarning)
+    }
+  }
 
   await employee.save()
 
   // Rebuild tracker if sales-relevant fields changed
   const salesRelevantChange =
     (role !== undefined && role !== prevRole) ||
-    (isActive !== undefined && isActive !== prevActive)
+    (normalizedIsActive !== undefined && normalizedIsActive !== prevActive)
 
   if (salesRelevantChange) await roundRobinService.rebuildTracker()
 
@@ -327,10 +377,21 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
     type: 'user',
     action: AUDIT_ACTIONS.USER_UPDATED,
     performedBy: req.user._id,
-    metadata: { userId, changes: { name, email: nextEmail, phone, role, isActive } },
+    metadata: {
+      userId,
+      changes: { name, email: nextEmail, phone, role, isActive: employee.isActive },
+      credentialsEmailSent,
+      credentialsEmailWarning,
+    },
   })
 
-  return success(res, { employee })
+  return success(
+    res,
+    { employee, credentialsEmailSent, credentialsEmailWarning },
+    credentialsEmailSent
+      ? 'Employee updated successfully'
+      : 'Employee updated, but updated credentials email could not be sent'
+  )
 })
 
 exports.getEmployeeAssignedLeads = asyncHandler(async (req, res) => {

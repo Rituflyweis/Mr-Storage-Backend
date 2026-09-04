@@ -126,6 +126,16 @@ Rules:
 
 Optional query:
 - `leadId`
+- `status` (`draft | pending_approval | approved | rejected | sent`)
+- `approvalStatus` (`not_submitted | pending_approval | approved | rejected`)
+- `startDate`, `endDate`
+- `search` (quote number search)
+- `page`, `limit`
+
+Current behavior:
+
+- Returns all quotation states by default (not only pending), newest first.
+- Use `status` / `approvalStatus` for filtering.
 
 ---
 
@@ -172,6 +182,9 @@ Sales quotation list endpoint alignment:
   - `approvalStatus` = raw approval state
   - `workflowStatus` = same workflow-aware state
   - `quotationStatus` = raw quotation model status (`draft | sent | accepted | rejected`)
+  - `rejectionReason` = value from `approval.rejectionReason`
+  - `approvalMessage` = latest note from `approval.history`
+  - `approvalReviewedAt` = review timestamp when approved/rejected
 
 Single quotation responses now also include:
 

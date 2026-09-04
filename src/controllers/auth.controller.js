@@ -7,6 +7,8 @@ const asyncHandler = require('../utils/asyncHandler')
 const { sendOtp } = require('../services/email/mailer')
 
 const OTP_EXPIRY_MINUTES = 10
+const DEACTIVATED_ACCOUNT_MESSAGE =
+  'Your account is deactivated. Please email to info@steelbuildingdepot.com'
 
 const signAccess = (user) =>
   jwt.sign({ _id: user._id, email: user.email, role: user.role, name: user.name }, env.JWT_ACCESS_SECRET, {
@@ -23,7 +25,7 @@ exports.login = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password')
   if (!user) return unauthorized(res, 'Invalid credentials')
-  if (!user.isActive) return unauthorized(res, 'Account is deactivated')
+  if (!user.isActive) return unauthorized(res, DEACTIVATED_ACCOUNT_MESSAGE)
 
   const match = await bcrypt.compare(password, user.password)
   if (!match) return unauthorized(res, 'Invalid credentials')
@@ -35,7 +37,13 @@ exports.login = asyncHandler(async (req, res) => {
     accessToken,
     refreshToken,
     role: user.role,
-    user: { _id: user._id, name: user.name, email: user.email, role: user.role },
+    user: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isMainAdmin: user.role === 'admin' ? Boolean(user.isMainAdmin) : false,
+    },
   })
 })
 
@@ -99,7 +107,7 @@ exports.verifyOtp = asyncHandler(async (req, res) => {
   if (!user || !user.resetOtp || !user.resetOtpExpiry)
     return badRequest(res, 'Invalid or expired OTP')
 
-  if (!user.isActive) return unauthorized(res, 'Account is deactivated')
+  if (!user.isActive) return unauthorized(res, DEACTIVATED_ACCOUNT_MESSAGE)
 
   if (new Date() > user.resetOtpExpiry)
     return badRequest(res, 'OTP has expired. Please request a new one')
@@ -138,7 +146,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 
   const user = await User.findById(decoded._id).select('+password')
   if (!user || !user.resetOtpVerified) return badRequest(res, 'OTP not verified. Please start over')
-  if (!user.isActive) return unauthorized(res, 'Account is deactivated')
+  if (!user.isActive) return unauthorized(res, DEACTIVATED_ACCOUNT_MESSAGE)
 
   user.password = await bcrypt.hash(newPassword, 12)
   user.passwordChangedAt = new Date()
@@ -155,7 +163,7 @@ exports.changePassword = asyncHandler(async (req, res) => {
 
   const user = await User.findById(req.user._id).select('+password')
   if (!user) return unauthorized(res)
-  if (!user.isActive) return unauthorized(res, 'Account is deactivated')
+  if (!user.isActive) return unauthorized(res, DEACTIVATED_ACCOUNT_MESSAGE)
 
   const match = await bcrypt.compare(currentPassword, user.password)
   if (!match) return badRequest(res, 'Current password is incorrect')
