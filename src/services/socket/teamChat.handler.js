@@ -1,19 +1,46 @@
+const mongoose = require('mongoose')
 const TeamMessage = require('../../models/TeamMessage')
 const { buildDirectKey } = require('../../models/TeamMessage')
+const TeamGroup = require('../../models/TeamGroup')
 
-const roomFor = (channelType, channelId, myId) =>
-  channelType === 'department' ? `team_dept:${channelId}` : `team_direct:${buildDirectKey(myId, channelId)}`
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id)
+
+const roomFor = (channelType, channelId, myId) => {
+  if (channelType === 'department') return `team_dept:${channelId}`
+  if (channelType === 'group') return `team_group:${channelId}`
+  return `team_direct:${buildDirectKey(myId, channelId)}`
+}
+
+const CHANNEL_TYPES = ['department', 'direct', 'group']
+const MAX_ATTACHMENTS = 10
+
+const sanitizeAttachments = (attachments) => {
+  if (!Array.isArray(attachments)) return []
+  return attachments
+    .filter((a) => a && typeof a.url === 'string' && a.url.trim())
+    .slice(0, MAX_ATTACHMENTS)
+    .map((a) => ({ url: a.url.trim(), name: (a.name || '').trim(), type: (a.type || '').trim() }))
+}
 
 const teamChatHandler = (socket, adminNS) => {
   const myId = socket.user._id
 
-  socket.on('join_team_channel', ({ channelType, channelId }) => {
-    if (!['department', 'direct'].includes(channelType) || !channelId) return
-    socket.join(roomFor(channelType, channelId, myId))
+  socket.on('join_team_channel', async ({ channelType, channelId }) => {
+    if (!CHANNEL_TYPES.includes(channelType) || !channelId) return
+    try {
+      if (channelType === 'group') {
+        if (!isValidObjectId(channelId)) return
+        const group = await TeamGroup.findById(channelId).select('members').lean()
+        if (!group || !group.members.some((m) => String(m) === String(myId))) return
+      }
+      socket.join(roomFor(channelType, channelId, myId))
+    } catch (err) {
+      console.error('[TeamChatHandler] join_team_channel error:', err.message)
+    }
   })
 
   socket.on('leave_team_channel', ({ channelType, channelId }) => {
-    if (!['department', 'direct'].includes(channelType) || !channelId) return
+    if (!CHANNEL_TYPES.includes(channelType) || !channelId) return
     socket.leave(roomFor(channelType, channelId, myId))
   })
 
@@ -27,8 +54,9 @@ const teamChatHandler = (socket, adminNS) => {
     socket.to(roomFor(channelType, channelId, myId)).emit('team_typing', { isTyping: false })
   })
 
-  socket.on('team_message', async ({ channelType, channelId, content }) => {
-    if (!['department', 'direct'].includes(channelType) || !channelId || !content?.trim()) return
+  socket.on('team_message', async ({ channelType, channelId, content, attachments }) => {
+    const cleanAttachments = sanitizeAttachments(attachments)
+    if (!CHANNEL_TYPES.includes(channelType) || !channelId || (!content?.trim() && !cleanAttachments.length)) return
 
     try {
       const doc = {
@@ -36,12 +64,25 @@ const teamChatHandler = (socket, adminNS) => {
         senderId: myId,
         senderName: socket.user.name || '',
         senderRole: socket.user.role || '',
-        content: content.trim(),
+        content: content?.trim() || '',
+        attachments: cleanAttachments,
         readBy: [myId],
       }
 
       if (channelType === 'department') {
         doc.department = channelId
+      } else if (channelType === 'group') {
+        if (!isValidObjectId(channelId)) {
+          socket.emit('team_chat_error', { message: 'Invalid group id' })
+          return
+        }
+        const group = await TeamGroup.findById(channelId).select('members isActive').lean()
+        if (!group || !group.isActive || !group.members.some((m) => String(m) === String(myId))) {
+          socket.emit('team_chat_error', { message: 'Not a member of this group' })
+          return
+        }
+        doc.groupId = channelId
+        doc.participants = group.members
       } else {
         doc.directKey = buildDirectKey(myId, channelId)
         doc.participants = [myId, channelId]
@@ -51,7 +92,13 @@ const teamChatHandler = (socket, adminNS) => {
       adminNS.to(roomFor(channelType, channelId, myId)).emit('new_team_message', message)
 
       if (channelType === 'direct') {
-        adminNS.to(`user:${channelId}`).emit('new_team_dm_notice', { fromUserId: myId, fromName: socket.user.name, content: content.trim() })
+        adminNS.to(`user:${channelId}`).emit('new_team_dm_notice', { fromUserId: myId, fromName: socket.user.name, content: content?.trim() || '' })
+      } else if (channelType === 'group') {
+        for (const memberId of doc.participants) {
+          if (String(memberId) !== String(myId)) {
+            adminNS.to(`user:${memberId}`).emit('new_team_group_message_notice', { groupId: channelId, fromName: socket.user.name, content: content?.trim() || '' })
+          }
+        }
       }
     } catch (err) {
       console.error('[TeamChatHandler] team_message error:', err.message)

@@ -14,7 +14,7 @@ const {
 } = require('../../utils/escalationLeadRow')
 
 exports.getAllEscalations = asyncHandler(async (req, res) => {
-  const { status, assignedSales, page = 1, limit = 20 } = req.query
+  const { status, assignedSales, search, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
   const filter = { ...dateFilter }
 
@@ -22,6 +22,18 @@ exports.getAllEscalations = asyncHandler(async (req, res) => {
   if (assignedSales) {
     const leadIds = await Lead.find({ assignedSales }).distinct('_id')
     filter.leadId = { $in: leadIds }
+  }
+  if (search?.trim()) {
+    // Escalation itself has no name/text field — the searchable content (project/customer) lives
+    // on the populated Lead, so resolve matching leadIds first.
+    const term = search.trim()
+    const matchingLeads = await Lead.find({
+      $or: [{ projectName: { $regex: term, $options: 'i' } }, { jobId: { $regex: term, $options: 'i' } }],
+    }).select('_id').lean()
+    const searchLeadIds = matchingLeads.map((l) => l._id)
+    filter.leadId = filter.leadId
+      ? { $in: filter.leadId.$in.filter((id) => searchLeadIds.some((s) => String(s) === String(id))) }
+      : { $in: searchLeadIds }
   }
 
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)

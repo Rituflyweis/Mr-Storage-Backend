@@ -90,7 +90,8 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))
   const skip = (page - 1) * limit
 
-  const leadIds = await getScopedLeadIds(req)
+  let leadIds = await getScopedLeadIds(req)
+  if (req.query.projectId) leadIds = leadIds.filter((id) => String(id) === String(req.query.projectId))
   if (!leadIds.length) {
     return success(res, { projects: [], total: 0, page, limit })
   }
@@ -106,6 +107,9 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
     .populate(LEAD_PROJECT_LIST_POPULATE)
     .lean()
   const leadMap = new Map(leads.map((l) => [String(l._id), l]))
+
+  const searchTerm = req.query.search?.trim().toLowerCase()
+  const statusFilter = req.query.status
 
   const rows = latestJobs
     .map((job) => {
@@ -125,6 +129,8 @@ exports.getBOMProjectList = asyncHandler(async (req, res) => {
       }
     })
     .filter(Boolean)
+    .filter((row) => !searchTerm || row.projectName.toLowerCase().includes(searchTerm) || row.projectId.toLowerCase().includes(searchTerm))
+    .filter((row) => !statusFilter || row.fileStatus === statusFilter)
     .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime())
 
   const total = rows.length

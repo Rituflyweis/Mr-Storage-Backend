@@ -4,6 +4,7 @@ const Customer = require('../../models/Customer')
 const PaymentSchedule = require('../../models/PaymentSchedule')
 const mailer = require('../../services/email/mailer')
 const auditService = require('../../services/audit.service')
+const notificationService = require('../../services/notification.service')
 const generateInvoiceNumber = require('../../utils/generateInvoiceNumber')
 const generatePONumber = require('../../utils/generatePONumber')
 const { success, created, notFound, badRequest, forbidden, error } = require('../../utils/apiResponse')
@@ -632,6 +633,19 @@ exports.markAsPaid = asyncHandler(async (req, res) => {
       paidByName: req.user.name,
     },
   })
+
+  if (invoice.customerId) {
+    await notificationService.notify({
+      customerId: invoice.customerId,
+      leadId: invoice.leadId,
+      title: 'Payment received',
+      body: `Invoice ${invoice.invoiceNumber} for $${invoice.totalAmount?.toLocaleString() || invoice.totalAmount} has been marked as paid.`,
+      type: 'payment',
+      priority: 'low',
+      refId: invoice._id,
+      refModel: 'Invoice',
+    })
+  }
 
   return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Invoice marked as paid')
 })

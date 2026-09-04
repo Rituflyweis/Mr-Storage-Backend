@@ -78,6 +78,18 @@ router.get('/:requestId/comparison-results',
   ctrl.getShipperComparisonResults
 )
 
+router.get('/:requestId/comparison-report/export',
+  [param('requestId').isMongoId()],
+  validate,
+  ctrl.exportComparisonReport
+)
+
+router.post('/:requestId/comparison-report/send',
+  [param('requestId').isMongoId(), body('email').isEmail()],
+  validate,
+  ctrl.emailComparisonReport
+)
+
 router.post('/:requestId/bundle-plan/generate',
   [param('requestId').isMongoId()],
   validate,

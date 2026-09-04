@@ -875,6 +875,34 @@ const sendShipperRejectionEmail = async ({
   });
 };
 
+// "Send Report to the Shippers" — plant panel Order Verification screen. Recipient is typed in
+// freely (may not be the vendor's own email), so this builds inline HTML rather than pulling
+// vendor context from a template.
+const sendComparisonReportEmail = async ({ toEmail, projectName, jobId, summary, excelBuffer }) => {
+  const rows = [
+    ['Matched Items', summary?.matchedItems ?? 0],
+    ['Missing Items', summary?.missingItems ?? 0],
+    ['Extra Items', summary?.extraItems ?? 0],
+  ]
+  const html = `
+    <p>Order verification comparison report for <strong>${projectName || 'Project'}</strong> (${jobId || ''}).</p>
+    <table cellpadding="6" style="border-collapse:collapse">
+      ${rows.map(([label, val]) => `<tr><td style="border:1px solid #ddd">${label}</td><td style="border:1px solid #ddd">${val}</td></tr>`).join('')}
+    </table>
+    <p>See the attached Excel report for full line-item detail.</p>
+  `
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: toEmail,
+    subject: `Order Verification Report: ${projectName || 'Project'}`,
+    html,
+    attachments: excelBuffer
+      ? [{ filename: `comparison-report-${jobId || 'report'}.xlsx`, content: excelBuffer }]
+      : [],
+  })
+}
+
 const sendShipperResubmitRequestEmail = async ({
   toEmail,
   vendorName,
@@ -1233,6 +1261,7 @@ module.exports = {
   sendShipperApprovalEmail,
   sendShipperRejectionEmail,
   sendShipperResubmitRequestEmail,
+  sendComparisonReportEmail,
   sendFreightBidRequestEmail,
   sendFreightBidResubmitRequestEmail,
   sendFreightBidAwardedEmail,

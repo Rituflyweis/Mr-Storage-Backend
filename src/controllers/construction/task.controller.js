@@ -6,15 +6,25 @@ const Milestone = require('../../models/Milestone')
 const ProjectStepDetail = require('../../models/ProjectStepDetail')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const notificationService = require('../../services/notification.service')
 
 exports.getTasks = asyncHandler(async (req, res) => {
-  const { leadId, status, priority, assignedTo, page = 1, limit = 50 } = req.query
+  const { leadId, status, priority, assignedTo, search, startDate, endDate, page = 1, limit = 50 } = req.query
 
   const filter = {}
   if (leadId) filter.leadId = leadId
   if (status) filter.status = status
   if (priority) filter.priority = priority
   if (assignedTo) filter.assignedTo = assignedTo
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ title: regex }, { description: regex }]
+  }
+  if (startDate || endDate) {
+    filter.dueDate = {}
+    if (startDate) filter.dueDate.$gte = new Date(startDate)
+    if (endDate) filter.dueDate.$lte = new Date(endDate)
+  }
 
   const skip = (Number(page) - 1) * Number(limit)
   const [tasks, total] = await Promise.all([
@@ -45,7 +55,7 @@ exports.getTasks = asyncHandler(async (req, res) => {
 })
 
 exports.createTask = asyncHandler(async (req, res) => {
-  const { title, description, leadId, assignedTo, priority, status, dueDate } = req.body
+  const { title, description, leadId, assignedTo, priority, status, dueDate, attachments } = req.body
   if (!title || !leadId) return badRequest(res, 'title and leadId are required')
 
   const lead = await Lead.findById(leadId).select('_id').lean()
@@ -60,12 +70,26 @@ exports.createTask = asyncHandler(async (req, res) => {
     priority: priority || 'medium',
     status: status || 'todo',
     dueDate: dueDate || null,
+    attachments: Array.isArray(attachments) ? attachments : [],
   })
 
   const populated = await Task.findById(task._id)
     .populate('leadId', 'projectName jobId')
     .populate('assignedTo', 'name email')
     .lean()
+
+  if (task.assignedTo) {
+    await notificationService.notify({
+      userId: task.assignedTo,
+      leadId: task.leadId,
+      title: 'New task assigned',
+      body: `"${task.title}" on ${populated.leadId?.projectName || 'a project'}${task.dueDate ? ` — due ${new Date(task.dueDate).toLocaleDateString()}` : ''}`,
+      type: 'task',
+      priority: task.priority === 'high' ? 'high' : 'medium',
+      refId: task._id,
+      refModel: 'Task',
+    })
+  }
 
   return success(res, { task: populated }, 'Task created')
 })
@@ -74,7 +98,8 @@ exports.updateTask = asyncHandler(async (req, res) => {
   const task = await Task.findById(req.params.taskId)
   if (!task) return notFound(res, 'Task not found')
 
-  const { title, description, assignedTo, priority, status, dueDate, notes } = req.body
+  const { title, description, assignedTo, priority, status, dueDate, notes, attachments } = req.body
+  const previousAssignedTo = task.assignedTo ? String(task.assignedTo) : null
 
   if (title !== undefined) task.title = title
   if (description !== undefined) task.description = description
@@ -82,6 +107,7 @@ exports.updateTask = asyncHandler(async (req, res) => {
   if (priority !== undefined) task.priority = priority
   if (notes !== undefined) task.notes = notes
   if (dueDate !== undefined) task.dueDate = dueDate || null
+  if (attachments !== undefined) task.attachments = Array.isArray(attachments) ? attachments : []
   if (status !== undefined) {
     task.status = status
     if (status === 'done' && !task.completedAt) task.completedAt = new Date()
@@ -94,6 +120,20 @@ exports.updateTask = asyncHandler(async (req, res) => {
     .populate('leadId', 'projectName jobId')
     .populate('assignedTo', 'name email')
     .lean()
+
+  const nowAssignedTo = task.assignedTo ? String(task.assignedTo) : null
+  if (nowAssignedTo && nowAssignedTo !== previousAssignedTo) {
+    await notificationService.notify({
+      userId: task.assignedTo,
+      leadId: task.leadId,
+      title: 'Task reassigned to you',
+      body: `"${task.title}" on ${populated.leadId?.projectName || 'a project'}`,
+      type: 'task',
+      priority: task.priority === 'high' ? 'high' : 'medium',
+      refId: task._id,
+      refModel: 'Task',
+    })
+  }
 
   return success(res, { task: populated }, 'Task updated')
 })
@@ -237,7 +277,7 @@ exports.updateMilestone = asyncHandler(async (req, res) => {
   return success(res, { milestone }, 'Milestone updated')
 })
 
-const STEP_KEYS = ['design', 'fabrication', 'dispatch', 'install', 'complete']
+const { STEP_KEYS } = ProjectStepDetail
 
 // PUT /projects/:leadId/steps/:stepKey — "Current Step Details" panel on the customer's Project Tracking tab
 exports.updateProjectStep = asyncHandler(async (req, res) => {

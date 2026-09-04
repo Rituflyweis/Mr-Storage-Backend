@@ -1,8 +1,11 @@
 const MaterialRequest = require('../../models/MaterialRequest')
+const { MR_STATUSES, MR_PRIORITIES } = require('../../models/MaterialRequest')
 const OrderQuotation = require('../../models/OrderQuotation')
 const Delivery = require('../../models/Delivery')
+const Lead = require('../../models/Lead')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const notificationService = require('../../services/notification.service')
 const generateMaterialRequestId = require('../../utils/generateMaterialRequestId')
 const generateOrderQuotationNumber = require('../../utils/generateOrderQuotationNumber')
 
@@ -25,13 +28,16 @@ const mapRow = (mr) => ({
 })
 
 exports.getMaterialRequests = asyncHandler(async (req, res) => {
-  const { leadId, department, status, requestedBy, dateFrom, dateTo, page = 1, limit = 20 } = req.query
+  const { leadId, department, status, requestedBy, priority, siteLocation, search, dateFrom, dateTo, page = 1, limit = 20 } = req.query
 
   const filter = {}
   if (leadId) filter.leadId = leadId
   if (department) filter.department = department
   if (status) filter.status = status
   if (requestedBy) filter.requestedBy = requestedBy
+  if (priority) filter.priority = priority
+  if (siteLocation) filter.siteLocation = siteLocation
+  if (search?.trim()) filter.requestId = { $regex: search.trim(), $options: 'i' }
   if (dateFrom || dateTo) {
     filter.requestDate = {}
     if (dateFrom) filter.requestDate.$gte = new Date(dateFrom)
@@ -58,6 +64,27 @@ exports.getMaterialRequests = asyncHandler(async (req, res) => {
   }
 
   return success(res, { materialRequests: rows.map(mapRow), total, stats })
+})
+
+// GET /material-requests/filters — populates the Apply Filters screen's dropdowns
+exports.getMaterialRequestFilters = asyncHandler(async (req, res) => {
+  const [leadIds, siteLocations, departments] = await Promise.all([
+    MaterialRequest.distinct('leadId'),
+    MaterialRequest.distinct('siteLocation', { siteLocation: { $nin: ['', null] } }),
+    MaterialRequest.distinct('department', { department: { $nin: ['', null] } }),
+  ])
+
+  const projects = leadIds.length
+    ? await Lead.find({ _id: { $in: leadIds } }).select('projectName jobId').sort({ projectName: 1 }).lean()
+    : []
+
+  return success(res, {
+    statuses: MR_STATUSES,
+    priorities: MR_PRIORITIES,
+    departments,
+    siteLocations,
+    projects: projects.map((p) => ({ leadId: p._id, projectName: p.projectName, jobId: p.jobId })),
+  })
 })
 
 exports.getMaterialRequest = asyncHandler(async (req, res) => {
@@ -104,6 +131,19 @@ exports.updateMaterialRequestStatus = asyncHandler(async (req, res) => {
   mr.reviewedAt = new Date()
   if (reviewNotes) mr.reviewNotes = reviewNotes
   await mr.save()
+
+  if (mr.requestedBy && ['approved', 'rejected', 'fulfilled'].includes(status)) {
+    await notificationService.notify({
+      userId: mr.requestedBy,
+      leadId: mr.leadId,
+      title: `Material request ${status}`,
+      body: `Request ${mr.requestId || mr._id} was ${status}${reviewNotes ? `: ${reviewNotes}` : '.'}`,
+      type: 'material_request',
+      priority: status === 'rejected' ? 'high' : 'medium',
+      refId: mr._id,
+      refModel: 'MaterialRequest',
+    })
+  }
 
   return success(res, { requestId: mr._id, status: mr.status }, 'Material request updated')
 })

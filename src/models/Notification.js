@@ -1,6 +1,9 @@
 const mongoose = require('mongoose')
 
-const NOTIFICATION_TYPES = ['lead', 'task', 'meeting', 'escalation', 'payment', 'system', 'drawing', 'delivery', 'followup']
+const NOTIFICATION_TYPES = [
+  'lead', 'task', 'meeting', 'escalation', 'payment', 'system', 'drawing', 'delivery', 'followup',
+  'material_request', 'quotation', 'invoice', 'freight_bid', 'chat',
+]
 const NOTIFICATION_PRIORITIES = ['high', 'medium', 'low']
 
 const NotificationSchema = new mongoose.Schema(
@@ -23,3 +26,5 @@ NotificationSchema.index({ userId: 1, createdAt: -1 })
 NotificationSchema.index({ customerId: 1, createdAt: -1 })
 
 module.exports = mongoose.model('Notification', NotificationSchema)
+module.exports.NOTIFICATION_TYPES = NOTIFICATION_TYPES
+module.exports.NOTIFICATION_PRIORITIES = NOTIFICATION_PRIORITIES

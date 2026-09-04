@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body } = require('express-validator')
+const { body, query } = require('express-validator')
 const ctrl = require('../../controllers/admin/financial.controller')
 const validate = require('../../middleware/validate')
 
@@ -9,22 +9,80 @@ router.get('/per-project',    ctrl.getPerProject)
 router.get('/invoice-aging',  ctrl.getInvoiceAging)
 
 // Payments Dashboard
-router.get('/payments-dashboard', ctrl.getPaymentsDashboard)
+router.get('/payments-dashboard',        ctrl.getPaymentsDashboard)
+router.get('/payments-dashboard/export', ctrl.exportPaymentsDashboard)
 
 // Tax & Filling
-router.get('/tax-filing',              ctrl.getTaxFiling)
+const taxFilingListQuery = [
+  query('projectId').optional({ checkFalsy: true }).isMongoId(),
+  query('clientId').optional({ checkFalsy: true }).isMongoId(),
+  query('startDate').optional({ checkFalsy: true }).isISO8601(),
+  query('endDate').optional({ checkFalsy: true }).isISO8601(),
+  query('search').optional().trim(),
+]
+router.get('/tax-filing',              taxFilingListQuery, validate, ctrl.getTaxFiling)
+router.get('/tax-filing/stats',
+  [
+    query('projectId').optional({ checkFalsy: true }).isMongoId(),
+    query('clientId').optional({ checkFalsy: true }).isMongoId(),
+    query('search').optional().trim(),
+  ],
+  validate,
+  ctrl.getTaxFilingStats
+)
+router.get('/tax-filing/filters',      ctrl.getTaxFilingFilters)
+router.get('/tax-filing/export',       taxFilingListQuery, validate, ctrl.exportTaxFiling)
 router.get('/tax-filing/:taxId/prepare', ctrl.prepareFiling)
 router.put('/tax-filing/:taxId/file',  ctrl.completeFiling)
 
 // State Wise Tax
-router.get('/state-wise-tax',   ctrl.getStateWiseTax)
+const stateWiseTaxQuery = [
+  query('projectId').optional({ checkFalsy: true }).isMongoId(),
+  query('startDate').optional({ checkFalsy: true }).isISO8601(),
+  query('endDate').optional({ checkFalsy: true }).isISO8601(),
+]
+router.get('/state-wise-tax',                    stateWiseTaxQuery, validate, ctrl.getStateWiseTax)
+router.get('/state-wise-tax/stats',               stateWiseTaxQuery, validate, ctrl.getStateWiseTaxStats)
+router.get('/state-wise-tax/export',              stateWiseTaxQuery, validate, ctrl.exportStateWiseTax)
+router.get('/state-wise-tax/upcoming-deadlines',
+  [
+    query('projectId').optional({ checkFalsy: true }).isMongoId(),
+    query('limit').optional({ checkFalsy: true }).isInt({ min: 1, max: 50 }),
+  ],
+  validate,
+  ctrl.getUpcomingFilingDeadlines
+)
 router.post('/state-wise-tax/sync', ctrl.syncStateTax)
 
 // Project Wise Tax
-router.get('/project-wise-tax', ctrl.getProjectWiseTax)
+const projectWiseTaxQuery = [
+  query('projectId').optional({ checkFalsy: true }).isMongoId(),
+  query('startDate').optional({ checkFalsy: true }).isISO8601(),
+  query('endDate').optional({ checkFalsy: true }).isISO8601(),
+]
+router.get('/project-wise-tax',
+  [...projectWiseTaxQuery, query('page').optional({ checkFalsy: true }).isInt({ min: 1 }), query('limit').optional({ checkFalsy: true }).isInt({ min: 1, max: 200 })],
+  validate,
+  ctrl.getProjectWiseTax
+)
+router.get('/project-wise-tax/stats',  projectWiseTaxQuery, validate, ctrl.getProjectWiseTaxStats)
+router.get('/project-wise-tax/export', projectWiseTaxQuery, validate, ctrl.exportProjectWiseTax)
 
 // Payment Approvals
-router.get('/payment-approvals', ctrl.getPaymentApprovals)
+const paymentApprovalQuery = [
+  query('status').optional({ checkFalsy: true }).isIn(['pending', 'under_review', 'approved', 'disputed', 'rejected']),
+  query('category').optional({ checkFalsy: true }).isIn(['vendor_payment', 'shipper_payment', 'equipment', 'other_expenses']),
+  query('requestedBy').optional({ checkFalsy: true }).isMongoId(),
+  query('startDate').optional({ checkFalsy: true }).isISO8601(),
+  query('endDate').optional({ checkFalsy: true }).isISO8601(),
+]
+router.get('/payment-approvals',
+  [...paymentApprovalQuery, query('page').optional({ checkFalsy: true }).isInt({ min: 1 }), query('limit').optional({ checkFalsy: true }).isInt({ min: 1, max: 200 })],
+  validate,
+  ctrl.getPaymentApprovals
+)
+router.get('/payment-approvals/filters', ctrl.getPaymentApprovalFilters)
+router.get('/payment-approvals/export', paymentApprovalQuery, validate, ctrl.exportPaymentApprovals)
 router.post('/payment-approvals',
   [body('payee').notEmpty(), body('category').notEmpty(), body('amount').isNumeric()],
   validate,
@@ -37,7 +95,17 @@ router.put('/payment-approvals/:approvalId/review',
 )
 
 // Payment Status
-router.get('/payment-status', ctrl.getPaymentStatus)
+const paymentStatusQuery = [
+  query('paymentMethod').optional({ checkFalsy: true }).isIn(['cash', 'bank_transfer', 'credit_card', 'upi', 'cheque', 'other']),
+  query('status').optional({ checkFalsy: true }).isIn(['draft', 'sent', 'paid', 'overdue', 'cancelled']),
+  query('search').optional().trim(),
+]
+router.get('/payment-status',
+  [...paymentStatusQuery, query('page').optional({ checkFalsy: true }).isInt({ min: 1 }), query('limit').optional({ checkFalsy: true }).isInt({ min: 1, max: 200 })],
+  validate,
+  ctrl.getPaymentStatus
+)
+router.get('/payment-status/export', paymentStatusQuery, validate, ctrl.exportPaymentStatus)
 
 // Financial Overview sub-pages
 router.get('/financial-overview', ctrl.getFinancialOverview)

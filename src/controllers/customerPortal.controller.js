@@ -35,8 +35,14 @@ const bcrypt = require('bcryptjs')
 const env = require('../config/env')
 const generateMaterialRequestId = require('../utils/generateMaterialRequestId')
 const auditService = require('../services/audit.service')
+const notificationService = require('../services/notification.service')
 const { syncLeadBuildings } = require('../services/leadBuilding.service')
-const { AUDIT_ACTIONS } = require('../config/constants')
+const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
+// Granular fulfillment steps (material_prepared -> ... -> dispatched_to_site) all read as
+// "in transit" to the customer, same as before this sub-flow existed.
+const CUSTOMER_IN_TRANSIT_STATUSES = new Set([
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'dispatched_to_site',
+])
 const { enrichLeadDocument } = require('../utils/leadProjectId')
 
 const s3 = new S3Client({
@@ -49,26 +55,39 @@ const s3 = new S3Client({
 
 const CLOSED_STAGES = ['payment_done', 'delivered']
 
-// "Project Steps" stepper (Design -> Fabrication -> Dispatch -> Install -> Complete) shown on
-// the Project Details / Dashboard screens. Maps the 21 granular sales+plant lifecycle stages
-// down to these 5 customer-facing buckets. NOTE: nothing in the data model marks a project
-// "Complete" beyond delivery — there is no separate installation/closure stage or flag today —
-// so the Install bucket becomes "in_progress" once delivered and Complete stays "pending"
-// until that gap is closed with a real signal.
-const PROJECT_STEP_DEFS = [
-  {
-    key: 'design', label: 'Design',
-    stages: [
-      'initial_contact', 'requirements_gathered', 'proposal_sent', 'negotiation', 'deal_closed',
-      'payment_done', 'converted_to_po', 'sent_to_admin',
-      'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
-    ],
-  },
-  { key: 'fabrication', label: 'Fabrication', stages: ['material_check', 'production_planning', 'fabrication_started', 'quality_inspection'] },
-  { key: 'dispatch', label: 'Dispatch', stages: ['packing_bundling', 'shipper_prepared', 'ready_for_delivery', 'dispatched'] },
-  { key: 'install', label: 'Install', stages: ['delivered'] },
-  { key: 'complete', label: 'Complete', stages: [] },
-]
+// Human-readable label per lifecycle stage — same wording used across Sales/Plant panels.
+const STAGE_LABELS = {
+  initial_contact: 'Initial Contact',
+  requirements_gathered: 'Requirements Gathered',
+  proposal_sent: 'Proposal Sent',
+  negotiation: 'Negotiation',
+  deal_closed: 'Deal Closed',
+  payment_done: 'Payment Done',
+  converted_to_po: 'Converted to PO',
+  sent_to_admin: 'Sent to Admin',
+  released_to_plant: 'Released to Plant',
+  drawings_received: 'Drawings Received',
+  bom_received: 'BOM Received',
+  bom_review: 'BOM Review',
+  material_check: 'Material Check',
+  production_planning: 'Production Planning',
+  fabrication_started: 'Fabrication Started',
+  quality_inspection: 'Quality Inspection',
+  packing_bundling: 'Packing & Bundling',
+  shipper_prepared: 'Shipper Prepared',
+  ready_for_delivery: 'Ready for Delivery',
+  dispatched: 'Dispatched',
+  delivered: 'Delivered',
+}
+
+// "Project Steps" stepper shown on the Project Details / Dashboard screens — one entry per
+// granular lifecycle stage (8 sales + 13 plant = 21), matching the Plant Panel's own
+// stage-by-stage tracking 1:1 instead of collapsing them into broader buckets.
+const PROJECT_STEP_DEFS = LIFECYCLE_STAGES.map((stage) => ({
+  key: stage,
+  label: STAGE_LABELS[stage] || stage,
+  stages: [stage],
+}))
 
 // stepDetails: ProjectStepDetail[] for this lead — optional descriptive overlay
 // (startedBy/completedBy/currentStage sub-label/completionPct/expectedCompletion/notes/attachments).
@@ -173,8 +192,9 @@ const paymentScheduleForInvoice = (schedule, invoice) => {
 }
 
 const PROJECT_DETAIL_LEAD_FIELDS = [
-  'customerId', 'jobId', 'projectName', 'buildingType', 'location', 'roofStyle', 'sqft',
-  'width', 'length', 'notes', 'numberOfBuildings', 'lifecycleStatus', 'lifecycleHistory',
+  'customerId', 'jobId', 'projectName', 'buildingType', 'location', 'city', 'state', 'pincode',
+  'roofStyle', 'sqft', 'width', 'length', 'height', 'numDoors', 'numWindows', 'numInsulation',
+  'notes', 'numberOfBuildings', 'lifecycleStatus', 'lifecycleHistory',
   'quoteValue', 'documents', 'assignedSales', 'createdAt', 'plannedStartDate', 'endDate',
   'isRaisedToPO', 'poNumber', 'source', 'isQuoteReady',
 ].join(' ')
@@ -255,7 +275,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     : []
 
   const deliveryTracking = {
-    inTransit:            deliveries.filter(d => d.status === 'in_transit').length,
+    inTransit:            deliveries.filter(d => CUSTOMER_IN_TRANSIT_STATUSES.has(d.status)).length,
     staged:               deliveries.filter(d => d.status === 'scheduled').length,
     ready:                deliveries.filter(d => d.status === 'confirmed').length,
     totalToday:           deliveries.filter(d => d.deliveryDate && new Date(d.deliveryDate).toDateString() === nowTs.toDateString()).length,
@@ -351,7 +371,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     note: 'There is no RFI / clarification-request data model in the backend yet, so itemsNeedingClarification is always 0 until that feature exists. revisionReceived is a best-effort proxy (count of drawings with a non-null revisionRequestedAt) — confirm this matches the intended definition.',
   }
 
-  const [ordersList, notificationsFeed, recentMessages] = await Promise.all([
+  const [rawOrders, notificationsFeed, recentMessages] = await Promise.all([
     leadIds.length
       ? MaterialRequest.find({ leadId: { $in: leadIds } }).sort({ createdAt: -1 }).limit(5).lean()
       : [],
@@ -360,6 +380,29 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       ? Message.find({ leadId: { $in: leadIds }, senderType: { $ne: 'customer' } }).sort({ createdAt: -1 }).limit(5).lean()
       : [],
   ])
+
+  // Same shape as GET /projects/:leadId/orders (project name, coil totals, computed stage) so the
+  // dashboard's "Orders List" table isn't a differently-shaped raw MaterialRequest dump.
+  const dashboardQuotations = rawOrders.length
+    ? await OrderQuotation.find({ orderId: { $in: rawOrders.map(o => o._id) } }).sort({ createdAt: -1 }).lean()
+    : []
+  const latestQuotationByOrderForDashboard = new Map()
+  for (const q of dashboardQuotations) {
+    const key = String(q.orderId)
+    if (!latestQuotationByOrderForDashboard.has(key)) latestQuotationByOrderForDashboard.set(key, q)
+  }
+  const ordersList = rawOrders.map(order => {
+    const lead = leads.find(l => String(l._id) === String(order.leadId)) || {}
+    const totalQuantity = order.requestedItems.reduce((sum, i) => sum + (i.quantity || 0), 0)
+    const totalLength = order.requestedItems.reduce((sum, i) => sum + (i.quantity || 0) * (i.lengthFeet || 0), 0)
+    return {
+      ...order,
+      project: { leadId: lead._id || order.leadId, projectName: lead.projectName || '', jobId: lead.jobId || '' },
+      totalQuantity,
+      totalLength,
+      stage: computeOrderStage(order, latestQuotationByOrderForDashboard.get(String(order._id))),
+    }
+  })
 
   return success(res, {
     activeProjects,
@@ -386,7 +429,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
 // Figma "My Projects" tabs — Proposed/New Enquiry (pre-PO) vs Confirmed (PO raised), mirrors the
 // isRaisedToPO flag already used to gate the Lead -> POOrder -> Invoice pipeline elsewhere.
 exports.getProjects = asyncHandler(async (req, res) => {
-  const { lifecycleStatus, tab, page = 1, limit = 20 } = req.query
+  const { lifecycleStatus, tab, search, page = 1, limit = 20 } = req.query
   const skip = (Number(page) - 1) * Number(limit)
 
   const baseFilter = { customerId: req.customer._id }
@@ -394,6 +437,10 @@ exports.getProjects = asyncHandler(async (req, res) => {
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
   if (tab === 'proposed') filter.isRaisedToPO = { $ne: true }
   if (tab === 'confirmed') filter.isRaisedToPO = true
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ projectName: regex }, { jobId: regex }]
+  }
 
   const ACTIVE_STAGES = [
     'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
@@ -423,6 +470,24 @@ exports.getProjects = asyncHandler(async (req, res) => {
 
   const totalAll = await Lead.countDocuments(baseFilter)
 
+  // "Progress" column on the My Projects table — same ProjectStepDetail.completionPct used by the
+  // dashboard's single active-project card, batched here for the whole list instead of N+1 queries.
+  const projectIds = projects.map(p => p._id)
+  const stepDetails = projectIds.length
+    ? await ProjectStepDetail.find({ leadId: { $in: projectIds } }).sort({ updatedAt: -1 }).select('leadId completionPct').lean()
+    : []
+  const progressByLead = new Map()
+  for (const s of stepDetails) {
+    const key = String(s.leadId)
+    if (!progressByLead.has(key)) progressByLead.set(key, s.completionPct ?? null)
+  }
+
+  const projectsWithProgress = projects.map(p => ({
+    ...enrichLeadDocument(p),
+    progressPct: progressByLead.get(String(p._id)) ?? null,
+    manager: p.assignedSales ? { name: p.assignedSales.name, email: p.assignedSales.email } : null,
+  }))
+
   return success(res, {
     stats: {
       total: totalAll,
@@ -432,7 +497,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
       proposed: proposedCount,
       confirmed: confirmedCount,
     },
-    projects: projects.map(enrichLeadDocument),
+    projects: projectsWithProgress,
     total,
     page: Number(page),
     limit: Number(limit),
@@ -504,20 +569,38 @@ exports.getProject = asyncHandler(async (req, res) => {
   })
 })
 
+// POST /projects — Figma "Create New Project" (project enquiry) form
 exports.createProject = asyncHandler(async (req, res) => {
-  const { buildingType, location, roofStyle, sqft, width, length, description } = req.body
+  const {
+    projectName, buildingType, expectedStartDate, targetCompletionDate,
+    fullAddress, city, pincode, state,
+    width, length, height, doors, windows, insulation,
+    description,
+    // legacy field names — kept for backward compatibility with existing integrations
+    location, roofStyle, sqft,
+  } = req.body
 
   const lead = await Lead.create({
-    customerId:      req.customer._id,
+    customerId:        req.customer._id,
+    projectName:       projectName || '',
     buildingType,
-    location,
-    roofStyle:       roofStyle  || '',
-    sqft:            sqft       || '',
-    width:           width      ?? null,
-    length:          length     ?? null,
-    notes:           description || '',
-    source:          'customer_portal',
-    lifecycleStatus: 'initial_contact',
+    location:           fullAddress || location || '',
+    city:               city || '',
+    state:              state || '',
+    pincode:            pincode || '',
+    plannedStartDate:  expectedStartDate    ? new Date(expectedStartDate)    : null,
+    endDate:           targetCompletionDate ? new Date(targetCompletionDate) : null,
+    roofStyle:         roofStyle || '',
+    sqft:              sqft || '',
+    width:             width  ?? null,
+    length:            length ?? null,
+    height:            height ?? null,
+    numDoors:          doors ?? null,
+    numWindows:        windows ?? null,
+    numInsulation:     insulation ?? null,
+    notes:             description || '',
+    source:            'customer_portal',
+    lifecycleStatus:   'initial_contact',
     lifecycleHistory: [
       { stage: 'initial_contact', changedAt: new Date(), changedBy: null },
     ],
@@ -528,24 +611,34 @@ exports.createProject = asyncHandler(async (req, res) => {
     action:     AUDIT_ACTIONS.CUSTOMER_PROJECT_CREATED,
     leadId:     lead._id,
     customerId: req.customer._id,
-    metadata:   { buildingType, location },
+    metadata:   { projectName, buildingType, location: lead.location },
   })
 
   await syncLeadBuildings(lead, { createdBy: null })
 
   return created(res, {
     lead: {
-      _id:             lead._id,
-      buildingType:    lead.buildingType,
-      location:        lead.location,
-      roofStyle:       lead.roofStyle,
-      sqft:            lead.sqft,
-      width:           lead.width,
-      length:          lead.length,
-      notes:           lead.notes,
-      source:          lead.source,
-      lifecycleStatus: lead.lifecycleStatus,
-      assignedSales:   null,
+      _id:              lead._id,
+      projectName:      lead.projectName,
+      buildingType:     lead.buildingType,
+      location:         lead.location,
+      city:             lead.city,
+      state:            lead.state,
+      pincode:          lead.pincode,
+      plannedStartDate: lead.plannedStartDate,
+      endDate:          lead.endDate,
+      roofStyle:        lead.roofStyle,
+      sqft:             lead.sqft,
+      width:            lead.width,
+      length:           lead.length,
+      height:           lead.height,
+      numDoors:         lead.numDoors,
+      numWindows:       lead.numWindows,
+      numInsulation:    lead.numInsulation,
+      notes:            lead.notes,
+      source:           lead.source,
+      lifecycleStatus:  lead.lifecycleStatus,
+      assignedSales:    null,
     },
   })
 })
@@ -750,12 +843,16 @@ exports.getPresignedUrl = asyncHandler(async (req, res) => {
 })
 
 exports.getPaymentInvoices = asyncHandler(async (req, res) => {
-  const { status, leadId } = req.query
+  const { status, tab, leadId, search } = req.query
   const customerId = req.customer._id
 
   const invoiceFilter = { customerId }
-  if (status) invoiceFilter.status = status
+  // "Paid"/"Unpaid" tabs on the Invoices screen — unpaid spans every non-paid, non-draft status.
+  if (tab === 'paid') invoiceFilter.status = 'paid'
+  else if (tab === 'unpaid') invoiceFilter.status = { $in: ['sent', 'overdue'] }
+  else if (status) invoiceFilter.status = status
   if (leadId) invoiceFilter.leadId = leadId
+  if (search?.trim()) invoiceFilter.invoiceNumber = { $regex: search.trim(), $options: 'i' }
 
   const [invoices, leads] = await Promise.all([
     Invoice.find(invoiceFilter).select('-paidBy -createdBy -__v').sort({ createdAt: -1 }).lean(),
@@ -991,6 +1088,9 @@ const mapDeliveryRow = (d, lead, carrier, loadDetails) => {
     },
     confirmationEmailSent: !!d.confirmationEmailSent,
     confirmationEmailSentAt: d.confirmationEmailSentAt || null,
+    // "Delivery Timeline & Flow" checklist screen — ordered log of every status this delivery
+    // has passed through, e.g. scheduled -> material_prepared -> ... -> delivered.
+    statusHistory: (d.statusHistory || []).map(h => ({ status: h.status, changedAt: h.changedAt })),
     reschedule: latest
       ? {
           _id: latest._id,
@@ -1092,9 +1192,11 @@ const buildDeliveryScheduleResponse = async (leads, tab) => {
 
 // GET /deliveries — unscoped, every project (kept for back-compat / dashboard-style usage)
 exports.getDeliverySchedule = asyncHandler(async (req, res) => {
-  const { tab = 'upcoming' } = req.query
+  const { tab = 'upcoming', leadId } = req.query
 
-  const leads = await Lead.find({ customerId: req.customer._id }).select('_id jobId projectName').lean()
+  const leadFilter = { customerId: req.customer._id }
+  if (leadId) leadFilter._id = leadId
+  const leads = await Lead.find(leadFilter).select('_id jobId projectName').lean()
   if (!leads.length) return success(res, { deliveries: [], total: 0, tabs: { upcoming: 0, past: 0, rescheduled: 0 } })
 
   return success(res, await buildDeliveryScheduleResponse(leads, tab))
@@ -1468,14 +1570,24 @@ exports.downloadDeliveryInstructions = asyncHandler(async (req, res) => {
 
 exports.getTaxReport = asyncHandler(async (req, res) => {
   const customerId = req.customer._id
+  const { leadId, startDate, endDate, page = 1, limit = 50 } = req.query
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.min(parseInt(limit, 10) || 50, 200)
 
   const leads = await Lead.find({ customerId }).select('_id jobId projectName buildingType location').lean()
-  if (!leads.length) return success(res, { rows: [], summary: { totalContractAmount: 0, totalTaxDue: 0 } })
+  if (!leads.length) return success(res, { rows: [], total: 0, page: parsedPage, limit: parsedLimit, summary: { totalContractAmount: 0, totalTaxDue: 0 } })
 
-  const leadIds = leads.map(l => l._id)
+  const leadIds = leadId ? leads.filter((l) => String(l._id) === String(leadId)).map((l) => l._id) : leads.map(l => l._id)
   const leadMap = new Map(leads.map(l => [String(l._id), l]))
 
-  const invoices = await Invoice.find({ customerId, leadId: { $in: leadIds } })
+  const invoiceFilter = { customerId, leadId: { $in: leadIds } }
+  if (startDate || endDate) {
+    invoiceFilter.date = {}
+    if (startDate) invoiceFilter.date.$gte = new Date(startDate)
+    if (endDate) invoiceFilter.date.$lte = new Date(endDate)
+  }
+
+  const invoices = await Invoice.find(invoiceFilter)
     .select('leadId invoiceNumber totalAmount tax date status lineItems')
     .sort({ date: -1 })
     .lean()
@@ -1502,10 +1614,13 @@ exports.getTaxReport = asyncHandler(async (req, res) => {
       }
     })
 
+  // Summary always reflects the full filtered set, not just the current page.
   const totalContractAmount = rows.reduce((s, r) => s + r.contractAmount, 0)
   const totalTaxDue = rows.reduce((s, r) => s + r.taxDue, 0)
+  const total = rows.length
+  const paged = rows.slice((parsedPage - 1) * parsedLimit, (parsedPage - 1) * parsedLimit + parsedLimit)
 
-  return success(res, { rows, summary: { totalContractAmount, totalTaxDue } })
+  return success(res, { rows: paged, total, page: parsedPage, limit: parsedLimit, summary: { totalContractAmount, totalTaxDue } })
 })
 
 // ── Project sub-routes ────────────────────────────────────────────────────────
@@ -1527,7 +1642,7 @@ exports.getProjectStats = asyncHandler(async (req, res) => {
   const [totalDeliveries, deliveredCount, inTransitCount, invoices, followUps, meetings, fullLead, stepDetails] = await Promise.all([
     Delivery.countDocuments({ leadId }),
     Delivery.countDocuments({ leadId, status: 'delivered' }),
-    Delivery.countDocuments({ leadId, status: 'in_transit' }),
+    Delivery.countDocuments({ leadId, status: { $in: [...CUSTOMER_IN_TRANSIT_STATUSES] } }),
     Invoice.find({ leadId }).select('status totalAmount').lean(),
     FollowUp.countDocuments({ leadId }),
     Meeting.countDocuments({ leadId }),
@@ -1650,6 +1765,7 @@ const mapBuildingDrawingToCustomer = (drawing, building, leadId) => ({
   notes: drawing.rejectionReason || '',
   revisionNote: '',
   revisionRequestedAt: null,
+  comments: drawing.comments || [],
   createdAt: drawing.uploadedAt,
   updatedAt: drawing.uploadedAt || drawing.reviewedAt,
   source: 'plant_building',
@@ -1669,7 +1785,12 @@ const populateDrawingUploaders = async (drawings) => {
 
 const fetchPlantBuildingDrawings = async (leadId, { buildingLabel } = {}) => {
   const targetNumber = buildingLabel ? buildingNumberFromLabel(buildingLabel) : null
-  const buildings = await Building.find({ leadId }).select('buildingNumber drawings').sort({ buildingNumber: 1 }).lean()
+  const buildings = await Building.find({ leadId })
+    .select('buildingNumber drawings')
+    .populate('drawings.comments.commentedBy', 'name')
+    .populate('drawings.comments.commentedByCustomer', 'firstName lastName')
+    .sort({ buildingNumber: 1 })
+    .lean()
   const rows = []
   for (const building of buildings) {
     if (targetNumber != null && building.buildingNumber !== targetNumber) continue
@@ -1712,12 +1833,17 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
     DrawingDocument.find(filter)
       .populate('uploadedBy', 'name')
       .populate('approvedBy', 'name')
+      .populate('comments.commentedBy', 'name')
+      .populate('comments.commentedByCustomer', 'firstName lastName')
       .sort({ createdAt: -1 })
       .lean(),
     plantDrawingsMatchTypeFilter(type)
       ? fetchPlantBuildingDrawings(req.params.leadId)
       : Promise.resolve([]),
-    Lead.findById(req.params.leadId).select('documents').lean(),
+    // Also include documents embedded in Lead
+    Lead.findById(req.params.leadId)
+      .select('projectName jobId buildingType location lifecycleStatus numberOfBuildings documents')
+      .lean(),
   ])
 
   const mergedDrawings = sortDrawingsNewestFirst([...drawings, ...plantDrawings])
@@ -1731,6 +1857,15 @@ exports.getProjectDrawings = asyncHandler(async (req, res) => {
   }))
 
   return success(res, {
+    project: {
+      _id: fullLead._id,
+      jobId: fullLead.jobId,
+      projectName: fullLead.projectName,
+      buildingType: fullLead.buildingType,
+      location: fullLead.location,
+      lifecycleStatus: fullLead.lifecycleStatus,
+      numberOfBuildings: fullLead.numberOfBuildings || 1,
+    },
     drawings: mergedDrawings,
     embeddedDocuments: embeddedDocs,
     total: mergedDrawings.length + embeddedDocs.length,
@@ -1781,6 +1916,10 @@ exports.getAllProjectDrawings = asyncHandler(async (req, res) => {
   return success(res, { projects })
 })
 
+// Comment/approve/revision endpoints below still need to resolve a :docId against either
+// DrawingDocument or a Building.drawings subdocument — done via resolveDrawingRef.
+const { resolveDrawingRef } = require('../utils/drawingSources')
+
 // GET /projects/:leadId/buildings — building breakdown ("Select a building" screen)
 exports.getProjectBuildings = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(req.params.leadId).select('customerId projectName jobId location numberOfBuildings').lean()
@@ -1790,7 +1929,6 @@ exports.getProjectBuildings = asyncHandler(async (req, res) => {
     DrawingDocument.find({ leadId: req.params.leadId }).select('buildingLabel category updatedAt').lean(),
     Building.find({ leadId: req.params.leadId }).select('buildingNumber drawings').lean(),
   ])
-
   const plantByLabel = {}
   for (const building of plantBuildings) {
     const label = buildingLabelFromNumber(building.buildingNumber)
@@ -1839,6 +1977,8 @@ exports.getBuildingDrawings = asyncHandler(async (req, res) => {
     DrawingDocument.find({ leadId: req.params.leadId, buildingLabel })
       .populate('uploadedBy', 'name')
       .populate('approvedBy', 'name')
+      .populate('comments.commentedBy', 'name')
+      .populate('comments.commentedByCustomer', 'firstName lastName')
       .sort({ createdAt: -1 })
       .lean(),
     fetchPlantBuildingDrawings(req.params.leadId, { buildingLabel }),
@@ -2111,42 +2251,43 @@ exports.rejectProjectQuotation = asyncHandler(async (req, res) => {
 // ── Drawing Approve / Request Revision ───────────────────────────────────────
 
 // POST /projects/:leadId/drawings/:docId/approve
+// All three of approve/request-revision/comment work against EITHER a DrawingDocument (admin/
+// customer upload flow) OR a Building.drawings subdocument (Plant Panel upload flow) — resolved
+// via resolveDrawingRef so :docId works no matter which panel originally uploaded the file.
 exports.approveDrawing = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(req.params.leadId).select('customerId').lean()
   if (!lead) return notFound(res, 'Project not found')
   if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
 
-  const doc = await DrawingDocument.findOne({ _id: req.params.docId, leadId: req.params.leadId })
-  if (doc) {
-    if (doc.status === 'approved') return badRequest(res, 'Drawing is already approved')
+  const ref = await resolveDrawingRef(req.params.leadId, req.params.docId)
+  if (!ref) return notFound(res, 'Drawing not found')
 
+  let result
+  let metadata
+  if (ref.source === 'document') {
+    const { doc } = ref
+    if (doc.status === 'approved') return badRequest(res, 'Drawing is already approved')
     doc.status = 'approved'
     doc.approvedAt = new Date()
     doc.revisionNote = ''
     await doc.save()
-
-    await auditService.log({
-      type: 'drawing',
-      action: 'drawing.approved',
-      leadId: lead._id,
-      customerId: req.customer._id,
-      performedBy: req.customer._id,
-      metadata: { docId: doc._id, name: doc.name, source: 'drawing_document' },
-    })
-
-    return success(res, { message: 'Drawing approved', drawing: { _id: doc._id, name: doc.name, status: doc.status } })
+    result = { _id: doc._id, name: doc.name, status: doc.status }
+    metadata = { docId: doc._id, name: doc.name, source: 'drawing_document' }
+  } else {
+    const { building, drawing } = ref
+    if (drawing.status === 'approved') return badRequest(res, 'Drawing is already approved')
+    drawing.status = 'approved'
+    drawing.reviewedAt = new Date()
+    drawing.rejectionReason = ''
+    await building.save()
+    result = { _id: drawing._id, name: drawing.fileName, status: drawing.status }
+    metadata = {
+      docId: drawing._id,
+      name: drawing.fileName,
+      source: 'plant_building',
+      buildingNumber: building.buildingNumber,
+    }
   }
-
-  const plantMatch = await findPlantBuildingDrawing(req.params.leadId, req.params.docId)
-  if (!plantMatch) return notFound(res, 'Drawing not found')
-
-  const { building, drawing } = plantMatch
-  if (drawing.status === 'approved') return badRequest(res, 'Drawing is already approved')
-
-  drawing.status = 'approved'
-  drawing.reviewedAt = new Date()
-  drawing.rejectionReason = ''
-  await building.save()
 
   await auditService.log({
     type: 'drawing',
@@ -2154,18 +2295,19 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: req.customer._id,
     performedBy: req.customer._id,
-    metadata: {
-      docId: drawing._id,
-      name: drawing.fileName,
-      source: 'plant_building',
-      buildingNumber: building.buildingNumber,
-    },
+    metadata,
   })
 
-  return success(res, {
-    message: 'Drawing approved',
-    drawing: { _id: drawing._id, name: drawing.fileName, status: 'approved' },
+  await notificationService.notifyLeadOwner(lead._id, {
+    title: 'Drawing approved',
+    body: `${result.name || 'A drawing'} was approved by the customer.`,
+    type: 'drawing',
+    priority: 'medium',
+    refId: result._id,
+    refModel: 'DrawingDocument',
   })
+
+  return success(res, { message: 'Drawing approved', drawing: result })
 })
 
 // POST /projects/:leadId/drawings/:docId/request-revision
@@ -2177,36 +2319,34 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
   const { note } = req.body
   if (!note || !note.trim()) return badRequest(res, 'Revision note is required')
 
-  const doc = await DrawingDocument.findOne({ _id: req.params.docId, leadId: req.params.leadId })
-  if (doc) {
+  const ref = await resolveDrawingRef(req.params.leadId, req.params.docId)
+  if (!ref) return notFound(res, 'Drawing not found')
+
+  let result
+  let metadata
+  if (ref.source === 'document') {
+    const { doc } = ref
     doc.status = 'under_review'
     doc.revisionNote = note.trim()
     doc.revisionRequestedAt = new Date()
     await doc.save()
-
-    await auditService.log({
-      type: 'drawing',
-      action: 'drawing.revision_requested',
-      leadId: lead._id,
-      customerId: req.customer._id,
-      performedBy: req.customer._id,
-      metadata: { docId: doc._id, name: doc.name, note: note.trim(), source: 'drawing_document' },
-    })
-
-    return success(res, {
-      message: 'Revision requested',
-      drawing: { _id: doc._id, name: doc.name, status: doc.status, revisionNote: doc.revisionNote },
-    })
+    result = { _id: doc._id, name: doc.name, status: doc.status, revisionNote: doc.revisionNote }
+    metadata = { docId: doc._id, name: doc.name, note: note.trim(), source: 'drawing_document' }
+  } else {
+    const { building, drawing } = ref
+    drawing.status = 'rejected'
+    drawing.rejectionReason = note.trim()
+    drawing.reviewedAt = new Date()
+    await building.save()
+    result = { _id: drawing._id, name: drawing.fileName, status: drawing.status, revisionNote: drawing.rejectionReason }
+    metadata = {
+      docId: drawing._id,
+      name: drawing.fileName,
+      note: note.trim(),
+      source: 'plant_building',
+      buildingNumber: building.buildingNumber,
+    }
   }
-
-  const plantMatch = await findPlantBuildingDrawing(req.params.leadId, req.params.docId)
-  if (!plantMatch) return notFound(res, 'Drawing not found')
-
-  const { building, drawing } = plantMatch
-  drawing.status = 'rejected'
-  drawing.rejectionReason = note.trim()
-  drawing.reviewedAt = new Date()
-  await building.save()
 
   await auditService.log({
     type: 'drawing',
@@ -2214,24 +2354,62 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: req.customer._id,
     performedBy: req.customer._id,
-    metadata: {
-      docId: drawing._id,
-      name: drawing.fileName,
-      note: note.trim(),
-      source: 'plant_building',
-      buildingNumber: building.buildingNumber,
-    },
+    metadata,
   })
 
-  return success(res, {
-    message: 'Revision requested',
-    drawing: {
-      _id: drawing._id,
-      name: drawing.fileName,
-      status: 'under_review',
-      revisionNote: drawing.rejectionReason,
-    },
+  await notificationService.notifyLeadOwner(lead._id, {
+    title: 'Drawing revision requested',
+    body: `Customer requested a revision on ${result.name || 'a drawing'}: "${note.trim()}"`,
+    type: 'drawing',
+    priority: 'high',
+    refId: result._id,
+    refModel: 'DrawingDocument',
   })
+
+  return success(res, { message: 'Revision requested', drawing: result })
+})
+
+// POST /projects/:leadId/drawings/:docId/comments — customer adds a comment on a drawing.
+// Stored on the same comments array admin/plant already read, so it shows up wherever the
+// drawing is accessed (admin construction panel, drawing detail, etc).
+exports.addDrawingComment = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId).select('customerId').lean()
+  if (!lead) return notFound(res, 'Project not found')
+  if (String(lead.customerId) !== String(req.customer._id)) return forbidden(res, 'Not your project')
+
+  const { text } = req.body
+  if (!text?.trim()) return badRequest(res, 'text is required')
+
+  const ref = await resolveDrawingRef(req.params.leadId, req.params.docId)
+  if (!ref) return notFound(res, 'Drawing not found')
+
+  const customer = await Customer.findById(req.customer._id).select('firstName lastName').lean()
+  const comment = {
+    text: text.trim(),
+    commentedByCustomer: req.customer._id,
+    authorName: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '',
+  }
+
+  let savedComment
+  if (ref.source === 'document') {
+    ref.doc.comments.push(comment)
+    await ref.doc.save()
+    savedComment = ref.doc.comments[ref.doc.comments.length - 1]
+  } else {
+    ref.drawing.comments.push(comment)
+    await ref.building.save()
+    savedComment = ref.drawing.comments[ref.drawing.comments.length - 1]
+  }
+
+  if (global.io) {
+    global.io.of('/admin').to(`lead:${req.params.leadId}`).emit('drawing_comment_added', {
+      documentId: req.params.docId,
+      leadId: req.params.leadId,
+      comment: savedComment,
+    })
+  }
+
+  return created(res, { comment: savedComment }, 'Comment added')
 })
 
 // ── Material Orders ───────────────────────────────────────────────────────────
@@ -2461,7 +2639,10 @@ exports.getProjectOrderQuotations = asyncHandler(async (req, res) => {
 
   const skip = (Number(page) - 1) * Number(limit)
   const [quotations, total] = await Promise.all([
-    OrderQuotation.find(filter).populate('orderId', 'requestId requestDate').sort({ sentAt: -1 }).skip(skip).limit(Number(limit)).lean(),
+    OrderQuotation.find(filter)
+      .populate('orderId', 'requestId requestDate')
+      .populate('createdBy', 'name')
+      .sort({ sentAt: -1 }).skip(skip).limit(Number(limit)).lean(),
     OrderQuotation.countDocuments(filter),
   ])
 
@@ -2474,6 +2655,8 @@ exports.getProjectOrderQuotations = asyncHandler(async (req, res) => {
     quotationReceived: q.sentAt,
     orderValue: q.totalValue,
     status: q.status,
+    sentBy: q.createdBy?.name || '',
+    customerRemark: q.customerRemark || q.rejectionReason || '',
   }))
 
   return success(res, {
@@ -2512,6 +2695,7 @@ exports.approveOrderQuotation = asyncHandler(async (req, res) => {
 
   quotation.status = 'approved'
   quotation.respondedAt = new Date()
+  if (req.body.customerRemark !== undefined) quotation.customerRemark = req.body.customerRemark
   await quotation.save()
 
   await MaterialRequest.findByIdAndUpdate(quotation.orderId, { status: 'approved' })
@@ -2681,6 +2865,12 @@ exports.getCustomerNotifications = asyncHandler(async (req, res) => {
 })
 
 // PUT /notifications/:id/read
+// GET /notifications/unread-count — lightweight endpoint for a badge icon poll
+exports.getCustomerUnreadNotificationCount = asyncHandler(async (req, res) => {
+  const count = await Notification.countDocuments({ customerId: req.customer._id, isRead: false })
+  return success(res, { count })
+})
+
 exports.markCustomerNotificationRead = asyncHandler(async (req, res) => {
   const notification = await Notification.findOne({ _id: req.params.id, customerId: req.customer._id })
   if (!notification) return notFound(res, 'Notification not found')

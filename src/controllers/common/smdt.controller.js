@@ -126,7 +126,8 @@ exports.listSMDT = asyncHandler(async (req, res) => {
 })
 
 exports.getSMDTStats = asyncHandler(async (req, res) => {
-  const stats = await getActiveSMDTStats()
+  const { category, isFrameType, isActive, search } = req.query
+  const stats = await getActiveSMDTStats({ category, isFrameType, isActive, search })
   return success(res, stats)
 })
 

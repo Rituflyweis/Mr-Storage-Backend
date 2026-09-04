@@ -39,3 +39,4 @@ PaymentApprovalSchema.index({ payeeType: 1 })
 module.exports = mongoose.model('PaymentApproval', PaymentApprovalSchema)
 module.exports.APPROVAL_STATUSES = APPROVAL_STATUSES
 module.exports.PAYEE_TYPES = PAYEE_TYPES
+module.exports.PAYMENT_CATEGORIES = PAYMENT_CATEGORIES

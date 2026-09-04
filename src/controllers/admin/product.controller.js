@@ -76,7 +76,17 @@ exports.getCategories = asyncHandler(async (req, res) => {
 })
 
 exports.exportProducts = asyncHandler(async (req, res) => {
-  const products = await Product.find({ status: 'active' }).sort({ category: 1, name: 1 }).lean()
+  const { category, subcategory, pricingType, vendorShipper, status, search } = req.query
+  const filter = {}
+  if (category)      filter.category      = category
+  if (subcategory)   filter.subcategory   = subcategory
+  if (pricingType)   filter.pricingType   = pricingType
+  if (vendorShipper) filter.vendorShipper = vendorShipper
+  if (status)         filter.status        = status
+  else                filter.status        = 'active' // default to active-only when no explicit status filter is requested
+  if (search)         filter.$text         = { $search: search }
+
+  const products = await Product.find(filter).sort({ category: 1, name: 1 }).lean()
 
   const rows = [
     ['Product Name', 'Category', 'Subcategory', 'SKU/Part Code', 'Pricing Type', 'Unit', 'Base Cost (USD)', 'Default Margin %'],

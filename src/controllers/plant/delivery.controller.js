@@ -1,4 +1,5 @@
 const crypto = require('crypto')
+const mongoose = require('mongoose')
 const Delivery = require('../../models/Delivery')
 const BundlePlan = require('../../models/BundlePlan')
 const Bundle = require('../../models/Bundle')
@@ -10,6 +11,7 @@ const POOrder = require('../../models/POOrder')
 const ShipperRequest = require('../../models/ShipperRequest')
 const Vendor = require('../../models/Vendor')
 const auditService = require('../../services/audit.service')
+const notificationService = require('../../services/notification.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
@@ -30,15 +32,26 @@ const {
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
+// Fulfillment sub-flow, in order, once a delivery is confirmed/carrier-selected:
+// material_prepared -> loaded -> picked_up -> in_transit -> staged -> dispatched_to_site ->
+// delivered. Each step also allows jumping straight to a later step (dropdown lets plant staff
+// correct a missed step) and to delayed/cancelled at any point.
 const DELIVERY_STATUS_TRANSITIONS = {
   draft: ['scheduled', 'cancelled'],
   bidding_sent: ['scheduled', 'cancelled'],
-  carrier_selected: ['scheduled', 'confirmed', 'in_transit', 'delayed', 'cancelled'],
-  scheduled: ['confirmed', 'in_transit', 'delayed', 'cancelled'],
-  confirmed: ['in_transit', 'delayed', 'cancelled'],
-  in_transit: ['staged', 'delivered', 'delayed', 'cancelled'],
-  delayed: ['scheduled', 'confirmed', 'in_transit', 'delivered', 'cancelled'],
-  staged: ['delivered', 'partial_received', 'received', 'cancelled'],
+  carrier_selected: ['scheduled', 'confirmed', 'material_prepared', 'in_transit', 'delayed', 'cancelled'],
+  scheduled: ['confirmed', 'material_prepared', 'in_transit', 'delayed', 'cancelled'],
+  confirmed: ['material_prepared', 'loaded', 'picked_up', 'in_transit', 'delayed', 'cancelled'],
+  material_prepared: ['loaded', 'picked_up', 'in_transit', 'delayed', 'cancelled'],
+  loaded: ['picked_up', 'in_transit', 'delayed', 'cancelled'],
+  picked_up: ['in_transit', 'delayed', 'cancelled'],
+  in_transit: ['staged', 'dispatched_to_site', 'delivered', 'delayed', 'cancelled'],
+  delayed: [
+    'scheduled', 'confirmed', 'material_prepared', 'loaded', 'picked_up', 'in_transit',
+    'staged', 'dispatched_to_site', 'delivered', 'cancelled',
+  ],
+  staged: ['dispatched_to_site', 'delivered', 'partial_received', 'received', 'cancelled'],
+  dispatched_to_site: ['delivered', 'partial_received', 'received', 'cancelled'],
   delivered: ['partial_received', 'received'],
   partial_received: ['received'],
 }
@@ -49,8 +62,16 @@ const DELIVERY_POST_AWARD_STATUSES = new Set([
   'carrier_selected',
   'scheduled',
   'confirmed',
+  'material_prepared',
+  'loaded',
+  'picked_up',
   'in_transit',
+  'dispatched_to_site',
   'delayed',
+])
+// Granular fulfillment steps still roll up into "inTransit" for coarse stat blocks in this file.
+const IN_TRANSIT_ROLLUP_STATUSES = new Set([
+  'material_prepared', 'loaded', 'picked_up', 'in_transit', 'dispatched_to_site',
 ])
 const DELIVERY_POST_AWARD_LOCKED_BODY_KEYS = new Set([
   'weight',
@@ -106,6 +127,8 @@ const makeDeliveryStatusHistory = (delivery) => {
     .map((row) => ({
       status: row.status,
       changedAt: row.changedAt,
+      changedBy: row.changedBy || null,
+      description: row.description || '',
     }))
     .sort((a, b) => new Date(a.changedAt || 0).getTime() - new Date(b.changedAt || 0).getTime())
 }
@@ -242,11 +265,8 @@ const getSubmittedBidAmount = (row) => {
 
 const toObjectId = (val) => {
   if (!val) return null
-  try {
-    return Delivery.db.Types.ObjectId(String(val))
-  } catch (err) {
-    return null
-  }
+  if (!mongoose.Types.ObjectId.isValid(String(val))) return null
+  return new mongoose.Types.ObjectId(String(val))
 }
 
 const normalizeDateOnly = (value) => {
@@ -382,7 +402,12 @@ const SELECTED_DELIVERY_STATUSES = [
   'carrier_selected',
   'scheduled',
   'confirmed',
+  'material_prepared',
+  'loaded',
+  'picked_up',
   'in_transit',
+  'staged',
+  'dispatched_to_site',
   'delayed',
   'delivered',
 ]
@@ -434,11 +459,13 @@ const buildDeliveryStats = (deliveries) => {
     cancelledCount: 0,
   }
 
+  // 'staged' is folded in here too (in addition to the shared IN_TRANSIT_ROLLUP_STATUSES) so this
+  // bucket sum stays in sync with totalCount — there's no separate stagedCount in this stat block.
   for (const d of deliveries) {
     if (d.status === 'draft') counts.draftCount += 1
     if (d.status === 'scheduled') counts.scheduledCount += 1
     if (d.status === 'confirmed' || d.status === 'carrier_selected') counts.confirmedCount += 1
-    if (d.status === 'in_transit') counts.inTransitCount += 1
+    if (IN_TRANSIT_ROLLUP_STATUSES.has(d.status) || d.status === 'staged') counts.inTransitCount += 1
     if (d.status === 'delivered') counts.deliveredCount += 1
     if (d.status === 'delayed') counts.delayedCount += 1
     if (d.status === 'cancelled') counts.cancelledCount += 1
@@ -576,7 +603,7 @@ exports.createDelivery = asyncHandler(async (req, res) => {
         leadId,
         deliveryNumber,
         status: 'draft',
-        statusHistory: [{ status: 'draft', changedAt: new Date() }],
+        statusHistory: [{ status: 'draft', changedAt: new Date(), changedBy: req.user._id, description: 'Delivery created and scheduled' }],
         ...buildDeliveryFieldsFromBody(req.body),
       })
       break
@@ -832,7 +859,7 @@ exports.sendDeliveryBids = asyncHandler(async (req, res) => {
   delivery.status = 'bidding_sent'
   delivery.statusHistory = [
     ...makeDeliveryStatusHistory(delivery),
-    { status: 'bidding_sent', changedAt: new Date() },
+    { status: 'bidding_sent', changedAt: new Date(), changedBy: req.user._id, description: 'Freight bid request sent to carriers' },
   ]
   await delivery.save()
 
@@ -1108,7 +1135,15 @@ const buildDeliveryDetailPayload = async (delivery, plantUserId) => {
         : null,
 
       siteCoordinationNotes: delivery.additionalNotes || '',
+      siteInstructions: delivery.specialRequirements || '',
       equipmentRequirement: delivery.loadingEquipment || [],
+
+      documents: {
+        documentUrl: delivery.documentUrl || '',
+        attachments: delivery.attachments || [],
+      },
+      confirmationEmailSent: !!delivery.confirmationEmailSent,
+      confirmationEmailSentAt: delivery.confirmationEmailSentAt || null,
 
       deliveryTypeAndSize: {
         bundleCount: bundlePlan?.totalBundles ?? null,
@@ -1228,7 +1263,7 @@ exports.getFreightLoadStats = asyncHandler(async (req, res) => {
     totalLoads: deliveries.length,
     requestedLoads: deliveries.filter((d) => d.status !== 'cancelled').length,
     bidsPending,
-    inTransit: deliveries.filter((d) => d.status === 'in_transit').length,
+    inTransit: deliveries.filter((d) => IN_TRANSIT_ROLLUP_STATUSES.has(d.status)).length,
     delivered: deliveries.filter((d) => d.status === 'delivered').length,
     totalSpent: Math.round(totalSpent * 100) / 100,
   })
@@ -1336,7 +1371,7 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
   ])
 
   const total = totalRows[0]?.total || 0
-  const leadIds = [...new Set(rows.map((r) => String(r.leadId?._id || r.leadId)).filter(Boolean))]
+  const leadIds = [...new Set(rows.map((r) => r.leadId?._id || r.leadId).filter(Boolean).map(String))]
   const shipperMap = await fetchShipperVendorsByLeadIds(leadIds)
 
   const requests = rows.map((row) => {
@@ -1404,7 +1439,7 @@ exports.getAwardedLoadStats = asyncHandler(async (req, res) => {
 
   return success(res, {
     totalAwarded: deliveries.length,
-    inTransit: deliveries.filter((d) => d.status === 'in_transit').length,
+    inTransit: deliveries.filter((d) => IN_TRANSIT_ROLLUP_STATUSES.has(d.status)).length,
     delivered: deliveries.filter((d) => d.status === 'delivered').length,
     totalSpent: Math.round(totalSpent * 100) / 100,
   })
@@ -1432,7 +1467,9 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
     ]
   }
   baseFilter.leadId = baseFilter.leadId || { $in: leadIds }
-  baseFilter.status = { $in: CALENDAR_DELIVERY_STATUSES }
+  // Only fall back to the default calendar status set when the caller didn't ask for a specific
+  // one — this used to unconditionally overwrite req.query.status, silently ignoring it.
+  if (!baseFilter.status) baseFilter.status = { $in: CALENDAR_DELIVERY_STATUSES }
   if (baseFilter.leadId?.$in) {
     baseFilter.leadId = { $in: baseFilter.leadId.$in.filter((id) => leadIds.some((a) => String(a) === String(id))) }
   } else if (!leadIds.some((a) => String(a) === String(baseFilter.leadId))) {
@@ -1457,7 +1494,11 @@ exports.getDeliveryCalendar = asyncHandler(async (req, res) => {
     ? deliveries.filter((d) => String(d.leadId?.customerId?._id || d.leadId?.customerId) === String(customerFilterId))
     : deliveries
 
-  const leadIdsInRows = [...new Set(filteredDeliveries.map((d) => String(d.leadId?._id || d.leadId)).filter(Boolean))]
+  // Filter out deliveries with no lead BEFORE stringifying — String(null) is the truthy string
+  // "null", which .filter(Boolean) doesn't catch and then fails ObjectId casting downstream.
+  const leadIdsInRows = [...new Set(
+    filteredDeliveries.map((d) => d.leadId?._id || d.leadId).filter(Boolean).map(String)
+  )]
   const shipperMap = await fetchShipperVendorsByLeadIds(leadIdsInRows)
 
   const grouped = new Map()
@@ -1609,7 +1650,7 @@ exports.getAllDeliveries = asyncHandler(async (req, res) => {
   ])
   const total = totalRows[0]?.total || 0
 
-  const leadIds = [...new Set(rows.map((r) => String(r.leadDoc?._id || r.leadId)).filter(Boolean))]
+  const leadIds = [...new Set(rows.map((r) => r.leadDoc?._id || r.leadId).filter(Boolean).map(String))]
   const shipperMap = await fetchShipperVendorsByLeadIds(leadIds)
 
   const deliveries = rows.map((row) =>
@@ -1780,9 +1821,28 @@ exports.updateDeliveryStatus = asyncHandler(async (req, res) => {
   delivery.status = status
   delivery.statusHistory = [
     ...makeDeliveryStatusHistory(delivery),
-    { status, changedAt: new Date() },
+    { status, changedAt: new Date(), changedBy: req.user._id, description: `Status updated to ${status} by ${req.user.name || 'plant staff'}` },
   ]
   await delivery.save()
+
+  // Customer-visible milestones only — the granular in-between steps (material_prepared, loaded,
+  // picked_up) are internal plant workflow, not something a customer needs pinged about.
+  const CUSTOMER_FACING_STATUSES = { in_transit: 'medium', delivered: 'high', delayed: 'high', cancelled: 'high' }
+  if (CUSTOMER_FACING_STATUSES[status]) {
+    const lead = await Lead.findById(delivery.leadId).select('customerId projectName').lean()
+    if (lead?.customerId) {
+      await notificationService.notify({
+        customerId: lead.customerId,
+        leadId: delivery.leadId,
+        title: `Delivery ${status.replace('_', ' ')}`,
+        body: `${delivery.deliveryNumber || 'Your delivery'} for ${lead.projectName || 'your project'} is now ${status.replace('_', ' ')}.`,
+        type: 'delivery',
+        priority: CUSTOMER_FACING_STATUSES[status],
+        refId: delivery._id,
+        refModel: 'Delivery',
+      })
+    }
+  }
 
   return success(res, { delivery }, 'Delivery status updated')
 })

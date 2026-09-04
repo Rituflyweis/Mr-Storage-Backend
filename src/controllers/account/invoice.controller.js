@@ -17,11 +17,16 @@ const computeDueDate = (inv) => {
 }
 
 exports.getInvoices = asyncHandler(async (req, res) => {
-  const { status } = req.query
+  const { status, customerId, category, paymentMethod, invoiceType, search } = req.query
   const dateFilter = buildDateFilter(req.query, 'createdAt')
 
   const invoiceFilter = { ...dateFilter }
   if (status) invoiceFilter.status = status
+  if (customerId) invoiceFilter.customerId = customerId
+  if (category) invoiceFilter.category = category
+  if (paymentMethod) invoiceFilter.paymentMethod = paymentMethod
+  if (invoiceType) invoiceFilter.invoiceType = invoiceType
+  if (search?.trim()) invoiceFilter.invoiceNumber = { $regex: search.trim(), $options: 'i' }
 
   const [invoices, leads] = await Promise.all([
     Invoice.find(invoiceFilter)

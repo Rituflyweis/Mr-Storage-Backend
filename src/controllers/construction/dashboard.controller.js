@@ -6,6 +6,9 @@ const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const { DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+// Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
+const IN_TRANSIT_ROLLUP_STATUSES = new Set(DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered'))
 
 const CONSTRUCTION_STAGES = [
   'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
@@ -63,7 +66,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
 
   const deliveryOverview = {
     delivered: deliveries.filter((d) => d.status === 'delivered').length,
-    inTransit: deliveries.filter((d) => d.status === 'in_transit').length,
+    inTransit: deliveries.filter((d) => IN_TRANSIT_ROLLUP_STATUSES.has(d.status)).length,
     outForDelivery: deliveries.filter((d) => d.status === 'scheduled' || d.status === 'confirmed').length,
     delayed: deliveries.filter((d) => d.status === 'delayed').length,
     total: deliveries.length,
@@ -78,7 +81,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   }
 
   const recentDeliveries = deliveries
-    .filter((d) => d.status === 'in_transit' || d.status === 'delivered')
+    .filter((d) => IN_TRANSIT_ROLLUP_STATUSES.has(d.status) || d.status === 'delivered')
     .sort((a, b) => new Date(b.deliveryDate || 0) - new Date(a.deliveryDate || 0))
     .slice(0, 5)
     .map((d) => ({

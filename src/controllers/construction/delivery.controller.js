@@ -2,25 +2,28 @@ const Delivery = require('../../models/Delivery')
 const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Bundle = require('../../models/Bundle')
-const { success, notFound, badRequest } = require('../../utils/apiResponse')
+const Lead = require('../../models/Lead')
+const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
 const { generatePackingListPdf, generateBillOfLadingPdf } = require('../../utils/exportDelivery')
+const { DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+const { resolveLeadByProjectRef } = require('../../utils/projectRef')
+// Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
+const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
 
 const buildDeliveryCard = async (delivery) => {
   let carrier = null
   if (delivery.selectedCarrierBidId) {
     const bid = await FreightBid.findById(delivery.selectedCarrierBidId)
-      .populate('carrierId', 'name phone email')
+      .populate('carrierId', 'carrierName contactName phone email')
       .lean()
     if (bid?.carrierId) {
       carrier = {
-        name: bid.carrierId.name,
+        name: bid.carrierId.carrierName,
+        contactName: bid.carrierId.contactName,
         phone: bid.carrierId.phone,
         email: bid.carrierId.email,
-        truckNumber: bid.truckNumber || '',
-        driverName: bid.driverName || '',
-        driverPhone: bid.driverPhone || '',
       }
     }
   }
@@ -49,6 +52,7 @@ const buildDeliveryCard = async (delivery) => {
     pickupContactPhone: delivery.pickupContactPhone,
     siteContact: delivery.siteContact || null,
     carrier,
+    statusHistory: delivery.statusHistory || [],
     project: {
       leadId: delivery.leadId?._id,
       projectName: delivery.leadId?.projectName,
@@ -59,11 +63,21 @@ const buildDeliveryCard = async (delivery) => {
 }
 
 exports.getDeliveries = asyncHandler(async (req, res) => {
-  const { status, leadId, page = 1, limit = 20 } = req.query
+  const { status, leadId, materialType, search, startDate, endDate, page = 1, limit = 20 } = req.query
 
   const filter = { status: { $ne: 'draft' } }
   if (status) filter.status = status
   if (leadId) filter.leadId = leadId
+  if (materialType) filter.materialType = materialType
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ deliveryNumber: regex }, { materialType: regex }, { description: regex }]
+  }
+  if (startDate || endDate) {
+    filter.deliveryDate = {}
+    if (startDate) filter.deliveryDate.$gte = new Date(startDate)
+    if (endDate) filter.deliveryDate.$lte = new Date(endDate)
+  }
 
   const skip = (Number(page) - 1) * Number(limit)
   const [deliveries, total] = await Promise.all([
@@ -78,7 +92,7 @@ exports.getDeliveries = asyncHandler(async (req, res) => {
 
   const now = new Date()
   const stats = {
-    inTransit: await Delivery.countDocuments({ status: 'in_transit' }),
+    inTransit: await Delivery.countDocuments({ status: { $in: IN_TRANSIT_ROLLUP_STATUSES } }),
     staged: await Delivery.countDocuments({ status: 'confirmed' }),
     ready: await Delivery.countDocuments({ status: 'scheduled' }),
     totalToday: await Delivery.countDocuments({
@@ -104,6 +118,32 @@ exports.getDelivery = asyncHandler(async (req, res) => {
   return success(res, { delivery: card })
 })
 
+// POST /deliveries — "Add Delivery" screen on the construction mobile app
+exports.createDelivery = asyncHandler(async (req, res) => {
+  const { title, leadId, sectionLocation, deliveryDate, description, notes, attachments } = req.body
+  if (!leadId) return badRequest(res, 'leadId is required')
+  if (!deliveryDate) return badRequest(res, 'deliveryDate is required')
+
+  const lead = await Lead.findById(leadId).select('_id').lean()
+  if (!lead) return notFound(res, 'Project not found')
+
+  const count = await Delivery.countDocuments({})
+  const delivery = await Delivery.create({
+    leadId,
+    deliveryNumber: `DEL-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`,
+    status: 'scheduled',
+    loadDescription: title || '',
+    description: description || '',
+    deliveryLocation: sectionLocation || '',
+    deliveryDate,
+    additionalNotes: notes || '',
+    attachments: Array.isArray(attachments) ? attachments : [],
+    statusHistory: [{ status: 'scheduled', changedAt: new Date() }],
+  })
+
+  return created(res, { delivery }, 'Delivery added')
+})
+
 exports.markReceived = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(req.params.deliveryId)
   if (!delivery) return notFound(res, 'Delivery not found')
@@ -120,12 +160,12 @@ exports.markPartialReceived = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(req.params.deliveryId)
   if (!delivery) return notFound(res, 'Delivery not found')
 
-  delivery.status = 'in_transit'
-  delivery.statusHistory.push({ status: 'in_transit', changedAt: new Date() })
+  delivery.status = 'partial_received'
+  delivery.statusHistory.push({ status: 'partial_received', changedAt: new Date() })
   if (req.body.notes) delivery.additionalNotes = req.body.notes
   await delivery.save()
 
-  return success(res, { deliveryId: delivery._id, status: 'in_transit' }, 'Marked as partial received')
+  return success(res, { deliveryId: delivery._id, status: 'partial_received' }, 'Marked as partial received')
 })
 
 exports.updateSiteContact = asyncHandler(async (req, res) => {
@@ -148,12 +188,25 @@ exports.updateSiteContact = asyncHandler(async (req, res) => {
 })
 
 exports.scanBundle = asyncHandler(async (req, res) => {
-  const { bundleId } = req.body
+  const { bundleId, project } = req.body
   if (!bundleId) return badRequest(res, 'bundleId is required')
 
-  const bundle = await Bundle.findOne({
-    $or: [{ _id: bundleId.length === 24 ? bundleId : null }, { bundleNo: bundleId }],
-  })
+  const isObjectId = /^[a-f0-9]{24}$/i.test(bundleId)
+
+  // Human-readable bundle numbers (e.g. "BND-001") are only unique within a project, so a
+  // project reference is required to scope the lookup — otherwise a scan could silently resolve
+  // to the wrong project's bundle. The internal Mongo _id is already globally unique.
+  let leadId = null
+  if (!isObjectId) {
+    if (!project) return badRequest(res, 'project is required when scanning by bundle number')
+    const lead = await resolveLeadByProjectRef(project)
+    if (!lead) return notFound(res, 'Project not found')
+    leadId = lead._id
+  }
+
+  const bundle = await Bundle.findOne(
+    isObjectId ? { _id: bundleId } : { bundleNo: bundleId, leadId }
+  )
     .populate('bundlePlanId', 'leadId')
     .lean()
 
@@ -236,3 +289,7 @@ exports.downloadDeliveryBillOfLading = asyncHandler(async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="delivery-${delivery.deliveryNumber || delivery._id}-bill-of-lading.pdf"`)
   return res.send(buffer)
 })
+
+// Reused by admin/employee.controller.js to render a construction employee's assigned
+// deliveries with the same card shape as the construction panel itself.
+module.exports.buildDeliveryCard = buildDeliveryCard

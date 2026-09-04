@@ -60,6 +60,24 @@ const buildDailySeries = (start, end, rows = []) => {
   return data
 }
 
+// buildDateFilter only understands explicit startDate/endDate — a `period=today` (or
+// `month`) shorthand from the dashboard's filter pill was silently ignored, so selecting
+// "Today" showed all-time totals instead. This resolves the shorthand into the same
+// startDate/endDate shape before handing off to buildDateFilter, and still passes explicit
+// dates through untouched.
+const buildKPIDateFilter = (query = {}, field = 'createdAt') => {
+  if (query.startDate || query.endDate) return buildDateFilter(query, field)
+
+  const now = new Date()
+  if (query.period === 'today') {
+    return buildDateFilter({ startDate: startOfDay(now).toISOString(), endDate: endOfDay(now).toISOString() }, field)
+  }
+  if (query.period === 'month') {
+    return buildDateFilter({ startDate: startOfMonth(now).toISOString(), endDate: endOfMonth(now).toISOString() }, field)
+  }
+  return {}
+}
+
 const calcPctChange = (currentTotal, prevTotal) => {
   if (prevTotal === 0) return currentTotal > 0 ? 100 : 0
   return Number((((currentTotal - prevTotal) / prevTotal) * 100).toFixed(2))
@@ -68,7 +86,7 @@ const calcPctChange = (currentTotal, prevTotal) => {
 // v2 dashboard API
 exports.getStats = asyncHandler(async (req, res) => {
   const salesId = req.user._id
-  const dateFilter = buildDateFilter(req.query)
+  const dateFilter = buildKPIDateFilter(req.query)
 
   const [totalLeads, leadsClosed, followUpPending, escalationsPending] = await Promise.all([
     Lead.countDocuments({ assignedSales: salesId, ...dateFilter }),
@@ -267,12 +285,16 @@ exports.getTodayTasks = asyncHandler(async (req, res) => {
 
 exports.getLeadStats = asyncHandler(async (req, res) => {
   const salesId = req.user._id
-  const dateFilter = buildDateFilter(req.query)
+  const dateFilter = buildKPIDateFilter(req.query)
   const base = { assignedSales: salesId, ...dateFilter }
 
-  const [total, quoteReady, quoteValueAgg, unread] = await Promise.all([
+  // "Confirmed" means the lead has been raised to a PO (isRaisedToPO) everywhere else in this
+  // codebase (customer portal + account panel both use this exact definition for their
+  // "Confirmed" tab) — this endpoint was instead counting isQuoteReady (quote sent, not won),
+  // which is a different, earlier pipeline stage. That mismatch is why the KPI looked wrong.
+  const [total, confirmed, quoteValueAgg, unread] = await Promise.all([
     Lead.countDocuments(base),
-    Lead.countDocuments({ ...base, isQuoteReady: true }),
+    Lead.countDocuments({ ...base, isRaisedToPO: true }),
     Lead.aggregate([{ $match: base }, { $group: { _id: null, total: { $sum: '$quoteValue' } } }]),
     Message.countDocuments({
       isRead: false,
@@ -283,7 +305,7 @@ exports.getLeadStats = asyncHandler(async (req, res) => {
 
   return success(res, {
     totalLeads: total,
-    confirmedLeads: quoteReady,
+    confirmedLeads: confirmed,
     pipelineValue: quoteValueAgg[0]?.total || 0,
     unreadMessages: unread,
   })

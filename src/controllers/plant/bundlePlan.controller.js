@@ -225,13 +225,25 @@ exports.getLoadPlanningProjects = asyncHandler(async (req, res) => {
     })
   }
 
-  const projects = [...projectMap.values()].sort((a, b) => {
+  let projects = [...projectMap.values()].sort((a, b) => {
     const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
     const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
     return bTime - aTime
   })
 
-  return success(res, { projects, total: projects.length })
+  const { search, page = 1, limit = 20 } = req.query
+  if (search?.trim()) {
+    const term = search.trim().toLowerCase()
+    projects = projects.filter((p) =>
+      p.projectName?.toLowerCase().includes(term) || p.jobId?.toLowerCase().includes(term)
+    )
+  }
+  const total = projects.length
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1)
+  const parsedLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 20))
+  const paged = projects.slice((parsedPage - 1) * parsedLimit, (parsedPage - 1) * parsedLimit + parsedLimit)
+
+  return success(res, { projects: paged, total, page: parsedPage, limit: parsedLimit })
 })
 
 const loadBundlePlanByProjectWithAccess = async (projectRef, req) => {

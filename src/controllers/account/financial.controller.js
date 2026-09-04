@@ -126,6 +126,10 @@ exports.getLogisticsCosts = asyncHandler(async (req, res) => {
   const filter = { payeeType: { $in: ['carrier', 'delivery_company'] } }
   if (status) filter.status = status
   if (project) filter.leadId = project
+  if (carrier) { filter.payeeType = 'carrier'; filter.payee = { $regex: carrier, $options: 'i' } }
+  if (deliveryCompany) { filter.payeeType = 'delivery_company'; filter.payee = { $regex: deliveryCompany, $options: 'i' } }
+  if (paymentStatus === 'paid') filter.paidAt = { $ne: null }
+  else if (paymentStatus === 'unpaid') filter.paidAt = null
 
   const [rows, total, statsAgg] = await Promise.all([
     PaymentApproval.find(filter)
