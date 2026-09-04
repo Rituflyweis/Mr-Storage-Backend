@@ -7,6 +7,7 @@ const mailer = require("../../services/email/mailer");
 const quoteSummaryService = require("../../services/ai/quoteSummary.service");
 const auditService = require("../../services/audit.service");
 const generateQuoteNumber = require("../../utils/generateQuoteNumber");
+const { generateQuotePdf: generateAssembledQuotePdf } = require("../../services/quoting/quoteDocumentGenerator");
 const {
   success,
   created,
@@ -124,6 +125,88 @@ const mapEstimateSummary = (estimate) => {
     squareFootage: toNumber(estimate.squareFootage, 0),
     grandTotal: resolveEstimateGrandTotal(estimate),
     updatedAt: estimate.updatedAt || estimate.createdAt || null,
+  };
+};
+
+const mapEstimateToDocumentPayload = (estimate = {}) => {
+  const grandTotal = resolveEstimateGrandTotal(estimate);
+  return {
+    jobType: estimate.jobType,
+    leadCompanyName: estimate.leadCompanyName,
+    customerEmail: estimate.customerEmail,
+    streetAddress: estimate.streetAddress,
+    cityStateZip: estimate.cityStateZip,
+    buildingSize: estimate.buildingSize,
+    squareFootage: estimate.squareFootage,
+    quoteDate: estimate.quoteDate,
+    additionalInfo: estimate.additionalInfo,
+    pricingResult: estimate.pricingResult,
+    storageData: estimate.storageData,
+    storagePricingResult: estimate.storagePricingResult,
+    grandTotal,
+    fullQuote: estimate.fullQuoteResult || {
+      pricing: estimate.pricingResult,
+      concrete: estimate.concreteAddon,
+      insulation: estimate.insulationAddon,
+      salesTax: estimate.salesTax,
+      grandTotal,
+      pricePerSf: estimate.pricePerSf,
+    },
+    concrete: estimate.concreteAddon,
+    insulation: estimate.insulationAddon,
+    salesTax: estimate.salesTax,
+    contract: estimate.contractDetails,
+    drawingAttachments: estimate.drawingAttachments,
+    customer: {
+      name: estimate.leadCompanyName,
+      address: estimate.streetAddress,
+      location: estimate.cityStateZip,
+      email: estimate.customerEmail,
+    },
+  };
+};
+
+const mapQuotationToDocumentPayload = (quotation = {}, customer = {}, estimate = null) => {
+  if (estimate) return mapEstimateToDocumentPayload(estimate);
+
+  const sf = toNumber(quotation.totalArea || quotation.sqft, 0);
+  const materialSell = toNumber(quotation.materialCost, 0) + toNumber(quotation.freightCost, 0);
+  const finalPrice = toNumber(quotation.finalPrice || quotation.basePrice, 0);
+  const installSell = Math.max(0, finalPrice - materialSell);
+
+  return {
+    jobType: quotation.buildingType || "PEMB",
+    leadCompanyName: quotation.companyName || customer.firstName || "Customer",
+    customerEmail: customer.email || "",
+    cityStateZip: quotation.location || "",
+    buildingSize: sf > 0 ? `${Number(sf).toLocaleString()} SF` : "",
+    squareFootage: sf,
+    quoteDate: quotation.proposalDate || quotation.createdAt || new Date(),
+    additionalInfo: quotation.clientNotes || quotation.specialNote || "",
+    grandTotal: finalPrice,
+    fullQuote: {
+      pricing: {
+        jobType: quotation.buildingType || "PEMB",
+        sf,
+        scope: "both",
+        isSS: false,
+        matSell: materialSell,
+        instSell: installSell,
+        totSell: finalPrice,
+        totWt: 0,
+        trucks: 0,
+      },
+      concrete: { include: false, appliedSell: 0 },
+      insulation: { include: false, appliedSell: 0 },
+      salesTax: { amount: 0, rate: 0 },
+      grandTotal: finalPrice,
+      pricePerSf: sf > 0 ? Number((finalPrice / sf).toFixed(2)) : 0,
+    },
+    customer: {
+      name: quotation.companyName || customer.firstName || "Customer",
+      location: quotation.location || "",
+      email: customer.email || "",
+    },
   };
 };
 
@@ -730,12 +813,42 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
   if (!customer) return notFound(res, "Customer not found");
   if (!customer.email) return badRequest(res, "Customer has no email address on file");
 
+  const customMessage = String(req.body?.message || req.body?.note || "").trim();
+  const requestedSections =
+    Array.isArray(req.body?.sections) && req.body.sections.length
+      ? req.body.sections
+      : ["quote", "sow", "contract", "drawings"];
+
+  let pdfAttachment = null;
+  let pdfWarning = null;
+  let sourceEstimate = null;
+  if (quotation.sourceEstimateId) {
+    sourceEstimate = await EstimateQuote.findById(quotation.sourceEstimateId).lean();
+  }
+  try {
+    const pdfPayload = mapQuotationToDocumentPayload(quotation.toObject(), customer.toObject(), sourceEstimate);
+    const pdfBuffer = await generateAssembledQuotePdf({
+      ...pdfPayload,
+      sections: requestedSections,
+    });
+    pdfAttachment = {
+      filename: `Quotation-${quotation.quoteNumber || quotation._id}.pdf`,
+      content: pdfBuffer,
+      contentType: "application/pdf",
+    };
+  } catch (err) {
+    pdfWarning = err.message || "Quotation PDF generation failed";
+    console.warn("[sendQuotation] PDF attachment skipped, sending HTML email only:", pdfWarning);
+  }
+
   let emailResult = { provider: "unknown" };
   try {
     emailResult = await mailer.sendQuotation({
       toEmail: customer.email,
       customerName: customer.firstName,
       quotation,
+      message: customMessage,
+      pdfAttachment,
     });
   } catch (err) {
     console.error("[sendQuotation] Email failed for quotation", quotation.quoteNumber, err.message);
@@ -780,6 +893,9 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
       quotationId: quotation._id,
       sentTo: customer.email,
       provider: emailResult?.provider || "unknown",
+      customMessageIncluded: Boolean(customMessage),
+      pdfAttached: Boolean(pdfAttachment),
+      pdfWarning: pdfWarning || null,
     },
   });
 
@@ -796,6 +912,9 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
         includeDocuments: true,
       }),
       emailProvider: emailResult?.provider || "unknown",
+      messageIncluded: Boolean(customMessage),
+      pdfAttached: Boolean(pdfAttachment),
+      pdfWarning: pdfWarning || null,
     },
     "Quotation sent successfully",
   );

@@ -136,7 +136,9 @@ const transporter = {
     try {
       const smtpPayload = {
         ...payload,
-        from: payload.from || SMTP_MAIL_FROM || MAIL_FROM,
+        // SMTP providers (notably Gmail) may reject spoofed From addresses.
+        // Prefer authenticated mailbox identity on SMTP sends.
+        from: SMTP_MAIL_FROM || payload.from || MAIL_FROM,
       };
       await smtpTransporter.sendMail(smtpPayload);
       return { provider: "smtp_fallback" };
@@ -150,7 +152,7 @@ const transporter = {
           );
           const altPayload = {
             ...payload,
-            from: payload.from || SMTP_MAIL_FROM || MAIL_FROM,
+            from: SMTP_MAIL_FROM || payload.from || MAIL_FROM,
           };
           await smtpAltTransporter.sendMail(altPayload);
           return { provider: "smtp_fallback_alt_port" };
@@ -509,7 +511,13 @@ const buildInvoicePdfDocument = (inv, customerName, paymentSchedule) => {
   };
 };
 
-const sendQuotation = async ({ toEmail, customerName, quotation }) => {
+const sendQuotation = async ({
+  toEmail,
+  customerName,
+  quotation,
+  message = "",
+  pdfAttachment = null,
+}) => {
   const template = loadTemplate("quotation");
   const html = fillTemplate(template, {
     CUSTOMER_NAME: customerName,
@@ -541,12 +549,33 @@ const sendQuotation = async ({ toEmail, customerName, quotation }) => {
     ROOF_STYLE: quotation.roofStyle || "",
   });
 
-  const result = await transporter.sendMail({
+  const safeMessage = escapeHtml(String(message || "").trim()).replace(/\n/g, "<br/>");
+  const htmlWithMessage = safeMessage
+    ? `${html}
+      <div style="margin-top:16px;padding:14px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;">
+        <div style="font-size:12px;font-weight:700;color:#111827;margin-bottom:6px;">Message from our team</div>
+        <div style="font-size:13px;">${safeMessage}</div>
+      </div>`
+    : html;
+
+  const mailOptions = {
     from: MAIL_FROM,
     to: toEmail,
     subject: `Your Quotation for ${quotation.buildingType || "Construction Project"}`,
-    html,
-  });
+    html: htmlWithMessage,
+  };
+
+  if (pdfAttachment?.content) {
+    mailOptions.attachments = [
+      {
+        filename: pdfAttachment.filename || "Quotation.pdf",
+        content: pdfAttachment.content,
+        contentType: pdfAttachment.contentType || "application/pdf",
+      },
+    ];
+  }
+
+  const result = await transporter.sendMail(mailOptions);
   return { provider: result?.provider || "unknown" };
 };
 
