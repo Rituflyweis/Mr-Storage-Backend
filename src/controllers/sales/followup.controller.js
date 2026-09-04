@@ -16,6 +16,8 @@ const {
 const asyncHandler = require("../../utils/asyncHandler");
 const { buildDateFilter } = require("../../utils/dateRange");
 const { AUDIT_ACTIONS } = require("../../config/constants");
+const { getOrCreateConfig } = require("../../services/followup/followUpAutomation.service");
+const { resolveFollowUpDate } = require("../../utils/timezoneDate");
 const {
   scheduleFollowUpReminder,
 } = require("../../utils/scheduler/followUpScheduler");
@@ -146,13 +148,18 @@ exports.createFollowUp = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(leadId).select("customerId").lean();
   if (!lead) return notFound(res, "Lead not found");
   const customerId = lead.customerId;
+  const config = await getOrCreateConfig();
+  const normalizedDate = resolveFollowUpDate(followUpDate, {
+    timezone: config?.timezone || "UTC",
+  });
+  if (!normalizedDate.date) return badRequest(res, "Invalid followUpDate");
 
   const followUp = await FollowUp.create({
     leadId,
     customerId,
     assignedTo: req.user._id,
     createdBy: req.user._id,
-    followUpDate: new Date(followUpDate),
+    followUpDate: normalizedDate.date,
     modeOfContact: modeOfContact || "call",
     reminderMinutes: Number(reminderMinutes ?? 30),
     notifyCustomer: notifyCustomer !== false,
@@ -170,6 +177,9 @@ exports.createFollowUp = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: {
       followUpDate,
+      followUpDateUtc: normalizedDate.date,
+      followUpTimezone: normalizedDate.timezoneUsed,
+      followUpParseMode: normalizedDate.mode,
       priority,
       modeOfContact,
       reminderMinutes,

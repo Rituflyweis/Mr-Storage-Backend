@@ -72,7 +72,9 @@ exports.getConfig = asyncHandler(async (req, res) => {
 })
 
 exports.updateConfig = asyncHandler(async (req, res) => {
-  if (req.user.role !== 'admin') return forbidden(res, 'Only admin can update automation config')
+  if (!['admin', 'sales'].includes(req.user.role)) {
+    return forbidden(res, 'Only admin or sales can update automation config')
+  }
 
   const payload = req.body || {}
   delete payload.key
