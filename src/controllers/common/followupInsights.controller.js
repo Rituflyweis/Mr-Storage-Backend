@@ -38,6 +38,12 @@ const computeStatus = (row, now = new Date()) => {
   return "pending";
 };
 
+const resolveActivityAt = (row) => {
+  if (row.status === "completed" && row.completedAt) return row.completedAt;
+  if (row.createdAt) return row.createdAt;
+  return row.followUpDate;
+};
+
 const parseTransitionState = (transitionState) => {
   if (!transitionState || !VALID_TRANSITION_STATES.includes(transitionState))
     return null;
@@ -312,7 +318,7 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
 
   const { match, now } = await buildFollowUpMatch(req, { kind, leadId: null });
   const allRows = await FollowUp.find(match)
-    .select("leadId followUpDate status")
+    .select("leadId followUpDate status createdAt completedAt")
     .lean();
 
   const leadSummaryMap = new Map();
@@ -326,7 +332,7 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
         pendingCount: 0,
         completedCount: 0,
         overdueCount: 0,
-        lastFollowUpAt: null,
+        lastActivityAt: null,
         lastFollowUpStatus: null,
       });
     }
@@ -336,12 +342,13 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
     else if (computedStatus === "completed") bucket.completedCount += 1;
     else if (computedStatus === "overdue") bucket.overdueCount += 1;
 
-    const rowTime = new Date(row.followUpDate).getTime();
-    const lastTime = bucket.lastFollowUpAt
-      ? new Date(bucket.lastFollowUpAt).getTime()
+    const activityAt = resolveActivityAt(row);
+    const rowTime = new Date(activityAt).getTime();
+    const lastTime = bucket.lastActivityAt
+      ? new Date(bucket.lastActivityAt).getTime()
       : 0;
-    if (!bucket.lastFollowUpAt || rowTime > lastTime) {
-      bucket.lastFollowUpAt = row.followUpDate;
+    if (!bucket.lastActivityAt || rowTime > lastTime) {
+      bucket.lastActivityAt = activityAt;
       bucket.lastFollowUpStatus = computedStatus;
     }
   }
@@ -362,8 +369,8 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
 
   let grouped = [...leadSummaryMap.values()].sort(
     (a, b) =>
-      new Date(b.lastFollowUpAt || 0).getTime() -
-      new Date(a.lastFollowUpAt || 0).getTime(),
+      new Date(b.lastActivityAt || 0).getTime() -
+      new Date(a.lastActivityAt || 0).getTime(),
   );
 
   let transitionSnapshot = {
@@ -402,7 +409,8 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
     pendingCount: row.pendingCount,
     completedCount: row.completedCount,
     overdueCount: row.overdueCount,
-    lastFollowUpAt: row.lastFollowUpAt,
+    lastFollowUpAt: row.lastActivityAt,
+    lastActivityAt: row.lastActivityAt,
     lastFollowUpStatus: row.lastFollowUpStatus,
     ...(shouldAttachTransitionData(req.query)
       ? {
