@@ -11,9 +11,19 @@ const DEACTIVATED_ACCOUNT_MESSAGE =
   'Your account is deactivated. Please email to info@steelbuildingdepot.com'
 
 const signAccess = (user) =>
-  jwt.sign({ _id: user._id, email: user.email, role: user.role, name: user.name }, env.JWT_ACCESS_SECRET, {
-    expiresIn: env.JWT_ACCESS_EXPIRES_IN,
-  })
+  jwt.sign(
+    {
+      _id: user._id,
+      email: user.email,
+      role: user.role,
+      name: user.name,
+      isMainAdmin: user.role === 'admin' ? Boolean(user.isMainAdmin) : false,
+    },
+    env.JWT_ACCESS_SECRET,
+    {
+      expiresIn: env.JWT_ACCESS_EXPIRES_IN,
+    }
+  )
 
 const signRefresh = (user) =>
   jwt.sign({ _id: user._id }, env.JWT_REFRESH_SECRET, {
@@ -57,7 +67,17 @@ exports.refresh = asyncHandler(async (req, res) => {
     if (!user || !user.isActive) return unauthorized(res, 'User not found or inactive')
 
     const accessToken = signAccess(user)
-    return success(res, { accessToken })
+    return success(res, {
+      accessToken,
+      role: user.role,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isMainAdmin: user.role === 'admin' ? Boolean(user.isMainAdmin) : false,
+      },
+    })
   } catch {
     return unauthorized(res, 'Invalid or expired refresh token')
   }
