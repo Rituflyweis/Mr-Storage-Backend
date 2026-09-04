@@ -317,7 +317,8 @@ exports.getScoredLeads = asyncHandler(async (req, res) => {
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
 
-  const filter = { assignedSales: req.user._id }
+  const { filter, error } = await buildSalesLeadsByScoreFilter(req.query, req.user._id)
+  if (error) return badRequest(res, error)
   const skip = (parsedPage - 1) * parsedLimit
 
   const [leads, total] = await Promise.all([
