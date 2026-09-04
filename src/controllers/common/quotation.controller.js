@@ -7,7 +7,10 @@ const mailer = require("../../services/email/mailer");
 const quoteSummaryService = require("../../services/ai/quoteSummary.service");
 const auditService = require("../../services/audit.service");
 const generateQuoteNumber = require("../../utils/generateQuoteNumber");
-const { generateQuotePdf: generateAssembledQuotePdf } = require("../../services/quoting/quoteDocumentGenerator");
+const {
+  generateAssembledHtml,
+  generateQuotePdf: generateAssembledQuotePdf,
+} = require("../../services/quoting/quoteDocumentGenerator");
 const {
   success,
   created,
@@ -22,6 +25,7 @@ const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require("../../config/constants");
 const QUOTATION_APPROVAL_STATUSES = ["not_submitted", "pending_approval", "approved", "rejected"];
 const QUOTATION_STATUS_FILTERS = ["draft", "pending", "pending_approval", "approved", "rejected", "sent", "accepted"];
 const QUOTATION_SORT_VALUES = ["latest", "oldest"];
+const QUOTATION_DOCUMENT_SECTIONS = ["quote", "sow", "contract", "drawings"];
 const QUOTATION_USER_FIELDS = "name email role";
 
 const populateQuotationUsers = (query) =>
@@ -211,7 +215,12 @@ const mapQuotationToDocumentPayload = (quotation = {}, customer = {}, estimate =
 };
 
 const buildQuotationDocumentMeta = (quotation = {}, estimate = null) => {
+  const quotationId = quotation?._id || null;
   const estimateId = quotation.sourceEstimateId || estimate?._id || null;
+  const previewEndpoint = quotationId
+    ? `/api/quotations/${quotationId}/pdf?format=html`
+    : null;
+  const pdfEndpoint = quotationId ? `/api/quotations/${quotationId}/pdf` : null;
   const hasPricingData = Boolean(
     estimate?.pricingResult ||
       estimate?.fullQuoteResult?.pricing ||
@@ -221,17 +230,30 @@ const buildQuotationDocumentMeta = (quotation = {}, estimate = null) => {
     source: estimateId ? "estimate" : "quotation",
     sourceEstimateId: estimateId || null,
     hasPricingData,
-    previewEndpoint: estimateId ? "/api/sales/estimates/documents/preview" : null,
-    pdfEndpoint: estimateId
-      ? `/api/sales/estimates/${estimateId}/documents/pdf`
-      : null,
+    previewEndpoint,
+    pdfEndpoint,
     defaultSections: ["quote", "sow", "contract", "drawings"],
   };
 };
 
 const buildQuotationPdfLink = (quotation = {}, estimate = null) => {
-  const estimateId = quotation.sourceEstimateId || estimate?._id || null;
-  return estimateId ? `/api/sales/estimates/${estimateId}/documents/pdf` : null;
+  if (!quotation?._id) return null;
+  return `/api/quotations/${quotation._id}/pdf`;
+};
+
+const buildQuotationHtmlPreviewLink = (quotation = {}) => {
+  if (!quotation?._id) return null;
+  return `/api/quotations/${quotation._id}/pdf?format=html`;
+};
+
+const parsePdfSections = (sectionsRaw) => {
+  if (!sectionsRaw) return QUOTATION_DOCUMENT_SECTIONS;
+  const values = String(sectionsRaw)
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+  const unique = [...new Set(values)].filter((s) => QUOTATION_DOCUMENT_SECTIONS.includes(s));
+  return unique.length ? unique : QUOTATION_DOCUMENT_SECTIONS;
 };
 
 const decorateQuotationResponse = async (
@@ -264,6 +286,7 @@ const decorateQuotationResponse = async (
     quotation.documentMeta = buildQuotationDocumentMeta(quotation, estimate);
   }
   quotation.pdfLink = buildQuotationPdfLink(quotation, estimate);
+  quotation.htmlPreviewLink = buildQuotationHtmlPreviewLink(quotation);
 
   return quotation;
 };
@@ -655,6 +678,41 @@ exports.getQuotation = asyncHandler(async (req, res) => {
       includeDocuments,
     }),
   });
+});
+
+exports.downloadQuotationPdf = asyncHandler(async (req, res) => {
+  const quotation = await Quotation.findById(req.params.quotationId);
+  if (!quotation) return notFound(res, "Quotation not found");
+
+  const { error: accessError, code } = await checkLeadAccess(quotation.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+
+  const customer = await Customer.findById(quotation.customerId).lean();
+  const sourceEstimate = quotation.sourceEstimateId
+    ? await EstimateQuote.findById(quotation.sourceEstimateId).lean()
+    : null;
+  const sections = parsePdfSections(req.query.sections);
+  const format = String(req.query.format || "pdf").trim().toLowerCase();
+
+  try {
+    const pdfPayload = mapQuotationToDocumentPayload(quotation.toObject(), customer || {}, sourceEstimate);
+    if (format === "html") {
+      const assembledHtml = generateAssembledHtml({
+        ...pdfPayload,
+        sections,
+      });
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(assembledHtml);
+    }
+
+    const pdfBuffer = await generateAssembledQuotePdf({ ...pdfPayload, sections });
+    const fileName = `Quotation-${quotation.quoteNumber || quotation._id}.pdf`.replace(/[^\w.-]+/g, "_");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+    return res.send(pdfBuffer);
+  } catch (err) {
+    return badRequest(res, `PDF generation failed: ${err.message}`);
+  }
 });
 
 exports.updateQuotation = asyncHandler(async (req, res) => {

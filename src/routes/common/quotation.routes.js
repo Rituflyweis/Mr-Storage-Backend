@@ -30,6 +30,7 @@ router.get(
   validate,
   ctrl.getPendingQuotationApprovals
 );
+router.get("/:quotationId/pdf", ctrl.downloadQuotationPdf);
 router.get("/:quotationId", ctrl.getQuotation);
 router.put("/:quotationId", ctrl.updateQuotation);
 router.delete("/:quotationId", ctrl.deleteQuotation);
