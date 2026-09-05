@@ -405,7 +405,7 @@ const processChatDropOff = async (config) => {
       customer,
       message:
         'Hi, we are checking in on your project details. Reply to this message and our sales team will assist right away.',
-      subject: 'Project follow-up from Storage Materials',
+      subject: 'Project follow-up from Steel Building Depot',
       followUpSource: 'chat_dropoff_auto',
       config,
     })

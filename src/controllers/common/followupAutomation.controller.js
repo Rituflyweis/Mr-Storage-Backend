@@ -14,6 +14,19 @@ const asyncHandler = require('../../utils/asyncHandler')
 
 const MAX_ATTEMPTS_LIMIT = 4
 
+const parseIntervalArray = (value) => {
+  if (Array.isArray(value)) return value.map((v) => Number(v))
+  if (value === undefined || value === null) return undefined
+  if (typeof value === 'string') {
+    const parts = value
+      .split(',')
+      .map((v) => Number(String(v).trim()))
+      .filter((v) => Number.isFinite(v))
+    return parts.length ? parts : []
+  }
+  return []
+}
+
 const normalizePhone = (countryCode, phone) => {
   const cc = String(countryCode || '').trim()
   const pn = String(phone || '').trim().replace(/\s+/g, '')
@@ -65,10 +78,25 @@ const normalizeLeadFollowUpPayload = (payload = {}) => {
   // Remove older/duplicate keys to keep one source of truth.
   delete payload.leadFrequency
   delete payload.coldLead
+
+  // Accept legacy/FE string input like "1,3,7" for interval fields.
+  if (payload.chatDropOff?.attemptIntervalsMinutes !== undefined) {
+    payload.chatDropOff.attemptIntervalsMinutes = parseIntervalArray(payload.chatDropOff.attemptIntervalsMinutes)
+  }
+  if (payload.invoiceReminder?.intervalsHours !== undefined) {
+    payload.invoiceReminder.intervalsHours = parseIntervalArray(payload.invoiceReminder.intervalsHours)
+  }
+  if (payload.leadFollowUp?.warm?.intervalsDays !== undefined) {
+    payload.leadFollowUp.warm.intervalsDays = parseIntervalArray(payload.leadFollowUp.warm.intervalsDays)
+  }
+  if (payload.leadFollowUp?.cold?.intervalsDays !== undefined) {
+    payload.leadFollowUp.cold.intervalsDays = parseIntervalArray(payload.leadFollowUp.cold.intervalsDays)
+  }
+
   return payload
 }
 
-const validateAttemptConfig = (label, intervals, maxAttempts) => {
+const validateAttemptConfig = (label, intervals, maxAttempts, requireExactCount = false) => {
   const max = Number(maxAttempts)
   if (!Number.isInteger(max) || max < 1 || max > MAX_ATTEMPTS_LIMIT) {
     return `${label}.maxAttempts must be an integer between 1 and ${MAX_ATTEMPTS_LIMIT}`
@@ -86,54 +114,90 @@ const validateAttemptConfig = (label, intervals, maxAttempts) => {
     }
   }
 
-  if (intervals.length > max) {
+  if (requireExactCount && intervals.length !== max) {
+    return `${label} intervals count (${intervals.length}) must exactly match maxAttempts (${max})`
+  }
+
+  if (!requireExactCount && intervals.length > max) {
     return `${label} intervals count (${intervals.length}) cannot exceed maxAttempts (${max})`
   }
 
   return null
 }
 
-const validateConfigPayload = (payload = {}, currentConfig = {}) => {
+const validateConfigPayload = (payload = {}, currentConfig = {}, rawPayload = {}) => {
   const errors = []
 
+  const chatIntervalsProvided = rawPayload.chatDropOff?.attemptIntervalsMinutes !== undefined
+  const chatTouched =
+    rawPayload.chatDropOff?.attemptIntervalsMinutes !== undefined ||
+    rawPayload.chatDropOff?.maxAttempts !== undefined
   const chatMaxAttempts =
     payload.chatDropOff?.maxAttempts ??
     currentConfig.chatDropOff?.maxAttempts
-  if (payload.chatDropOff?.attemptIntervalsMinutes !== undefined || payload.chatDropOff?.maxAttempts !== undefined) {
+  if (chatTouched) {
     const err = validateAttemptConfig(
       'chatDropOff.attemptIntervalsMinutes',
       payload.chatDropOff?.attemptIntervalsMinutes,
-      chatMaxAttempts
+      chatMaxAttempts,
+      chatIntervalsProvided
     )
     if (err) errors.push(err)
   }
 
+  const invoiceIntervalsProvided = rawPayload.invoiceReminder?.intervalsHours !== undefined
+  const invoiceTouched =
+    rawPayload.invoiceReminder?.intervalsHours !== undefined ||
+    rawPayload.invoiceReminder?.maxAttempts !== undefined
   const invoiceMaxAttempts =
     payload.invoiceReminder?.maxAttempts ??
     currentConfig.invoiceReminder?.maxAttempts
-  if (payload.invoiceReminder?.intervalsHours !== undefined || payload.invoiceReminder?.maxAttempts !== undefined) {
+  if (invoiceTouched) {
     const err = validateAttemptConfig(
       'invoiceReminder.intervalsHours',
       payload.invoiceReminder?.intervalsHours,
-      invoiceMaxAttempts
+      invoiceMaxAttempts,
+      invoiceIntervalsProvided
     )
     if (err) errors.push(err)
   }
 
-  if (payload.leadFollowUp?.warm) {
+  const warmIntervalsProvided =
+    rawPayload.leadFollowUp?.warm?.intervalsDays !== undefined ||
+    rawPayload.leadFrequency?.warm?.intervalsDays !== undefined
+  const warmTouched =
+    rawPayload.leadFollowUp?.warm !== undefined ||
+    rawPayload.leadFrequency?.warm !== undefined
+  if (warmTouched && payload.leadFollowUp?.warm) {
+    const warmMaxAttempts =
+      payload.leadFollowUp.warm?.maxAttempts ??
+      currentConfig.leadFollowUp?.warm?.maxAttempts
     const err = validateAttemptConfig(
       'leadFollowUp.warm.intervalsDays',
       payload.leadFollowUp.warm?.intervalsDays,
-      payload.leadFollowUp.warm?.maxAttempts
+      warmMaxAttempts,
+      warmIntervalsProvided
     )
     if (err) errors.push(err)
   }
 
-  if (payload.leadFollowUp?.cold) {
+  const coldIntervalsProvided =
+    rawPayload.leadFollowUp?.cold?.intervalsDays !== undefined ||
+    rawPayload.coldLead?.intervalsDays !== undefined ||
+    rawPayload.leadFrequency?.cold?.intervalsDays !== undefined
+  const coldTouched =
+    rawPayload.leadFollowUp?.cold !== undefined ||
+    rawPayload.coldLead !== undefined ||
+    rawPayload.leadFrequency?.cold !== undefined
+  if (coldTouched && payload.leadFollowUp?.cold) {
+    const coldMaxAttempts =
+      payload.leadFollowUp.cold?.maxAttempts ??
+      currentConfig.leadFollowUp?.cold?.maxAttempts
     const err = validateAttemptConfig(
       'leadFollowUp.cold.intervalsDays',
       payload.leadFollowUp.cold?.intervalsDays,
-      payload.leadFollowUp.cold?.maxAttempts
+      coldMaxAttempts,
+      coldIntervalsProvided
     )
     if (err) errors.push(err)
   }
@@ -156,9 +220,10 @@ exports.updateConfig = asyncHandler(async (req, res) => {
   delete payload._id
   delete payload.createdAt
   delete payload.updatedAt
+  const rawPayload = JSON.parse(JSON.stringify(payload))
   const currentConfig = await getOrCreateConfig()
   normalizeLeadFollowUpPayload(payload)
-  const validationErrors = validateConfigPayload(payload, currentConfig)
+  const validationErrors = validateConfigPayload(payload, currentConfig, rawPayload)
   if (validationErrors.length) {
     return badRequest(res, validationErrors.join('; '))
   }
@@ -235,7 +300,7 @@ exports.sendChatDropoffNow = asyncHandler(async (req, res) => {
       await sendFollowUpNudgeEmail({
         toEmail: emailTo,
         customerName: [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim() || 'there',
-        subject: 'Follow-up from Storage Materials',
+        subject: 'Follow-up from Steel Building Depot',
         message: msg,
       })
       sent.email = true

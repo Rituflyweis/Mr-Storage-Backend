@@ -697,7 +697,7 @@ const sendFollowUpNudgeEmail = async ({
       <h2 style="margin:0 0 12px">Follow-up Reminder</h2>
       <p>Hi ${escapeHtml(customerName)},</p>
       <p>${safeMessage || "Our team is following up with you regarding your project. Please reply when convenient."}</p>
-      <p>Thank you,<br/>Storage Materials Team</p>
+      <p>Thank you,<br/>Steel Building Depot Team</p>
     </div>
   `;
 

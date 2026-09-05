@@ -24,8 +24,8 @@ const parseAddressLines = (raw) => {
 const getInvoiceCompany = () => ({
   name: INVOICE_COMPANY_NAME || 'STEEL BUILDING DEPOT',
   addressLines: parseAddressLines(INVOICE_COMPANY_ADDRESS),
-  email: INVOICE_COMPANY_EMAIL || 'travis@storagematerials.com',
-  website: INVOICE_COMPANY_WEBSITE || 'www.storagematerials.com',
+  email: INVOICE_COMPANY_EMAIL || 'info@steelbuildingdepot.com',
+  website: INVOICE_COMPANY_WEBSITE || 'www.steelbuildingdepot.com',
   logoUrl: INVOICE_LOGO_URL || '',
 })
 

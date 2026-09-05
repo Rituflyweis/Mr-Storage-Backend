@@ -418,7 +418,7 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
     weightByCategory: payload.weightByCategory,
     pricing: payload.pricing,
     fullQuote: payload.fullQuote,
-    note: 'Parsed using Storage Materials quoting tool rules — review categories and pricing before saving.',
+    note: 'Parsed using Steel Building Depot quoting tool rules — review categories and pricing before saving.',
   })
 })
 

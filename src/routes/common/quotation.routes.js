@@ -46,7 +46,18 @@ router.post(
 );
 router.put("/:quotationId/approve", [body("note").optional().isString()], validate, ctrl.approveQuotation);
 router.put("/:quotationId/reject", [body("reason").optional().isString(), body("note").optional().isString()], validate, ctrl.rejectQuotationApproval);
-router.post("/:quotationId/send", ctrl.sendQuotation);
+router.post(
+  "/:quotationId/send",
+  [
+    body("message").optional().isString(),
+    body("note").optional().isString(),
+    body("emailMessage").optional().isString(),
+    body("coverNote").optional().isString(),
+    body("sections").optional().isArray(),
+  ],
+  validate,
+  ctrl.sendQuotation
+);
 router.get("/:quotationId/summary", ctrl.getQuoteSummary);
 
 module.exports = router;

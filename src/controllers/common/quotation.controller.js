@@ -871,7 +871,15 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
   if (!customer) return notFound(res, "Customer not found");
   if (!customer.email) return badRequest(res, "Customer has no email address on file");
 
-  const customMessage = String(req.body?.message || req.body?.note || "").trim();
+  const messageCandidates = [
+    ['message', req.body?.message],
+    ['note', req.body?.note],
+    ['emailMessage', req.body?.emailMessage],
+    ['coverNote', req.body?.coverNote],
+  ];
+  const firstMessageEntry = messageCandidates.find(([, value]) => String(value || '').trim());
+  const customMessage = String(firstMessageEntry?.[1] || '').trim();
+  const messageSourceKey = firstMessageEntry?.[0] || null;
   const requestedSections =
     Array.isArray(req.body?.sections) && req.body.sections.length
       ? req.body.sections
@@ -952,6 +960,7 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
       sentTo: customer.email,
       provider: emailResult?.provider || "unknown",
       customMessageIncluded: Boolean(customMessage),
+      customMessageSourceKey: messageSourceKey,
       pdfAttached: Boolean(pdfAttachment),
       pdfWarning: pdfWarning || null,
     },
@@ -971,6 +980,7 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
       }),
       emailProvider: emailResult?.provider || "unknown",
       messageIncluded: Boolean(customMessage),
+      messageSourceKey,
       pdfAttached: Boolean(pdfAttachment),
       pdfWarning: pdfWarning || null,
     },

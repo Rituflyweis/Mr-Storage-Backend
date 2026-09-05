@@ -39,7 +39,7 @@ const QUOTE_STYLES = `
 `
 
 const getLogoHtml = () =>
-  '<span class="q-logo-sm">STORAGE</span><span class="q-logo-mat">MATERIALS</span>'
+  '<span class="q-logo-sm">STEEL BUILDING</span><span class="q-logo-mat">DEPOT</span>'
 
 const fmtMoney = (n) => '$' + Math.round(Number(n) || 0).toLocaleString()
 const fmtDate = (d = new Date()) =>
@@ -150,7 +150,7 @@ const generateStorageQuoteHtml = (payload = {}) => {
 
   return `<div class="quote-output" id="quote-printable">
     <div class="q-logo-bar">
-      <div>${getLogoHtml()}<div class="q-logo-sub">METAL AND DOORS · 1851 Madison Ave Suite 300, Council Bluffs, IA 51503<br>(888) 968-1222 · travis@storagematerials.com · www.storagematerials.com</div></div>
+      <div>${getLogoHtml()}<div class="q-logo-sub">METAL AND DOORS · 1851 Madison Ave Suite 300, Council Bluffs, IA 51503<br>(888) 968-1222 · info@steelbuildingdepot.com · www.steelbuildingdepot.com</div></div>
       <div class="q-header-right"><div class="q-co-name">ESTIMATE</div><div class="q-co-detail">Date: ${ctx.today}<br>Expiration: ${ctx.exp}<br>Business/Tax #: 99-4515145</div></div>
     </div>
     <div class="q-doc-info">
@@ -197,10 +197,10 @@ const generateStorageQuoteHtml = (payload = {}) => {
       </div>
     </div>
     <div class="q-sign">
-      <div class="q-sign-block"><strong>Steel Investments DBA Storage Materials</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
+      <div class="q-sign-block"><strong>Steel Building Depot</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
       <div class="q-sign-block"><strong>${ctx.cust}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
     </div>
-    <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business!!! Reach out with any questions · (888) 968-1222 · travis@storagematerials.com</p>
+    <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business!!! Reach out with any questions · (888) 968-1222 · info@steelbuildingdepot.com</p>
   </div>`
 }
 
@@ -220,7 +220,7 @@ const generateQuoteHtml = (payload = {}) => {
     <div class="q-logo-bar">
       <div>
         ${getLogoHtml()}
-        <div class="q-logo-sub">METAL AND DOORS · 1851 Madison Ave Suite 300, Council Bluffs, IA 51503<br>(888) 968-1222 · travis@storagematerials.com · www.storagematerials.com</div>
+        <div class="q-logo-sub">METAL AND DOORS · 1851 Madison Ave Suite 300, Council Bluffs, IA 51503<br>(888) 968-1222 · info@steelbuildingdepot.com · www.steelbuildingdepot.com</div>
       </div>
       <div class="q-header-right">
         <div class="q-co-name">ESTIMATE</div>
@@ -268,11 +268,11 @@ const generateQuoteHtml = (payload = {}) => {
       </div>
     </div>
     <div class="q-sign">
-      <div class="q-sign-block"><strong>Steel Investments DBA Storage Materials</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
+      <div class="q-sign-block"><strong>Steel Building Depot</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
       <div class="q-sign-block"><strong>${ctx.cust}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
     </div>
     ${ctx.additionalInfo ? `<div style="margin-top:14px;padding:12px;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;"><div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Additional Information</div><p style="font-size:12px;color:#374151;line-height:1.7;white-space:pre-wrap;">${ctx.additionalInfo}</p></div>` : ''}
-    <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business! Reach out with any questions · (888) 968-1222 · travis@storagematerials.com</p>
+    <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business! Reach out with any questions · (888) 968-1222 · info@steelbuildingdepot.com</p>
   </div>`
 }
 
@@ -344,7 +344,7 @@ const generateSowHtml = (payload = {}) => {
       <div class="q-field"><label>Building Size</label><p>${ctx.size} ${res.jobType || 'PEMB'}</p></div>
     </div>
     <div class="q-section"><div class="q-section-title">1. Project Overview</div>
-      <p style="font-size:12px;color:#374151;line-height:1.7;">Storage Materials will furnish${isSupply ? ' and deliver' : ' and install'} a complete Pre-Engineered Metal Building (PEMB) package based on preliminary drawings.</p>
+      <p style="font-size:12px;color:#374151;line-height:1.7;">Steel Building Depot will furnish${isSupply ? ' and deliver' : ' and install'} a complete Pre-Engineered Metal Building (PEMB) package based on preliminary drawings.</p>
       <ul class="q-list" style="margin-top:8px;">
         <li>Approx. ${ctx.size} eave height</li>
         <li>Clear span rigid frame structure</li>
@@ -376,7 +376,7 @@ const generateSowHtml = (payload = {}) => {
       <div class="q-price-sf">$${ctx.grandSF}/SF building · ${scopeTitle}${concInclude ? ' + Concrete' : ''}</div>
     </div>
     <div class="q-sign">
-      <div class="q-sign-block"><strong>Steel Investments DBA Storage Materials</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
+      <div class="q-sign-block"><strong>Steel Building Depot</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
       <div class="q-sign-block"><strong>${ctx.cust}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
     </div>
   </div>`
