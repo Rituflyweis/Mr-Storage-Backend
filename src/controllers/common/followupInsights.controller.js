@@ -5,6 +5,9 @@ const {
   buildActiveLeadMatch,
   isLeadActive,
 } = require("../../utils/activeLeadScope");
+const {
+  getFollowUpDeliveryStatusMap,
+} = require("../../utils/followupDispatchStatus");
 const asyncHandler = require("../../utils/asyncHandler");
 const {
   success,
@@ -35,15 +38,18 @@ const parsePagination = (query = {}) => {
   return { page, limit, skip: (page - 1) * limit };
 };
 
+const normalizeStatus = (status) => String(status || "").trim().toLowerCase();
+
 const computeStatus = (row, now = new Date()) => {
-  if (row.status === "completed") return "completed";
-  if (row.status === "pending" && new Date(row.followUpDate) < now)
-    return "overdue";
+  const status = normalizeStatus(row.status);
+  // Defensive: some legacy rows can have completedAt even if status was not normalized.
+  if (status === "completed" || row.completedAt) return "completed";
+  if (status === "pending" && new Date(row.followUpDate) < now) return "overdue";
   return "pending";
 };
 
 const resolveActivityAt = (row) => {
-  if (row.status === "completed" && row.completedAt) return row.completedAt;
+  if (row.completedAt) return row.completedAt;
   if (row.createdAt) return row.createdAt;
   return row.followUpDate;
 };
@@ -271,6 +277,7 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
       FollowUp.countDocuments(match),
       FollowUp.find(match).select("status followUpDate").lean(),
     ]);
+    const deliveryStatusMap = await getFollowUpDeliveryStatusMap(rows);
 
     const totals = totalsAgg.reduce(
       (acc, row) => {
@@ -300,6 +307,7 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
       notes: row.notes || "",
       createdAt: row.createdAt,
       completedAt: row.completedAt || null,
+      deliveryStatus: deliveryStatusMap.get(String(row._id)) || null,
     }));
 
     let transition = null;
@@ -339,7 +347,9 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
 
   const { match, now } = await buildFollowUpMatch(req, { kind, leadId: null });
   const allRows = await FollowUp.find(match)
-    .select("leadId followUpDate status createdAt completedAt")
+    .select(
+      "_id leadId customerId assignedTo source notifyCustomer sendSms sendEmail followUpDate status createdAt completedAt",
+    )
     .lean();
 
   const leadSummaryMap = new Map();
@@ -355,6 +365,7 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
         overdueCount: 0,
         lastActivityAt: null,
         lastFollowUpStatus: null,
+        lastFollowUpId: null,
       });
     }
     const bucket = leadSummaryMap.get(key);
@@ -371,6 +382,7 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
     if (!bucket.lastActivityAt || rowTime > lastTime) {
       bucket.lastActivityAt = activityAt;
       bucket.lastFollowUpStatus = computedStatus;
+      bucket.lastFollowUpId = row._id;
     }
   }
 
@@ -425,6 +437,11 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
 
   const pageRows = grouped.slice(skip, skip + limit);
   const leadMap = await getLeadMap(pageRows.map((r) => r.leadId));
+  const lastRowsById = new Map(allRows.map((row) => [String(row._id), row]));
+  const lastFollowUpRows = pageRows
+    .map((row) => lastRowsById.get(String(row.lastFollowUpId)))
+    .filter(Boolean);
+  const lastDeliveryStatusMap = await getFollowUpDeliveryStatusMap(lastFollowUpRows);
 
   const leads = pageRows.map((row) => ({
     lead: leadMap.get(String(row.leadId)) || { _id: row.leadId },
@@ -435,6 +452,8 @@ exports.getFollowUpActivity = asyncHandler(async (req, res) => {
     lastFollowUpAt: row.lastActivityAt,
     lastActivityAt: row.lastActivityAt,
     lastFollowUpStatus: row.lastFollowUpStatus,
+    lastDeliveryStatus:
+      lastDeliveryStatusMap.get(String(row.lastFollowUpId)) || null,
     ...(shouldAttachTransitionData(req.query)
       ? {
           transition:

@@ -7,6 +7,7 @@ const LEAD_EDIT_BODY_KEYS = [
   'source',
   'quoteValue',
   'roofStyle',
+  'roofPitch',
   'width',
   'length',
   'height',
@@ -54,6 +55,7 @@ const buildLeadCreatePayload = (body, options = {}) => {
     quoteValue,
     estimatedValue,
     roofStyle,
+    roofPitch,
     width,
     length,
     height,
@@ -86,6 +88,7 @@ const buildLeadCreatePayload = (body, options = {}) => {
       source: resolvedSource,
       quoteValue: toNumberOrNull(quoteValue ?? estimatedValue) ?? 0,
       roofStyle: roofStyle || '',
+      roofPitch: roofPitch === undefined || roofPitch === null ? '' : String(roofPitch).trim(),
       width: toNumberOrNull(width),
       length: toNumberOrNull(length),
       height: toNumberOrNull(height),
@@ -138,6 +141,9 @@ const applyLeadUpdateFromBody = (lead, body) => {
   }
   if (body.roofStyle !== undefined) {
     lead.roofStyle = body.roofStyle === null ? '' : String(body.roofStyle)
+  }
+  if (body.roofPitch !== undefined) {
+    lead.roofPitch = body.roofPitch === null ? '' : String(body.roofPitch).trim()
   }
   if (body.width !== undefined) lead.width = toNumberOrNull(body.width)
   if (body.length !== undefined) lead.length = toNumberOrNull(body.length)

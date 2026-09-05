@@ -241,7 +241,7 @@ exports.importLeads = asyncHandler(async (req, res) => {
   for (let i = 0; i < records.length; i++) {
     const row = records[i]
     try {
-      const { projectName, customerName, customerEmail, customerPhone, buildingType, location, roofStyle, width, length, height } = row
+      const { projectName, customerName, customerEmail, customerPhone, buildingType, location, roofStyle, roofPitch, width, length, height } = row
       if (!projectName || !customerEmail || !buildingType || !location) {
         results.skipped++
         continue
@@ -268,8 +268,10 @@ exports.importLeads = asyncHandler(async (req, res) => {
         buildingType,
         location,
         roofStyle: roofStyle || '',
+        roofPitch: roofPitch ? String(roofPitch).trim() : '',
         width: width ? Number(width) : null,
         length: length ? Number(length) : null,
+        height: height ? Number(height) : null,
         source: 'import',
         assignedSales: req.user._id,
         isHandedToSales: true,

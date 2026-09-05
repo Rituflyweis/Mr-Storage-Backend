@@ -26,8 +26,14 @@ const {
   markFollowUpCompleted,
 } = require("../../services/calendar/calendarSync.service");
 
+const normalizeFollowUpStatus = (status) =>
+  String(status || "").trim().toLowerCase();
+const isCompleted = (f) =>
+  normalizeFollowUpStatus(f?.status) === "completed" || Boolean(f?.completedAt);
 const isOverdue = (f) =>
-  f.status === "pending" && new Date(f.followUpDate) < new Date();
+  !isCompleted(f) &&
+  normalizeFollowUpStatus(f?.status) === "pending" &&
+  new Date(f.followUpDate) < new Date();
 
 exports.getStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query);

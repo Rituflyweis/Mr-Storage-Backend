@@ -11,8 +11,11 @@ const { getOrCreateConfig } = require('../../services/followup/followUpAutomatio
 const { resolveFollowUpDate } = require('../../utils/timezoneDate')
 const { scheduleFollowUpReminder } = require('../../utils/scheduler/followUpScheduler')
 const { upsertFollowUpEvent, markFollowUpCompleted } = require('../../services/calendar/calendarSync.service')
+const { getFollowUpDeliveryStatusMap } = require('../../utils/followupDispatchStatus')
 
-const isOverdue = (f) => f.status === 'pending' && new Date(f.followUpDate) < new Date()
+const normalizeFollowUpStatus = (status) => String(status || '').trim().toLowerCase()
+const isCompleted = (f) => normalizeFollowUpStatus(f?.status) === 'completed' || Boolean(f?.completedAt)
+const isOverdue = (f) => !isCompleted(f) && normalizeFollowUpStatus(f?.status) === 'pending' && new Date(f.followUpDate) < new Date()
 
 const formatClientName = (customer) => {
   if (!customer) return ''
@@ -20,7 +23,7 @@ const formatClientName = (customer) => {
 }
 
 const resolveFollowUpStatus = (followUp) => {
-  if (followUp.status === 'completed') return 'completed'
+  if (isCompleted(followUp)) return 'completed'
   if (isOverdue(followUp)) return 'overdue'
   return 'pending'
 }
@@ -221,6 +224,7 @@ exports.getFollowUpActivityLog = asyncHandler(async (req, res) => {
       .lean(),
     FollowUp.countDocuments(filter),
   ])
+  const deliveryStatusMap = await getFollowUpDeliveryStatusMap(followups)
 
   const leadIds = [...new Set(followups.map((f) => f.leadId?._id || f.leadId).filter(Boolean))]
   const pendingByLeadId = new Map()
@@ -264,6 +268,7 @@ exports.getFollowUpActivityLog = asyncHandler(async (req, res) => {
     priority: f.priority,
     completedAt: f.completedAt,
     createdAt: f.createdAt,
+    deliveryStatus: deliveryStatusMap.get(String(f._id)) || null,
   }))
 
   return success(res, {
@@ -297,6 +302,7 @@ exports.getAllFollowups = asyncHandler(async (req, res) => {
       .skip((page - 1) * limit).limit(Number(limit)).lean(),
     FollowUp.countDocuments(filter)
   ])
+  const deliveryStatusMap = await getFollowUpDeliveryStatusMap(followups)
 
   const perEmployee = await FollowUp.aggregate([
     { $group: { _id: '$assignedTo', total: { $sum: 1 },
@@ -306,5 +312,10 @@ exports.getAllFollowups = asyncHandler(async (req, res) => {
     { $project: { employeeId: '$_id', name: '$emp.name', total: 1, completed: 1 } }
   ])
 
-  return success(res, { followups, total, page: Number(page), limit: Number(limit), perEmployee })
+  const followupsWithDelivery = followups.map((f) => ({
+    ...f,
+    deliveryStatus: deliveryStatusMap.get(String(f._id)) || null,
+  }))
+
+  return success(res, { followups: followupsWithDelivery, total, page: Number(page), limit: Number(limit), perEmployee })
 })
