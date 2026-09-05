@@ -715,6 +715,19 @@ const EMPLOYEE_LOGIN_URLS = {
   plant: PLANT_LOGIN_URL,
 };
 
+const normalizeLoginUrl = (url, role) => {
+  const fallbackByRole = {
+    admin: 'https://admin.steelbuildingdepot.com/sign-in/',
+    sales: 'https://sales.steelbuildingdepot.com/sign-in/',
+    plant: 'https://plant.steelbuildingdepot.com/login',
+  }
+  const trimmed = String(url || '').trim()
+  if (!trimmed) return fallbackByRole[role] || fallbackByRole.admin
+  if (!trimmed.includes('storagematerials.org')) return trimmed
+  const normalizedRole = role === 'sales' ? 'sales' : role === 'plant' ? 'plant' : 'admin'
+  return fallbackByRole[normalizedRole]
+}
+
 const sendEmployeeCredentials = async ({
   toEmail,
   name,
@@ -722,8 +735,10 @@ const sendEmployeeCredentials = async ({
   tempPassword,
 }) => {
   const normalizedRole = String(role || "").toLowerCase();
-  const loginUrl =
-    EMPLOYEE_LOGIN_URLS[normalizedRole] || EMPLOYEE_LOGIN_URLS.admin;
+  const loginUrl = normalizeLoginUrl(
+    EMPLOYEE_LOGIN_URLS[normalizedRole] || EMPLOYEE_LOGIN_URLS.admin,
+    normalizedRole
+  );
   const roleLabel =
     normalizedRole === "admin"
       ? "Admin"

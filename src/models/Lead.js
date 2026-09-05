@@ -78,6 +78,7 @@ const LeadSchema = new mongoose.Schema(
     state:           { type: String, default: '' },
     pincode:         { type: String, default: '' },
     roofStyle:       { type: String, default: '' },
+    roofPitch:       { type: String, default: '' },
     sqft:            { type: String, default: '' },
     width:           { type: Number, default: null },
     length:          { type: Number, default: null },

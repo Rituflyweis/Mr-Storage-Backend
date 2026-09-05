@@ -182,6 +182,7 @@ exports.sendQuotesRequest = asyncHandler(async(req, res) => {
       width: req.body.width ? Number(req.body.width) : null,
       length: req.body.length ? Number(req.body.length) : null,
       height: req.body.height ? Number(req.body.height) : null,
+      roofPitch: req.body.roofPitch ? String(req.body.roofPitch).trim() : '',
       location: [req.body.siteAddress, req.body.city, req.body.state, req.body.country, req.body.zip || req.body.zipCode]
         .filter(Boolean)
         .join(', '),

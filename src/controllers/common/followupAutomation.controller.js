@@ -28,13 +28,23 @@ const parseIntervalArray = (value) => {
 }
 
 const normalizePhone = (countryCode, phone) => {
-  const cc = String(countryCode || '').trim()
-  const pn = String(phone || '').trim().replace(/\s+/g, '')
-  const raw = `${cc}${pn}`
-  if (!raw) return ''
-  if (raw.startsWith('+')) return raw
-  const digits = raw.replace(/[^\d]/g, '')
-  return digits ? `+${digits}` : ''
+  const ccDigits = String(countryCode || '')
+    .replace(/[^\d]/g, '')
+    .trim()
+  const phoneDigits = String(phone || '')
+    .replace(/[^\d]/g, '')
+    .trim()
+  if (!ccDigits && !phoneDigits) return ''
+
+  // If number already has country code (common in CRM imports), trust it.
+  if (phoneDigits.length >= 11) return `+${phoneDigits}`
+
+  if (ccDigits) {
+    if (phoneDigits.startsWith(ccDigits)) return `+${phoneDigits}`
+    return `+${ccDigits}${phoneDigits}`
+  }
+
+  return phoneDigits ? `+${phoneDigits}` : ''
 }
 
 const normalizeLeadFollowUpPayload = (payload = {}) => {

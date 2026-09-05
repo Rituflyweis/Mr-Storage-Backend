@@ -320,31 +320,5 @@ exports.deleteAdmin = asyncHandler(async (req, res) => {
 })
 
 exports.transferMainAdmin = asyncHandler(async (req, res) => {
-  const requester = await requireMainAdmin(req, res)
-  if (!requester) return
-
-  const target = await User.findById(req.params.adminId)
-  if (!target || target.role !== 'admin') return notFound(res, 'Admin user not found')
-  if (!target.isActive) return badRequest(res, 'Cannot set inactive user as main admin')
-  if (String(target._id) === String(requester._id)) {
-    return success(res, { mainAdmin: requester }, 'You are already the main admin')
-  }
-
-  requester.isMainAdmin = false
-  target.isMainAdmin = true
-  await requester.save()
-  await target.save()
-
-  await auditService.log({
-    type: 'user',
-    action: AUDIT_ACTIONS.ADMIN_MAIN_ASSIGNED,
-    performedBy: req.user._id,
-    metadata: {
-      previousMainAdminId: String(requester._id),
-      newMainAdminId: String(target._id),
-      source: 'transfer',
-    },
-  })
-
-  return success(res, { previousMainAdmin: requester, mainAdmin: target }, 'Main admin transferred')
+  return badRequest(res, 'Main admin transfer has been disabled')
 })

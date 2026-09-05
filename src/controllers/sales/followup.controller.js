@@ -715,28 +715,32 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
 });
 
 exports.getQuotationStats = asyncHandler(async (req, res) => {
-  const mongoose = require("mongoose");
   const Quotation = require("../../models/Quotation");
   const dateFilter = buildDateFilter(req.query);
-  const filter = { createdBy: new mongoose.Types.ObjectId(req.user._id), ...dateFilter };
+  const filter = { createdBy: req.user._id, ...dateFilter };
+  const quotations = await Quotation.find(filter).select('status approval').lean()
 
-  const rows = await Quotation.aggregate([
-    { $match: filter },
-    { $group: { _id: "$status", count: { $sum: 1 } } },
-  ]);
+  const stats = {
+    total: quotations.length,
+    approved: 0,
+    pendingApproval: 0,
+    rejected: 0,
+    sent: 0,
+    draft: 0,
+  }
 
-  const byStatus = { draft: 0, sent: 0, accepted: 0, rejected: 0 };
-  rows.forEach((r) => {
-    if (byStatus[r._id] !== undefined) byStatus[r._id] = r.count;
-  });
-  const total = Object.values(byStatus).reduce((s, n) => s + n, 0);
+  for (const quotation of quotations) {
+    const workflowStatus = resolveQuotationWorkflowStatus(quotation)
+    if (workflowStatus === 'approved') stats.approved += 1
+    else if (workflowStatus === 'pending_approval') stats.pendingApproval += 1
+    else if (workflowStatus === 'rejected') stats.rejected += 1
+    else if (workflowStatus === 'sent') stats.sent += 1
+    else stats.draft += 1
+  }
 
   return success(res, {
-    total,
-    approved: byStatus.accepted,
-    pendingApproval: byStatus.sent,
-    rejected: byStatus.rejected,
-    draft: byStatus.draft,
+    ...stats,
+    pending_approval: stats.pendingApproval,
     statusLabels: QUOTATION_STATUS_LABELS,
   });
 });
