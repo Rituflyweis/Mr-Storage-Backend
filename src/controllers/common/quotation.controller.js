@@ -22,6 +22,7 @@ const {
 const asyncHandler = require("../../utils/asyncHandler");
 const { buildDateFilter } = require("../../utils/dateRange");
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require("../../config/constants");
+const { resolveOutboundRecipients } = require("../../utils/outboundEmail");
 const QUOTATION_APPROVAL_STATUSES = ["not_submitted", "pending_approval", "approved", "rejected"];
 const QUOTATION_STATUS_FILTERS = ["draft", "pending", "pending_approval", "approved", "rejected", "sent", "accepted"];
 const QUOTATION_SORT_VALUES = ["latest", "oldest"];
@@ -81,6 +82,54 @@ const ensureApprovalState = (quotation) => {
 const pushApprovalHistory = (quotation, { status, note = "", by = null, at = new Date() }) => {
   ensureApprovalState(quotation);
   quotation.approval.history.push({ status, note, by, at });
+};
+
+const assertQuotationReadyToSend = (quotation) => {
+  ensureApprovalState(quotation);
+  if (quotation.approval.status !== "approved") {
+    return "Quotation must be approved by admin before sending";
+  }
+  if (
+    quotation.approval.approvedVersionNumber != null &&
+    Number(quotation.approval.approvedVersionNumber) !== Number(quotation.versionNumber || 1)
+  ) {
+    return "Quotation was edited after approval. Please resubmit for admin approval.";
+  }
+  return null;
+};
+
+const applyQuotationSentFields = (quotation, {
+  sendMethod,
+  sentTo = "",
+  sentCc = [],
+  sentMessage = "",
+  sentAt = new Date(),
+} = {}) => {
+  quotation.status = "sent";
+  quotation.sentAt = sentAt;
+  quotation.sendMethod = sendMethod;
+  quotation.sentTo = sentTo || "";
+  quotation.sentCc = Array.isArray(sentCc) ? sentCc : [];
+  quotation.sentMessage = sentMessage || "";
+};
+
+const advanceLeadToProposalSent = async (leadId, userId) => {
+  const leadForStage = await Lead.findById(leadId).lean();
+  if (!leadForStage) return;
+  const targetIdx = LIFECYCLE_STAGES.indexOf("proposal_sent");
+  const currentIdx = LIFECYCLE_STAGES.indexOf(leadForStage.lifecycleStatus);
+  if (targetIdx > currentIdx) {
+    await Lead.findByIdAndUpdate(leadId, {
+      lifecycleStatus: "proposal_sent",
+      $push: {
+        lifecycleHistory: {
+          stage: "proposal_sent",
+          changedAt: new Date(),
+          changedBy: userId,
+        },
+      },
+    });
+  }
 };
 
 const getWorkflowStatus = (quotation) => {
@@ -856,30 +905,18 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
   if (!quotation) return notFound(res, "Quotation not found");
   const { error: accessError, code } = await checkLeadAccess(quotation.leadId, req.user);
   if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
-  ensureApprovalState(quotation);
-  if (quotation.approval.status !== "approved") {
-    return badRequest(res, "Quotation must be approved by admin before sending");
-  }
-  if (
-    quotation.approval.approvedVersionNumber != null &&
-    Number(quotation.approval.approvedVersionNumber) !== Number(quotation.versionNumber || 1)
-  ) {
-    return badRequest(res, "Quotation was edited after approval. Please resubmit for admin approval.");
-  }
+  const readyError = assertQuotationReadyToSend(quotation);
+  if (readyError) return badRequest(res, readyError);
 
   const customer = await Customer.findById(quotation.customerId);
   if (!customer) return notFound(res, "Customer not found");
-  if (!customer.email) return badRequest(res, "Customer has no email address on file");
-
-  const messageCandidates = [
-    ['message', req.body?.message],
-    ['note', req.body?.note],
-    ['emailMessage', req.body?.emailMessage],
-    ['coverNote', req.body?.coverNote],
-  ];
-  const firstMessageEntry = messageCandidates.find(([, value]) => String(value || '').trim());
-  const customMessage = String(firstMessageEntry?.[1] || '').trim();
-  const messageSourceKey = firstMessageEntry?.[0] || null;
+  const recipients = resolveOutboundRecipients({
+    body: req.body,
+    fallbackToEmail: customer.email,
+  });
+  if (recipients.error) return badRequest(res, recipients.error);
+  const customMessage = recipients.customMessage;
+  const messageSourceKey = recipients.messageSourceKey;
   const requestedSections =
     Array.isArray(req.body?.sections) && req.body.sections.length
       ? req.body.sections
@@ -910,7 +947,8 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
   let emailResult = { provider: "unknown" };
   try {
     emailResult = await mailer.sendQuotation({
-      toEmail: customer.email,
+      toEmail: recipients.toEmail,
+      cc: recipients.cc,
       customerName: customer.firstName,
       quotation,
       message: customMessage,
@@ -921,33 +959,19 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
     return error(res, `Failed to send quotation email: ${err.message}`, 502);
   }
 
-  quotation.status = "sent";
-  quotation.sentAt = new Date();
+  applyQuotationSentFields(quotation, {
+    sendMethod: "platform",
+    sentTo: recipients.toEmail,
+    sentCc: recipients.cc,
+    sentMessage: customMessage,
+  });
   pushApprovalHistory(quotation, {
     status: "sent",
-    note: `Quotation sent to customer (${customer.email})`,
+    note: `Quotation sent to ${recipients.toEmail}${recipients.cc.length ? ` (cc: ${recipients.cc.join(", ")})` : ""}`,
     by: req.user._id,
   });
   await quotation.save();
-
-  // Only advance lifecycle — never regress a stage already reached
-  const leadForStage = await Lead.findById(quotation.leadId).lean();
-  if (leadForStage) {
-    const targetIdx = LIFECYCLE_STAGES.indexOf("proposal_sent");
-    const currentIdx = LIFECYCLE_STAGES.indexOf(leadForStage.lifecycleStatus);
-    if (targetIdx > currentIdx) {
-      await Lead.findByIdAndUpdate(quotation.leadId, {
-        lifecycleStatus: "proposal_sent",
-        $push: {
-          lifecycleHistory: {
-            stage: "proposal_sent",
-            changedAt: new Date(),
-            changedBy: req.user._id,
-          },
-        },
-      });
-    }
-  }
+  await advanceLeadToProposalSent(quotation.leadId, req.user._id);
 
   await auditService.log({
     type: "quotation",
@@ -957,7 +981,9 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: {
       quotationId: quotation._id,
-      sentTo: customer.email,
+      sendMethod: "platform",
+      sentTo: recipients.toEmail,
+      sentCc: recipients.cc,
       provider: emailResult?.provider || "unknown",
       customMessageIncluded: Boolean(customMessage),
       customMessageSourceKey: messageSourceKey,
@@ -979,12 +1005,77 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
         includeDocuments: true,
       }),
       emailProvider: emailResult?.provider || "unknown",
+      sendMethod: "platform",
+      sentTo: recipients.toEmail,
+      sentCc: recipients.cc,
       messageIncluded: Boolean(customMessage),
       messageSourceKey,
       pdfAttached: Boolean(pdfAttachment),
       pdfWarning: pdfWarning || null,
     },
     "Quotation sent successfully",
+  );
+});
+
+exports.markQuotationSent = asyncHandler(async (req, res) => {
+  const quotation = await Quotation.findById(req.params.quotationId);
+  if (!quotation) return notFound(res, "Quotation not found");
+  const { error: accessError, code } = await checkLeadAccess(quotation.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+  if (quotation.status === "sent") {
+    return badRequest(res, "Quotation is already marked as sent");
+  }
+  const readyError = assertQuotationReadyToSend(quotation);
+  if (readyError) return badRequest(res, readyError);
+
+  const sentAt = req.body?.sentAt ? new Date(req.body.sentAt) : new Date();
+  if (Number.isNaN(sentAt.getTime())) return badRequest(res, "Invalid sentAt");
+  const note = String(req.body?.note || req.body?.message || "").trim();
+
+  applyQuotationSentFields(quotation, {
+    sendMethod: "manual",
+    sentTo: "",
+    sentCc: [],
+    sentMessage: note,
+    sentAt,
+  });
+  pushApprovalHistory(quotation, {
+    status: "sent",
+    note: note || "Marked as sent (sent outside the platform)",
+    by: req.user._id,
+    at: sentAt,
+  });
+  await quotation.save();
+  await advanceLeadToProposalSent(quotation.leadId, req.user._id);
+
+  await auditService.log({
+    type: "quotation",
+    action: AUDIT_ACTIONS.QUOTATION_SENT,
+    leadId: quotation.leadId,
+    customerId: quotation.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      quotationId: quotation._id,
+      sendMethod: "manual",
+      sentAt,
+      note: note || null,
+    },
+  });
+
+  quoteSummaryService
+    .generateAndSave(quotation, quotation.leadId, quotation.customerId)
+    .catch((err) => console.error("[QuoteSummary]", err.message));
+
+  return success(
+    res,
+    {
+      quotation: await decorateQuotationResponse(quotation.toObject(), {
+        includeEstimate: true,
+        includeDocuments: true,
+      }),
+      sendMethod: "manual",
+    },
+    "Quotation marked as sent",
   );
 });
 

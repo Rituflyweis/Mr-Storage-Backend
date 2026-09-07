@@ -2,6 +2,10 @@ const router = require("express").Router();
 const { body, param, query } = require("express-validator");
 const ctrl = require("../../controllers/common/quotation.controller");
 const validate = require("../../middleware/validate");
+const {
+  outboundSendBodyValidators,
+  markSentBodyValidators,
+} = require("../../utils/outboundEmailRouteValidators");
 
 router.post("/", [body("leadId").notEmpty()], validate, ctrl.createQuotation);
 router.post(
@@ -49,14 +53,17 @@ router.put("/:quotationId/reject", [body("reason").optional().isString(), body("
 router.post(
   "/:quotationId/send",
   [
-    body("message").optional().isString(),
-    body("note").optional().isString(),
-    body("emailMessage").optional().isString(),
-    body("coverNote").optional().isString(),
+    ...outboundSendBodyValidators,
     body("sections").optional().isArray(),
   ],
   validate,
   ctrl.sendQuotation
+);
+router.post(
+  "/:quotationId/mark-sent",
+  markSentBodyValidators,
+  validate,
+  ctrl.markQuotationSent
 );
 router.get("/:quotationId/summary", ctrl.getQuoteSummary);
 

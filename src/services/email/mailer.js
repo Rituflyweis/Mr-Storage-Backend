@@ -194,6 +194,22 @@ const escapeHtml = (str) => {
     .replace(/"/g, "&quot;");
 };
 
+const wrapCustomMessage = (html, message) => {
+  const safeMessage = escapeHtml(String(message || "").trim()).replace(/\n/g, "<br/>");
+  if (!safeMessage) return html;
+  return `${html}
+      <div style="margin-top:16px;padding:14px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;">
+        <div style="font-size:12px;font-weight:700;color:#111827;margin-bottom:6px;">Message from our team</div>
+        <div style="font-size:13px;">${safeMessage}</div>
+      </div>`;
+};
+
+const withCc = (mailOptions, cc) => {
+  const list = Array.isArray(cc) ? cc.filter(Boolean) : [];
+  if (list.length) mailOptions.cc = list;
+  return mailOptions;
+};
+
 const formatMultilineAddressHtml = (lines = []) =>
   lines
     .filter(Boolean)
@@ -513,6 +529,7 @@ const buildInvoicePdfDocument = (inv, customerName, paymentSchedule) => {
 
 const sendQuotation = async ({
   toEmail,
+  cc = [],
   customerName,
   quotation,
   message = "",
@@ -549,21 +566,12 @@ const sendQuotation = async ({
     ROOF_STYLE: quotation.roofStyle || "",
   });
 
-  const safeMessage = escapeHtml(String(message || "").trim()).replace(/\n/g, "<br/>");
-  const htmlWithMessage = safeMessage
-    ? `${html}
-      <div style="margin-top:16px;padding:14px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;">
-        <div style="font-size:12px;font-weight:700;color:#111827;margin-bottom:6px;">Message from our team</div>
-        <div style="font-size:13px;">${safeMessage}</div>
-      </div>`
-    : html;
-
-  const mailOptions = {
+  const mailOptions = withCc({
     from: MAIL_FROM,
     to: toEmail,
     subject: `Your Quotation for ${quotation.buildingType || "Construction Project"}`,
-    html: htmlWithMessage,
-  };
+    html: wrapCustomMessage(html, message),
+  }, cc);
 
   if (pdfAttachment?.content) {
     mailOptions.attachments = [
@@ -581,10 +589,12 @@ const sendQuotation = async ({
 
 const sendInvoice = async ({
   toEmail,
+  cc = [],
   customerName,
   customerAddressHtml = "",
   invoice,
   paymentSchedule = null,
+  message = "",
 }) => {
   const inv = invoice?.toObject ? invoice.toObject() : invoice;
   const template = loadTemplate("invoice");
@@ -638,12 +648,12 @@ const sendInvoice = async ({
     );
   }
 
-  const mailOptions = {
+  const mailOptions = withCc({
     from: MAIL_FROM,
     to: toEmail,
     subject: `Invoice ${inv.invoiceNumber || ""}`,
-    html,
-  };
+    html: wrapCustomMessage(html, message),
+  }, cc);
 
   if (pdfBuffer) {
     mailOptions.attachments = [

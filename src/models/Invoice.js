@@ -104,6 +104,10 @@ const InvoiceSchema = new mongoose.Schema(
 
     status:  { type: String, enum: INVOICE_STATUSES, default: 'draft' },
     sentAt:  { type: Date, default: null },
+    sendMethod: { type: String, enum: ['platform', 'manual'], default: null },
+    sentTo: { type: String, default: '' },
+    sentCc: { type: [String], default: [] },
+    sentMessage: { type: String, default: '' },
     revision: { type: Number, default: 1 },
     approval: { type: InvoiceApprovalSchema, default: () => ({}) },
 

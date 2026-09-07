@@ -174,6 +174,10 @@ const QuotationSchema = new mongoose.Schema(
     priorityLevel: { type: String, enum: PRIORITY_LEVELS, default: "medium" },
     status: { type: String, enum: QUOTATION_STATUSES, default: "draft" },
     sentAt: { type: Date, default: null },
+    sendMethod: { type: String, enum: ["platform", "manual"], default: null },
+    sentTo: { type: String, default: "" },
+    sentCc: { type: [String], default: [] },
+    sentMessage: { type: String, default: "" },
     approval: { type: QuotationApprovalSchema, default: () => ({}) },
 
     // Versioning

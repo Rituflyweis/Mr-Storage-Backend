@@ -22,6 +22,10 @@ This note covers the latest backend updates completed today for follow-up status
 ### Result
 - Completed follow-ups should not be misclassified as overdue in activity/summary views.
 
+### Frontend behavior contract
+- If UI sees `status: "completed"` or `completedAt` present for a follow-up, show it as **Completed**.
+- `overdue` is only for pending follow-ups where `followUpDate` is in the past.
+
 ---
 
 ## 2) New per-channel delivery status in follow-up responses
@@ -68,6 +72,28 @@ This is derived from `FollowUpDispatchLog` and attached to follow-up payloads.
 - `GET /api/admin/followups`
   - Each `followups[]` item now includes `deliveryStatus`.
 
+### Example (`view=detail`)
+```json
+{
+  "history": [
+    {
+      "_id": "6a9c0dc6d96b4a5274690ed5",
+      "computedStatus": "completed",
+      "deliveryStatus": {
+        "customer": {
+          "sms": { "enabled": true, "status": "sent", "sentAt": "2026-09-05T12:42:36.430Z", "error": "" },
+          "email": { "enabled": true, "status": "sent", "sentAt": "2026-09-05T12:42:37.989Z", "error": "" }
+        },
+        "salesEmployee": {
+          "sms": { "enabled": true, "status": "failed", "sentAt": "2026-09-05T12:42:38.297Z", "error": "Twilio trial unverified number" },
+          "email": { "enabled": true, "status": "sent", "sentAt": "2026-09-05T12:42:39.722Z", "error": "" }
+        }
+      }
+    }
+  ]
+}
+```
+
 ---
 
 ## 3) Lead roof pitch persistence (admin, sales, sendQuotesRequest consistency)
@@ -91,6 +117,34 @@ This is derived from `FollowUpDispatchLog` and attached to follow-up payloads.
 - Sales lead create/edit APIs (shared mapper path)
 - Sales lead CSV import
 - `POST /api/v1/user/sendQuotesRequest` already had `roofPitch`; no contract change needed there.
+
+### Request payload acceptance (newly enforced across admin/sales create+edit)
+```json
+{
+  "projectName": "Test Project",
+  "buildingType": "Storage",
+  "location": "Ohio",
+  "roofStyle": "Gable",
+  "roofPitch": "4:12",
+  "width": 40,
+  "length": 60,
+  "height": 16
+}
+```
+
+### Lead detail response expectation
+`GET /api/admin/leads/:leadId/detail` and `GET /api/sales/leads/:leadId/detail` now reliably include:
+```json
+{
+  "lead": {
+    "roofStyle": "Gable",
+    "roofPitch": "4:12",
+    "width": 40,
+    "length": 60,
+    "height": 16
+  }
+}
+```
 
 ### Result
 - `roofPitch` is saved in `Lead` documents and returned in lead detail responses (admin + sales lead detail APIs that return the lead object).

@@ -3,6 +3,10 @@ const { body, query } = require('express-validator')
 const validate = require('../../middleware/validate')
 const ctrl = require('../../controllers/common/invoice.controller')
 const { invoiceBodyValidators } = require('../../utils/invoiceRouteValidators')
+const {
+  outboundSendBodyValidators,
+  markSentBodyValidators,
+} = require('../../utils/outboundEmailRouteValidators')
 
 router.get('/stats', [
   query('leadId').optional().isMongoId().withMessage('Invalid leadId'),
@@ -23,7 +27,8 @@ router.put('/:invoiceId', invoiceBodyValidators, validate, ctrl.updateInvoice)
 router.post('/:invoiceId/submit-approval', [body('note').optional().isString()], validate, ctrl.submitInvoiceForApproval)
 router.put('/:invoiceId/approve', [body('note').optional().isString()], validate, ctrl.approveInvoice)
 router.put('/:invoiceId/reject', [body('reason').optional().isString(), body('note').optional().isString()], validate, ctrl.rejectInvoice)
-router.post('/:invoiceId/send', ctrl.sendInvoice)
+router.post('/:invoiceId/send', outboundSendBodyValidators, validate, ctrl.sendInvoice)
+router.post('/:invoiceId/mark-sent', markSentBodyValidators, validate, ctrl.markInvoiceSent)
 router.put('/:invoiceId/mark-paid', ctrl.markAsPaid)
 router.put('/:invoiceId/payment-proof/verify', ctrl.verifyPaymentProof)
 router.put('/:invoiceId/payment-proof/reject', [body('reviewNotes').optional().isString()], validate, ctrl.rejectPaymentProof)

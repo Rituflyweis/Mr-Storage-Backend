@@ -13,6 +13,7 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { isInvoiceOverdue, resolveInvoiceLeadIds, getScopedLeadIds } = require('../../utils/invoiceScope')
 const { AUDIT_ACTIONS, INVOICE_STATUSES, INVOICE_CREATE_MIN_LIFECYCLE_STAGE } = require('../../config/constants')
 const { isLifecycleAtLeast } = require('../../utils/leadLifecycle.util')
+const { resolveOutboundRecipients } = require('../../utils/outboundEmail')
 const { generateInvoiceListExcel, generateInvoiceListPdf } = require('../../utils/exportInvoices')
 const INVOICE_USER_FIELDS = 'name email role'
 
@@ -91,6 +92,37 @@ const checkLeadAccess = async (leadId, user) => {
     return { error: 'Access denied', code: 403 }
   }
   return { lead }
+}
+
+const assertInvoiceReadyToSend = (invoice) => {
+  ensureApprovalState(invoice)
+  if (invoice.status === 'paid') return 'Paid invoices cannot be sent'
+  if (invoice.status === 'cancelled') return 'Cancelled invoices cannot be sent'
+  if (invoice.approval.status !== 'approved') {
+    return 'Invoice must be approved by admin before sending'
+  }
+  if (
+    invoice.approval.approvedRevision != null &&
+    Number(invoice.approval.approvedRevision) !== Number(invoice.revision || 1)
+  ) {
+    return 'Invoice was edited after approval. Please resubmit for admin approval.'
+  }
+  return null
+}
+
+const applyInvoiceSentFields = (invoice, {
+  sendMethod,
+  sentTo = '',
+  sentCc = [],
+  sentMessage = '',
+  sentAt = new Date(),
+} = {}) => {
+  invoice.status = 'sent'
+  invoice.sentAt = sentAt
+  invoice.sendMethod = sendMethod
+  invoice.sentTo = sentTo || ''
+  invoice.sentCc = Array.isArray(sentCc) ? sentCc : []
+  invoice.sentMessage = sentMessage || ''
 }
 
 const applyInvoiceBodyFields = (target, body) => {
@@ -367,25 +399,22 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
 
   const invoice = await Invoice.findById(req.params.invoiceId)
   if (!invoice) return notFound(res, 'Invoice not found')
-  if (invoice.status === 'paid') return badRequest(res, 'Paid invoices cannot be sent')
-  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoices cannot be sent')
-  ensureApprovalState(invoice)
-  if (invoice.approval.status !== 'approved') {
-    return badRequest(res, 'Invoice must be approved by admin before sending')
-  }
-  if (
-    invoice.approval.approvedRevision != null &&
-    Number(invoice.approval.approvedRevision) !== Number(invoice.revision || 1)
-  ) {
-    return badRequest(res, 'Invoice was edited after approval. Please resubmit for admin approval.')
-  }
 
   const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
   if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
 
+  const readyError = assertInvoiceReadyToSend(invoice)
+  if (readyError) return badRequest(res, readyError)
+
   const customer = await Customer.findById(invoice.customerId)
   if (!customer) return notFound(res, 'Customer not found')
-  if (!customer.email) return badRequest(res, 'Customer has no email address on file')
+  const recipients = resolveOutboundRecipients({
+    body: req.body,
+    fallbackToEmail: customer.email,
+  })
+  if (recipients.error) return badRequest(res, recipients.error)
+  const customMessage = recipients.customMessage
+  const messageSourceKey = recipients.messageSourceKey
 
   const paymentSchedule = await loadPaymentScheduleForInvoice(invoice)
   const lead = await Lead.findById(invoice.leadId).select('location').lean()
@@ -397,22 +426,28 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
   let emailResult = { pdfAttached: true, pdfError: null, paymentScheduleIncluded: false, paymentScheduleStageCount: 0 }
   try {
     emailResult = await mailer.sendInvoice({
-      toEmail: customer.email,
+      toEmail: recipients.toEmail,
+      cc: recipients.cc,
       customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || customer.firstName,
       customerAddressHtml,
       invoice,
       paymentSchedule,
+      message: customMessage,
     })
   } catch (err) {
     console.error('[sendInvoice] Email failed for invoice', invoice.invoiceNumber, err.message)
     return error(res, `Failed to send invoice email: ${err.message}`, 502)
   }
 
-  invoice.status = 'sent'
-  invoice.sentAt = new Date()
+  applyInvoiceSentFields(invoice, {
+    sendMethod: 'platform',
+    sentTo: recipients.toEmail,
+    sentCc: recipients.cc,
+    sentMessage: customMessage,
+  })
   pushApprovalHistory(invoice, {
     status: 'sent',
-    note: `Invoice sent to customer (${customer.email})`,
+    note: `Invoice sent to ${recipients.toEmail}${recipients.cc.length ? ` (cc: ${recipients.cc.join(', ')})` : ''}`,
     by: req.user._id,
   })
   await invoice.save()
@@ -425,7 +460,11 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: {
       invoiceNumber: invoice.invoiceNumber,
-      sentTo: customer.email,
+      sendMethod: 'platform',
+      sentTo: recipients.toEmail,
+      sentCc: recipients.cc,
+      customMessageIncluded: Boolean(customMessage),
+      customMessageSourceKey: messageSourceKey,
       pdfAttached: emailResult.pdfAttached,
       pdfError: emailResult.pdfError || null,
       paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
@@ -439,11 +478,70 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
 
   return success(res, {
     invoice: decorateInvoiceForResponse(invoice),
+    sendMethod: 'platform',
+    sentTo: recipients.toEmail,
+    sentCc: recipients.cc,
+    messageIncluded: Boolean(customMessage),
+    messageSourceKey,
     pdfAttached: emailResult.pdfAttached,
     pdfWarning: emailResult.pdfError || null,
     paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
     paymentScheduleStageCount: emailResult.paymentScheduleStageCount,
   }, message)
+})
+
+exports.markInvoiceSent = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId)
+  if (!invoice) return notFound(res, 'Invoice not found')
+
+  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
+
+  if (invoice.status === 'sent') {
+    return badRequest(res, 'Invoice is already marked as sent')
+  }
+
+  const readyError = assertInvoiceReadyToSend(invoice)
+  if (readyError) return badRequest(res, readyError)
+
+  const sentAt = req.body?.sentAt ? new Date(req.body.sentAt) : new Date()
+  if (Number.isNaN(sentAt.getTime())) return badRequest(res, 'Invalid sentAt')
+  const note = String(req.body?.note || req.body?.message || '').trim()
+
+  applyInvoiceSentFields(invoice, {
+    sendMethod: 'manual',
+    sentTo: '',
+    sentCc: [],
+    sentMessage: note,
+    sentAt,
+  })
+  pushApprovalHistory(invoice, {
+    status: 'sent',
+    note: note || 'Marked as sent (sent outside the platform)',
+    by: req.user._id,
+    at: sentAt,
+  })
+  await invoice.save()
+
+  await auditService.log({
+    type: 'invoice',
+    action: AUDIT_ACTIONS.INVOICE_SENT,
+    leadId: invoice.leadId,
+    customerId: invoice.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      invoiceId: invoice._id,
+      invoiceNumber: invoice.invoiceNumber,
+      sendMethod: 'manual',
+      sentAt,
+      note: note || null,
+    },
+  })
+
+  return success(res, {
+    invoice: decorateInvoiceForResponse(invoice),
+    sendMethod: 'manual',
+  }, 'Invoice marked as sent')
 })
 
 exports.submitInvoiceForApproval = asyncHandler(async (req, res) => {
