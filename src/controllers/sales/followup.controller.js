@@ -707,6 +707,8 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
             email: q.customerId.email,
           }
         : null,
+      customerEmail: q.customerId?.email || "",
+      defaultToEmail: q.customerId?.email || "",
       createdAt: q.createdAt,
       sentAt: q.sentAt || null,
     }

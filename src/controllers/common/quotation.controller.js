@@ -362,6 +362,45 @@ const parsePdfSections = (sectionsRaw) => {
   return unique.length ? unique : QUOTATION_DOCUMENT_SECTIONS;
 };
 
+const customerIdOf = (quotation = {}) => {
+  const raw = quotation.customerId;
+  if (!raw) return "";
+  if (typeof raw === "object") return String(raw._id || raw.id || "");
+  return String(raw);
+};
+
+const populatedCustomerEmail = (quotation = {}) => {
+  const raw = quotation.customerId;
+  if (raw && typeof raw === "object" && raw.email) return String(raw.email).trim();
+  return String(quotation.customerEmail || "").trim();
+};
+
+const attachCustomerEmails = async (quotations) => {
+  const rows = Array.isArray(quotations) ? quotations : [quotations];
+  const missingIds = [
+    ...new Set(
+      rows
+        .filter((row) => row && !populatedCustomerEmail(row))
+        .map(customerIdOf)
+        .filter(Boolean)
+    ),
+  ];
+  const emailById = new Map();
+  if (missingIds.length) {
+    const customers = await Customer.find({ _id: { $in: missingIds } }).select("email").lean();
+    customers.forEach((customer) => {
+      emailById.set(String(customer._id), String(customer.email || "").trim());
+    });
+  }
+  rows.forEach((row) => {
+    if (!row) return;
+    const customerEmail = populatedCustomerEmail(row) || emailById.get(customerIdOf(row)) || "";
+    row.customerEmail = customerEmail;
+    row.defaultToEmail = customerEmail;
+  });
+  return quotations;
+};
+
 const decorateQuotationResponse = async (
   quotationLike,
   { includeEstimate = false, includeDocuments = false } = {}
@@ -393,6 +432,7 @@ const decorateQuotationResponse = async (
   }
   quotation.pdfLink = buildQuotationPdfLink(quotation, estimate);
   quotation.htmlPreviewLink = buildQuotationHtmlPreviewLink(quotation);
+  await attachCustomerEmails(quotation);
 
   return quotation;
 };
@@ -1399,13 +1439,16 @@ exports.getPendingQuotationApprovals = asyncHandler(async (req, res) => {
     Quotation.countDocuments(filter),
   ]);
 
+  const decorated = quotations.map((q) => ({
+    ...q,
+    approvalStatus: q.approval?.status || "not_submitted",
+    workflowStatus: getWorkflowStatus(q),
+    pdfLink: buildQuotationPdfLink(q),
+  }));
+  await attachCustomerEmails(decorated);
+
   return success(res, {
-    quotations: quotations.map((q) => ({
-      ...q,
-      approvalStatus: q.approval?.status || "not_submitted",
-      workflowStatus: getWorkflowStatus(q),
-      pdfLink: buildQuotationPdfLink(q),
-    })),
+    quotations: decorated,
     pagination: {
       page: parsedPage,
       limit: parsedLimit,
@@ -1473,12 +1516,15 @@ exports.getLeadQuotations = asyncHandler(async (req, res) => {
     rows = rows.filter((q) => (q.approval?.status || "not_submitted") === approvalStatus);
   }
 
+  const decorated = rows.map((q) => ({
+    ...q,
+    approvalStatus: q.approval?.status || "not_submitted",
+    workflowStatus: getWorkflowStatus(q),
+    pdfLink: buildQuotationPdfLink(q),
+  }));
+  await attachCustomerEmails(decorated);
+
   return success(res, {
-    quotations: rows.map((q) => ({
-      ...q,
-      approvalStatus: q.approval?.status || "not_submitted",
-      workflowStatus: getWorkflowStatus(q),
-      pdfLink: buildQuotationPdfLink(q),
-    })),
+    quotations: decorated,
   });
 });
