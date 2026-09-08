@@ -35,9 +35,14 @@ const QUOTATION_STATUS_LABELS = {
   rejected: "Rejected",
 };
 
+const QUOTATION_CUSTOMER_FIELDS = "firstName lastName email company phone";
+const QUOTATION_LEAD_FIELDS = "jobId projectName buildingType customerId";
+
 const populateQuotationUsers = (query) =>
   query
     .populate("createdBy", QUOTATION_USER_FIELDS)
+    .populate("customerId", QUOTATION_CUSTOMER_FIELDS)
+    .populate("leadId", QUOTATION_LEAD_FIELDS)
     .populate("approval.submittedBy", QUOTATION_USER_FIELDS)
     .populate("approval.reviewedBy", QUOTATION_USER_FIELDS)
     .populate("approval.history.by", QUOTATION_USER_FIELDS);
@@ -66,9 +71,19 @@ const computeQuotePricing = (src) => {
   };
 };
 
+const extractRefId = (raw) => {
+  if (!raw) return "";
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "object") {
+    if (raw._id) return String(raw._id);
+    if (typeof raw.toHexString === "function") return raw.toHexString();
+  }
+  return String(raw);
+};
+
 // Sales can only act on their assigned leads
 const checkLeadAccess = async (leadId, user) => {
-  const lead = await Lead.findById(leadId);
+  const lead = await Lead.findById(extractRefId(leadId) || leadId);
   if (!lead) return { error: "Lead not found", code: 404 };
   if (
     user.role === "sales" &&
@@ -368,23 +383,21 @@ const parsePdfSections = (sectionsRaw) => {
   return unique.length ? unique : QUOTATION_DOCUMENT_SECTIONS;
 };
 
-const customerIdOf = (quotation = {}) => {
-  const raw = quotation.customerId;
-  if (!raw) return "";
-  if (typeof raw === "object") return String(raw._id || raw.id || "");
-  return String(raw);
-};
+const customerIdOf = (quotation = {}) => extractRefId(quotation.customerId);
 
-const leadIdOf = (quotation = {}) => {
-  const raw = quotation.leadId;
-  if (!raw) return "";
-  if (typeof raw === "object") return String(raw._id || raw.id || "");
-  return String(raw);
-};
+const leadIdOf = (quotation = {}) => extractRefId(quotation.leadId);
 
 const customerDisplayName = (customer = {}) =>
   [customer.firstName, customer.lastName].filter(Boolean).join(" ").trim()
   || String(customer.company || "").trim();
+
+const isPopulatedRef = (raw) =>
+  Boolean(
+    raw &&
+      typeof raw === "object" &&
+      typeof raw.toHexString !== "function" &&
+      (raw._id || raw.firstName || raw.email || raw.jobId || raw.projectName)
+  );
 
 const attachCustomerEmails = async (quotations) => {
   const rows = Array.isArray(quotations) ? quotations : [quotations];
@@ -395,21 +408,15 @@ const attachCustomerEmails = async (quotations) => {
     ...new Set(rows.map(leadIdOf).filter(Boolean)),
   ];
 
-  const needsCustomerLookup = rows.some((row) => {
-    const populated = row?.customerId;
-    return row && customerIdOf(row) && !(populated && typeof populated === "object" && (populated.email || populated.firstName));
-  });
-  const needsLeadLookup = rows.some((row) => {
-    const populated = row?.leadId;
-    return row && leadIdOf(row) && !(populated && typeof populated === "object" && (populated.jobId || populated.projectName));
-  });
+  const needsCustomerLookup = rows.some((row) => row && customerIdOf(row) && !isPopulatedRef(row.customerId));
+  const needsLeadLookup = rows.some((row) => row && leadIdOf(row) && !isPopulatedRef(row.leadId));
 
   const [customers, leads] = await Promise.all([
     needsCustomerLookup && customerIds.length
-      ? Customer.find({ _id: { $in: customerIds } }).select("firstName lastName email company").lean()
+      ? Customer.find({ _id: { $in: customerIds } }).select(QUOTATION_CUSTOMER_FIELDS).lean()
       : Promise.resolve([]),
     needsLeadLookup && leadIds.length
-      ? Lead.find({ _id: { $in: leadIds } }).select("jobId projectName").lean()
+      ? Lead.find({ _id: { $in: leadIds } }).select(QUOTATION_LEAD_FIELDS).lean()
       : Promise.resolve([]),
   ]);
   const customerById = new Map(customers.map((customer) => [String(customer._id), customer]));
@@ -417,8 +424,8 @@ const attachCustomerEmails = async (quotations) => {
 
   rows.forEach((row) => {
     if (!row) return;
-    const populatedCustomer = row.customerId && typeof row.customerId === "object" ? row.customerId : null;
-    const populatedLead = row.leadId && typeof row.leadId === "object" ? row.leadId : null;
+    const populatedCustomer = isPopulatedRef(row.customerId) ? row.customerId : null;
+    const populatedLead = isPopulatedRef(row.leadId) ? row.leadId : null;
     const customer = populatedCustomer || customerById.get(customerIdOf(row)) || {};
     const lead = populatedLead || leadById.get(leadIdOf(row)) || {};
     const customerEmail = String(customer.email || row.customerEmail || "").trim();
@@ -432,6 +439,17 @@ const attachCustomerEmails = async (quotations) => {
     row.projectName = projectName;
     row.jobId = jobId;
     row.projectId = jobId;
+    if (!row.buildingType && lead.buildingType) row.buildingType = lead.buildingType;
+    if (customer._id) {
+      row.customer = {
+        _id: customer._id,
+        firstName: customer.firstName || "",
+        lastName: customer.lastName || "",
+        email: customerEmail,
+        company: customer.company || "",
+        phone: customer.phone || null,
+      };
+    }
   });
   return quotations;
 };
