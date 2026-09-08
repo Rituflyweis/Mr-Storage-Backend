@@ -28,6 +28,12 @@ const QUOTATION_STATUS_FILTERS = ["draft", "pending", "pending_approval", "appro
 const QUOTATION_SORT_VALUES = ["latest", "oldest"];
 const QUOTATION_DOCUMENT_SECTIONS = ["quote", "sow", "contract", "drawings"];
 const QUOTATION_USER_FIELDS = "name email role";
+const QUOTATION_STATUS_LABELS = {
+  draft: "Draft",
+  sent: "Pending Approval",
+  accepted: "Approved",
+  rejected: "Rejected",
+};
 
 const populateQuotationUsers = (query) =>
   query
@@ -1393,6 +1399,37 @@ exports.rejectQuotationApproval = asyncHandler(async (req, res) => {
     },
     "Quotation rejected"
   );
+});
+
+exports.getQuotationStats = asyncHandler(async (req, res) => {
+  const dateFilter = buildDateFilter(req.query);
+  const filter = { ...dateFilter };
+  if (req.user.role === "sales") filter.createdBy = req.user._id;
+
+  const quotations = await Quotation.find(filter).select("status approval").lean();
+  const stats = {
+    total: quotations.length,
+    approved: 0,
+    pendingApproval: 0,
+    rejected: 0,
+    sent: 0,
+    draft: 0,
+  };
+
+  for (const quotation of quotations) {
+    const workflowStatus = getWorkflowStatus(quotation);
+    if (workflowStatus === "approved") stats.approved += 1;
+    else if (workflowStatus === "pending_approval") stats.pendingApproval += 1;
+    else if (workflowStatus === "rejected") stats.rejected += 1;
+    else if (workflowStatus === "sent") stats.sent += 1;
+    else stats.draft += 1;
+  }
+
+  return success(res, {
+    ...stats,
+    pending_approval: stats.pendingApproval,
+    statusLabels: QUOTATION_STATUS_LABELS,
+  });
 });
 
 exports.getPendingQuotationApprovals = asyncHandler(async (req, res) => {

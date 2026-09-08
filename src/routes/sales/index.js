@@ -24,7 +24,7 @@ const {
 
 
 router.get('/po-orders', leadCtrl.getMyPOOrders)
-router.get('/quotations/stats', followupCtrl.getQuotationStats)
+router.get('/quotations/stats', quotationCtrl.getQuotationStats)
 router.get('/quotations', followupCtrl.getMyQuotations)
 router.post('/quotations', [body('leadId').notEmpty()], validate, quotationCtrl.createQuotation)
 router.get('/quotations/:quotationId', quotationCtrl.getQuotation)

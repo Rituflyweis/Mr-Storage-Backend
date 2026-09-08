@@ -593,9 +593,6 @@ exports.updatePaymentFollowUpStatus = asyncHandler(async (req, res) => {
   return success(res, { followUp: record }, "Status updated");
 });
 
-// Figma "Quotation" screen shows status labels Approved/Pending Approval/Rejected/Quote Sent —
-// best-effort mapping onto the model's draft/sent/accepted/rejected enum.
-const QUOTATION_STATUS_LABELS = { draft: 'Draft', sent: 'Pending Approval', accepted: 'Approved', rejected: 'Rejected' }
 const APPROVAL_STATUSES = ['not_submitted', 'pending_approval', 'approved', 'rejected']
 
 const resolveQuotationWorkflowStatus = (quotation = {}) => {
@@ -727,33 +724,3 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
   });
 });
 
-exports.getQuotationStats = asyncHandler(async (req, res) => {
-  const Quotation = require("../../models/Quotation");
-  const dateFilter = buildDateFilter(req.query);
-  const filter = { createdBy: req.user._id, ...dateFilter };
-  const quotations = await Quotation.find(filter).select('status approval').lean()
-
-  const stats = {
-    total: quotations.length,
-    approved: 0,
-    pendingApproval: 0,
-    rejected: 0,
-    sent: 0,
-    draft: 0,
-  }
-
-  for (const quotation of quotations) {
-    const workflowStatus = resolveQuotationWorkflowStatus(quotation)
-    if (workflowStatus === 'approved') stats.approved += 1
-    else if (workflowStatus === 'pending_approval') stats.pendingApproval += 1
-    else if (workflowStatus === 'rejected') stats.rejected += 1
-    else if (workflowStatus === 'sent') stats.sent += 1
-    else stats.draft += 1
-  }
-
-  return success(res, {
-    ...stats,
-    pending_approval: stats.pendingApproval,
-    statusLabels: QUOTATION_STATUS_LABELS,
-  });
-});

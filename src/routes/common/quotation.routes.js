@@ -34,6 +34,15 @@ router.get(
   validate,
   ctrl.getPendingQuotationApprovals
 );
+router.get(
+  "/stats",
+  [
+    query("startDate").optional().isISO8601(),
+    query("endDate").optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getQuotationStats
+);
 router.get("/:quotationId/pdf", ctrl.downloadQuotationPdf);
 router.get("/:quotationId", ctrl.getQuotation);
 router.put("/:quotationId", ctrl.updateQuotation);
