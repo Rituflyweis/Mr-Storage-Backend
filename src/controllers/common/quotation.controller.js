@@ -181,6 +181,47 @@ const mapEstimateSummary = (estimate) => {
   };
 };
 
+const collectQuotationDraftNotes = (quotation = {}) => {
+  const lines = [];
+  const clientNotes = String(quotation.clientNotes || "").trim();
+  const specialNote = String(quotation.specialNote || "").trim();
+  if (clientNotes) lines.push(clientNotes);
+  if (specialNote && specialNote !== clientNotes) lines.push(specialNote);
+
+  const materials = (quotation.includedMaterials || [])
+    .map((item) => [item?.name, item?.description].filter(Boolean).join(" — "))
+    .filter(Boolean);
+  if (materials.length) {
+    lines.push(`Included materials:\n${materials.map((item) => `- ${item}`).join("\n")}`);
+  }
+
+  const components = (quotation.includedComponents || []).map((item) => String(item || "").trim()).filter(Boolean);
+  if (components.length) {
+    lines.push(`Included components:\n${components.map((item) => `- ${item}`).join("\n")}`);
+  }
+
+  const exclusions = (quotation.exclusions || []).map((item) => String(item || "").trim()).filter(Boolean);
+  if (exclusions.length) {
+    lines.push(`Exclusions:\n${exclusions.map((item) => `- ${item}`).join("\n")}`);
+  }
+
+  const addOns = (quotation.optionalAddOns || [])
+    .map((item) => {
+      const label = String(item?.name || item?.description || "").trim();
+      if (!label) return "";
+      return item?.price != null && item.price !== "" ? `${label} (${item.price})` : label;
+    })
+    .filter(Boolean);
+  if (addOns.length) {
+    lines.push(`Optional add-ons:\n${addOns.map((item) => `- ${item}`).join("\n")}`);
+  }
+
+  return lines.join("\n\n");
+};
+
+const mergeDraftNotes = (...parts) =>
+  parts.map((part) => String(part || "").trim()).filter(Boolean).join("\n\n");
+
 const mapEstimateToDocumentPayload = (estimate = {}) => {
   const grandTotal = resolveEstimateGrandTotal(estimate);
   return {
@@ -220,7 +261,23 @@ const mapEstimateToDocumentPayload = (estimate = {}) => {
 };
 
 const mapQuotationToDocumentPayload = (quotation = {}, customer = {}, estimate = null) => {
-  if (estimate) return mapEstimateToDocumentPayload(estimate);
+  const draftNotes = collectQuotationDraftNotes(quotation);
+
+  if (estimate) {
+    const payload = mapEstimateToDocumentPayload(estimate);
+    payload.additionalInfo = mergeDraftNotes(payload.additionalInfo, draftNotes);
+    if (quotation.companyName) payload.leadCompanyName = quotation.companyName;
+    if (quotation.location) payload.cityStateZip = quotation.location;
+    if (quotation.proposalDate) payload.quoteDate = quotation.proposalDate;
+    payload.customer = {
+      ...(payload.customer || {}),
+      name: quotation.companyName || payload.customer?.name || customer.firstName || "Customer",
+      location: quotation.location || payload.customer?.location || "",
+      email: customer.email || payload.customer?.email || "",
+    };
+    if (customer.email) payload.customerEmail = customer.email;
+    return payload;
+  }
 
   const sf = toNumber(quotation.totalArea || quotation.sqft, 0);
   const materialSell = toNumber(quotation.materialCost, 0) + toNumber(quotation.freightCost, 0);
@@ -235,7 +292,7 @@ const mapQuotationToDocumentPayload = (quotation = {}, customer = {}, estimate =
     buildingSize: sf > 0 ? `${Number(sf).toLocaleString()} SF` : "",
     squareFootage: sf,
     quoteDate: quotation.proposalDate || quotation.createdAt || new Date(),
-    additionalInfo: quotation.clientNotes || quotation.specialNote || "",
+    additionalInfo: draftNotes,
     grandTotal: finalPrice,
     fullQuote: {
       pricing: {
@@ -924,12 +981,24 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
 
   let pdfAttachment = null;
   let pdfWarning = null;
+  let draftHtml = "";
+  let draftHtmlIncluded = false;
   let sourceEstimate = null;
   if (quotation.sourceEstimateId) {
     sourceEstimate = await EstimateQuote.findById(quotation.sourceEstimateId).lean();
   }
+  const pdfPayload = mapQuotationToDocumentPayload(quotation.toObject(), customer.toObject(), sourceEstimate);
+  const emailSections = requestedSections.filter((section) => section !== "drawings");
   try {
-    const pdfPayload = mapQuotationToDocumentPayload(quotation.toObject(), customer.toObject(), sourceEstimate);
+    draftHtml = generateAssembledHtml({
+      ...pdfPayload,
+      sections: emailSections.length ? emailSections : ["quote"],
+    });
+    draftHtmlIncluded = Boolean(String(draftHtml || "").trim());
+  } catch (err) {
+    console.warn("[sendQuotation] Assembled quotation draft HTML skipped:", err.message);
+  }
+  try {
     const pdfBuffer = await generateAssembledQuotePdf({
       ...pdfPayload,
       sections: requestedSections,
@@ -941,7 +1010,7 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
     };
   } catch (err) {
     pdfWarning = err.message || "Quotation PDF generation failed";
-    console.warn("[sendQuotation] PDF attachment skipped, sending HTML email only:", pdfWarning);
+    console.warn("[sendQuotation] PDF attachment skipped, sending quotation draft HTML email only:", pdfWarning);
   }
 
   let emailResult = { provider: "unknown" };
@@ -952,6 +1021,7 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
       customerName: customer.firstName,
       quotation,
       message: customMessage,
+      draftHtml,
       pdfAttachment,
     });
   } catch (err) {
@@ -987,6 +1057,7 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
       provider: emailResult?.provider || "unknown",
       customMessageIncluded: Boolean(customMessage),
       customMessageSourceKey: messageSourceKey,
+      draftHtmlIncluded,
       pdfAttached: Boolean(pdfAttachment),
       pdfWarning: pdfWarning || null,
     },
@@ -1010,6 +1081,7 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
       sentCc: recipients.cc,
       messageIncluded: Boolean(customMessage),
       messageSourceKey,
+      draftHtmlIncluded,
       pdfAttached: Boolean(pdfAttachment),
       pdfWarning: pdfWarning || null,
     },

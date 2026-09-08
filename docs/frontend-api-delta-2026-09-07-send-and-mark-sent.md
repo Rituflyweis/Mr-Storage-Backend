@@ -144,7 +144,9 @@ Same To / CC / message fields as invoice send, plus existing:
 ```
 
 ### Response extras
-`quotation` now includes `sendMethod`, `sentTo`, `sentCc`, `sentMessage`, `sentAt`. Top-level: `sendMethod`, `sentTo`, `sentCc`, `messageIncluded`, `messageSourceKey`, `pdfAttached`, `pdfWarning`.
+`quotation` now includes `sendMethod`, `sentTo`, `sentCc`, `sentMessage`, `sentAt`. Top-level: `sendMethod`, `sentTo`, `sentCc`, `messageIncluded`, `messageSourceKey`, `draftHtmlIncluded`, `pdfAttached`, `pdfWarning`.
+
+The email body is the **sales-panel quotation draft** (assembled quote / SOW / contract HTML), plus the PDF of the same document. Optional `message` is prepended as a cover note. Drawings stay in the PDF attachment only.
 
 On success, lead `lifecycleStatus` moves to `proposal_sent` if it was earlier (unlocks invoice create).
 

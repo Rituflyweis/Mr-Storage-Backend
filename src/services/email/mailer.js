@@ -204,6 +204,16 @@ const wrapCustomMessage = (html, message) => {
       </div>`;
 };
 
+const prependCustomMessage = (html, message) => {
+  const safeMessage = escapeHtml(String(message || "").trim()).replace(/\n/g, "<br/>");
+  if (!safeMessage) return html;
+  return `<div style="margin:0 0 16px;padding:14px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;">
+        <div style="font-size:12px;font-weight:700;color:#111827;margin-bottom:6px;">Message from our team</div>
+        <div style="font-size:13px;">${safeMessage}</div>
+      </div>
+      ${html}`;
+};
+
 const withCc = (mailOptions, cc) => {
   const list = Array.isArray(cc) ? cc.filter(Boolean) : [];
   if (list.length) mailOptions.cc = list;
@@ -533,10 +543,11 @@ const sendQuotation = async ({
   customerName,
   quotation,
   message = "",
+  draftHtml = "",
   pdfAttachment = null,
 }) => {
   const template = loadTemplate("quotation");
-  const html = fillTemplate(template, {
+  const fallbackHtml = fillTemplate(template, {
     CUSTOMER_NAME: customerName,
     BUILDING_TYPE: quotation.buildingType,
     QUOTE_NUMBER: quotation.quoteNumber || "",
@@ -565,12 +576,13 @@ const sendQuotation = async ({
     HEIGHT: quotation.height || "",
     ROOF_STYLE: quotation.roofStyle || "",
   });
+  const html = prependCustomMessage(String(draftHtml || "").trim() || fallbackHtml, message);
 
   const mailOptions = withCc({
     from: MAIL_FROM,
     to: toEmail,
     subject: `Your Quotation for ${quotation.buildingType || "Construction Project"}`,
-    html: wrapCustomMessage(html, message),
+    html,
   }, cc);
 
   if (pdfAttachment?.content) {
