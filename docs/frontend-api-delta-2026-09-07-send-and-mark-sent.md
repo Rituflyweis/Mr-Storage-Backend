@@ -181,6 +181,11 @@ Invoice and quotation documents now persist:
 | `sentMessage` | string | Cover note or manual note |
 | `customerEmail` | string | Customer record email, for send-modal **To** default |
 | `defaultToEmail` | string | Same value as `customerEmail` |
+| `customerName` | string | Customer first + last name (list + detail) |
+| `projectName` | string | Lead project name |
+| `jobId` / `projectId` | string | Lead job id (e.g. `PRO-011`). `projectId` is the same value |
+
+Admin quotations list (`GET /api/quotations/approval/pending`) and sales quotations list now return these so the table can show who the quote belongs to.
 
 `status` remains `"sent"` for both methods. Use `sendMethod` if the UI needs to label “Sent via email” vs “Marked sent”. Prefill send **To** with `quotation.defaultToEmail` or `quotation.customerEmail`. If omitted on `POST .../send`, backend still falls back to that customer email.
 

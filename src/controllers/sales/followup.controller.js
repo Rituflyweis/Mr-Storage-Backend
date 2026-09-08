@@ -668,8 +668,8 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
   const skip = (parsedPage - 1) * parsedLimit;
   const [quotations, total] = await Promise.all([
     Quotation.find(filter)
-      .populate({ path: "leadId", select: "projectName" })
-      .populate({ path: "customerId", select: "firstName email" })
+      .populate({ path: "leadId", select: "projectName jobId" })
+      .populate({ path: "customerId", select: "firstName lastName email" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -698,17 +698,22 @@ exports.getMyQuotations = asyncHandler(async (req, res) => {
       approvalReviewedAt: approval.reviewedAt || null,
       finalPrice: q.finalPrice || 0,
       leadId: q.leadId
-        ? { _id: q.leadId._id, projectName: q.leadId.projectName }
+        ? { _id: q.leadId._id, projectName: q.leadId.projectName, jobId: q.leadId.jobId }
         : null,
       customerId: q.customerId
         ? {
             _id: q.customerId._id,
             firstName: q.customerId.firstName,
+            lastName: q.customerId.lastName,
             email: q.customerId.email,
           }
         : null,
+      customerName: [q.customerId?.firstName, q.customerId?.lastName].filter(Boolean).join(" ").trim(),
       customerEmail: q.customerId?.email || "",
       defaultToEmail: q.customerId?.email || "",
+      projectName: q.leadId?.projectName || "",
+      jobId: q.leadId?.jobId || "",
+      projectId: q.leadId?.jobId || "",
       createdAt: q.createdAt,
       sentAt: q.sentAt || null,
     }
