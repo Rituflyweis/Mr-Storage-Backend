@@ -42,7 +42,7 @@ const initSocket = (io) => {
   adminNS.on('connection', (socket) => {
     console.log(`[Socket /admin] Connected: ${socket.id} | user: ${socket.user._id} | role: ${socket.user.role}`)
 
-    socket.join(`user:${socket.user._id}`)
+    socket.join(`user:${String(socket.user._id)}`)
 
     if (socket.user.role === 'admin') {
       socket.join('admin_room')

@@ -141,7 +141,7 @@ const adminHandler = (socket, adminNS) => {
   })
 
   socket.on('join_user_room', () => {
-  const userId = socket.user._id.toString()
+  const userId = String(socket.user._id)
   socket.join(`user:${userId}`)
   console.log(`User ${userId} joined their room`)
 })
