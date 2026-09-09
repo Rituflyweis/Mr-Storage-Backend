@@ -280,10 +280,13 @@ Latest = most recently **admin-approved** quotation on that lead (`approval.stat
     "leadId": "66d7f...",
     "quotationId": "66d8a...",
     "quoteNumber": "Q-10021",
-    "quoteValue": 125000,
-    "tax": 8750,
+    "quoteValue": 36417,
+    "subtotal": 34871,
+    "pretaxAmount": 34871,
+    "tax": 1546,
     "taxRate": 7,
-    "salesTax": { "amount": 8750, "rate": 7 },
+    "salesTax": { "amount": 1546, "rate": 7 },
+    "taxIncludedInQuoteValue": true,
     "currency": "USD",
     "approvalStatus": "approved",
     "versionNumber": 1,
@@ -292,10 +295,12 @@ Latest = most recently **admin-approved** quotation on that lead (`approval.stat
 }
 ```
 
+- `quoteValue` → **tax-inclusive** quote total (what the customer was quoted)
+- `subtotal` / `pretaxAmount` → invoice line/subtotal (`quoteValue - tax`)
 - `tax` / `salesTax.amount` → invoice `tax` field
-- `quoteValue` → quote total (`finalPrice`, else estimate grand total, else `basePrice`)
+- `taxIncludedInQuoteValue` → `true` when tax is already inside `quoteValue`
+- Create invoice: if frontend sends the quote total as the line amount and `tax` is `0`/omitted, backend peels tax out of that amount instead of adding it on top. Invoice total stays the quoted amount.
 - `404` if the lead has no approved quotation
-- Create invoice can still omit `tax` / send `0`; backend will copy quote tax on create. This endpoint is for showing the value in the form first.
 
 ---
 

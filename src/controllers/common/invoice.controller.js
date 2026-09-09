@@ -248,6 +248,29 @@ const applyQuoteTaxToInvoiceData = (invoiceData, quoteTax) => {
   const discount = toFiniteNumber(invoiceData.discount, 0)
   const currentTotal = toFiniteNumber(invoiceData.totalAmount, 0)
   const pretax = subtotal + markupTotal - discount
+  const postedAmount = currentTotal || pretax
+
+  // Quotation grand total already includes sales tax. If the invoice was posted
+  // as a single figure (line/subtotal/total all match, no tax split), peel tax
+  // out instead of adding it on top.
+  const postedWithoutTaxSplit = !currentTotal || Math.abs(currentTotal - pretax) < 0.51
+  if (postedWithoutTaxSplit && postedAmount > taxAmount) {
+    const pretaxAmount = Math.round((postedAmount - taxAmount) * 100) / 100
+    invoiceData.subtotal = pretaxAmount
+    invoiceData.totalAmount = postedAmount
+    if (Array.isArray(invoiceData.lineItems) && invoiceData.lineItems.length === 1) {
+      const line = invoiceData.lineItems[0] || {}
+      const lineTotal = toFiniteNumber(line.total, 0)
+      if (!lineTotal || Math.abs(lineTotal - postedAmount) < 0.51) {
+        const qty = toFiniteNumber(line.quantity, 1) || 1
+        line.total = pretaxAmount
+        line.rate = Math.round((pretaxAmount / qty) * 100) / 100
+        invoiceData.lineItems[0] = line
+      }
+    }
+    return invoiceData
+  }
+
   if (!currentTotal || Math.abs(currentTotal - pretax) < 0.51) {
     invoiceData.totalAmount = pretax + taxAmount
   }

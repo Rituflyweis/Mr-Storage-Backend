@@ -1628,18 +1628,22 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     toNumber(quotation.finalPrice, 0) ||
     estimateGrandTotal ||
     toNumber(quotation.basePrice, 0);
+  const pretaxAmount = Math.max(0, Math.round((quoteValue - tax) * 100) / 100);
 
   return success(res, {
     leadId: quotation.leadId,
     quotationId: quotation._id,
     quoteNumber: quotation.quoteNumber || "",
     quoteValue,
+    subtotal: pretaxAmount,
+    pretaxAmount,
     tax,
     taxRate,
     salesTax: {
       amount: tax,
       rate: taxRate,
     },
+    taxIncludedInQuoteValue: tax > 0,
     currency: quotation.currency || "USD",
     approvalStatus: quotation.approval?.status || "approved",
     versionNumber: quotation.versionNumber || 1,
