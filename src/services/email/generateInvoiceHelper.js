@@ -57,6 +57,13 @@ const generateInvoicePdfWithPdfkit = (document) => {
     doc.on('error', reject)
 
     const contentWidth = doc.page.width - PAGE_MARGIN * 2
+    const headerY = doc.y
+    doc.font('Helvetica-Bold').fontSize(16).fillColor('#1a1a1a')
+      .text('STEEL BUILDING', PAGE_MARGIN, headerY, { continued: false })
+    const depotX = PAGE_MARGIN + doc.widthOfString('STEEL BUILDING ') + 4
+    doc.rect(depotX, headerY - 2, 78, 22).fill('#2176c7')
+    doc.fillColor('#ffffff').fontSize(14).text('DEPOT', depotX + 8, headerY + 2)
+    doc.moveDown(1.6)
 
     doc.rect(PAGE_MARGIN, doc.y, contentWidth, 72).fill(HEADER_COLOR)
     doc.fillColor('#ffffff')

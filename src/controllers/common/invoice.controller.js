@@ -1,6 +1,8 @@
 const Invoice = require('../../models/Invoice')
 const Lead = require('../../models/Lead')
 const Customer = require('../../models/Customer')
+const Quotation = require('../../models/Quotation')
+const EstimateQuote = require('../../models/EstimateQuote')
 const PaymentSchedule = require('../../models/PaymentSchedule')
 const mailer = require('../../services/email/mailer')
 const auditService = require('../../services/audit.service')
@@ -131,6 +133,70 @@ const applyInvoiceBodyFields = (target, body) => {
   })
 }
 
+const toFiniteNumber = (value, fallback = 0) => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+const pickSalesTax = (source = {}) => {
+  const salesTax =
+    source.salesTax ||
+    source.fullQuoteResult?.salesTax ||
+    source.storagePricingResult?.salesTax ||
+    {}
+  return {
+    taxAmount: toFiniteNumber(salesTax.amount, 0),
+    taxRate: toFiniteNumber(salesTax.rate, 0),
+  }
+}
+
+const resolveQuoteSalesTaxForLead = async (leadId, explicitQuotationId = null) => {
+  let quotation = null
+  if (explicitQuotationId) {
+    quotation = await Quotation.findOne({ _id: explicitQuotationId, leadId }).lean()
+  }
+  if (!quotation) {
+    quotation =
+      (await Quotation.findOne({ leadId, status: 'sent' }).sort({ sentAt: -1, createdAt: -1 }).lean()) ||
+      (await Quotation.findOne({ leadId, status: 'accepted' }).sort({ createdAt: -1 }).lean()) ||
+      (await Quotation.findOne({ leadId }).sort({ createdAt: -1 }).lean())
+  }
+  if (!quotation) return { quotationId: null, taxAmount: 0, taxRate: 0 }
+
+  let taxAmount = 0
+  let taxRate = 0
+  if (quotation.sourceEstimateId) {
+    const estimate = await EstimateQuote.findById(quotation.sourceEstimateId)
+      .select('salesTax storagePricingResult fullQuoteResult')
+      .lean()
+    const picked = pickSalesTax(estimate || {})
+    taxAmount = picked.taxAmount
+    taxRate = picked.taxRate
+  }
+
+  return { quotationId: quotation._id, taxAmount, taxRate }
+}
+
+const applyQuoteTaxToInvoiceData = (invoiceData, quoteTax) => {
+  if (!quoteTax?.taxAmount) return invoiceData
+  const bodyTax = toFiniteNumber(invoiceData.tax, 0)
+  if (bodyTax > 0) return invoiceData
+
+  const taxAmount = quoteTax.taxAmount
+  invoiceData.tax = taxAmount
+
+  const subtotal = toFiniteNumber(invoiceData.subtotal, 0)
+  const markupTotal = toFiniteNumber(invoiceData.markupTotal, 0)
+  const discount = toFiniteNumber(invoiceData.discount, 0)
+  const currentTotal = toFiniteNumber(invoiceData.totalAmount, 0)
+  const pretax = subtotal + markupTotal - discount
+  if (!currentTotal || Math.abs(currentTotal - pretax) < 0.51) {
+    invoiceData.totalAmount = pretax + taxAmount
+  }
+
+  return invoiceData
+}
+
 const resolvePaymentScheduleStage = async (leadId, paymentScheduleStageId) => {
   const schedule = await PaymentSchedule.findOne({ leadId, 'stages._id': paymentScheduleStageId })
     .select('_id')
@@ -217,6 +283,8 @@ exports.createInvoice = asyncHandler(async (req, res) => {
 
   const invoiceData = {}
   applyInvoiceBodyFields(invoiceData, req.body)
+  const quoteTax = await resolveQuoteSalesTaxForLead(leadId, req.body.quotationId)
+  applyQuoteTaxToInvoiceData(invoiceData, quoteTax)
 
   const { paymentScheduleStageId } = req.body
   let paymentScheduleId = null
@@ -241,7 +309,7 @@ exports.createInvoice = asyncHandler(async (req, res) => {
         createdBy: req.user._id,
         leadId,
         customerId: lead.customerId,
-        quotationId: null,
+        quotationId: quoteTax.quotationId || req.body.quotationId || null,
         paymentScheduleId,
         paymentScheduleStageId: paymentScheduleStageId || null,
         approval:

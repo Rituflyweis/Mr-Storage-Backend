@@ -18,6 +18,7 @@ const { computeInvoiceDueDate } = require("../../utils/invoiceDueDate");
 const path = require("path");
 const fs = require("fs");
 const { generateInvoicePdf } = require("./generateInvoiceHelper");
+const { getLogoHtml } = require("../quoting/quoteDocumentGenerator");
 const {
   formatExceptionsForEmailHtml,
   formatExceptionsForEmailText,
@@ -236,7 +237,7 @@ const buildInvoiceCompanyTemplateFields = () => {
 
   const logoBlock = company.logoUrl
     ? `<img src="${escapeHtml(company.logoUrl)}" alt="${escapeHtml(company.name)}" class="logo" />`
-    : `<div style="font-size:18px;font-weight:800;color:#111827;letter-spacing:0.5px;line-height:1.3;">${escapeHtml(company.name)}</div>`;
+    : getLogoHtml();
 
   return {
     LOGO_BLOCK: logoBlock,
@@ -664,7 +665,7 @@ const sendInvoice = async ({
     from: MAIL_FROM,
     to: toEmail,
     subject: `Invoice ${inv.invoiceNumber || ""}`,
-    html: wrapCustomMessage(html, message),
+    html: prependCustomMessage(html, message),
   }, cc);
 
   if (pdfBuffer) {

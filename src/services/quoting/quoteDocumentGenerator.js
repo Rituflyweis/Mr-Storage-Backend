@@ -493,4 +493,5 @@ module.exports = {
   generateStorageQuoteHtml,
   generateAssembledHtml,
   generateQuotePdf,
+  getLogoHtml,
 }
