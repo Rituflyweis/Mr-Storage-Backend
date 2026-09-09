@@ -4,6 +4,7 @@ const {
   SENDGRID_API_KEY,
   SENDGRID_FROM,
   MAIL_FROM,
+  MAIL_FROM_NODE_MAILER,
   SMTP_HOST,
   SMTP_PORT,
   SMTP_USER,
@@ -38,7 +39,12 @@ const isSmtpConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 const isEmailConfigured = () =>
   Boolean(SENDGRID_API_KEY && (SENDGRID_FROM || MAIL_FROM));
 const isEnquiryNotificationConfigured = () =>
-  Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && SMTP_MAIL_FROM);
+  Boolean(
+    SMTP_HOST &&
+      SMTP_USER &&
+      SMTP_PASS &&
+      (MAIL_FROM_NODE_MAILER || SMTP_MAIL_FROM),
+  );
 
 // Nodemailer/SMTP is only for public form (and chat) enquiry notifications.
 const enquiryTransporter = isEnquiryNotificationConfigured()
@@ -77,7 +83,7 @@ const transporter = {
 
     const payload = {
       ...mailOptions,
-      from: mailOptions.from || resolvedMailFrom || MAIL_FROM,
+      from: mailOptions.from || resolvedMailFrom,
     };
     if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
       payload.attachments = normalizeAttachmentsForSendGrid(payload.attachments);
@@ -494,7 +500,7 @@ const sendQuotation = async ({
   const html = prependCustomMessage(String(draftHtml || "").trim() || fallbackHtml, message);
 
   const mailOptions = withCc({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Your Quotation for ${quotation.buildingType || "Construction Project"}`,
     html,
@@ -576,7 +582,7 @@ const sendInvoice = async ({
   }
 
   const mailOptions = withCc({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Invoice ${inv.invoiceNumber || ""}`,
     html: prependCustomMessage(html, message),
@@ -615,7 +621,7 @@ const sendOtp = async ({ toEmail, name, otp, expiresInMinutes = 10 }) => {
   });
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: "Your Password Reset OTP",
     html,
@@ -639,7 +645,7 @@ const sendFollowUpNudgeEmail = async ({
   `;
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject,
     html,
@@ -695,7 +701,7 @@ const sendEmployeeCredentials = async ({
   });
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Your ${roleLabel} Login Credentials`,
     html,
@@ -737,12 +743,12 @@ const sendNewCustomerEnquiryNotification = async ({
 
   if (!enquiryTransporter) {
     throw new Error(
-      "Enquiry email is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS.",
+      "Enquiry email is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM_NODE_MAILER.",
     );
   }
 
   const info = await enquiryTransporter.sendMail({
-    from: SMTP_MAIL_FROM,
+    from: MAIL_FROM_NODE_MAILER || SMTP_MAIL_FROM,
     to: toEmail,
     subject,
     html,
@@ -778,7 +784,7 @@ const sendConsolidatedBOMToVendor = async ({
   });
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Consolidated BOM for ${projectName || "Project"}`,
     html,
@@ -799,7 +805,7 @@ const sendShipperApprovalEmail = async ({
   });
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Vendor Selection Update: ${projectName || "Project"}`,
     html,
@@ -820,7 +826,7 @@ const sendShipperRejectionEmail = async ({
   });
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Vendor Selection Update: ${projectName || "Project"}`,
     html,
@@ -845,7 +851,7 @@ const sendComparisonReportEmail = async ({ toEmail, projectName, jobId, summary,
   `
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Order Verification Report: ${projectName || 'Project'}`,
     html,
@@ -902,7 +908,7 @@ const sendShipperResubmitRequestEmail = async ({
   });
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Action Required: Updated Quote Needed for ${projectName || "Project"}`,
     html,
@@ -986,7 +992,7 @@ const sendFreightBidRequestEmail = async ({
   `;
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Freight Bid Request: ${projectName || "Project"}${deliveryNumber ? ` (${deliveryNumber})` : ""}`,
     html,
@@ -1034,7 +1040,7 @@ const sendFreightBidAwardedEmail = async ({
   `;
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Freight Bid Awarded: ${projectName || "Project"}${deliveryNumber ? ` (${deliveryNumber})` : ""}`,
     html,
@@ -1063,7 +1069,7 @@ const sendFreightBidRejectedEmail = async ({
   `;
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Freight Bid Update: ${projectName || "Project"}${deliveryNumber ? ` (${deliveryNumber})` : ""}`,
     html,
@@ -1105,7 +1111,7 @@ const sendFreightBidResubmitRequestEmail = async ({
   });
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Action Required: Revised Freight Bid for ${projectName || "Project"}`,
     html,
@@ -1156,7 +1162,7 @@ const sendDeliveryConfirmationEmail = async ({
   `;
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Delivery Confirmed: ${projectName || "Project"}${deliveryNumber ? ` (${deliveryNumber})` : ""}`,
     html,
@@ -1191,7 +1197,7 @@ const sendDeliveryCallbackRequestEmail = async ({
   `;
 
   await transporter.sendMail({
-    from: MAIL_FROM,
+    from: resolvedMailFrom,
     to: toEmail,
     subject: `Call Back Requested: ${projectName || "Project"}${deliveryNumber ? ` (${deliveryNumber})` : ""}`,
     html,

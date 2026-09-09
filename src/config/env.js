@@ -64,16 +64,20 @@ module.exports = {
     10,
   ),
 
-  SENDGRID_API_KEY: process.env.SENDGRID_API_KEY,
-  SENDGRID_FROM: process.env.SENDGRID_FROM,
-  MAIL_FROM: process.env.MAIL_FROM || "Construction AI <noreply@example.com>",
+  SENDGRID_API_KEY: (process.env.SENDGRID_API_KEY || "").trim() || undefined,
+  SENDGRID_FROM: (process.env.SENDGRID_FROM || "").trim() || undefined,
+  MAIL_FROM:
+    (process.env.MAIL_FROM || "").trim() ||
+    "Construction AI <noreply@example.com>",
+  MAIL_FROM_NODE_MAILER: (process.env.MAIL_FROM_NODE_MAILER || "").trim() || null,
 
   SMTP_HOST: process.env.SMTP_HOST,
   SMTP_PORT: parseInt(process.env.SMTP_PORT || "587", 10),
   SMTP_USER: process.env.SMTP_USER,
   SMTP_PASS: process.env.SMTP_PASS,
   SMTP_MAIL_FROM:
-    process.env.SMTP_MAIL_FROM ||
+    (process.env.MAIL_FROM_NODE_MAILER || "").trim() ||
+    (process.env.SMTP_MAIL_FROM || "").trim() ||
     (process.env.SMTP_USER
       ? `Steel Building Depot <${process.env.SMTP_USER}>`
       : null),
