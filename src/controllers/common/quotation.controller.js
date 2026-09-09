@@ -1049,7 +1049,7 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
 
 exports.sendQuotation = asyncHandler(async (req, res) => {
   if (!mailer.isEmailConfigured()) {
-    return badRequest(res, "Email service is not configured. Set SENDGRID or SMTP credentials.");
+    return badRequest(res, "Email service is not configured. Set SENDGRID_API_KEY.");
   }
   const quotation = await Quotation.findById(req.params.quotationId);
   if (!quotation) return notFound(res, "Quotation not found");

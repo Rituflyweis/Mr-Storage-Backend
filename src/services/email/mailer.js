@@ -33,40 +33,14 @@ if (SENDGRID_API_KEY) {
 }
 
 const resolvedMailFrom = SENDGRID_FROM || MAIL_FROM;
-// Temporary ops mode: keep delivery on SMTP only and skip SendGrid attempts.
-const SENDGRID_ENABLED = false;
 
 const isSmtpConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 const isEmailConfigured = () =>
-  Boolean(isSmtpConfigured() && (SMTP_MAIL_FROM || MAIL_FROM));
+  Boolean(SENDGRID_API_KEY && (SENDGRID_FROM || MAIL_FROM));
 const isEnquiryNotificationConfigured = () =>
   Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && SMTP_MAIL_FROM);
 
-const buildSmtpTransporter = ({ port, secure }) =>
-  nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
-    secure,
-    family: 4,
-    connectionTimeout: 15000,
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
-  });
-
-const smtpTransporter = isSmtpConfigured()
-  ? buildSmtpTransporter({ port: SMTP_PORT, secure: SMTP_PORT === 465 })
-  : null;
-
-const smtpAltPort = SMTP_PORT === 465 ? 587 : 465;
-const smtpAltTransporter = isSmtpConfigured()
-  ? buildSmtpTransporter({
-      port: smtpAltPort,
-      secure: smtpAltPort === 465,
-    })
-  : null;
-
+// Nodemailer/SMTP is only for public form (and chat) enquiry notifications.
 const enquiryTransporter = isEnquiryNotificationConfigured()
   ? nodemailer.createTransport({
       host: SMTP_HOST,
@@ -95,82 +69,22 @@ const normalizeAttachmentsForSendGrid = (attachments = []) =>
 
 const transporter = {
   sendMail: async (mailOptions = {}) => {
+    if (!SENDGRID_API_KEY) {
+      throw new Error(
+        "Email service is not configured. Set SENDGRID_API_KEY.",
+      );
+    }
+
     const payload = {
       ...mailOptions,
-      from: mailOptions.from || resolvedMailFrom || SMTP_MAIL_FROM || MAIL_FROM,
+      from: mailOptions.from || resolvedMailFrom || MAIL_FROM,
     };
-
-    const hasSendGrid = SENDGRID_ENABLED && Boolean(SENDGRID_API_KEY);
-    const hasSmtp = Boolean(smtpTransporter);
-    if (!hasSendGrid && !hasSmtp) {
-      throw new Error(
-        "Email service is not configured. Set SENDGRID_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS.",
-      );
+    if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
+      payload.attachments = normalizeAttachmentsForSendGrid(payload.attachments);
     }
 
-    if (hasSendGrid) {
-      try {
-        const sgPayload = { ...payload };
-        if (
-          Array.isArray(sgPayload.attachments) &&
-          sgPayload.attachments.length > 0
-        ) {
-          sgPayload.attachments = normalizeAttachmentsForSendGrid(
-            sgPayload.attachments,
-          );
-        }
-        await sgMail.send(sgPayload);
-        return { provider: "sendgrid" };
-      } catch (sendgridErr) {
-        console.error(
-          `[Mailer] SendGrid send failed, trying SMTP fallback: ${
-            sendgridErr?.message || "unknown_sendgrid_error"
-          }`,
-        );
-        if (!hasSmtp) {
-          throw sendgridErr;
-        }
-      }
-    }
-
-    // Fallback path (or primary when SendGrid is unavailable).
-    try {
-      const smtpPayload = {
-        ...payload,
-        // SMTP providers (notably Gmail) may reject spoofed From addresses.
-        // Prefer authenticated mailbox identity on SMTP sends.
-        from: SMTP_MAIL_FROM || payload.from || MAIL_FROM,
-      };
-      await smtpTransporter.sendMail(smtpPayload);
-      return { provider: "smtp_fallback" };
-    } catch (smtpErr) {
-      if (smtpAltTransporter) {
-        try {
-          console.warn(
-            `[Mailer] SMTP primary failed on port ${SMTP_PORT}, trying alternate port ${smtpAltPort}: ${
-              smtpErr?.message || "unknown_smtp_error"
-            }`,
-          );
-          const altPayload = {
-            ...payload,
-            from: SMTP_MAIL_FROM || payload.from || MAIL_FROM,
-          };
-          await smtpAltTransporter.sendMail(altPayload);
-          return { provider: "smtp_fallback_alt_port" };
-        } catch (smtpAltErr) {
-          throw new Error(
-            `[Mailer] Email delivery failed on SMTP fallback: ${
-              smtpAltErr?.message || smtpErr?.message || "unknown_smtp_error"
-            }`,
-          );
-        }
-      }
-      throw new Error(
-        `[Mailer] Email delivery failed on SMTP fallback: ${
-          smtpErr?.message || "unknown_smtp_error"
-        }`,
-      );
-    }
+    await sgMail.send(payload);
+    return { provider: "sendgrid" };
   },
 };
 
