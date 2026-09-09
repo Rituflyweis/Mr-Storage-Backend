@@ -47,7 +47,7 @@ const DEFAULT_AUTOMATION_CONFIG = {
       enabled: true,
       preset: 'd7_15_30',
       intervalsDays: [7, 15, 30],
-      maxAttempts: 4,
+      maxAttempts: 3,
     },
   },
   invoiceReminder: {
@@ -66,6 +66,22 @@ const DEFAULT_AUTOMATION_CONFIG = {
   timezone: 'UTC',
 }
 
+const MAX_ATTEMPTS_LIMIT = 4
+
+const alignCadenceAttempts = (cadence = {}) => {
+  const next = { ...cadence }
+  const intervals = Array.isArray(next.intervalsDays)
+    ? next.intervalsDays.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+    : []
+  let max = Number(next.maxAttempts)
+  if (!Number.isInteger(max) || max < 1) max = intervals.length || 1
+  if (max > MAX_ATTEMPTS_LIMIT) max = MAX_ATTEMPTS_LIMIT
+  if (intervals.length && intervals.length < max) max = intervals.length
+  next.intervalsDays = intervals
+  next.maxAttempts = max
+  return next
+}
+
 const fillDefaults = (cfg = {}) => ({
   ...DEFAULT_AUTOMATION_CONFIG,
   ...cfg,
@@ -81,14 +97,14 @@ const fillDefaults = (cfg = {}) => ({
     ...(cfg.coldLead || {}),
   },
   leadFollowUp: {
-    warm: {
+    warm: alignCadenceAttempts({
       ...DEFAULT_AUTOMATION_CONFIG.leadFollowUp.warm,
       ...(cfg.leadFollowUp?.warm || {}),
-    },
-    cold: {
+    }),
+    cold: alignCadenceAttempts({
       ...DEFAULT_AUTOMATION_CONFIG.leadFollowUp.cold,
       ...(cfg.leadFollowUp?.cold || cfg.coldLead || {}),
-    },
+    }),
   },
   invoiceReminder: {
     ...DEFAULT_AUTOMATION_CONFIG.invoiceReminder,
@@ -698,6 +714,7 @@ const stopAutomationRunner = () => {
 
 module.exports = {
   getOrCreateConfig,
+  alignCadenceAttempts,
   runAutomationSweep,
   startAutomationRunner,
   stopAutomationRunner,

@@ -34,7 +34,7 @@ const LeadCadenceSchema = new mongoose.Schema(
 const LeadFollowUpSchema = new mongoose.Schema(
   {
     warm: { type: LeadCadenceSchema, default: () => ({ enabled: true, intervalsDays: [3, 7, 10, 14], maxAttempts: 4 }) },
-    cold: { type: LeadCadenceSchema, default: () => ({ enabled: true, intervalsDays: [7, 15, 30], maxAttempts: 4 }) },
+    cold: { type: LeadCadenceSchema, default: () => ({ enabled: true, intervalsDays: [7, 15, 30], maxAttempts: 3 }) },
   },
   { _id: false }
 )

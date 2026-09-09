@@ -6,6 +6,7 @@ const { AUDIT_ACTIONS } = require('../../config/constants')
 const {
   getOrCreateConfig,
   runAutomationSweep,
+  alignCadenceAttempts,
 } = require('../../services/followup/followUpAutomation.service')
 const { sendSms } = require('../../services/sms/sms.service')
 const { sendFollowUpNudgeEmail, isEmailConfigured } = require('../../services/email/mailer')
@@ -75,7 +76,7 @@ const normalizeLeadFollowUpPayload = (payload = {}) => {
         leadFollowUp.cold?.maxAttempts ??
         coldLegacy.maxAttempts ??
         coldFromLeadFrequency.maxAttempts ??
-        4,
+        3,
       intervalsDays:
         leadFollowUp.cold?.intervalsDays ??
         coldLegacy.intervalsDays ??
@@ -101,6 +102,12 @@ const normalizeLeadFollowUpPayload = (payload = {}) => {
   }
   if (payload.leadFollowUp?.cold?.intervalsDays !== undefined) {
     payload.leadFollowUp.cold.intervalsDays = parseIntervalArray(payload.leadFollowUp.cold.intervalsDays)
+  }
+  if (payload.leadFollowUp?.warm) {
+    payload.leadFollowUp.warm = alignCadenceAttempts(payload.leadFollowUp.warm)
+  }
+  if (payload.leadFollowUp?.cold) {
+    payload.leadFollowUp.cold = alignCadenceAttempts(payload.leadFollowUp.cold)
   }
 
   return payload
