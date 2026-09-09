@@ -643,12 +643,13 @@ const applySalesQuotationStatusFilter = (filter, statusRaw) => {
 
 exports.getMyQuotations = asyncHandler(async (req, res) => {
   const Quotation = require("../../models/Quotation");
-  const { status, approvalStatus, search, buildingType, minValue, maxValue, page = 1, limit = 20 } = req.query;
+  const { leadId, status, approvalStatus, search, buildingType, minValue, maxValue, page = 1, limit = 20 } = req.query;
   const dateFilter = buildDateFilter(req.query);
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1);
 
   const filter = { createdBy: req.user._id, ...dateFilter };
+  if (leadId) filter.leadId = leadId;
   if (status) applySalesQuotationStatusFilter(filter, status);
   const normalizedApprovalStatus = String(approvalStatus || '').trim().toLowerCase()
   if (normalizedApprovalStatus && APPROVAL_STATUSES.includes(normalizedApprovalStatus)) {
