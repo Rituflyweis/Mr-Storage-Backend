@@ -19,7 +19,9 @@ This document is for frontend integration of the new invoice approval workflow.
 - `invoice.invoiceStatus` (single UI status): `draft | pending_approval | approved | rejected | sent | paid | overdue | cancelled`
 - `invoice.paymentStatus` (alias of `invoice.status`): `draft | sent | paid | overdue | cancelled`
 - `invoice.approvalStatus` (alias of `invoice.approval.status`): `not_submitted | pending_approval | approved | rejected`
-- `invoice.approval.history[].status`: `not_submitted | pending_approval | approved | rejected | sent`
+- `invoice.approval.history[].status`: `not_submitted | pending_approval | approved | rejected | sent | cancelled`
+- `invoice.approval.history[].revision`: invoice revision for that event (optional on older rows)
+- `invoice.approvalRequests` (computed): versioned approval requests derived from history. Use this in admin UI instead of treating every `pending_approval` history row as still waiting.
 - `invoice.paymentProof.status`: `none | pending_review | verified | rejected`
 - `invoice.lineItems[].markupType`: `percentage | amount`
 - `invoice.lineItems[].taxType`: `percentage | amount`
@@ -174,8 +176,12 @@ New rule:
 
 When editable fields are changed:
 - `revision` increments.
-- If approval is `pending_approval`, `approved`, or `rejected`, approval resets to `not_submitted`.
-- Sales should submit again using `submit-approval`.
+- If approval is `pending_approval`:
+  - the **old request is cancelled** (`approval.history` gets `cancelled` for the previous revision)
+  - a **new pending request is opened automatically** for the new revision (`approval.status` stays `pending_approval`)
+  - admin pending queue still has this invoice once; `approvalRequests` shows cancelled old version + pending new version
+- If approval is `approved` or `rejected`, approval resets to `not_submitted`.
+- Sales should submit again using `submit-approval` only after approved/rejected edits (pending edits auto-resubmit).
 
 ---
 
@@ -187,8 +193,12 @@ For sales:
 3. If status `Rejected`, show `rejectionReason`, allow edit + resubmit.
 
 For admin:
-1. Pending queue page from `GET /approval/pending`.
-2. Invoice detail actions:
+1. Pending queue page from `GET /approval/pending` (one row per invoice).
+2. On invoice detail, render `approvalRequests` so an edited invoice shows:
+   - old version `cancelled`
+   - new version `pending_approval` (`current: true`)
+3. Do not treat every `approval.history` row with `pending_approval` as still waiting.
+4. Invoice detail actions:
    - Approve
    - Reject (reason required)
 

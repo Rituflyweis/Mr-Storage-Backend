@@ -47,10 +47,67 @@ const toBooleanQuery = (value) => {
   return ['1', 'true', 'yes', 'y'].includes(normalized)
 }
 
-const pushApprovalHistory = (invoice, { status, note = '', by = null, at = new Date() }) => {
+const pushApprovalHistory = (invoice, { status, note = '', by = null, at = new Date(), revision = null }) => {
   invoice.approval = invoice.approval || {}
   invoice.approval.history = Array.isArray(invoice.approval.history) ? invoice.approval.history : []
-  invoice.approval.history.push({ status, note, by, at })
+  invoice.approval.history.push({
+    status,
+    note,
+    by,
+    at,
+    revision: revision != null ? revision : Number(invoice.revision || 1),
+  })
+}
+
+const buildApprovalRequests = (invoice) => {
+  const history = Array.isArray(invoice.approval?.history) ? invoice.approval.history : []
+  const requests = []
+  let open = null
+
+  const closeOpen = (status, event) => {
+    if (!open) return
+    open.status = status
+    open.closedAt = event?.at || null
+    open.closedNote = event?.note || ''
+    open.current = false
+    requests.push(open)
+    open = null
+  }
+
+  for (const event of history) {
+    const status = event?.status
+    if (status === 'pending_approval') {
+      closeOpen('cancelled', event)
+      open = {
+        status: 'pending_approval',
+        revision: event.revision != null ? event.revision : null,
+        submittedAt: event.at || null,
+        submittedBy: event.by || null,
+        note: event.note || '',
+        current: true,
+      }
+    } else if (status === 'cancelled' || status === 'not_submitted') {
+      closeOpen('cancelled', event)
+    } else if (status === 'approved' || status === 'rejected' || status === 'sent') {
+      closeOpen(status, event)
+    }
+  }
+
+  if (open) {
+    const currentApproval = invoice.approval?.status || 'not_submitted'
+    if (currentApproval === 'pending_approval') {
+      open.current = true
+    } else if (currentApproval === 'not_submitted') {
+      open.status = 'cancelled'
+      open.current = false
+    } else {
+      open.status = currentApproval
+      open.current = false
+    }
+    requests.push(open)
+  }
+
+  return requests
 }
 
 const getWorkflowStatus = (invoice) => {
@@ -78,6 +135,7 @@ const decorateInvoiceForResponse = (invoiceLike) => {
   invoice.workflowStatus = getWorkflowStatus(invoice)
   // Frontend-friendly single status across approval + payment stages.
   invoice.invoiceStatus = getUnifiedInvoiceStatus(invoice)
+  invoice.approvalRequests = buildApprovalRequests(invoice)
   return invoice
 }
 
@@ -323,6 +381,7 @@ exports.createInvoice = asyncHandler(async (req, res) => {
                   note: 'Invoice submitted for admin approval on create',
                   by: req.user._id,
                   at: new Date(),
+                  revision: 1,
                 }],
               }
             : { status: 'approved', reviewedBy: req.user._id, reviewedAt: new Date(), approvedRevision: 1, history: [{
@@ -330,6 +389,7 @@ exports.createInvoice = asyncHandler(async (req, res) => {
               note: 'Admin-created invoice auto-approved',
               by: req.user._id,
               at: new Date(),
+              revision: 1,
             }] },
       })
       break
@@ -407,6 +467,7 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
 
   const hasPaymentStageUpdate = req.body.paymentScheduleStageId !== undefined
   const hasBodyFieldUpdates = INVOICE_BODY_FIELDS.some(k => req.body[k] !== undefined)
+  let replacedPendingApproval = false
   ensureApprovalState(invoice)
 
   if (hasBodyFieldUpdates && !INVOICE_EDITABLE_STATUSES.includes(invoice.status)) {
@@ -415,10 +476,32 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
 
   if (hasBodyFieldUpdates) {
     applyInvoiceBodyFields(invoice, req.body)
-    invoice.revision = Number(invoice.revision || 1) + 1
+    const prevRevision = Number(invoice.revision || 1)
+    invoice.revision = prevRevision + 1
     if (invoice.status !== 'sent' && invoice.status !== 'paid' && invoice.status !== 'cancelled') {
       const prevApproval = invoice.approval?.status || 'not_submitted'
-      if (['pending_approval', 'approved', 'rejected'].includes(prevApproval)) {
+      if (prevApproval === 'pending_approval') {
+        pushApprovalHistory(invoice, {
+          status: 'cancelled',
+          note: `Previous approval request cancelled after edit (revision ${prevRevision})`,
+          by: req.user._id,
+          revision: prevRevision,
+        })
+        invoice.approval.status = 'pending_approval'
+        invoice.approval.submittedBy = req.user._id
+        invoice.approval.submittedAt = new Date()
+        invoice.approval.reviewedBy = null
+        invoice.approval.reviewedAt = null
+        invoice.approval.rejectionReason = ''
+        invoice.approval.approvedRevision = null
+        pushApprovalHistory(invoice, {
+          status: 'pending_approval',
+          note: `New approval request after edit (revision ${invoice.revision})`,
+          by: req.user._id,
+          revision: invoice.revision,
+        })
+        replacedPendingApproval = true
+      } else if (['approved', 'rejected'].includes(prevApproval)) {
         invoice.approval.status = 'not_submitted'
         invoice.approval.reviewedBy = null
         invoice.approval.reviewedAt = null
@@ -455,6 +538,21 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
       approvalStatus: invoice.approval?.status || 'not_submitted',
     },
   })
+  if (replacedPendingApproval) {
+    await auditService.log({
+      type: 'invoice',
+      action: AUDIT_ACTIONS.INVOICE_SUBMITTED_FOR_APPROVAL,
+      leadId: invoice.leadId,
+      customerId: invoice.customerId,
+      performedBy: req.user._id,
+      metadata: {
+        invoiceId: invoice._id,
+        invoiceNumber: invoice.invoiceNumber,
+        revision: invoice.revision,
+        source: 'edit_pending_invoice',
+      },
+    })
+  }
 
   return success(res, { invoice: decorateInvoiceForResponse(invoice) })
 })
