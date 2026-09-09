@@ -41,6 +41,11 @@ const quotationCtrl = require("../../controllers/common/quotation.controller");
 const invoiceCtrl = require("../../controllers/common/invoice.controller");
 
 router.get(
+  "/leads/:leadId/quotations/latest-approved-tax",
+  ...guard,
+  quotationCtrl.getLatestApprovedQuotationTax,
+);
+router.get(
   "/leads/:leadId/quotations",
   ...guard,
   quotationCtrl.getLeadQuotations,

@@ -1583,6 +1583,70 @@ exports.deleteQuotation = asyncHandler(async (req, res) => {
   return success(res, {}, 'Quotation deleted')
 })
 
+const pickQuoteSalesTax = (source = {}) => {
+  const salesTax =
+    source.salesTax ||
+    source.fullQuoteResult?.salesTax ||
+    source.storagePricingResult?.salesTax ||
+    {};
+  return {
+    tax: toNumber(salesTax.amount, 0),
+    taxRate: toNumber(salesTax.rate, 0),
+  };
+};
+
+exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
+  const { leadId } = req.params;
+  const { error: accessError, code } = await checkLeadAccess(leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+
+  const quotation = await Quotation.findOne({
+    leadId,
+    "approval.status": "approved",
+  })
+    .sort({ "approval.reviewedAt": -1, createdAt: -1 })
+    .lean();
+
+  if (!quotation) {
+    return notFound(res, "No approved quotation found for this lead");
+  }
+
+  let tax = 0;
+  let taxRate = 0;
+  let estimateGrandTotal = 0;
+  if (quotation.sourceEstimateId) {
+    const estimate = await EstimateQuote.findById(quotation.sourceEstimateId)
+      .select("salesTax storagePricingResult fullQuoteResult totalSell pricingResult")
+      .lean();
+    const picked = pickQuoteSalesTax(estimate || {});
+    tax = picked.tax;
+    taxRate = picked.taxRate;
+    estimateGrandTotal = resolveEstimateGrandTotal(estimate || {});
+  }
+
+  const quoteValue =
+    toNumber(quotation.finalPrice, 0) ||
+    estimateGrandTotal ||
+    toNumber(quotation.basePrice, 0);
+
+  return success(res, {
+    leadId: quotation.leadId,
+    quotationId: quotation._id,
+    quoteNumber: quotation.quoteNumber || "",
+    quoteValue,
+    tax,
+    taxRate,
+    salesTax: {
+      amount: tax,
+      rate: taxRate,
+    },
+    currency: quotation.currency || "USD",
+    approvalStatus: quotation.approval?.status || "approved",
+    versionNumber: quotation.versionNumber || 1,
+    reviewedAt: quotation.approval?.reviewedAt || null,
+  });
+});
+
 exports.getLeadQuotations = asyncHandler(async (req, res) => {
   const { leadId } = req.params;
   const dateFilter = buildDateFilter(req.query);
