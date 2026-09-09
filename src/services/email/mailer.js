@@ -137,7 +137,11 @@ const prependCustomMessage = (html, message) => {
 
 const withCc = (mailOptions, cc) => {
   const list = Array.isArray(cc) ? cc.filter(Boolean) : [];
-  if (list.length) mailOptions.cc = list;
+  if (list.length) {
+    mailOptions.cc = list.map((email) =>
+      typeof email === "string" ? { email } : email,
+    );
+  }
   return mailOptions;
 };
 

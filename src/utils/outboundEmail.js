@@ -5,6 +5,15 @@ const isValidEmail = (value) => EMAIL_RE.test(String(value || '').trim())
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase()
 
+const emailFromItem = (item) => {
+  if (item == null || item === '') return ''
+  if (typeof item === 'string' || typeof item === 'number') return normalizeEmail(item)
+  if (typeof item === 'object') {
+    return normalizeEmail(item.email || item.Email || item.value || item.address || '')
+  }
+  return ''
+}
+
 const parseEmailList = (raw) => {
   if (raw == null || raw === '') return []
   const values = Array.isArray(raw)
@@ -13,7 +22,7 @@ const parseEmailList = (raw) => {
   const emails = []
   const seen = new Set()
   for (const item of values) {
-    const email = normalizeEmail(item)
+    const email = emailFromItem(item)
     if (!email || seen.has(email)) continue
     seen.add(email)
     emails.push(email)
@@ -41,7 +50,9 @@ const resolveOutboundRecipients = ({ body = {}, fallbackToEmail = '' } = {}) => 
   if (!toEmail) return { error: 'A To email is required' }
   if (!isValidEmail(toEmail)) return { error: 'Invalid To email' }
 
-  const cc = parseEmailList(body.cc ?? body.ccEmail ?? body.ccEmails)
+  const cc = parseEmailList(
+    body.cc ?? body.ccEmail ?? body.ccEmails ?? body.ccRecipients ?? body.ccList ?? body.ccs
+  )
   if (cc.length > MAX_CC) return { error: `A maximum of ${MAX_CC} CC emails is allowed` }
   const invalidCc = cc.find((email) => !isValidEmail(email))
   if (invalidCc) return { error: `Invalid CC email: ${invalidCc}` }
