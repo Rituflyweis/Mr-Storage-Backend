@@ -5,6 +5,7 @@ const mailer = require('../../services/email/mailer')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const { kickStaffSession } = require('../../utils/staffSession')
 const EMAIL_SEND_TIMEOUT_MS = 5000
 
 const toBoolean = (value, fallback = false) => {
@@ -248,6 +249,7 @@ exports.updateAdmin = asyncHandler(async (req, res) => {
   }
 
   await admin.save()
+  if (changes.isActive === false) kickStaffSession(admin._id)
 
   await auditService.log({
     type: 'user',
@@ -280,6 +282,7 @@ exports.toggleAdminStatus = asyncHandler(async (req, res) => {
 
   admin.isActive = !admin.isActive
   await admin.save()
+  if (!admin.isActive) kickStaffSession(admin._id)
 
   await auditService.log({
     type: 'user',
@@ -304,6 +307,7 @@ exports.deleteAdmin = asyncHandler(async (req, res) => {
   if (String(admin._id) === String(requester._id)) return badRequest(res, 'You cannot delete your own account')
 
   await User.findByIdAndDelete(admin._id)
+  kickStaffSession(admin._id)
 
   await auditService.log({
     type: 'user',

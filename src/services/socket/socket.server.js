@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken')
+const User = require('../../models/User')
 const { JWT_ACCESS_SECRET } = require('../../config/env')
 const chatHandler = require('./chat.handler')
 const adminHandler = require('./admin.handler')
@@ -27,12 +28,20 @@ const initSocket = (io) => {
 
   const adminNS = io.of('/admin')
 
-  adminNS.use((socket, next) => {
+  adminNS.use(async (socket, next) => {
     const token = socket.handshake.auth?.token
     if (!token) return next(new Error('Authentication required'))
     try {
       const decoded = jwt.verify(token, JWT_ACCESS_SECRET)
-      socket.user = decoded
+      const user = await User.findById(decoded._id).select('_id email role name isActive isMainAdmin')
+      if (!user || !user.isActive) return next(new Error('Account deactivated'))
+      socket.user = {
+        _id: user._id,
+        email: user.email,
+        role: user.role,
+        name: user.name,
+        isMainAdmin: user.role === 'admin' ? Boolean(user.isMainAdmin) : false,
+      }
       next()
     } catch (err) {
       next(new Error('Invalid token'))

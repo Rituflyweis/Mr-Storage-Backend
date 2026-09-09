@@ -4,11 +4,11 @@ const User = require('../models/User')
 const env = require('../config/env')
 const { success, unauthorized, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
+const { ACCOUNT_DEACTIVATED_MESSAGE } = require('../utils/staffSession')
 const { sendOtp } = require('../services/email/mailer')
 
 const OTP_EXPIRY_MINUTES = 10
-const DEACTIVATED_ACCOUNT_MESSAGE =
-  'Your account is deactivated. Please email to info@steelbuildingdepot.com'
+const DEACTIVATED_ACCOUNT_MESSAGE = ACCOUNT_DEACTIVATED_MESSAGE
 
 const signAccess = (user) =>
   jwt.sign(

@@ -46,6 +46,7 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog, getEmployeesAuditLog } = require('../../services/auditActivity.service')
+const { kickStaffSession } = require('../../utils/staffSession')
 const EMPLOYEE_BASE_FILTER = { role: { $ne: 'admin' } }
 const EMAIL_SEND_TIMEOUT_MS = 5000
 const toBoolean = (value, fallback = false) => {
@@ -643,6 +644,7 @@ exports.toggleStatus = asyncHandler(async (req, res) => {
 
   employee.isActive = !employee.isActive
   await employee.save()
+  if (!employee.isActive) kickStaffSession(employee._id)
 
   if (employee.role === 'sales') await roundRobinService.rebuildTracker()
 
@@ -661,6 +663,7 @@ exports.deleteEmployee = asyncHandler(async (req, res) => {
   }
 
   await User.findByIdAndDelete(userId)
+  kickStaffSession(userId)
 
   if (employee.role === 'sales') await roundRobinService.rebuildTracker()
 
