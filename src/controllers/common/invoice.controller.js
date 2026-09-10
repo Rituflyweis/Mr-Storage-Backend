@@ -1,390 +1,502 @@
-const Invoice = require('../../models/Invoice')
-const Lead = require('../../models/Lead')
-const Customer = require('../../models/Customer')
-const Quotation = require('../../models/Quotation')
-const EstimateQuote = require('../../models/EstimateQuote')
-const PaymentSchedule = require('../../models/PaymentSchedule')
-const mailer = require('../../services/email/mailer')
-const auditService = require('../../services/audit.service')
-const notificationService = require('../../services/notification.service')
-const generateInvoiceNumber = require('../../utils/generateInvoiceNumber')
-const generatePONumber = require('../../utils/generatePONumber')
-const { success, created, notFound, badRequest, forbidden, error } = require('../../utils/apiResponse')
-const asyncHandler = require('../../utils/asyncHandler')
-const { buildDateFilter } = require('../../utils/dateRange')
-const { isInvoiceOverdue, resolveInvoiceLeadIds, getScopedLeadIds } = require('../../utils/invoiceScope')
-const { AUDIT_ACTIONS, INVOICE_STATUSES, INVOICE_CREATE_MIN_LIFECYCLE_STAGE } = require('../../config/constants')
-const { isLifecycleAtLeast } = require('../../utils/leadLifecycle.util')
-const { resolveOutboundRecipients } = require('../../utils/outboundEmail')
-const { generateInvoiceListExcel, generateInvoiceListPdf } = require('../../utils/exportInvoices')
-const INVOICE_USER_FIELDS = 'name email role'
+const Invoice = require("../../models/Invoice");
+const Lead = require("../../models/Lead");
+const Customer = require("../../models/Customer");
+const Quotation = require("../../models/Quotation");
+const EstimateQuote = require("../../models/EstimateQuote");
+const PaymentSchedule = require("../../models/PaymentSchedule");
+const mailer = require("../../services/email/mailer");
+const auditService = require("../../services/audit.service");
+const notificationService = require("../../services/notification.service");
+const generateInvoiceNumber = require("../../utils/generateInvoiceNumber");
+const generatePONumber = require("../../utils/generatePONumber");
+const {
+  success,
+  created,
+  notFound,
+  badRequest,
+  forbidden,
+  error,
+} = require("../../utils/apiResponse");
+const asyncHandler = require("../../utils/asyncHandler");
+const { buildDateFilter } = require("../../utils/dateRange");
+const {
+  isInvoiceOverdue,
+  resolveInvoiceLeadIds,
+  getScopedLeadIds,
+} = require("../../utils/invoiceScope");
+const {
+  AUDIT_ACTIONS,
+  INVOICE_STATUSES,
+  INVOICE_CREATE_MIN_LIFECYCLE_STAGE,
+} = require("../../config/constants");
+const { isLifecycleAtLeast } = require("../../utils/leadLifecycle.util");
+const { resolveOutboundRecipients } = require("../../utils/outboundEmail");
+const {
+  generateInvoiceListExcel,
+  generateInvoiceListPdf,
+} = require("../../utils/exportInvoices");
+const INVOICE_USER_FIELDS = "name email role";
 
 const loadPaymentScheduleForInvoice = async (invoice) => {
-  const leadId = invoice.leadId?._id || invoice.leadId
+  const leadId = invoice.leadId?._id || invoice.leadId;
   if (leadId) {
-    const byLead = await PaymentSchedule.findOne({ leadId }).lean()
-    if (byLead) return byLead
+    const byLead = await PaymentSchedule.findOne({ leadId }).lean();
+    if (byLead) return byLead;
   }
   if (invoice.paymentScheduleId) {
-    return PaymentSchedule.findById(invoice.paymentScheduleId).lean()
+    return PaymentSchedule.findById(invoice.paymentScheduleId).lean();
   }
-  return null
-}
+  return null;
+};
 
 const INVOICE_BODY_FIELDS = [
-  'date', 'daysToPay', 'lineItems', 'description',
-  'subtotal', 'markupTotal', 'tax', 'discount', 'depositAmount', 'totalAmount',
-]
+  "date",
+  "daysToPay",
+  "lineItems",
+  "description",
+  "subtotal",
+  "markupTotal",
+  "tax",
+  "discount",
+  "depositAmount",
+  "totalAmount",
+];
 
-const INVOICE_EDITABLE_STATUSES = ['draft', 'sent']
-const APPROVAL_STATUSES = ['not_submitted', 'pending_approval', 'approved', 'rejected']
-const PENDING_APPROVAL_ALIASES = ['pending', 'pending_approval']
+const INVOICE_EDITABLE_STATUSES = ["draft", "sent"];
+const APPROVAL_STATUSES = [
+  "not_submitted",
+  "pending_approval",
+  "approved",
+  "rejected",
+];
+const PENDING_APPROVAL_ALIASES = ["pending", "pending_approval"];
 
 const toBooleanQuery = (value) => {
-  if (value === undefined || value === null) return false
-  if (typeof value === 'boolean') return value
-  const normalized = String(value).trim().toLowerCase()
-  return ['1', 'true', 'yes', 'y'].includes(normalized)
-}
+  if (value === undefined || value === null) return false;
+  if (typeof value === "boolean") return value;
+  const normalized = String(value).trim().toLowerCase();
+  return ["1", "true", "yes", "y"].includes(normalized);
+};
 
-const pushApprovalHistory = (invoice, { status, note = '', by = null, at = new Date(), revision = null }) => {
-  invoice.approval = invoice.approval || {}
-  invoice.approval.history = Array.isArray(invoice.approval.history) ? invoice.approval.history : []
+const pushApprovalHistory = (
+  invoice,
+  { status, note = "", by = null, at = new Date(), revision = null },
+) => {
+  invoice.approval = invoice.approval || {};
+  invoice.approval.history = Array.isArray(invoice.approval.history)
+    ? invoice.approval.history
+    : [];
   invoice.approval.history.push({
     status,
     note,
     by,
     at,
     revision: revision != null ? revision : Number(invoice.revision || 1),
-  })
-}
+  });
+};
 
 const buildApprovalRequests = (invoice) => {
-  const history = Array.isArray(invoice.approval?.history) ? invoice.approval.history : []
-  const requests = []
-  let open = null
+  const history = Array.isArray(invoice.approval?.history)
+    ? invoice.approval.history
+    : [];
+  const requests = [];
+  let open = null;
 
   const closeOpen = (status, event) => {
-    if (!open) return
-    open.status = status
-    open.closedAt = event?.at || null
-    open.closedNote = event?.note || ''
-    open.current = false
-    requests.push(open)
-    open = null
-  }
+    if (!open) return;
+    open.status = status;
+    open.closedAt = event?.at || null;
+    open.closedNote = event?.note || "";
+    open.current = false;
+    requests.push(open);
+    open = null;
+  };
 
   for (const event of history) {
-    const status = event?.status
-    if (status === 'pending_approval') {
-      closeOpen('cancelled', event)
+    const status = event?.status;
+    if (status === "pending_approval") {
+      closeOpen("cancelled", event);
       open = {
-        status: 'pending_approval',
+        status: "pending_approval",
         revision: event.revision != null ? event.revision : null,
         submittedAt: event.at || null,
         submittedBy: event.by || null,
-        note: event.note || '',
+        note: event.note || "",
         current: true,
-      }
-    } else if (status === 'cancelled' || status === 'not_submitted') {
-      closeOpen('cancelled', event)
-    } else if (status === 'approved' || status === 'rejected' || status === 'sent') {
-      closeOpen(status, event)
+      };
+    } else if (status === "cancelled" || status === "not_submitted") {
+      closeOpen("cancelled", event);
+    } else if (
+      status === "approved" ||
+      status === "rejected" ||
+      status === "sent"
+    ) {
+      closeOpen(status, event);
     }
   }
 
   if (open) {
-    const currentApproval = invoice.approval?.status || 'not_submitted'
-    if (currentApproval === 'pending_approval') {
-      open.current = true
-    } else if (currentApproval === 'not_submitted') {
-      open.status = 'cancelled'
-      open.current = false
+    const currentApproval = invoice.approval?.status || "not_submitted";
+    if (currentApproval === "pending_approval") {
+      open.current = true;
+    } else if (currentApproval === "not_submitted") {
+      open.status = "cancelled";
+      open.current = false;
     } else {
-      open.status = currentApproval
-      open.current = false
+      open.status = currentApproval;
+      open.current = false;
     }
-    requests.push(open)
+    requests.push(open);
   }
 
-  return requests
-}
+  return requests;
+};
 
 const getWorkflowStatus = (invoice) => {
-  if (invoice.status === 'sent') return 'sent'
-  const approval = invoice.approval?.status || 'not_submitted'
-  if (approval === 'pending_approval') return 'pending_approval'
-  if (approval === 'approved') return 'approved'
-  if (approval === 'rejected') return 'rejected'
-  return 'draft'
-}
+  if (invoice.status === "sent") return "sent";
+  const approval = invoice.approval?.status || "not_submitted";
+  if (approval === "pending_approval") return "pending_approval";
+  if (approval === "approved") return "approved";
+  if (approval === "rejected") return "rejected";
+  return "draft";
+};
 
 const getUnifiedInvoiceStatus = (invoice) => {
-  if (invoice.status === 'paid') return 'paid'
-  if (invoice.status === 'cancelled') return 'cancelled'
-  if (invoice.status === 'overdue') return 'overdue'
-  if (invoice.status === 'sent') return 'sent'
-  return getWorkflowStatus(invoice)
-}
+  if (invoice.status === "paid") return "paid";
+  if (invoice.status === "cancelled") return "cancelled";
+  if (invoice.status === "overdue") return "overdue";
+  if (invoice.status === "sent") return "sent";
+  return getWorkflowStatus(invoice);
+};
 
 const decorateInvoiceForResponse = (invoiceLike) => {
-  if (!invoiceLike) return invoiceLike
-  const invoice = typeof invoiceLike.toObject === 'function' ? invoiceLike.toObject() : { ...invoiceLike }
-  invoice.approvalStatus = invoice.approval?.status || 'not_submitted'
-  invoice.paymentStatus = invoice.status
-  invoice.workflowStatus = getWorkflowStatus(invoice)
+  if (!invoiceLike) return invoiceLike;
+  const invoice =
+    typeof invoiceLike.toObject === "function"
+      ? invoiceLike.toObject()
+      : { ...invoiceLike };
+  invoice.approvalStatus = invoice.approval?.status || "not_submitted";
+  invoice.paymentStatus = invoice.status;
+  invoice.workflowStatus = getWorkflowStatus(invoice);
   // Frontend-friendly single status across approval + payment stages.
-  invoice.invoiceStatus = getUnifiedInvoiceStatus(invoice)
-  invoice.approvalRequests = [...buildApprovalRequests(invoice)].reverse()
+  invoice.invoiceStatus = getUnifiedInvoiceStatus(invoice);
+  invoice.approvalRequests = [...buildApprovalRequests(invoice)].reverse();
   if (invoice.approval) {
-    invoice.approval.history = [...(invoice.approval.history || [])].reverse()
+    invoice.approval.history = [...(invoice.approval.history || [])].reverse();
   }
-  return invoice
-}
+  return invoice;
+};
 
 const ensureApprovalState = (invoice) => {
-  if (!invoice.approval) invoice.approval = {}
-  if (!invoice.approval.status) invoice.approval.status = 'not_submitted'
-  if (!Array.isArray(invoice.approval.history)) invoice.approval.history = []
-}
+  if (!invoice.approval) invoice.approval = {};
+  if (!invoice.approval.status) invoice.approval.status = "not_submitted";
+  if (!Array.isArray(invoice.approval.history)) invoice.approval.history = [];
+};
 
 const checkLeadAccess = async (leadId, user) => {
-  const lead = await Lead.findById(leadId)
-  if (!lead) return { error: 'Lead not found', code: 404 }
-  if (user.role === 'sales' && String(lead.assignedSales) !== String(user._id)) {
-    return { error: 'Access denied', code: 403 }
+  const lead = await Lead.findById(leadId);
+  if (!lead) return { error: "Lead not found", code: 404 };
+  if (
+    user.role === "sales" &&
+    String(lead.assignedSales) !== String(user._id)
+  ) {
+    return { error: "Access denied", code: 403 };
   }
-  return { lead }
-}
+  return { lead };
+};
 
 const assertInvoiceReadyToSend = (invoice) => {
-  ensureApprovalState(invoice)
-  if (invoice.status === 'paid') return 'Paid invoices cannot be sent'
-  if (invoice.status === 'cancelled') return 'Cancelled invoices cannot be sent'
-  if (invoice.approval.status !== 'approved') {
-    return 'Invoice must be approved by admin before sending'
+  ensureApprovalState(invoice);
+  if (invoice.status === "paid") return "Paid invoices cannot be sent";
+  if (invoice.status === "cancelled")
+    return "Cancelled invoices cannot be sent";
+  if (invoice.approval.status !== "approved") {
+    return "Invoice must be approved by admin before sending";
   }
   if (
     invoice.approval.approvedRevision != null &&
     Number(invoice.approval.approvedRevision) !== Number(invoice.revision || 1)
   ) {
-    return 'Invoice was edited after approval. Please resubmit for admin approval.'
+    return "Invoice was edited after approval. Please resubmit for admin approval.";
   }
-  return null
-}
+  return null;
+};
 
-const applyInvoiceSentFields = (invoice, {
-  sendMethod,
-  sentTo = '',
-  sentCc = [],
-  sentMessage = '',
-  sentAt = new Date(),
-} = {}) => {
-  invoice.status = 'sent'
-  invoice.sentAt = sentAt
-  invoice.sendMethod = sendMethod
-  invoice.sentTo = sentTo || ''
-  invoice.sentCc = Array.isArray(sentCc) ? sentCc : []
-  invoice.sentMessage = sentMessage || ''
-}
+const applyInvoiceSentFields = (
+  invoice,
+  {
+    sendMethod,
+    sentTo = "",
+    sentCc = [],
+    sentMessage = "",
+    sentAt = new Date(),
+  } = {},
+) => {
+  invoice.status = "sent";
+  invoice.sentAt = sentAt;
+  invoice.sendMethod = sendMethod;
+  invoice.sentTo = sentTo || "";
+  invoice.sentCc = Array.isArray(sentCc) ? sentCc : [];
+  invoice.sentMessage = sentMessage || "";
+};
 
 const applyInvoiceBodyFields = (target, body) => {
-  INVOICE_BODY_FIELDS.forEach(k => {
-    if (body[k] !== undefined) target[k] = body[k]
-  })
-}
+  INVOICE_BODY_FIELDS.forEach((k) => {
+    if (body[k] !== undefined) target[k] = body[k];
+  });
+};
 
 const toFiniteNumber = (value, fallback = 0) => {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
-}
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
 
 const pickSalesTax = (source = {}) => {
   const salesTax =
     source.salesTax ||
     source.fullQuoteResult?.salesTax ||
     source.storagePricingResult?.salesTax ||
-    {}
+    {};
   return {
     taxAmount: toFiniteNumber(salesTax.amount, 0),
     taxRate: toFiniteNumber(salesTax.rate, 0),
-  }
-}
+  };
+};
 
-const resolveQuoteSalesTaxForLead = async (leadId, explicitQuotationId = null) => {
-  let quotation = null
+const resolveQuoteSalesTaxForLead = async (
+  leadId,
+  explicitQuotationId = null,
+) => {
+  let quotation = null;
   if (explicitQuotationId) {
-    quotation = await Quotation.findOne({ _id: explicitQuotationId, leadId }).lean()
+    quotation = await Quotation.findOne({
+      _id: explicitQuotationId,
+      leadId,
+    }).lean();
   }
   if (!quotation) {
     quotation =
-      (await Quotation.findOne({ leadId, status: 'sent' }).sort({ sentAt: -1, createdAt: -1 }).lean()) ||
-      (await Quotation.findOne({ leadId, status: 'accepted' }).sort({ createdAt: -1 }).lean()) ||
-      (await Quotation.findOne({ leadId }).sort({ createdAt: -1 }).lean())
+      (await Quotation.findOne({ leadId, status: "sent" })
+        .sort({ sentAt: -1, createdAt: -1 })
+        .lean()) ||
+      (await Quotation.findOne({ leadId, status: "accepted" })
+        .sort({ createdAt: -1 })
+        .lean()) ||
+      (await Quotation.findOne({ leadId }).sort({ createdAt: -1 }).lean());
   }
-  if (!quotation) return { quotationId: null, taxAmount: 0, taxRate: 0 }
+  if (!quotation) return { quotationId: null, taxAmount: 0, taxRate: 0 };
 
-  let taxAmount = 0
-  let taxRate = 0
+  let taxAmount = 0;
+  let taxRate = 0;
   if (quotation.sourceEstimateId) {
     const estimate = await EstimateQuote.findById(quotation.sourceEstimateId)
-      .select('salesTax storagePricingResult fullQuoteResult')
-      .lean()
-    const picked = pickSalesTax(estimate || {})
-    taxAmount = picked.taxAmount
-    taxRate = picked.taxRate
+      .select("salesTax storagePricingResult fullQuoteResult")
+      .lean();
+    const picked = pickSalesTax(estimate || {});
+    taxAmount = picked.taxAmount;
+    taxRate = picked.taxRate;
   }
 
-  return { quotationId: quotation._id, taxAmount, taxRate }
-}
+  return { quotationId: quotation._id, taxAmount, taxRate };
+};
 
 const applyQuoteTaxToInvoiceData = (invoiceData, quoteTax) => {
-  if (!quoteTax?.taxAmount) return invoiceData
-  const bodyTax = toFiniteNumber(invoiceData.tax, 0)
-  if (bodyTax > 0) return invoiceData
+  if (!quoteTax?.taxAmount) return invoiceData;
+  const bodyTax = toFiniteNumber(invoiceData.tax, 0);
+  if (bodyTax > 0) return invoiceData;
 
-  const taxAmount = quoteTax.taxAmount
-  invoiceData.tax = taxAmount
+  const taxAmount = quoteTax.taxAmount;
+  invoiceData.tax = taxAmount;
 
-  const subtotal = toFiniteNumber(invoiceData.subtotal, 0)
-  const markupTotal = toFiniteNumber(invoiceData.markupTotal, 0)
-  const discount = toFiniteNumber(invoiceData.discount, 0)
-  const currentTotal = toFiniteNumber(invoiceData.totalAmount, 0)
-  const pretax = subtotal + markupTotal - discount
-  const postedAmount = currentTotal || pretax
+  const subtotal = toFiniteNumber(invoiceData.subtotal, 0);
+  const markupTotal = toFiniteNumber(invoiceData.markupTotal, 0);
+  const discount = toFiniteNumber(invoiceData.discount, 0);
+  const currentTotal = toFiniteNumber(invoiceData.totalAmount, 0);
+  const pretax = subtotal + markupTotal - discount;
+  const postedAmount = currentTotal || pretax;
 
   // Quotation grand total already includes sales tax. If the invoice was posted
   // as a single figure (line/subtotal/total all match, no tax split), peel tax
   // out instead of adding it on top.
-  const postedWithoutTaxSplit = !currentTotal || Math.abs(currentTotal - pretax) < 0.51
+  const postedWithoutTaxSplit =
+    !currentTotal || Math.abs(currentTotal - pretax) < 0.51;
   if (postedWithoutTaxSplit && postedAmount > taxAmount) {
-    const pretaxAmount = Math.round((postedAmount - taxAmount) * 100) / 100
-    invoiceData.subtotal = pretaxAmount
-    invoiceData.totalAmount = postedAmount
-    if (Array.isArray(invoiceData.lineItems) && invoiceData.lineItems.length === 1) {
-      const line = invoiceData.lineItems[0] || {}
-      const lineTotal = toFiniteNumber(line.total, 0)
+    const pretaxAmount = Math.round((postedAmount - taxAmount) * 100) / 100;
+    invoiceData.subtotal = pretaxAmount;
+    invoiceData.totalAmount = postedAmount;
+    if (
+      Array.isArray(invoiceData.lineItems) &&
+      invoiceData.lineItems.length === 1
+    ) {
+      const line = invoiceData.lineItems[0] || {};
+      const lineTotal = toFiniteNumber(line.total, 0);
       if (!lineTotal || Math.abs(lineTotal - postedAmount) < 0.51) {
-        const qty = toFiniteNumber(line.quantity, 1) || 1
-        line.total = pretaxAmount
-        line.rate = Math.round((pretaxAmount / qty) * 100) / 100
-        invoiceData.lineItems[0] = line
+        const qty = toFiniteNumber(line.quantity, 1) || 1;
+        line.total = pretaxAmount;
+        line.rate = Math.round((pretaxAmount / qty) * 100) / 100;
+        invoiceData.lineItems[0] = line;
       }
     }
-    return invoiceData
+    return invoiceData;
   }
 
   if (!currentTotal || Math.abs(currentTotal - pretax) < 0.51) {
-    invoiceData.totalAmount = pretax + taxAmount
+    invoiceData.totalAmount = pretax + taxAmount;
   }
 
-  return invoiceData
-}
+  return invoiceData;
+};
 
 const resolvePaymentScheduleStage = async (leadId, paymentScheduleStageId) => {
-  const schedule = await PaymentSchedule.findOne({ leadId, 'stages._id': paymentScheduleStageId })
-    .select('_id')
-    .lean()
-  if (!schedule) return { error: 'Payment schedule stage not found for this project' }
-  return { paymentScheduleId: schedule._id, paymentScheduleStageId }
-}
-
-const setPaymentScheduleStageInvoiced = async (leadId, paymentScheduleStageId, invoiceId) => {
-  await PaymentSchedule.findOneAndUpdate(
-    { leadId, 'stages._id': paymentScheduleStageId },
-    { $set: { 'stages.$.invoiceId': invoiceId, 'stages.$.status': 'invoiced' } }
-  )
-}
-
-const unlinkInvoiceFromPaymentStage = async (leadId, paymentScheduleStageId, invoiceId) => {
-  if (!paymentScheduleStageId) return
   const schedule = await PaymentSchedule.findOne({
     leadId,
-    'stages._id': paymentScheduleStageId,
-    'stages.invoiceId': invoiceId,
-  }).lean()
-  if (!schedule) return
+    "stages._id": paymentScheduleStageId,
+  })
+    .select("_id")
+    .lean();
+  if (!schedule)
+    return { error: "Payment schedule stage not found for this project" };
+  return { paymentScheduleId: schedule._id, paymentScheduleStageId };
+};
 
-  const stage = schedule.stages.find(s => String(s._id) === String(paymentScheduleStageId))
-  const resetStatus = stage?.status === 'invoiced' ? 'pending' : stage?.status
+const setPaymentScheduleStageInvoiced = async (
+  leadId,
+  paymentScheduleStageId,
+  invoiceId,
+) => {
+  await PaymentSchedule.findOneAndUpdate(
+    { leadId, "stages._id": paymentScheduleStageId },
+    {
+      $set: { "stages.$.invoiceId": invoiceId, "stages.$.status": "invoiced" },
+    },
+  );
+};
+
+const unlinkInvoiceFromPaymentStage = async (
+  leadId,
+  paymentScheduleStageId,
+  invoiceId,
+) => {
+  if (!paymentScheduleStageId) return;
+  const schedule = await PaymentSchedule.findOne({
+    leadId,
+    "stages._id": paymentScheduleStageId,
+    "stages.invoiceId": invoiceId,
+  }).lean();
+  if (!schedule) return;
+
+  const stage = schedule.stages.find(
+    (s) => String(s._id) === String(paymentScheduleStageId),
+  );
+  const resetStatus = stage?.status === "invoiced" ? "pending" : stage?.status;
 
   await PaymentSchedule.findOneAndUpdate(
-    { leadId, 'stages._id': paymentScheduleStageId },
+    { leadId, "stages._id": paymentScheduleStageId },
     {
       $set: {
-        'stages.$.invoiceId': null,
-        ...(resetStatus ? { 'stages.$.status': resetStatus } : {}),
+        "stages.$.invoiceId": null,
+        ...(resetStatus ? { "stages.$.status": resetStatus } : {}),
       },
-    }
-  )
-}
+    },
+  );
+};
 
-const applyPaymentScheduleStageLink = async (invoice, paymentScheduleStageId) => {
-  const previousStageId = invoice.paymentScheduleStageId
+const applyPaymentScheduleStageLink = async (
+  invoice,
+  paymentScheduleStageId,
+) => {
+  const previousStageId = invoice.paymentScheduleStageId;
 
-  if (previousStageId && String(previousStageId) !== String(paymentScheduleStageId || '')) {
-    await unlinkInvoiceFromPaymentStage(invoice.leadId, previousStageId, invoice._id)
+  if (
+    previousStageId &&
+    String(previousStageId) !== String(paymentScheduleStageId || "")
+  ) {
+    await unlinkInvoiceFromPaymentStage(
+      invoice.leadId,
+      previousStageId,
+      invoice._id,
+    );
   }
 
   if (paymentScheduleStageId) {
-    const resolved = await resolvePaymentScheduleStage(invoice.leadId, paymentScheduleStageId)
-    if (resolved.error) return resolved
-    invoice.paymentScheduleId = resolved.paymentScheduleId
-    invoice.paymentScheduleStageId = resolved.paymentScheduleStageId
-    await setPaymentScheduleStageInvoiced(invoice.leadId, paymentScheduleStageId, invoice._id)
+    const resolved = await resolvePaymentScheduleStage(
+      invoice.leadId,
+      paymentScheduleStageId,
+    );
+    if (resolved.error) return resolved;
+    invoice.paymentScheduleId = resolved.paymentScheduleId;
+    invoice.paymentScheduleStageId = resolved.paymentScheduleStageId;
+    await setPaymentScheduleStageInvoiced(
+      invoice.leadId,
+      paymentScheduleStageId,
+      invoice._id,
+    );
   } else {
-    invoice.paymentScheduleId = null
-    invoice.paymentScheduleStageId = null
+    invoice.paymentScheduleId = null;
+    invoice.paymentScheduleStageId = null;
   }
 
-  return {}
-}
+  return {};
+};
 
 exports.createInvoice = asyncHandler(async (req, res) => {
-  const leadId = req.params.leadId
-  if (!leadId) return badRequest(res, 'leadId is required in the URL path')
+  const leadId = req.params.leadId;
+  if (!leadId) return badRequest(res, "leadId is required in the URL path");
 
-  const { lead, error, code } = await checkLeadAccess(leadId, req.user)
-  if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
+  const { lead, error, code } = await checkLeadAccess(leadId, req.user);
+  if (error) return code === 404 ? notFound(res, error) : forbidden(res, error);
 
-  if (!isLifecycleAtLeast(lead.lifecycleStatus, INVOICE_CREATE_MIN_LIFECYCLE_STAGE)) {
+  if (
+    !isLifecycleAtLeast(
+      lead.lifecycleStatus,
+      INVOICE_CREATE_MIN_LIFECYCLE_STAGE,
+    )
+  ) {
     return badRequest(
       res,
-      `Invoice can only be created when the lead lifecycle is at least ${INVOICE_CREATE_MIN_LIFECYCLE_STAGE.replace(/_/g, ' ')}`
-    )
+      `Invoice can only be created when the lead lifecycle is at least ${INVOICE_CREATE_MIN_LIFECYCLE_STAGE.replace(/_/g, " ")}`,
+    );
   }
 
   // PO number logic:
   // First invoice on this lead: auto-generate a new PO number
   // Second+ invoice on same lead: carry forward the first invoice's PO number
-  const existingInvoice = await Invoice.findOne({ leadId }).sort({ createdAt: 1 }).lean()
-  let poNumber
+  const existingInvoice = await Invoice.findOne({ leadId })
+    .sort({ createdAt: 1 })
+    .lean();
+  let poNumber;
   if (existingInvoice?.poNumber) {
-    poNumber = existingInvoice.poNumber
+    poNumber = existingInvoice.poNumber;
   } else {
-    poNumber = await generatePONumber()
+    poNumber = await generatePONumber();
   }
 
-  const invoiceData = {}
-  applyInvoiceBodyFields(invoiceData, req.body)
-  const quoteTax = await resolveQuoteSalesTaxForLead(leadId, req.body.quotationId)
-  applyQuoteTaxToInvoiceData(invoiceData, quoteTax)
+  const invoiceData = {};
+  applyInvoiceBodyFields(invoiceData, req.body);
+  const quoteTax = await resolveQuoteSalesTaxForLead(
+    leadId,
+    req.body.quotationId,
+  );
+  applyQuoteTaxToInvoiceData(invoiceData, quoteTax);
 
-  const { paymentScheduleStageId } = req.body
-  let paymentScheduleId = null
+  const { paymentScheduleStageId } = req.body;
+  let paymentScheduleId = null;
 
   if (paymentScheduleStageId) {
-    const resolved = await resolvePaymentScheduleStage(leadId, paymentScheduleStageId)
-    if (resolved.error) return badRequest(res, resolved.error)
-    paymentScheduleId = resolved.paymentScheduleId
+    const resolved = await resolvePaymentScheduleStage(
+      leadId,
+      paymentScheduleStageId,
+    );
+    if (resolved.error) return badRequest(res, resolved.error);
+    paymentScheduleId = resolved.paymentScheduleId;
   }
 
   // Retry on rare invoiceNumber collisions (concurrent creates)
-  let invoice
-  let invoiceNumber
-  const maxAttempts = 5
+  let invoice;
+  let invoiceNumber;
+  const maxAttempts = 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    invoiceNumber = await generateInvoiceNumber()
+    invoiceNumber = await generateInvoiceNumber();
     try {
       invoice = await Invoice.create({
         ...invoiceData,
@@ -397,42 +509,57 @@ exports.createInvoice = asyncHandler(async (req, res) => {
         paymentScheduleId,
         paymentScheduleStageId: paymentScheduleStageId || null,
         approval:
-          req.user.role === 'sales'
+          req.user.role === "sales"
             ? {
-                status: 'pending_approval',
+                status: "pending_approval",
                 submittedBy: req.user._id,
                 submittedAt: new Date(),
-                history: [{
-                  status: 'pending_approval',
-                  note: 'Invoice submitted for admin approval on create',
-                  by: req.user._id,
-                  at: new Date(),
-                  revision: 1,
-                }],
+                history: [
+                  {
+                    status: "pending_approval",
+                    note: "Invoice submitted for admin approval on create",
+                    by: req.user._id,
+                    at: new Date(),
+                    revision: 1,
+                  },
+                ],
               }
-            : { status: 'approved', reviewedBy: req.user._id, reviewedAt: new Date(), approvedRevision: 1, history: [{
-              status: 'approved',
-              note: 'Admin-created invoice auto-approved',
-              by: req.user._id,
-              at: new Date(),
-              revision: 1,
-            }] },
-      })
-      break
+            : {
+                status: "approved",
+                reviewedBy: req.user._id,
+                reviewedAt: new Date(),
+                approvedRevision: 1,
+                history: [
+                  {
+                    status: "approved",
+                    note: "Admin-created invoice auto-approved",
+                    by: req.user._id,
+                    at: new Date(),
+                    revision: 1,
+                  },
+                ],
+              },
+      });
+      break;
     } catch (err) {
       const isDupInvoiceNumber =
         err?.code === 11000 &&
-        (err?.keyPattern?.invoiceNumber || String(err?.message || '').includes('invoiceNumber'))
-      if (!isDupInvoiceNumber || attempt === maxAttempts) throw err
+        (err?.keyPattern?.invoiceNumber ||
+          String(err?.message || "").includes("invoiceNumber"));
+      if (!isDupInvoiceNumber || attempt === maxAttempts) throw err;
     }
   }
 
   if (paymentScheduleStageId) {
-    await setPaymentScheduleStageInvoiced(leadId, paymentScheduleStageId, invoice._id)
+    await setPaymentScheduleStageInvoiced(
+      leadId,
+      paymentScheduleStageId,
+      invoice._id,
+    );
   }
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.INVOICE_CREATED,
     leadId,
     customerId: lead.customerId,
@@ -440,120 +567,155 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     metadata: {
       invoiceNumber,
       totalAmount: invoice.totalAmount,
-      approvalStatus: invoice.approval?.status || 'not_submitted',
+      approvalStatus: invoice.approval?.status || "not_submitted",
     },
-  })
-  if (req.user.role === 'sales') {
+  });
+  if (req.user.role === "sales") {
     await auditService.log({
-      type: 'invoice',
+      type: "invoice",
       action: AUDIT_ACTIONS.INVOICE_SUBMITTED_FOR_APPROVAL,
       leadId,
       customerId: lead.customerId,
       performedBy: req.user._id,
-      metadata: { invoiceId: invoice._id, invoiceNumber, source: 'create_invoice' },
-    })
+      metadata: {
+        invoiceId: invoice._id,
+        invoiceNumber,
+        source: "create_invoice",
+      },
+    });
   } else {
     await auditService.log({
-      type: 'invoice',
+      type: "invoice",
       action: AUDIT_ACTIONS.INVOICE_APPROVED,
       leadId,
       customerId: lead.customerId,
       performedBy: req.user._id,
-      metadata: { invoiceId: invoice._id, invoiceNumber, source: 'create_invoice_admin' },
-    })
+      metadata: {
+        invoiceId: invoice._id,
+        invoiceNumber,
+        source: "create_invoice_admin",
+      },
+    });
   }
 
-  return created(res, { invoice: decorateInvoiceForResponse(invoice) })
-})
+  return created(res, { invoice: decorateInvoiceForResponse(invoice) });
+});
 
 exports.getInvoice = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findById(req.params.invoiceId)
-    .populate('createdBy', INVOICE_USER_FIELDS)
-    .populate('paidBy', INVOICE_USER_FIELDS)
-    .populate('approval.submittedBy', INVOICE_USER_FIELDS)
-    .populate('approval.reviewedBy', INVOICE_USER_FIELDS)
-    .populate('approval.history.by', INVOICE_USER_FIELDS)
-    .lean()
-  if (!invoice) return notFound(res, 'Invoice not found')
+    .populate("createdBy", INVOICE_USER_FIELDS)
+    .populate("paidBy", INVOICE_USER_FIELDS)
+    .populate("approval.submittedBy", INVOICE_USER_FIELDS)
+    .populate("approval.reviewedBy", INVOICE_USER_FIELDS)
+    .populate("approval.history.by", INVOICE_USER_FIELDS)
+    .lean();
+  if (!invoice) return notFound(res, "Invoice not found");
 
-  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
-  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
+  const { error: accessError, code } = await checkLeadAccess(
+    invoice.leadId,
+    req.user,
+  );
+  if (accessError)
+    return code === 404
+      ? notFound(res, accessError)
+      : forbidden(res, accessError);
 
-  const paymentSchedule = await PaymentSchedule.findOne({ leadId: invoice.leadId }).lean()
-  return success(res, { invoice: decorateInvoiceForResponse(invoice), paymentSchedule })
-})
+  const paymentSchedule = await PaymentSchedule.findOne({
+    leadId: invoice.leadId,
+  }).lean();
+  return success(res, {
+    invoice: decorateInvoiceForResponse(invoice),
+    paymentSchedule,
+  });
+});
 
 exports.updateInvoice = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findById(req.params.invoiceId)
-  if (!invoice) return notFound(res, 'Invoice not found')
-  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoices cannot be edited')
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
+  if (invoice.status === "cancelled")
+    return badRequest(res, "Cancelled invoices cannot be edited");
 
-  const { error, code } = await checkLeadAccess(invoice.leadId, req.user)
-  if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
+  const { error, code } = await checkLeadAccess(invoice.leadId, req.user);
+  if (error) return code === 404 ? notFound(res, error) : forbidden(res, error);
 
-  const hasPaymentStageUpdate = req.body.paymentScheduleStageId !== undefined
-  const hasBodyFieldUpdates = INVOICE_BODY_FIELDS.some(k => req.body[k] !== undefined)
-  let replacedPendingApproval = false
-  ensureApprovalState(invoice)
+  const hasPaymentStageUpdate = req.body.paymentScheduleStageId !== undefined;
+  const hasBodyFieldUpdates = INVOICE_BODY_FIELDS.some(
+    (k) => req.body[k] !== undefined,
+  );
+  let replacedPendingApproval = false;
+  ensureApprovalState(invoice);
 
-  if (hasBodyFieldUpdates && !INVOICE_EDITABLE_STATUSES.includes(invoice.status)) {
-    return badRequest(res, 'Only draft and sent invoices can be edited')
+  if (
+    hasBodyFieldUpdates &&
+    !INVOICE_EDITABLE_STATUSES.includes(invoice.status)
+  ) {
+    return badRequest(res, "Only draft and sent invoices can be edited");
   }
 
   if (hasBodyFieldUpdates) {
-    applyInvoiceBodyFields(invoice, req.body)
-    const prevRevision = Number(invoice.revision || 1)
-    invoice.revision = prevRevision + 1
-    if (invoice.status !== 'sent' && invoice.status !== 'paid' && invoice.status !== 'cancelled') {
-      const prevApproval = invoice.approval?.status || 'not_submitted'
-      if (prevApproval === 'pending_approval') {
+    applyInvoiceBodyFields(invoice, req.body);
+    const prevRevision = Number(invoice.revision || 1);
+    invoice.revision = prevRevision + 1;
+    if (
+      invoice.status !== "sent" &&
+      invoice.status !== "paid" &&
+      invoice.status !== "cancelled"
+    ) {
+      const prevApproval = invoice.approval?.status || "not_submitted";
+      if (prevApproval === "pending_approval") {
         pushApprovalHistory(invoice, {
-          status: 'cancelled',
+          status: "cancelled",
           note: `Previous approval request cancelled after edit (revision ${prevRevision})`,
           by: req.user._id,
           revision: prevRevision,
-        })
-        invoice.approval.status = 'pending_approval'
-        invoice.approval.submittedBy = req.user._id
-        invoice.approval.submittedAt = new Date()
-        invoice.approval.reviewedBy = null
-        invoice.approval.reviewedAt = null
-        invoice.approval.rejectionReason = ''
-        invoice.approval.approvedRevision = null
+        });
+        invoice.approval.status = "pending_approval";
+        invoice.approval.submittedBy = req.user._id;
+        invoice.approval.submittedAt = new Date();
+        invoice.approval.reviewedBy = null;
+        invoice.approval.reviewedAt = null;
+        invoice.approval.rejectionReason = "";
+        invoice.approval.approvedRevision = null;
         pushApprovalHistory(invoice, {
-          status: 'pending_approval',
+          status: "pending_approval",
           note: `New approval request after edit (revision ${invoice.revision})`,
           by: req.user._id,
           revision: invoice.revision,
-        })
-        replacedPendingApproval = true
-      } else if (['approved', 'rejected'].includes(prevApproval)) {
-        invoice.approval.status = 'not_submitted'
-        invoice.approval.reviewedBy = null
-        invoice.approval.reviewedAt = null
-        invoice.approval.rejectionReason = ''
-        invoice.approval.approvedRevision = null
+        });
+        replacedPendingApproval = true;
+      } else if (["approved", "rejected"].includes(prevApproval)) {
+        invoice.approval.status = "not_submitted";
+        invoice.approval.reviewedBy = null;
+        invoice.approval.reviewedAt = null;
+        invoice.approval.rejectionReason = "";
+        invoice.approval.approvedRevision = null;
         pushApprovalHistory(invoice, {
-          status: 'not_submitted',
+          status: "not_submitted",
           note: `Approval reset after invoice edit (from ${prevApproval})`,
           by: req.user._id,
-        })
+        });
       }
     }
   }
 
   if (hasPaymentStageUpdate) {
     if (!INVOICE_EDITABLE_STATUSES.includes(invoice.status)) {
-      return badRequest(res, 'Payment schedule stage can only be changed on draft or sent invoices')
+      return badRequest(
+        res,
+        "Payment schedule stage can only be changed on draft or sent invoices",
+      );
     }
-    const linkResult = await applyPaymentScheduleStageLink(invoice, req.body.paymentScheduleStageId)
-    if (linkResult.error) return badRequest(res, linkResult.error)
+    const linkResult = await applyPaymentScheduleStageLink(
+      invoice,
+      req.body.paymentScheduleStageId,
+    );
+    if (linkResult.error) return badRequest(res, linkResult.error);
   }
 
-  await invoice.save()
+  await invoice.save();
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.INVOICE_EDITED,
     leadId: invoice.leadId,
     customerId: invoice.customerId,
@@ -561,12 +723,12 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
     metadata: {
       invoiceId: invoice._id,
       revision: invoice.revision,
-      approvalStatus: invoice.approval?.status || 'not_submitted',
+      approvalStatus: invoice.approval?.status || "not_submitted",
     },
-  })
+  });
   if (replacedPendingApproval) {
     await auditService.log({
-      type: 'invoice',
+      type: "invoice",
       action: AUDIT_ACTIONS.INVOICE_SUBMITTED_FOR_APPROVAL,
       leadId: invoice.leadId,
       customerId: invoice.customerId,
@@ -575,84 +737,103 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
         invoiceId: invoice._id,
         invoiceNumber: invoice.invoiceNumber,
         revision: invoice.revision,
-        source: 'edit_pending_invoice',
+        source: "edit_pending_invoice",
       },
-    })
+    });
   }
 
-  return success(res, { invoice: decorateInvoiceForResponse(invoice) })
-})
-
+  return success(res, { invoice: decorateInvoiceForResponse(invoice) });
+});
 
 exports.sendInvoice = asyncHandler(async (req, res) => {
   if (!mailer.isEmailConfigured()) {
-    return badRequest(res, 'Email service is not configured. Set SENDGRID_API_KEY.')
+    return badRequest(
+      res,
+      "Email service is not configured. Set SENDGRID_API_KEY.",
+    );
   }
 
-  const invoice = await Invoice.findById(req.params.invoiceId)
-  if (!invoice) return notFound(res, 'Invoice not found')
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
 
-  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
-  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
+  const { error: accessError, code } = await checkLeadAccess(
+    invoice.leadId,
+    req.user,
+  );
+  if (accessError)
+    return code === 404
+      ? notFound(res, accessError)
+      : forbidden(res, accessError);
 
-  const readyError = assertInvoiceReadyToSend(invoice)
-  if (readyError) return badRequest(res, readyError)
+  const readyError = assertInvoiceReadyToSend(invoice);
+  if (readyError) return badRequest(res, readyError);
 
-  const customer = await Customer.findById(invoice.customerId)
-  if (!customer) return notFound(res, 'Customer not found')
+  const customer = await Customer.findById(invoice.customerId);
+  if (!customer) return notFound(res, "Customer not found");
   const recipients = resolveOutboundRecipients({
     body: req.body,
     fallbackToEmail: customer.email,
-  })
-  if (recipients.error) return badRequest(res, recipients.error)
-  const customMessage = recipients.customMessage
-  const messageSourceKey = recipients.messageSourceKey
+  });
+  if (recipients.error) return badRequest(res, recipients.error);
+  const customMessage = recipients.customMessage;
+  const messageSourceKey = recipients.messageSourceKey;
 
-  const paymentSchedule = await loadPaymentScheduleForInvoice(invoice)
-  const lead = await Lead.findById(invoice.leadId).select('location').lean()
+  const paymentSchedule = await loadPaymentScheduleForInvoice(invoice);
+  const lead = await Lead.findById(invoice.leadId).select("location").lean();
   const customerAddressHtml = mailer.buildCustomerBillToAddressHtml({
     company: customer.company,
-    location: customer.location || lead?.location || '',
-  })
+    location: customer.location || lead?.location || "",
+  });
 
-  let emailResult = { pdfAttached: true, pdfError: null, paymentScheduleIncluded: false, paymentScheduleStageCount: 0 }
+  let emailResult = {
+    pdfAttached: true,
+    pdfError: null,
+    paymentScheduleIncluded: false,
+    paymentScheduleStageCount: 0,
+  };
   try {
     emailResult = await mailer.sendInvoice({
       toEmail: recipients.toEmail,
       cc: recipients.cc,
-      customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || customer.firstName,
+      customerName:
+        `${customer.firstName || ""} ${customer.lastName || ""}`.trim() ||
+        customer.firstName,
       customerAddressHtml,
       invoice,
       paymentSchedule,
       message: customMessage,
-    })
+    });
   } catch (err) {
-    console.error('[sendInvoice] Email failed for invoice', invoice.invoiceNumber, err.message)
-    return error(res, `Failed to send invoice email: ${err.message}`, 502)
+    console.error(
+      "[sendInvoice] Email failed for invoice",
+      invoice.invoiceNumber,
+      err.message,
+    );
+    return error(res, `Failed to send invoice email: ${err.message}`, 502);
   }
 
   applyInvoiceSentFields(invoice, {
-    sendMethod: 'platform',
+    sendMethod: "platform",
     sentTo: recipients.toEmail,
     sentCc: recipients.cc,
     sentMessage: customMessage,
-  })
+  });
   pushApprovalHistory(invoice, {
-    status: 'sent',
-    note: `Invoice sent to ${recipients.toEmail}${recipients.cc.length ? ` (cc: ${recipients.cc.join(', ')})` : ''}`,
+    status: "sent",
+    note: `Invoice sent to ${recipients.toEmail}${recipients.cc.length ? ` (cc: ${recipients.cc.join(", ")})` : ""}`,
     by: req.user._id,
-  })
-  await invoice.save()
+  });
+  await invoice.save();
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.INVOICE_SENT,
     leadId: invoice.leadId,
     customerId: invoice.customerId,
     performedBy: req.user._id,
     metadata: {
       invoiceNumber: invoice.invoiceNumber,
-      sendMethod: 'platform',
+      sendMethod: "platform",
       sentTo: recipients.toEmail,
       sentCc: recipients.cc,
       customMessageIncluded: Boolean(customMessage),
@@ -662,61 +843,71 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
       paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
       paymentScheduleStageCount: emailResult.paymentScheduleStageCount,
     },
-  })
+  });
 
   const message = emailResult.pdfAttached
-    ? 'Invoice sent successfully'
-    : 'Invoice sent successfully (PDF attachment could not be generated; HTML email delivered)'
+    ? "Invoice sent successfully"
+    : "Invoice sent successfully (PDF attachment could not be generated; HTML email delivered)";
 
-  return success(res, {
-    invoice: decorateInvoiceForResponse(invoice),
-    sendMethod: 'platform',
-    sentTo: recipients.toEmail,
-    sentCc: recipients.cc,
-    messageIncluded: Boolean(customMessage),
-    messageSourceKey,
-    pdfAttached: emailResult.pdfAttached,
-    pdfWarning: emailResult.pdfError || null,
-    paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
-    paymentScheduleStageCount: emailResult.paymentScheduleStageCount,
-  }, message)
-})
+  return success(
+    res,
+    {
+      invoice: decorateInvoiceForResponse(invoice),
+      sendMethod: "platform",
+      sentTo: recipients.toEmail,
+      sentCc: recipients.cc,
+      messageIncluded: Boolean(customMessage),
+      messageSourceKey,
+      pdfAttached: emailResult.pdfAttached,
+      pdfWarning: emailResult.pdfError || null,
+      paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
+      paymentScheduleStageCount: emailResult.paymentScheduleStageCount,
+    },
+    message,
+  );
+});
 
 exports.markInvoiceSent = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findById(req.params.invoiceId)
-  if (!invoice) return notFound(res, 'Invoice not found')
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
 
-  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
-  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
+  const { error: accessError, code } = await checkLeadAccess(
+    invoice.leadId,
+    req.user,
+  );
+  if (accessError)
+    return code === 404
+      ? notFound(res, accessError)
+      : forbidden(res, accessError);
 
-  if (invoice.status === 'sent') {
-    return badRequest(res, 'Invoice is already marked as sent')
+  if (invoice.status === "sent") {
+    return badRequest(res, "Invoice is already marked as sent");
   }
 
-  const readyError = assertInvoiceReadyToSend(invoice)
-  if (readyError) return badRequest(res, readyError)
+  const readyError = assertInvoiceReadyToSend(invoice);
+  if (readyError) return badRequest(res, readyError);
 
-  const sentAt = req.body?.sentAt ? new Date(req.body.sentAt) : new Date()
-  if (Number.isNaN(sentAt.getTime())) return badRequest(res, 'Invalid sentAt')
-  const note = String(req.body?.note || req.body?.message || '').trim()
+  const sentAt = req.body?.sentAt ? new Date(req.body.sentAt) : new Date();
+  if (Number.isNaN(sentAt.getTime())) return badRequest(res, "Invalid sentAt");
+  const note = String(req.body?.note || req.body?.message || "").trim();
 
   applyInvoiceSentFields(invoice, {
-    sendMethod: 'manual',
-    sentTo: '',
+    sendMethod: "manual",
+    sentTo: "",
     sentCc: [],
     sentMessage: note,
     sentAt,
-  })
+  });
   pushApprovalHistory(invoice, {
-    status: 'sent',
-    note: note || 'Marked as sent (sent outside the platform)',
+    status: "sent",
+    note: note || "Marked as sent (sent outside the platform)",
     by: req.user._id,
     at: sentAt,
-  })
-  await invoice.save()
+  });
+  await invoice.save();
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.INVOICE_SENT,
     leadId: invoice.leadId,
     customerId: invoice.customerId,
@@ -724,82 +915,110 @@ exports.markInvoiceSent = asyncHandler(async (req, res) => {
     metadata: {
       invoiceId: invoice._id,
       invoiceNumber: invoice.invoiceNumber,
-      sendMethod: 'manual',
+      sendMethod: "manual",
       sentAt,
       note: note || null,
     },
-  })
+  });
 
-  return success(res, {
-    invoice: decorateInvoiceForResponse(invoice),
-    sendMethod: 'manual',
-  }, 'Invoice marked as sent')
-})
+  return success(
+    res,
+    {
+      invoice: decorateInvoiceForResponse(invoice),
+      sendMethod: "manual",
+    },
+    "Invoice marked as sent",
+  );
+});
 
 exports.submitInvoiceForApproval = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findById(req.params.invoiceId)
-  if (!invoice) return notFound(res, 'Invoice not found')
-  if (invoice.status === 'sent') return badRequest(res, 'Sent invoice cannot be submitted for approval')
-  if (invoice.status === 'paid') return badRequest(res, 'Paid invoice cannot be submitted for approval')
-  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoice cannot be submitted for approval')
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
+  if (invoice.status === "sent")
+    return badRequest(res, "Sent invoice cannot be submitted for approval");
+  if (invoice.status === "paid")
+    return badRequest(res, "Paid invoice cannot be submitted for approval");
+  if (invoice.status === "cancelled")
+    return badRequest(
+      res,
+      "Cancelled invoice cannot be submitted for approval",
+    );
 
-  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user)
-  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError)
+  const { error: accessError, code } = await checkLeadAccess(
+    invoice.leadId,
+    req.user,
+  );
+  if (accessError)
+    return code === 404
+      ? notFound(res, accessError)
+      : forbidden(res, accessError);
 
-  ensureApprovalState(invoice)
-  invoice.approval.status = 'pending_approval'
-  invoice.approval.submittedBy = req.user._id
-  invoice.approval.submittedAt = new Date()
-  invoice.approval.reviewedBy = null
-  invoice.approval.reviewedAt = null
-  invoice.approval.rejectionReason = ''
-  invoice.approval.approvedRevision = null
+  ensureApprovalState(invoice);
+  invoice.approval.status = "pending_approval";
+  invoice.approval.submittedBy = req.user._id;
+  invoice.approval.submittedAt = new Date();
+  invoice.approval.reviewedBy = null;
+  invoice.approval.reviewedAt = null;
+  invoice.approval.rejectionReason = "";
+  invoice.approval.approvedRevision = null;
   pushApprovalHistory(invoice, {
-    status: 'pending_approval',
-    note: req.body?.note || 'Submitted for admin approval',
+    status: "pending_approval",
+    note: req.body?.note || "Submitted for admin approval",
     by: req.user._id,
-  })
-  await invoice.save()
+  });
+  await invoice.save();
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.INVOICE_SUBMITTED_FOR_APPROVAL,
     leadId: invoice.leadId,
     customerId: invoice.customerId,
     performedBy: req.user._id,
-    metadata: { invoiceId: invoice._id, invoiceNumber: invoice.invoiceNumber, revision: invoice.revision },
-  })
+    metadata: {
+      invoiceId: invoice._id,
+      invoiceNumber: invoice.invoiceNumber,
+      revision: invoice.revision,
+    },
+  });
 
-  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Invoice submitted for approval')
-})
+  return success(
+    res,
+    { invoice: decorateInvoiceForResponse(invoice) },
+    "Invoice submitted for approval",
+  );
+});
 
 exports.approveInvoice = asyncHandler(async (req, res) => {
-  if (req.user.role !== 'admin') return forbidden(res, 'Only admin can approve invoices')
-  const invoice = await Invoice.findById(req.params.invoiceId)
-  if (!invoice) return notFound(res, 'Invoice not found')
-  if (invoice.status === 'sent') return badRequest(res, 'Sent invoice cannot be approved')
-  if (invoice.status === 'paid') return badRequest(res, 'Paid invoice cannot be approved')
-  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoice cannot be approved')
+  if (req.user.role !== "admin")
+    return forbidden(res, "Only admin can approve invoices");
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
+  if (invoice.status === "sent")
+    return badRequest(res, "Sent invoice cannot be approved");
+  if (invoice.status === "paid")
+    return badRequest(res, "Paid invoice cannot be approved");
+  if (invoice.status === "cancelled")
+    return badRequest(res, "Cancelled invoice cannot be approved");
 
-  ensureApprovalState(invoice)
-  if (invoice.approval.status !== 'pending_approval') {
-    return badRequest(res, 'Only pending approval invoices can be approved')
+  ensureApprovalState(invoice);
+  if (invoice.approval.status !== "pending_approval") {
+    return badRequest(res, "Only pending approval invoices can be approved");
   }
 
-  invoice.approval.status = 'approved'
-  invoice.approval.reviewedBy = req.user._id
-  invoice.approval.reviewedAt = new Date()
-  invoice.approval.rejectionReason = ''
-  invoice.approval.approvedRevision = Number(invoice.revision || 1)
+  invoice.approval.status = "approved";
+  invoice.approval.reviewedBy = req.user._id;
+  invoice.approval.reviewedAt = new Date();
+  invoice.approval.rejectionReason = "";
+  invoice.approval.approvedRevision = Number(invoice.revision || 1);
   pushApprovalHistory(invoice, {
-    status: 'approved',
-    note: req.body?.note || 'Approved by admin',
+    status: "approved",
+    note: req.body?.note || "Approved by admin",
     by: req.user._id,
-  })
-  await invoice.save()
+  });
+  await invoice.save();
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.INVOICE_APPROVED,
     leadId: invoice.leadId,
     customerId: invoice.customerId,
@@ -809,109 +1028,136 @@ exports.approveInvoice = asyncHandler(async (req, res) => {
       invoiceNumber: invoice.invoiceNumber,
       approvedRevision: invoice.approval.approvedRevision,
     },
-  })
+  });
 
-  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Invoice approved')
-})
+  return success(
+    res,
+    { invoice: decorateInvoiceForResponse(invoice) },
+    "Invoice approved",
+  );
+});
 
 exports.rejectInvoice = asyncHandler(async (req, res) => {
-  if (req.user.role !== 'admin') return forbidden(res, 'Only admin can reject invoices')
-  const invoice = await Invoice.findById(req.params.invoiceId)
-  if (!invoice) return notFound(res, 'Invoice not found')
-  if (invoice.status === 'sent') return badRequest(res, 'Sent invoice cannot be rejected')
-  if (invoice.status === 'paid') return badRequest(res, 'Paid invoice cannot be rejected')
-  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoice cannot be rejected')
+  if (req.user.role !== "admin")
+    return forbidden(res, "Only admin can reject invoices");
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
+  if (invoice.status === "sent")
+    return badRequest(res, "Sent invoice cannot be rejected");
+  if (invoice.status === "paid")
+    return badRequest(res, "Paid invoice cannot be rejected");
+  if (invoice.status === "cancelled")
+    return badRequest(res, "Cancelled invoice cannot be rejected");
 
-  ensureApprovalState(invoice)
-  if (invoice.approval.status !== 'pending_approval') {
-    return badRequest(res, 'Only pending approval invoices can be rejected')
+  ensureApprovalState(invoice);
+  if (invoice.approval.status !== "pending_approval") {
+    return badRequest(res, "Only pending approval invoices can be rejected");
   }
 
-  const reason = String(req.body?.reason || req.body?.note || '').trim()
-  if (!reason) return badRequest(res, 'Rejection reason is required')
+  const reason = String(req.body?.reason || req.body?.note || "").trim();
+  if (!reason) return badRequest(res, "Rejection reason is required");
 
-  invoice.approval.status = 'rejected'
-  invoice.approval.reviewedBy = req.user._id
-  invoice.approval.reviewedAt = new Date()
-  invoice.approval.rejectionReason = reason
-  invoice.approval.approvedRevision = null
+  invoice.approval.status = "rejected";
+  invoice.approval.reviewedBy = req.user._id;
+  invoice.approval.reviewedAt = new Date();
+  invoice.approval.rejectionReason = reason;
+  invoice.approval.approvedRevision = null;
   pushApprovalHistory(invoice, {
-    status: 'rejected',
+    status: "rejected",
     note: reason,
     by: req.user._id,
-  })
-  await invoice.save()
+  });
+  await invoice.save();
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.INVOICE_REJECTED,
     leadId: invoice.leadId,
     customerId: invoice.customerId,
     performedBy: req.user._id,
-    metadata: { invoiceId: invoice._id, invoiceNumber: invoice.invoiceNumber, reason },
-  })
+    metadata: {
+      invoiceId: invoice._id,
+      invoiceNumber: invoice.invoiceNumber,
+      reason,
+    },
+  });
 
-  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Invoice rejected')
-})
+  return success(
+    res,
+    { invoice: decorateInvoiceForResponse(invoice) },
+    "Invoice rejected",
+  );
+});
 
 exports.getPendingInvoiceApprovals = asyncHandler(async (req, res) => {
-  if (req.user.role !== 'admin') return forbidden(res, 'Only admin can view pending approvals')
+  if (req.user.role !== "admin")
+    return forbidden(res, "Only admin can view pending approvals");
   const invoices = await Invoice.find({
-    status: { $nin: ['sent', 'paid', 'cancelled'] },
-    'approval.status': 'pending_approval',
+    status: { $nin: ["sent", "paid", "cancelled"] },
+    "approval.status": "pending_approval",
   })
-    .populate('createdBy', INVOICE_USER_FIELDS)
-    .populate('approval.submittedBy', INVOICE_USER_FIELDS)
-    .populate('approval.reviewedBy', INVOICE_USER_FIELDS)
-    .populate('approval.history.by', INVOICE_USER_FIELDS)
-    .sort({ 'approval.submittedAt': 1, createdAt: 1 })
-    .lean()
+    .populate("createdBy", INVOICE_USER_FIELDS)
+    .populate("approval.submittedBy", INVOICE_USER_FIELDS)
+    .populate("approval.reviewedBy", INVOICE_USER_FIELDS)
+    .populate("approval.history.by", INVOICE_USER_FIELDS)
+    .sort({ "approval.submittedAt": 1, createdAt: 1 })
+    .lean();
 
   return success(res, {
     invoices: invoices.map((inv) => decorateInvoiceForResponse(inv)),
-  })
-})
+  });
+});
 
 exports.markAsPaid = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findById(req.params.invoiceId)
-  if (!invoice) return notFound(res, 'Invoice not found')
-  if (invoice.status === 'paid') return badRequest(res, 'Invoice is already marked as paid')
-  if (invoice.status === 'cancelled') {
-    return badRequest(res, 'Cannot mark a cancelled invoice as paid')
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
+  if (invoice.status === "paid")
+    return badRequest(res, "Invoice is already marked as paid");
+  if (invoice.status === "cancelled") {
+    return badRequest(res, "Cannot mark a cancelled invoice as paid");
   }
 
   // Check access for sales role
-  if (req.user.role === 'sales') {
-    const lead = await Lead.findById(invoice.leadId)
+  if (req.user.role === "sales") {
+    const lead = await Lead.findById(invoice.leadId);
     if (lead && String(lead.assignedSales) !== String(req.user._id)) {
-      return forbidden(res, 'Access denied')
+      return forbidden(res, "Access denied");
     }
   }
 
-  invoice.status = 'paid'
-  invoice.paidAt = new Date()
-  invoice.paidBy = req.user._id
-  await invoice.save()
+  invoice.status = "paid";
+  invoice.paidAt = new Date();
+  invoice.paidBy = req.user._id;
+  await invoice.save();
 
   // Auto-update linked payment schedule stage
   if (invoice.paymentScheduleStageId) {
-    const PaymentSchedule = require('../../models/PaymentSchedule')
+    const PaymentSchedule = require("../../models/PaymentSchedule");
     await PaymentSchedule.findOneAndUpdate(
-      { 'stages._id': invoice.paymentScheduleStageId },
-      { $set: { 'stages.$.status': 'paid', 'stages.$.paidAt': new Date(), 'stages.$.paidBy': req.user._id } }
-    )
+      { "stages._id": invoice.paymentScheduleStageId },
+      {
+        $set: {
+          "stages.$.status": "paid",
+          "stages.$.paidAt": new Date(),
+          "stages.$.paidBy": req.user._id,
+        },
+      },
+    );
     await auditService.log({
-      type: 'invoice',
+      type: "invoice",
       action: AUDIT_ACTIONS.PAYMENT_STAGE_PAID,
       leadId: invoice.leadId,
       customerId: invoice.customerId,
       performedBy: req.user._id,
-      metadata: { stageId: invoice.paymentScheduleStageId, invoiceId: invoice._id },
-    })
+      metadata: {
+        stageId: invoice.paymentScheduleStageId,
+        invoiceId: invoice._id,
+      },
+    });
   }
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.INVOICE_PAID,
     leadId: invoice.leadId,
     customerId: invoice.customerId,
@@ -922,330 +1168,416 @@ exports.markAsPaid = asyncHandler(async (req, res) => {
       paidBy: req.user._id,
       paidByName: req.user.name,
     },
-  })
+  });
 
   if (invoice.customerId) {
     await notificationService.notify({
       customerId: invoice.customerId,
       leadId: invoice.leadId,
-      title: 'Payment received',
+      title: "Payment received",
       body: `Invoice ${invoice.invoiceNumber} for $${invoice.totalAmount?.toLocaleString() || invoice.totalAmount} has been marked as paid.`,
-      type: 'payment',
-      priority: 'low',
+      type: "payment",
+      priority: "low",
       refId: invoice._id,
-      refModel: 'Invoice',
-    })
+      refModel: "Invoice",
+    });
   }
 
-  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Invoice marked as paid')
-})
+  return success(
+    res,
+    { invoice: decorateInvoiceForResponse(invoice) },
+    "Invoice marked as paid",
+  );
+});
 
 // GET /invoices/payment-proofs/pending — queue of customer-submitted receipts awaiting review
 exports.getPendingPaymentProofs = asyncHandler(async (req, res) => {
-  const filter = { 'paymentProof.status': 'pending_review' }
-  if (req.user.role === 'sales') {
-    const leadIds = await Lead.find({ assignedSales: req.user._id }).distinct('_id')
-    filter.leadId = { $in: leadIds }
+  const filter = { "paymentProof.status": "pending_review" };
+  if (req.user.role === "sales") {
+    const leadIds = await Lead.find({ assignedSales: req.user._id }).distinct(
+      "_id",
+    );
+    filter.leadId = { $in: leadIds };
   }
 
   const invoices = await Invoice.find(filter)
-    .populate('customerId', 'firstName lastName email')
-    .populate('leadId', 'projectName jobId')
-    .sort({ 'paymentProof.submittedAt': -1 })
-    .lean()
+    .populate("customerId", "firstName lastName email")
+    .populate("leadId", "projectName jobId")
+    .sort({ "paymentProof.submittedAt": -1 })
+    .lean();
 
-  return success(res, { invoices })
-})
+  return success(res, { invoices });
+});
 
 // PUT /invoices/:invoiceId/payment-proof/verify — approves the receipt and marks the invoice paid
 exports.verifyPaymentProof = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findById(req.params.invoiceId)
-  if (!invoice) return notFound(res, 'Invoice not found')
-  if (invoice.paymentProof?.status !== 'pending_review') return badRequest(res, 'No pending receipt to verify for this invoice')
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
+  if (invoice.paymentProof?.status !== "pending_review")
+    return badRequest(res, "No pending receipt to verify for this invoice");
 
-  if (req.user.role === 'sales') {
-    const lead = await Lead.findById(invoice.leadId)
-    if (lead && String(lead.assignedSales) !== String(req.user._id)) return forbidden(res, 'Access denied')
+  if (req.user.role === "sales") {
+    const lead = await Lead.findById(invoice.leadId);
+    if (lead && String(lead.assignedSales) !== String(req.user._id))
+      return forbidden(res, "Access denied");
   }
 
-  invoice.paymentProof.status = 'verified'
-  invoice.paymentProof.reviewedBy = req.user._id
-  invoice.paymentProof.reviewedAt = new Date()
-  invoice.paymentProof.reviewNotes = req.body.reviewNotes || ''
+  invoice.paymentProof.status = "verified";
+  invoice.paymentProof.reviewedBy = req.user._id;
+  invoice.paymentProof.reviewedAt = new Date();
+  invoice.paymentProof.reviewNotes = req.body.reviewNotes || "";
 
-  invoice.status = 'paid'
-  invoice.paidAt = new Date()
-  invoice.paidBy = req.user._id
-  await invoice.save()
+  invoice.status = "paid";
+  invoice.paidAt = new Date();
+  invoice.paidBy = req.user._id;
+  await invoice.save();
 
   if (invoice.paymentScheduleStageId) {
     await PaymentSchedule.findOneAndUpdate(
-      { 'stages._id': invoice.paymentScheduleStageId },
-      { $set: { 'stages.$.status': 'paid', 'stages.$.paidAt': new Date(), 'stages.$.paidBy': req.user._id } }
-    )
+      { "stages._id": invoice.paymentScheduleStageId },
+      {
+        $set: {
+          "stages.$.status": "paid",
+          "stages.$.paidAt": new Date(),
+          "stages.$.paidBy": req.user._id,
+        },
+      },
+    );
   }
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.PAYMENT_PROOF_VERIFIED,
     leadId: invoice.leadId,
     customerId: invoice.customerId,
     performedBy: req.user._id,
     metadata: { invoiceId: invoice._id },
-  })
+  });
 
-  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Payment receipt verified — invoice marked as paid')
-})
+  return success(
+    res,
+    { invoice: decorateInvoiceForResponse(invoice) },
+    "Payment receipt verified — invoice marked as paid",
+  );
+});
 
 // PUT /invoices/:invoiceId/payment-proof/reject — sends the receipt back, invoice stays unpaid
 exports.rejectPaymentProof = asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findById(req.params.invoiceId)
-  if (!invoice) return notFound(res, 'Invoice not found')
-  if (invoice.paymentProof?.status !== 'pending_review') return badRequest(res, 'No pending receipt to reject for this invoice')
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
+  if (invoice.paymentProof?.status !== "pending_review")
+    return badRequest(res, "No pending receipt to reject for this invoice");
 
-  if (req.user.role === 'sales') {
-    const lead = await Lead.findById(invoice.leadId)
-    if (lead && String(lead.assignedSales) !== String(req.user._id)) return forbidden(res, 'Access denied')
+  if (req.user.role === "sales") {
+    const lead = await Lead.findById(invoice.leadId);
+    if (lead && String(lead.assignedSales) !== String(req.user._id))
+      return forbidden(res, "Access denied");
   }
 
-  invoice.paymentProof.status = 'rejected'
-  invoice.paymentProof.reviewedBy = req.user._id
-  invoice.paymentProof.reviewedAt = new Date()
-  invoice.paymentProof.reviewNotes = req.body.reviewNotes || ''
-  await invoice.save()
+  invoice.paymentProof.status = "rejected";
+  invoice.paymentProof.reviewedBy = req.user._id;
+  invoice.paymentProof.reviewedAt = new Date();
+  invoice.paymentProof.reviewNotes = req.body.reviewNotes || "";
+  await invoice.save();
 
   await auditService.log({
-    type: 'invoice',
+    type: "invoice",
     action: AUDIT_ACTIONS.PAYMENT_PROOF_REJECTED,
     leadId: invoice.leadId,
     customerId: invoice.customerId,
     performedBy: req.user._id,
     metadata: { invoiceId: invoice._id, reason: req.body.reviewNotes },
-  })
+  });
 
-  return success(res, { invoice: decorateInvoiceForResponse(invoice) }, 'Payment receipt rejected — customer can resubmit')
-})
+  return success(
+    res,
+    { invoice: decorateInvoiceForResponse(invoice) },
+    "Payment receipt rejected — customer can resubmit",
+  );
+});
 
 exports.getLeadInvoices = asyncHandler(async (req, res) => {
-  const { leadId } = req.params
-  const dateFilter = buildDateFilter(req.query)
+  const { leadId } = req.params;
+  const dateFilter = buildDateFilter(req.query);
 
   const invoices = await Invoice.find({ leadId, ...dateFilter })
-    .populate('createdBy', INVOICE_USER_FIELDS)
-    .populate('paidBy', INVOICE_USER_FIELDS)
-    .populate('approval.submittedBy', INVOICE_USER_FIELDS)
-    .populate('approval.reviewedBy', INVOICE_USER_FIELDS)
-    .populate('approval.history.by', INVOICE_USER_FIELDS)
+    .populate("createdBy", INVOICE_USER_FIELDS)
+    .populate("paidBy", INVOICE_USER_FIELDS)
+    .populate("approval.submittedBy", INVOICE_USER_FIELDS)
+    .populate("approval.reviewedBy", INVOICE_USER_FIELDS)
+    .populate("approval.history.by", INVOICE_USER_FIELDS)
     .sort({ createdAt: -1 })
-    .lean()
+    .lean();
 
   return success(res, {
     invoices: invoices.map((inv) => decorateInvoiceForResponse(inv)),
-  })
-})
+  });
+});
 
 exports.getInvoiceStats = asyncHandler(async (req, res) => {
-  const { leadId } = req.query  
-  const scopedLeadIds = await getScopedLeadIds(req.user)
-  const filter = { status: { $ne: 'cancelled' } }
+  const { leadId } = req.query;
+  const scopedLeadIds = await getScopedLeadIds(req.user);
+  const filter = { status: { $ne: "cancelled" } };
 
   if (scopedLeadIds !== null) {
-    filter.leadId = { $in: scopedLeadIds }
+    filter.leadId = { $in: scopedLeadIds };
   }
 
   // ← leadId param aaye toh override karo global filter
   if (leadId) {
-    filter.leadId = leadId
+    filter.leadId = leadId;
   }
 
   const invoices = await Invoice.find(filter)
-    .select('status totalAmount dueDate date daysToPay')
-    .lean()
+    .select("status totalAmount dueDate date daysToPay")
+    .lean();
 
-  const now = new Date()
-  let totalAmount = 0
-  let totalPaid = 0
-  let totalUnpaid = 0
-  let overdue = 0
+  const now = new Date();
+  let totalAmount = 0;
+  let totalPaid = 0;
+  let totalUnpaid = 0;
+  let overdue = 0;
 
   for (const inv of invoices) {
-    const amt = inv.totalAmount || 0
-    totalAmount += amt
-    if (inv.status === 'paid') {
-      totalPaid += amt
+    const amt = inv.totalAmount || 0;
+    totalAmount += amt;
+    if (inv.status === "paid") {
+      totalPaid += amt;
     } else if (isInvoiceOverdue(inv, now)) {
-      overdue += amt
-    } else if (['draft', 'sent'].includes(inv.status)) {
-      totalUnpaid += amt
+      overdue += amt;
+    } else if (["draft", "sent"].includes(inv.status)) {
+      totalUnpaid += amt;
     }
   }
 
-  return success(res, { totalAmount, totalPaid, totalUnpaid, overdue })
-})
+  return success(res, { totalAmount, totalPaid, totalUnpaid, overdue });
+});
 
 exports.listInvoices = asyncHandler(async (req, res) => {
-  const { status, approvalStatus, leadId, search, page = 1, limit = 20, pending } = req.query
-  const parsedPage = Math.max(1, Number(page) || 1)
-  const parsedLimit = Math.min(Math.max(1, Number(limit) || 20), 100)
-  const skip = (parsedPage - 1) * parsedLimit
+  const {
+    status,
+    approvalStatus,
+    leadId,
+    search,
+    page = 1,
+    limit = 20,
+    pending,
+  } = req.query;
+  const parsedPage = Math.max(1, Number(page) || 1);
+  const parsedLimit = Math.min(Math.max(1, Number(limit) || 20), 100);
+  const skip = (parsedPage - 1) * parsedLimit;
 
-  let resolvedStatus = status ? String(status).trim().toLowerCase() : undefined
-  let resolvedApprovalStatus = approvalStatus ? String(approvalStatus).trim().toLowerCase() : undefined
-  const pendingOnly = toBooleanQuery(pending)
+  let resolvedStatus = status ? String(status).trim().toLowerCase() : undefined;
+  let resolvedApprovalStatus = approvalStatus
+    ? String(approvalStatus).trim().toLowerCase()
+    : undefined;
+  const pendingOnly = toBooleanQuery(pending);
 
   if (PENDING_APPROVAL_ALIASES.includes(resolvedStatus)) {
-    resolvedApprovalStatus = resolvedApprovalStatus || 'pending_approval'
-    resolvedStatus = undefined
+    resolvedApprovalStatus = resolvedApprovalStatus || "pending_approval";
+    resolvedStatus = undefined;
   }
-  if (resolvedApprovalStatus === 'pending') {
-    resolvedApprovalStatus = 'pending_approval'
+  if (resolvedApprovalStatus === "pending") {
+    resolvedApprovalStatus = "pending_approval";
   }
   if (pendingOnly) {
-    resolvedApprovalStatus = 'pending_approval'
-    resolvedStatus = undefined
+    resolvedApprovalStatus = "pending_approval";
+    resolvedStatus = undefined;
   }
 
   // Backward compatibility:
   // some clients send approval workflow values in `status`.
-  if (resolvedStatus && !INVOICE_STATUSES.includes(resolvedStatus) && APPROVAL_STATUSES.includes(resolvedStatus)) {
-    resolvedApprovalStatus = resolvedApprovalStatus || resolvedStatus
-    resolvedStatus = undefined
+  if (
+    resolvedStatus &&
+    !INVOICE_STATUSES.includes(resolvedStatus) &&
+    APPROVAL_STATUSES.includes(resolvedStatus)
+  ) {
+    resolvedApprovalStatus = resolvedApprovalStatus || resolvedStatus;
+    resolvedStatus = undefined;
   }
 
   if (resolvedStatus && !INVOICE_STATUSES.includes(resolvedStatus)) {
-    return badRequest(res, `Invalid status. Use: ${INVOICE_STATUSES.join(', ')}`)
+    return badRequest(
+      res,
+      `Invalid status. Use: ${INVOICE_STATUSES.join(", ")}`,
+    );
   }
-  if (resolvedApprovalStatus && !APPROVAL_STATUSES.includes(resolvedApprovalStatus)) {
-    return badRequest(res, `Invalid approvalStatus. Use: ${APPROVAL_STATUSES.join(', ')}`)
+  if (
+    resolvedApprovalStatus &&
+    !APPROVAL_STATUSES.includes(resolvedApprovalStatus)
+  ) {
+    return badRequest(
+      res,
+      `Invalid approvalStatus. Use: ${APPROVAL_STATUSES.join(", ")}`,
+    );
   }
 
-  const { leadIds } = await resolveInvoiceLeadIds(req.user, { search, leadId })
-  const filter = { ...buildDateFilter(req.query, 'createdAt') }
-  if (resolvedStatus) filter.status = resolvedStatus
-  if (resolvedApprovalStatus) filter['approval.status'] = resolvedApprovalStatus
-  if (pendingOnly) filter.status = { $nin: ['sent', 'paid', 'cancelled'] }
+  const { leadIds } = await resolveInvoiceLeadIds(req.user, { search, leadId });
+  const filter = { ...buildDateFilter(req.query, "createdAt") };
+  if (resolvedStatus) filter.status = resolvedStatus;
+  if (resolvedApprovalStatus)
+    filter["approval.status"] = resolvedApprovalStatus;
+  if (pendingOnly) filter.status = { $nin: ["sent", "paid", "cancelled"] };
 
   if (leadIds !== null) {
     if (leadIds.length === 0) {
-      return success(res, { invoices: [], total: 0, page: parsedPage, limit: parsedLimit })
+      return success(res, {
+        invoices: [],
+        total: 0,
+        page: parsedPage,
+        limit: parsedLimit,
+      });
     }
-    filter.leadId = { $in: leadIds }
+    filter.leadId = { $in: leadIds };
   }
 
   const [invoices, total] = await Promise.all([
     Invoice.find(filter)
-      .populate('createdBy', INVOICE_USER_FIELDS)
-      .populate('paidBy', INVOICE_USER_FIELDS)
-      .populate('approval.submittedBy', INVOICE_USER_FIELDS)
-      .populate('approval.reviewedBy', INVOICE_USER_FIELDS)
-      .populate('approval.history.by', INVOICE_USER_FIELDS)
+      .populate("createdBy", INVOICE_USER_FIELDS)
+      .populate("paidBy", INVOICE_USER_FIELDS)
+      .populate("approval.submittedBy", INVOICE_USER_FIELDS)
+      .populate("approval.reviewedBy", INVOICE_USER_FIELDS)
+      .populate("approval.history.by", INVOICE_USER_FIELDS)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
       .lean(),
     Invoice.countDocuments(filter),
-  ])
+  ]);
 
-  const leadIdSet = new Set(invoices.map(i => String(i.leadId)))
+  const leadIdSet = new Set(invoices.map((i) => String(i.leadId)));
   const leadRows = leadIdSet.size
-    ? await Lead.find({ _id: { $in: [...leadIdSet] } }).select('_id projectName').lean()
-    : []
-  const projectNameByLead = Object.fromEntries(leadRows.map(l => [String(l._id), l.projectName || '']))
+    ? await Lead.find({ _id: { $in: [...leadIdSet] } })
+        .select("_id projectName")
+        .lean()
+    : [];
+  const projectNameByLead = Object.fromEntries(
+    leadRows.map((l) => [String(l._id), l.projectName || ""]),
+  );
 
-  const rows = invoices.map(inv => ({
+  const rows = invoices.map((inv) => ({
     invoiceNumber: inv.invoiceNumber,
-    projectName: projectNameByLead[String(inv.leadId)] || '',
+    projectName: projectNameByLead[String(inv.leadId)] || "",
     dueDate: inv.dueDate,
     amount: inv.totalAmount,
     status: inv.status,
-    approvalStatus: inv.approval?.status || 'not_submitted',
+    approvalStatus: inv.approval?.status || "not_submitted",
     workflowStatus: getWorkflowStatus(inv),
     invoiceStatus: getUnifiedInvoiceStatus(inv),
     paymentStatus: inv.status,
     invoice: decorateInvoiceForResponse(inv),
-  }))
+  }));
 
   return success(res, {
     invoices: rows,
     total,
     page: parsedPage,
     limit: parsedLimit,
-  })
-})
-
+  });
+});
 
 exports.exportInvoices = asyncHandler(async (req, res) => {
-  const { format = 'excel', status, approvalStatus, leadId, search, pending } = req.query
+  const {
+    format = "excel",
+    status,
+    approvalStatus,
+    leadId,
+    search,
+    pending,
+  } = req.query;
 
-  let resolvedStatus = status ? String(status).trim().toLowerCase() : undefined
-  let resolvedApprovalStatus = approvalStatus ? String(approvalStatus).trim().toLowerCase() : undefined
-  const pendingOnly = toBooleanQuery(pending)
+  let resolvedStatus = status ? String(status).trim().toLowerCase() : undefined;
+  let resolvedApprovalStatus = approvalStatus
+    ? String(approvalStatus).trim().toLowerCase()
+    : undefined;
+  const pendingOnly = toBooleanQuery(pending);
 
   if (PENDING_APPROVAL_ALIASES.includes(resolvedStatus)) {
-    resolvedApprovalStatus = resolvedApprovalStatus || 'pending_approval'
-    resolvedStatus = undefined
+    resolvedApprovalStatus = resolvedApprovalStatus || "pending_approval";
+    resolvedStatus = undefined;
   }
-  if (resolvedApprovalStatus === 'pending') {
-    resolvedApprovalStatus = 'pending_approval'
+  if (resolvedApprovalStatus === "pending") {
+    resolvedApprovalStatus = "pending_approval";
   }
   if (pendingOnly) {
-    resolvedApprovalStatus = 'pending_approval'
-    resolvedStatus = undefined
+    resolvedApprovalStatus = "pending_approval";
+    resolvedStatus = undefined;
   }
 
-  if (resolvedStatus && !INVOICE_STATUSES.includes(resolvedStatus) && APPROVAL_STATUSES.includes(resolvedStatus)) {
-    resolvedApprovalStatus = resolvedApprovalStatus || resolvedStatus
-    resolvedStatus = undefined
+  if (
+    resolvedStatus &&
+    !INVOICE_STATUSES.includes(resolvedStatus) &&
+    APPROVAL_STATUSES.includes(resolvedStatus)
+  ) {
+    resolvedApprovalStatus = resolvedApprovalStatus || resolvedStatus;
+    resolvedStatus = undefined;
   }
 
   if (resolvedStatus && !INVOICE_STATUSES.includes(resolvedStatus)) {
-    return badRequest(res, `Invalid status. Use: ${INVOICE_STATUSES.join(', ')}`)
+    return badRequest(
+      res,
+      `Invalid status. Use: ${INVOICE_STATUSES.join(", ")}`,
+    );
   }
-  if (resolvedApprovalStatus && !APPROVAL_STATUSES.includes(resolvedApprovalStatus)) {
-    return badRequest(res, `Invalid approvalStatus. Use: ${APPROVAL_STATUSES.join(', ')}`)
+  if (
+    resolvedApprovalStatus &&
+    !APPROVAL_STATUSES.includes(resolvedApprovalStatus)
+  ) {
+    return badRequest(
+      res,
+      `Invalid approvalStatus. Use: ${APPROVAL_STATUSES.join(", ")}`,
+    );
   }
 
   // ✅ Same filter logic as listInvoices (no pagination)
-  const { leadIds } = await resolveInvoiceLeadIds(req.user, { search, leadId })
-  const filter = { ...buildDateFilter(req.query, 'createdAt') }
-  if (resolvedStatus) filter.status = resolvedStatus
-  if (resolvedApprovalStatus) filter['approval.status'] = resolvedApprovalStatus
-  if (pendingOnly) filter.status = { $nin: ['sent', 'paid', 'cancelled'] }
+  const { leadIds } = await resolveInvoiceLeadIds(req.user, { search, leadId });
+  const filter = { ...buildDateFilter(req.query, "createdAt") };
+  if (resolvedStatus) filter.status = resolvedStatus;
+  if (resolvedApprovalStatus)
+    filter["approval.status"] = resolvedApprovalStatus;
+  if (pendingOnly) filter.status = { $nin: ["sent", "paid", "cancelled"] };
 
   if (leadIds !== null) {
     if (leadIds.length === 0) {
-      return badRequest(res, 'No matching invoices found to export')
+      return badRequest(res, "No matching invoices found to export");
     }
-    filter.leadId = { $in: leadIds }
+    filter.leadId = { $in: leadIds };
   }
 
   const invoices = await Invoice.find(filter)
-    .populate('customerId', 'firstName lastName email')
-    .populate('createdBy', 'name email')
+    .populate("customerId", "firstName lastName email")
+    .populate("createdBy", "name email")
     .sort({ createdAt: -1 })
-    .lean()
+    .lean();
 
   // Attach projectName same as listInvoices
-  const leadIdSet = new Set(invoices.map(i => String(i.leadId)))
+  const leadIdSet = new Set(invoices.map((i) => String(i.leadId)));
   const leadRows = leadIdSet.size
-    ? await Lead.find({ _id: { $in: [...leadIdSet] } }).select('_id projectName').lean()
-    : []
-  const projectNameByLead = Object.fromEntries(leadRows.map(l => [String(l._id), l.projectName || '']))
+    ? await Lead.find({ _id: { $in: [...leadIdSet] } })
+        .select("_id projectName")
+        .lean()
+    : [];
+  const projectNameByLead = Object.fromEntries(
+    leadRows.map((l) => [String(l._id), l.projectName || ""]),
+  );
 
-  const rows = invoices.map(inv => ({
+  const rows = invoices.map((inv) => ({
     ...inv,
-    projectName: projectNameByLead[String(inv.leadId)] || '—',
-  }))
+    projectName: projectNameByLead[String(inv.leadId)] || "—",
+  }));
 
-  if (format === 'pdf') {
-    const buffer = await generateInvoiceListPdf(rows)
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', 'attachment; filename="invoices.pdf"')
-    return res.send(buffer)
+  if (format === "pdf") {
+    const buffer = await generateInvoiceListPdf(rows);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'attachment; filename="invoices.pdf"');
+    return res.send(buffer);
   }
 
-  const buffer = await generateInvoiceListExcel(rows)
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-  res.setHeader('Content-Disposition', 'attachment; filename="invoices.xlsx"')
-  return res.send(buffer)
-})
+  const buffer = await generateInvoiceListExcel(rows);
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  res.setHeader("Content-Disposition", 'attachment; filename="invoices.xlsx"');
+  return res.send(buffer);
+});
