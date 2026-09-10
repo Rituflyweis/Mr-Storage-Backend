@@ -279,16 +279,18 @@ Latest = most recently **admin-approved** quotation on that lead (`approval.stat
   "data": {
     "leadId": "66d7f...",
     "quotationId": "66d8a...",
-    "quoteNumber": "Q-10021",
-    "quoteValue": 36417,
-    "quoteAmountIncludingTax": 36417,
-    "quoteAmountMinusTax": 34871,
-    "quoteAmountExcludingTax": 34871,
-    "subtotal": 34871,
-    "pretaxAmount": 34871,
-    "tax": 1546,
+    "quoteNumber": "QUO-0010",
+    "quoteValue": 241024,
+    "quoteAmountIncludingTax": 241024,
+    "quoteAmountMinusTax": 233178,
+    "quoteAmountExcludingTax": 233178,
+    "subtotal": 233178,
+    "pretaxAmount": 233178,
+    "tax": 7846,
     "taxRate": 7,
-    "salesTax": { "amount": 1546, "rate": 7 },
+    "taxableBase": 112079,
+    "taxNote": "Tax on materials & insulation — labor not taxed",
+    "salesTax": { "amount": 7846, "rate": 7, "taxableBase": 112079, "note": "Tax on materials & insulation — labor not taxed" },
     "taxIncludedInQuoteValue": true,
     "currency": "USD",
     "approvalStatus": "approved",
@@ -300,7 +302,9 @@ Latest = most recently **admin-approved** quotation on that lead (`approval.stat
 
 - `quoteValue` / `quoteAmountIncludingTax` → **tax-inclusive** quote total (what the customer was quoted)
 - `quoteAmountMinusTax` / `quoteAmountExcludingTax` / `subtotal` / `pretaxAmount` → **quote amount − tax** (use this as the invoice line/subtotal)
-- `tax` / `salesTax.amount` → invoice `tax` field
+- `tax` / `salesTax.amount` → invoice `tax` field. **Do not** compute `pretaxAmount * taxRate / 100`. Quote tax is 7% of `taxableBase` (materials + insulation), not 7% of the full pretax total. Labor is not taxed.
+- `taxableBase` → amount the 7% was applied to
+- `pretaxAmount + tax` === `quoteValue` (this is the check that must match)
 - `taxIncludedInQuoteValue` → `true` when tax is already inside `quoteValue`
 - Create invoice: if frontend sends the quote total as the line amount and `tax` is `0`/omitted, backend peels tax out of that amount instead of adding it on top. Invoice total stays the quoted amount.
 - `404` if the lead has no approved quotation

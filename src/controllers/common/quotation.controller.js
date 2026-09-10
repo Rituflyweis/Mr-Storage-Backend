@@ -1793,6 +1793,8 @@ const pickQuoteSalesTax = (source = {}) => {
   return {
     tax: toNumber(salesTax.amount, 0),
     taxRate: toNumber(salesTax.rate, 0),
+    taxableBase: toNumber(salesTax.taxableBase, 0),
+    taxNote: String(salesTax.note || "").trim(),
   };
 };
 
@@ -1814,6 +1816,8 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
 
   let tax = 0;
   let taxRate = 0;
+  let taxableBase = 0;
+  let taxNote = "";
   let estimateGrandTotal = 0;
   if (quotation.sourceEstimateId) {
     const estimate = await EstimateQuote.findById(quotation.sourceEstimateId)
@@ -1822,6 +1826,8 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     const picked = pickQuoteSalesTax(estimate || {});
     tax = picked.tax;
     taxRate = picked.taxRate;
+    taxableBase = picked.taxableBase;
+    taxNote = picked.taxNote;
     estimateGrandTotal = resolveEstimateGrandTotal(estimate || {});
   }
 
@@ -1843,9 +1849,13 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     pretaxAmount,
     tax,
     taxRate,
+    taxableBase,
+    taxNote: taxNote || (tax > 0 ? "Tax is not applied to the full pretax amount. Labor is not taxed." : ""),
     salesTax: {
       amount: tax,
       rate: taxRate,
+      taxableBase,
+      note: taxNote || (tax > 0 ? "Tax is not applied to the full pretax amount. Labor is not taxed." : ""),
     },
     taxIncludedInQuoteValue: tax > 0,
     currency: quotation.currency || "USD",
