@@ -43,6 +43,7 @@ Each estimate row now includes:
     "quotationStatus": "draft",
     "approvalStatus": "pending_approval",
     "workflowStatus": "pending_approval",
+    "versionNumber": 1,
     "convertedAt": "2026-09-03T09:56:29.429Z"
   }
 }

@@ -178,6 +178,52 @@ const applyApprovalDecorators = (quotation) => {
   return quotation;
 };
 
+const applyVersionedApprovalOnQuotationEdit = (
+  quotation,
+  user,
+  { sourceLabel = "quotation edit" } = {}
+) => {
+  const prevVersion = Number(quotation.versionNumber || 1);
+  quotation.versionNumber = prevVersion + 1;
+  ensureApprovalState(quotation);
+  let replacedPendingApproval = false;
+  const prevApproval = quotation.approval.status;
+  if (prevApproval === "pending_approval") {
+    pushApprovalHistory(quotation, {
+      status: "cancelled",
+      note: `Previous approval request cancelled after ${sourceLabel} (version ${prevVersion})`,
+      by: user._id,
+      versionNumber: prevVersion,
+    });
+    quotation.approval.status = "pending_approval";
+    quotation.approval.submittedBy = user._id;
+    quotation.approval.submittedAt = new Date();
+    quotation.approval.reviewedBy = null;
+    quotation.approval.reviewedAt = null;
+    quotation.approval.rejectionReason = "";
+    quotation.approval.approvedVersionNumber = null;
+    pushApprovalHistory(quotation, {
+      status: "pending_approval",
+      note: `New approval request after ${sourceLabel} (version ${quotation.versionNumber})`,
+      by: user._id,
+      versionNumber: quotation.versionNumber,
+    });
+    replacedPendingApproval = true;
+  } else if (["approved", "rejected"].includes(prevApproval)) {
+    quotation.approval.status = "not_submitted";
+    quotation.approval.reviewedBy = null;
+    quotation.approval.reviewedAt = null;
+    quotation.approval.rejectionReason = "";
+    quotation.approval.approvedVersionNumber = null;
+    pushApprovalHistory(quotation, {
+      status: "not_submitted",
+      note: `Approval reset after ${sourceLabel} (from ${prevApproval})`,
+      by: user._id,
+    });
+  }
+  return { replacedPendingApproval, prevApproval };
+};
+
 const assertQuotationReadyToSend = (quotation) => {
   ensureApprovalState(quotation);
   if (quotation.approval.status !== "approved") {
@@ -657,6 +703,82 @@ const mapEstimateToQuotationPayload = (estimate = {}, lead, reqUser) => {
   };
 };
 
+const ESTIMATE_SYNC_SKIP_KEYS = new Set([
+  "sourceEstimateId",
+  "leadId",
+  "customerId",
+  "createdBy",
+  "approval",
+]);
+
+const applyEstimateMappedFieldsToQuotation = (quotation, estimate, reqUser) => {
+  const payload = mapEstimateToQuotationPayload(
+    typeof estimate.toObject === "function" ? estimate.toObject() : estimate,
+    { _id: quotation.leadId, customerId: quotation.customerId },
+    reqUser
+  );
+  for (const [key, value] of Object.entries(payload)) {
+    if (ESTIMATE_SYNC_SKIP_KEYS.has(key)) continue;
+    quotation[key] = value;
+  }
+};
+
+exports.syncLinkedQuotationFromUpdatedEstimate = async ({ estimate, user } = {}) => {
+  if (!estimate?._id) return { synced: false, skippedReason: "missing_estimate", quotation: null };
+  const quotation = await Quotation.findOne({ sourceEstimateId: estimate._id }).sort({
+    createdAt: -1,
+  });
+  if (!quotation) return { synced: false, skippedReason: "not_converted", quotation: null };
+  if (quotation.status !== "draft") {
+    return { synced: false, skippedReason: "quotation_not_draft", quotation };
+  }
+
+  const prevBasePrice = quotation.basePrice;
+  applyEstimateMappedFieldsToQuotation(quotation, estimate, user);
+  const { replacedPendingApproval } = applyVersionedApprovalOnQuotationEdit(quotation, user, {
+    sourceLabel: "estimate update",
+  });
+  await quotation.save();
+
+  if (quotation.finalPrice !== prevBasePrice || quotation.basePrice !== prevBasePrice) {
+    await Lead.findByIdAndUpdate(quotation.leadId, {
+      quoteValue: quotation.finalPrice || quotation.basePrice || 0,
+    });
+  }
+
+  await auditService.log({
+    type: "quotation",
+    action: AUDIT_ACTIONS.QUOTATION_EDITED,
+    leadId: quotation.leadId,
+    customerId: quotation.customerId,
+    performedBy: user._id,
+    metadata: {
+      quotationId: quotation._id,
+      versionNumber: quotation.versionNumber,
+      approvalStatus: quotation.approval?.status || "not_submitted",
+      source: "estimate_update",
+      sourceEstimateId: estimate._id,
+    },
+  });
+  if (replacedPendingApproval) {
+    await auditService.log({
+      type: "quotation",
+      action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
+      leadId: quotation.leadId,
+      customerId: quotation.customerId,
+      performedBy: user._id,
+      metadata: {
+        quotationId: quotation._id,
+        quoteNumber: quotation.quoteNumber,
+        versionNumber: quotation.versionNumber,
+        source: "edit_pending_quotation_from_estimate",
+      },
+    });
+  }
+
+  return { synced: true, skippedReason: null, quotation, replacedPendingApproval };
+};
+
 const resolveLeadForEstimateConversion = async ({
   estimate,
   reqUser,
@@ -1072,44 +1194,11 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
   }
 
   // Per spec line 615: auto-increment versionNumber on every save
-  const prevVersion = Number(quotation.versionNumber || 1);
-  quotation.versionNumber = prevVersion + 1;
-  ensureApprovalState(quotation);
-  let replacedPendingApproval = false;
-  const prevApproval = quotation.approval.status;
-  if (prevApproval === "pending_approval") {
-    pushApprovalHistory(quotation, {
-      status: "cancelled",
-      note: `Previous approval request cancelled after edit (version ${prevVersion})`,
-      by: req.user._id,
-      versionNumber: prevVersion,
-    });
-    quotation.approval.status = "pending_approval";
-    quotation.approval.submittedBy = req.user._id;
-    quotation.approval.submittedAt = new Date();
-    quotation.approval.reviewedBy = null;
-    quotation.approval.reviewedAt = null;
-    quotation.approval.rejectionReason = "";
-    quotation.approval.approvedVersionNumber = null;
-    pushApprovalHistory(quotation, {
-      status: "pending_approval",
-      note: `New approval request after edit (version ${quotation.versionNumber})`,
-      by: req.user._id,
-      versionNumber: quotation.versionNumber,
-    });
-    replacedPendingApproval = true;
-  } else if (["approved", "rejected"].includes(prevApproval)) {
-    quotation.approval.status = "not_submitted";
-    quotation.approval.reviewedBy = null;
-    quotation.approval.reviewedAt = null;
-    quotation.approval.rejectionReason = "";
-    quotation.approval.approvedVersionNumber = null;
-    pushApprovalHistory(quotation, {
-      status: "not_submitted",
-      note: `Approval reset after quotation edit (from ${prevApproval})`,
-      by: req.user._id,
-    });
-  }
+  const { replacedPendingApproval } = applyVersionedApprovalOnQuotationEdit(
+    quotation,
+    req.user,
+    { sourceLabel: "quotation edit" }
+  );
 
   await quotation.save();
 

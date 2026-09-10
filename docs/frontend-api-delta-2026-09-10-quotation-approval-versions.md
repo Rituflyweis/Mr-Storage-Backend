@@ -117,6 +117,52 @@ Same for `POST /api/quotations/from-estimate/:estimateId` unless that estimate a
 
 Only `status = draft` quotations can be edited (not yet sent). `versionNumber` increments on every save.
 
+### Estimate update after conversion (this was missing)
+
+Sales often edits the **estimate** (`PUT /api/sales/estimates/:estimateId`), not `PUT /api/quotations/:quotationId`. That used to update only `EstimateQuote` and **left quotation approval unchanged**.
+
+Now, if that estimate is already converted (`Quotation.sourceEstimateId`):
+
+- Draft quotation is **synced** from the estimate (price, tax, building fields)
+- The **same approval versioning rules as quotation PUT** run
+- Response includes `estimate.conversion` and `quotationSync` so the UI can refresh the badge without a second GET
+
+```json
+{
+  "success": true,
+  "data": {
+    "estimate": {
+      "conversion": {
+        "isConvertedToQuotation": true,
+        "quotationId": "...",
+        "quoteNumber": "QUO-0013",
+        "quotationStatus": "draft",
+        "approvalStatus": "pending_approval",
+        "workflowStatus": "pending_approval",
+        "versionNumber": 2
+      }
+    },
+    "quotationSync": {
+      "synced": true,
+      "skippedReason": null,
+      "approvalStatus": "pending_approval",
+      "versionNumber": 2
+    }
+  }
+}
+```
+
+| Linked quotation | What happens |
+|---|---|
+| Not converted yet | Estimate saves only. `quotationSync.skippedReason = "not_converted"` |
+| `status = draft` and pending | Old request cancelled, new pending version. No extra submit. |
+| `status = draft` and approved/rejected | Approval becomes `not_submitted`. Sales must `POST /api/quotations/:quotationId/submit-approval` |
+| Already `sent` | Estimate can still save if estimate is draft. Quotation is **not** changed. `skippedReason = "quotation_not_draft"` |
+
+Do **not** expect approval to change from estimate GET/PDF/preview endpoints. Only `PUT /api/sales/estimates/:estimateId` or `PUT /api/quotations/:quotationId`.
+
+---
+
 ### A) Quotation is pending approval
 
 Do **not** call submit-approval after save.

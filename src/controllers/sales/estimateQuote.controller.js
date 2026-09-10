@@ -14,6 +14,7 @@ const { computeStoragePricing } = require('../../services/quoting/storagePricing
 const { previewCogsOverride } = require('../../services/quoting/cogsOverride')
 const { previewMarginOverride } = require('../../services/quoting/marginOverride')
 const { lookupSalesTaxByZip } = require('../../services/quoting/salesTaxLookup')
+const { syncLinkedQuotationFromUpdatedEstimate } = require('../common/quotation.controller')
 const {
   generateAssembledHtml,
   generateQuoteHtml,
@@ -277,6 +278,7 @@ const buildEstimateConversionMeta = (quotation) => {
       quotationStatus: null,
       approvalStatus: null,
       workflowStatus: null,
+      versionNumber: null,
       convertedAt: null,
     }
   }
@@ -298,6 +300,7 @@ const buildEstimateConversionMeta = (quotation) => {
     quotationStatus: quotation.status || 'draft',
     approvalStatus,
     workflowStatus,
+    versionNumber: quotation.versionNumber || 1,
     convertedAt: quotation.createdAt || null,
   }
 }
@@ -726,7 +729,27 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
   }
 
   await estimate.save()
-  return success(res, { estimate: withEstimateTotals(estimate.toObject()) })
+  const quotationSync = await syncLinkedQuotationFromUpdatedEstimate({
+    estimate,
+    user: req.user,
+  })
+  const linkedQuotation = quotationSync.quotation
+    ? quotationSync.quotation.toObject
+      ? quotationSync.quotation.toObject()
+      : quotationSync.quotation
+    : null
+  return success(res, {
+    estimate: {
+      ...withEstimateTotals(estimate.toObject()),
+      conversion: buildEstimateConversionMeta(linkedQuotation),
+    },
+    quotationSync: {
+      synced: Boolean(quotationSync.synced),
+      skippedReason: quotationSync.skippedReason || null,
+      approvalStatus: linkedQuotation?.approval?.status || null,
+      versionNumber: linkedQuotation?.versionNumber || null,
+    },
+  })
 })
 
 exports.deleteEstimateQuote = asyncHandler(async (req, res) => {
