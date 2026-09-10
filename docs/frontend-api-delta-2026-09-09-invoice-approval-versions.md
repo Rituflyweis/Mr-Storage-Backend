@@ -281,6 +281,9 @@ Latest = most recently **admin-approved** quotation on that lead (`approval.stat
     "quotationId": "66d8a...",
     "quoteNumber": "Q-10021",
     "quoteValue": 36417,
+    "quoteAmountIncludingTax": 36417,
+    "quoteAmountMinusTax": 34871,
+    "quoteAmountExcludingTax": 34871,
     "subtotal": 34871,
     "pretaxAmount": 34871,
     "tax": 1546,
@@ -295,8 +298,8 @@ Latest = most recently **admin-approved** quotation on that lead (`approval.stat
 }
 ```
 
-- `quoteValue` → **tax-inclusive** quote total (what the customer was quoted)
-- `subtotal` / `pretaxAmount` → invoice line/subtotal (`quoteValue - tax`)
+- `quoteValue` / `quoteAmountIncludingTax` → **tax-inclusive** quote total (what the customer was quoted)
+- `quoteAmountMinusTax` / `quoteAmountExcludingTax` / `subtotal` / `pretaxAmount` → **quote amount − tax** (use this as the invoice line/subtotal)
 - `tax` / `salesTax.amount` → invoice `tax` field
 - `taxIncludedInQuoteValue` → `true` when tax is already inside `quoteValue`
 - Create invoice: if frontend sends the quote total as the line amount and `tax` is `0`/omitted, backend peels tax out of that amount instead of adding it on top. Invoice total stays the quoted amount.
