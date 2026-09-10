@@ -198,6 +198,8 @@ Returned on quotation detail, pending list, lead list, and decorated quotation p
 
 Arrays are **newest first**.
 
+Lead detail `auditLog` / `activityLog` (quotation edits, approvals, sends) is also **newest first**.
+
 **Do not** loop `approval.history` and show every `pending_approval` event as still waiting.
 
 Admin pending **list** is still one quotation. Show version history on **detail**.

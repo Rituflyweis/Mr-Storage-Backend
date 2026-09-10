@@ -369,7 +369,7 @@ None.
 | `lead` | Full lead document; `customerId` and `assignedSales` populated |
 | `quotation` | Full quotation document; `createdBy` and `assignedSalesperson` populated |
 | `customer` | Same object as `lead.customerId` (convenience for FE) |
-| `auditLog` | All audit entries for the lead, oldest first |
+| `auditLog` | All audit entries for the lead, **newest first** |
 | `order.invoiceId` | Full invoice document |
 
 ### Errors

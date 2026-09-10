@@ -424,14 +424,14 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
       leadId,
       type: { $ne: 'activity' },
     })
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: -1 })
       .lean(),
 
     AuditLog.find({
       leadId,
       type: 'activity',
     })
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: -1 })
       .lean(),
 
     FollowUp.find({ leadId })
@@ -459,6 +459,9 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
   const flaggedQuotations = quotations.map((q, i) => ({
     ...q,
     isLatest: i === 0,
+    approval: q.approval
+      ? { ...q.approval, history: [...(q.approval.history || [])].reverse() }
+      : q.approval,
   }))
 
   const totalPaid = invoices
@@ -511,7 +514,12 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     activityLog: activityLogs,
     followUps,
     payments: {
-      invoices,
+      invoices: invoices.map((inv) => ({
+        ...inv,
+        approval: inv.approval
+          ? { ...inv.approval, history: [...(inv.approval.history || [])].reverse() }
+          : inv.approval,
+      })),
       totalPaid,
       totalPending,
       totalInvoices: invoices.length,

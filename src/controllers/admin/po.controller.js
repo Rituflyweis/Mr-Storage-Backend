@@ -160,18 +160,27 @@ exports.getPOOrderDetail = asyncHandler(async (req, res) => {
       : null,
     AuditLog.find({ leadId: order.leadId })
       .populate('performedBy', 'name email role')
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: -1 })
       .lean(),
   ])
 
   if (!lead) return notFound(res, 'Lead not found')
 
   const enrichedLead = enrichLeadDocument(lead)
+  const quotationWithNewestHistory = quotation?.approval
+    ? {
+        ...quotation,
+        approval: {
+          ...quotation.approval,
+          history: [...(quotation.approval.history || [])].reverse(),
+        },
+      }
+    : quotation
 
   return success(res, {
     order,
     lead: enrichedLead,
-    quotation,
+    quotation: quotationWithNewestHistory,
     customer: lead.customerId,
     auditLog,
   })

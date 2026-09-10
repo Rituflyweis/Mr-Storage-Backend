@@ -475,8 +475,8 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
   ] = await Promise.all([
     Customer.findById(lead.customerId).select('_id customerId firstName email phone company location').lean(),
     Quotation.find({ leadId }).sort({ versionNumber: -1, createdAt: -1 }).lean(),
-    AuditLog.find({ leadId, type: { $ne: 'activity' } }).sort({ createdAt: 1 }).lean(),
-    AuditLog.find({ leadId, type: 'activity' }).sort({ createdAt: 1 }).lean(),
+    AuditLog.find({ leadId, type: { $ne: 'activity' } }).sort({ createdAt: -1 }).lean(),
+    AuditLog.find({ leadId, type: 'activity' }).sort({ createdAt: -1 }).lean(),
     FollowUp.find({ leadId }).sort({ followUpDate: 1 }).lean(),
     Invoice.find({ leadId }).populate('paidBy').sort({ createdAt: -1 }).lean(),
     Building.find({ leadId }).sort({ buildingNumber: 1 }).lean(),
@@ -484,7 +484,13 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     Message.find({ leadId }).sort({ createdAt: -1 }).limit(20).lean().then(m => m.reverse()),
   ])
 
-  const flaggedQuotations = quotations.map((q, i) => ({ ...q, isLatest: i === 0 }))
+  const flaggedQuotations = quotations.map((q, i) => ({
+    ...q,
+    isLatest: i === 0,
+    approval: q.approval
+      ? { ...q.approval, history: [...(q.approval.history || [])].reverse() }
+      : q.approval,
+  }))
   const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
   const totalPending = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
 
@@ -512,7 +518,17 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     auditLog: auditLogs,
     activityLog: activityLogs,
     followUps,
-    payments: { invoices, totalPaid, totalPending, totalInvoices: invoices.length },
+    payments: {
+      invoices: invoices.map((inv) => ({
+        ...inv,
+        approval: inv.approval
+          ? { ...inv.approval, history: [...(inv.approval.history || [])].reverse() }
+          : inv.approval,
+      })),
+      totalPaid,
+      totalPending,
+      totalInvoices: invoices.length,
+    },
     buildings,
     budget: budgetOut,
     recentMessages,
