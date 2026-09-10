@@ -178,16 +178,19 @@ const applyApprovalDecorators = (quotation) => {
   return quotation;
 };
 
+const EDITABLE_QUOTATION_STATUSES = ["draft", "sent"];
+
 const applyVersionedApprovalOnQuotationEdit = (
   quotation,
   user,
   { sourceLabel = "quotation edit" } = {}
 ) => {
   const prevVersion = Number(quotation.versionNumber || 1);
+  const wasSent = quotation.status === "sent";
   quotation.versionNumber = prevVersion + 1;
   ensureApprovalState(quotation);
-  let replacedPendingApproval = false;
   const prevApproval = quotation.approval.status;
+
   if (prevApproval === "pending_approval") {
     pushApprovalHistory(quotation, {
       status: "cancelled",
@@ -195,33 +198,45 @@ const applyVersionedApprovalOnQuotationEdit = (
       by: user._id,
       versionNumber: prevVersion,
     });
-    quotation.approval.status = "pending_approval";
-    quotation.approval.submittedBy = user._id;
-    quotation.approval.submittedAt = new Date();
-    quotation.approval.reviewedBy = null;
-    quotation.approval.reviewedAt = null;
-    quotation.approval.rejectionReason = "";
-    quotation.approval.approvedVersionNumber = null;
-    pushApprovalHistory(quotation, {
-      status: "pending_approval",
-      note: `New approval request after ${sourceLabel} (version ${quotation.versionNumber})`,
-      by: user._id,
-      versionNumber: quotation.versionNumber,
-    });
-    replacedPendingApproval = true;
   } else if (["approved", "rejected"].includes(prevApproval)) {
-    quotation.approval.status = "not_submitted";
-    quotation.approval.reviewedBy = null;
-    quotation.approval.reviewedAt = null;
-    quotation.approval.rejectionReason = "";
-    quotation.approval.approvedVersionNumber = null;
     pushApprovalHistory(quotation, {
-      status: "not_submitted",
-      note: `Approval reset after ${sourceLabel} (from ${prevApproval})`,
+      status: "cancelled",
+      note: `Previous ${prevApproval} approval superseded after ${sourceLabel} (version ${prevVersion})`,
       by: user._id,
+      versionNumber: prevVersion,
     });
   }
-  return { replacedPendingApproval, prevApproval };
+
+  if (wasSent) {
+    quotation.status = "draft";
+    pushApprovalHistory(quotation, {
+      status: "not_submitted",
+      note: `Quotation reopened as draft after ${sourceLabel} (was sent, version ${prevVersion})`,
+      by: user._id,
+      versionNumber: prevVersion,
+    });
+  }
+
+  quotation.approval.status = "pending_approval";
+  quotation.approval.submittedBy = user._id;
+  quotation.approval.submittedAt = new Date();
+  quotation.approval.reviewedBy = null;
+  quotation.approval.reviewedAt = null;
+  quotation.approval.rejectionReason = "";
+  quotation.approval.approvedVersionNumber = null;
+  pushApprovalHistory(quotation, {
+    status: "pending_approval",
+    note: `New approval request after ${sourceLabel} (version ${quotation.versionNumber})`,
+    by: user._id,
+    versionNumber: quotation.versionNumber,
+  });
+
+  return {
+    autoSubmittedForApproval: true,
+    replacedPendingApproval: prevApproval === "pending_approval",
+    reopenedFromSent: wasSent,
+    prevApproval,
+  };
 };
 
 const assertQuotationReadyToSend = (quotation) => {
@@ -729,13 +744,13 @@ exports.syncLinkedQuotationFromUpdatedEstimate = async ({ estimate, user } = {})
     createdAt: -1,
   });
   if (!quotation) return { synced: false, skippedReason: "not_converted", quotation: null };
-  if (quotation.status !== "draft") {
-    return { synced: false, skippedReason: "quotation_not_draft", quotation };
+  if (!EDITABLE_QUOTATION_STATUSES.includes(quotation.status)) {
+    return { synced: false, skippedReason: "quotation_not_editable", quotation };
   }
 
   const prevBasePrice = quotation.basePrice;
   applyEstimateMappedFieldsToQuotation(quotation, estimate, user);
-  const { replacedPendingApproval } = applyVersionedApprovalOnQuotationEdit(quotation, user, {
+  const approvalChange = applyVersionedApprovalOnQuotationEdit(quotation, user, {
     sourceLabel: "estimate update",
   });
   await quotation.save();
@@ -760,7 +775,7 @@ exports.syncLinkedQuotationFromUpdatedEstimate = async ({ estimate, user } = {})
       sourceEstimateId: estimate._id,
     },
   });
-  if (replacedPendingApproval) {
+  if (approvalChange.autoSubmittedForApproval) {
     await auditService.log({
       type: "quotation",
       action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
@@ -771,12 +786,16 @@ exports.syncLinkedQuotationFromUpdatedEstimate = async ({ estimate, user } = {})
         quotationId: quotation._id,
         quoteNumber: quotation.quoteNumber,
         versionNumber: quotation.versionNumber,
-        source: "edit_pending_quotation_from_estimate",
+        source: approvalChange.reopenedFromSent
+          ? "edit_sent_quotation_from_estimate"
+          : approvalChange.replacedPendingApproval
+            ? "edit_pending_quotation_from_estimate"
+            : "edit_approved_quotation_from_estimate",
       },
     });
   }
 
-  return { synced: true, skippedReason: null, quotation, replacedPendingApproval };
+  return { synced: true, skippedReason: null, quotation, ...approvalChange };
 };
 
 const resolveLeadForEstimateConversion = async ({
@@ -1115,8 +1134,9 @@ exports.downloadQuotationPdf = asyncHandler(async (req, res) => {
 exports.updateQuotation = asyncHandler(async (req, res) => {
   const quotation = await Quotation.findById(req.params.quotationId);
   if (!quotation) return notFound(res, "Quotation not found");
-  if (quotation.status !== "draft")
-    return badRequest(res, "Only draft quotations can be edited");
+  if (!EDITABLE_QUOTATION_STATUSES.includes(quotation.status)) {
+    return badRequest(res, "Only draft or sent quotations can be edited");
+  }
   const { error: accessError, code } = await checkLeadAccess(quotation.leadId, req.user);
   if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
 
@@ -1194,11 +1214,9 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
   }
 
   // Per spec line 615: auto-increment versionNumber on every save
-  const { replacedPendingApproval } = applyVersionedApprovalOnQuotationEdit(
-    quotation,
-    req.user,
-    { sourceLabel: "quotation edit" }
-  );
+  const approvalChange = applyVersionedApprovalOnQuotationEdit(quotation, req.user, {
+    sourceLabel: "quotation edit",
+  });
 
   await quotation.save();
 
@@ -1222,9 +1240,10 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
       quotationId: quotation._id,
       versionNumber: quotation.versionNumber,
       approvalStatus: quotation.approval?.status || "not_submitted",
+      reopenedFromSent: approvalChange.reopenedFromSent,
     },
   });
-  if (replacedPendingApproval) {
+  if (approvalChange.autoSubmittedForApproval) {
     await auditService.log({
       type: "quotation",
       action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
@@ -1235,7 +1254,11 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
         quotationId: quotation._id,
         quoteNumber: quotation.quoteNumber,
         versionNumber: quotation.versionNumber,
-        source: "edit_pending_quotation",
+        source: approvalChange.reopenedFromSent
+          ? "edit_sent_quotation"
+          : approvalChange.replacedPendingApproval
+            ? "edit_pending_quotation"
+            : "edit_approved_quotation",
       },
     });
   }
@@ -1535,8 +1558,6 @@ exports.approveQuotation = asyncHandler(async (req, res) => {
   if (req.user.role !== "admin") return forbidden(res, "Only admin can approve quotations");
   const quotation = await Quotation.findById(req.params.quotationId);
   if (!quotation) return notFound(res, "Quotation not found");
-  if (quotation.status === "sent") return badRequest(res, "Sent quotation cannot be approved");
-
   ensureApprovalState(quotation);
   if (quotation.approval.status !== "pending_approval") {
     return badRequest(res, "Only pending approval quotations can be approved");
@@ -1578,8 +1599,6 @@ exports.rejectQuotationApproval = asyncHandler(async (req, res) => {
   if (req.user.role !== "admin") return forbidden(res, "Only admin can reject quotations");
   const quotation = await Quotation.findById(req.params.quotationId);
   if (!quotation) return notFound(res, "Quotation not found");
-  if (quotation.status === "sent") return badRequest(res, "Sent quotation cannot be rejected");
-
   ensureApprovalState(quotation);
   if (quotation.approval.status !== "pending_approval") {
     return badRequest(res, "Only pending approval quotations can be rejected");
@@ -1798,6 +1817,64 @@ const pickQuoteSalesTax = (source = {}) => {
   };
 };
 
+const roundMoney = (value) => Math.max(0, Math.round(toNumber(value, 0) * 100) / 100);
+
+const addonIncludedAmount = (addon = {}, field) =>
+  addon?.include ? toNumber(addon[field], 0) : 0;
+
+const resolveQuoteAmountWithoutMarkup = (quotation = {}, estimate = null) => {
+  if (estimate) {
+    const sp = estimate.storagePricingResult;
+    if (estimate.jobType === "Storage" && sp) {
+      const passThrough = toNumber(sp.shipping, 0) + toNumber(sp.drawings, 0);
+      const cogs = toNumber(sp.totalCogs, 0);
+      if (cogs > 0 || passThrough > 0) return cogs + passThrough;
+    }
+
+    const pricing = estimate.fullQuoteResult?.pricing || estimate.pricingResult || {};
+    const concrete = estimate.fullQuoteResult?.concrete || estimate.concreteAddon || {};
+    const insulation = estimate.fullQuoteResult?.insulation || estimate.insulationAddon || {};
+    const buildingCost = toNumber(pricing.totCost, toNumber(estimate.totalCOGS, 0));
+    const cogs =
+      buildingCost +
+      addonIncludedAmount(concrete, "cost") +
+      addonIncludedAmount(insulation, "cost");
+    if (cogs > 0) return cogs;
+  }
+
+  return toNumber(quotation.totalCOGS, 0);
+};
+
+const buildQuoteInvoiceBreakdown = (quotation = {}, estimate = null) => {
+  const picked = pickQuoteSalesTax(estimate || {});
+  const tax = roundMoney(picked.tax);
+  const total = roundMoney(
+    toNumber(quotation.finalPrice, 0) ||
+      resolveEstimateGrandTotal(estimate || {}) ||
+      toNumber(quotation.basePrice, 0)
+  );
+  const subtotal = roundMoney(Math.max(0, total - tax));
+
+  let amountWithoutMarkup = roundMoney(resolveQuoteAmountWithoutMarkup(quotation, estimate));
+  if (amountWithoutMarkup <= 0 || amountWithoutMarkup > subtotal) {
+    amountWithoutMarkup = subtotal;
+  }
+  const markup = roundMoney(subtotal - amountWithoutMarkup);
+
+  return {
+    amountWithoutMarkup,
+    subtotalWithoutMarkup: amountWithoutMarkup,
+    markup,
+    subtotal,
+    subtotalWithMarkup: subtotal,
+    tax,
+    total,
+    taxRate: picked.taxRate,
+    taxableBase: picked.taxableBase,
+    taxNote: picked.taxNote,
+  };
+};
+
 exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
   const { leadId } = req.params;
   const { error: accessError, code } = await checkLeadAccess(leadId, req.user);
@@ -1814,39 +1891,34 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     return notFound(res, "No approved quotation found for this lead");
   }
 
-  let tax = 0;
-  let taxRate = 0;
-  let taxableBase = 0;
-  let taxNote = "";
-  let estimateGrandTotal = 0;
-  if (quotation.sourceEstimateId) {
-    const estimate = await EstimateQuote.findById(quotation.sourceEstimateId)
-      .select("salesTax storagePricingResult fullQuoteResult totalSell pricingResult")
-      .lean();
-    const picked = pickQuoteSalesTax(estimate || {});
-    tax = picked.tax;
-    taxRate = picked.taxRate;
-    taxableBase = picked.taxableBase;
-    taxNote = picked.taxNote;
-    estimateGrandTotal = resolveEstimateGrandTotal(estimate || {});
-  }
+  const estimate = quotation.sourceEstimateId
+    ? await EstimateQuote.findById(quotation.sourceEstimateId)
+        .select(
+          "jobType salesTax storagePricingResult fullQuoteResult totalSell pricingResult totalCOGS concreteAddon insulationAddon"
+        )
+        .lean()
+    : null;
 
-  const quoteValue =
-    toNumber(quotation.finalPrice, 0) ||
-    estimateGrandTotal ||
-    toNumber(quotation.basePrice, 0);
-  const subtotal = Math.max(0, Math.round((quoteValue - tax) * 100) / 100);
+  const breakdown = buildQuoteInvoiceBreakdown(quotation, estimate);
 
   return success(res, {
     leadId: quotation.leadId,
     quotationId: quotation._id,
     quoteNumber: quotation.quoteNumber || "",
-    subtotal,
-    tax,
-    total: quoteValue,
-    taxRate,
-    taxableBase,
-    taxNote: taxNote || (tax > 0 ? "Tax is 7% of materials and insulation only. Labor is not taxed." : ""),
+    amountWithoutMarkup: breakdown.amountWithoutMarkup,
+    subtotalWithoutMarkup: breakdown.subtotalWithoutMarkup,
+    markup: breakdown.markup,
+    subtotal: breakdown.subtotal,
+    subtotalWithMarkup: breakdown.subtotalWithMarkup,
+    tax: breakdown.tax,
+    total: breakdown.total,
+    taxRate: breakdown.taxRate,
+    taxableBase: breakdown.taxableBase,
+    taxNote:
+      breakdown.taxNote ||
+      (breakdown.tax > 0
+        ? "Tax is 7% of materials and insulation only. Labor is not taxed."
+        : ""),
     currency: quotation.currency || "USD",
     approvalStatus: quotation.approval?.status || "approved",
     versionNumber: quotation.versionNumber || 1,

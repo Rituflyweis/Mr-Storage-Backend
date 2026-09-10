@@ -208,7 +208,7 @@ const run = async () => {
       assert(rReject.json?.data?.quotation?.approval?.status === "rejected", "Expected rejected");
     });
 
-    await scenario("Editing rejected quotation resets to not_submitted", async () => {
+    await scenario("Editing rejected quotation auto-submits pending approval", async () => {
       const q = await Quotation.findOne({ leadId: lead._id, "approval.status": "rejected" }).sort({ createdAt: -1 }).lean();
       assert(q, "Expected rejected quotation row");
       const r = await callApi({
@@ -218,20 +218,23 @@ const run = async () => {
         body: { basePrice: Number(q.basePrice || 0) + 500, changeNote: "Updated after rejection" },
       });
       assert(r.status === 200, `Expected 200, got ${r.status}`);
-      assert(r.json?.data?.quotation?.approval?.status === "not_submitted", "Expected not_submitted after edit");
+      assert(r.json?.data?.quotation?.approval?.status === "pending_approval", "Expected pending_approval after edit");
+      assert(r.json?.data?.quotation?.workflowStatus === "pending_approval", "Expected workflow pending_approval");
     });
 
-    await scenario("Sales can re-submit edited quotation", async () => {
-      const q = await Quotation.findOne({ leadId: lead._id, "approval.status": "not_submitted" }).sort({ createdAt: -1 }).lean();
-      assert(q, "Expected not_submitted quotation row");
+    await scenario("Editing sent quotation reopens draft and auto-submits pending approval", async () => {
+      const q = await Quotation.findById(quotationId).lean();
+      assert(q?.status === "sent", "Expected sent quotation from earlier send test");
       const r = await callApi({
-        method: "POST",
-        path: `/quotations/${q._id}/submit-approval`,
+        method: "PUT",
+        path: `/quotations/${quotationId}`,
         token: salesToken,
-        body: { note: "Resubmitted after fixing requested points" },
+        body: { basePrice: Number(q.basePrice || 0) + 1000, changeNote: "Updated after customer send" },
       });
       assert(r.status === 200, `Expected 200, got ${r.status}`);
-      assert(r.json?.data?.quotation?.approval?.status === "pending_approval", "Expected pending_approval on resubmit");
+      assert(r.json?.data?.quotation?.status === "draft", "Expected draft after sent edit");
+      assert(r.json?.data?.quotation?.approval?.status === "pending_approval", "Expected pending_approval after sent edit");
+      assert(r.json?.data?.quotation?.workflowStatus === "pending_approval", "Expected workflow pending_approval");
     });
   } finally {
     if (created.quotations.length) await Quotation.deleteMany({ _id: { $in: created.quotations } });

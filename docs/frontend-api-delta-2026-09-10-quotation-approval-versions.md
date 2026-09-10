@@ -15,8 +15,8 @@ Related older doc (create/send/estimate conversion still apply; **edit-while-pen
 1. Sales creates a quotation. It goes to admin as **Pending Approval**. Sales cannot send it to the customer yet.
 2. If sales **edits that pending quotation**, the old approval request is **cancelled** and a **new pending request** is created for the updated version. Sales does **not** need to submit again.
 3. Admin still sees that quotation as waiting for approval, but only the **new version** is waiting. The old version is cancelled.
-4. If admin **rejects** it, sales can edit and then **submit again** for approval.
-5. If admin **approves** it and sales later **edits** it, approval is cleared. Sales must **submit again** before it can be sent.
+4. If admin **rejects** it, sales can edit and a **new pending approval request is created automatically**.
+5. If admin **approves** it (or it was already **sent** to the customer) and sales later **edits** the quotation or linked estimate, the quotation goes back to **`draft` + `pending_approval`** automatically. Sales does **not** call submit-approval.
 6. Only after admin approval can sales **send** the quotation to the customer.
 
 ### Admin panel
@@ -32,7 +32,7 @@ Related older doc (create/send/estimate conversion still apply; **edit-while-pen
 ### Simple rule
 
 - Edit while waiting for approval = cancel old request + new pending request automatically.
-- Edit after approval or rejection = sales must submit again.
+- Edit after approval, rejection, or send = reopen as `draft` (if was sent) + new pending request automatically.
 
 ---
 
@@ -155,9 +155,8 @@ Now, if that estimate is already converted (`Quotation.sourceEstimateId`):
 | Linked quotation | What happens |
 |---|---|
 | Not converted yet | Estimate saves only. `quotationSync.skippedReason = "not_converted"` |
-| `status = draft` and pending | Old request cancelled, new pending version. No extra submit. |
-| `status = draft` and approved/rejected | Approval becomes `not_submitted`. Sales must `POST /api/quotations/:quotationId/submit-approval` |
-| Already `sent` | Estimate can still save if estimate is draft. Quotation is **not** changed. `skippedReason = "quotation_not_draft"` |
+| `status = draft` or `sent` | Quotation synced. Old approval cancelled/superseded. New `pending_approval` version. If was `sent`, `status` becomes `draft`. |
+| `status = accepted` / `rejected` (workflow) | Quotation **not** changed. `skippedReason = "quotation_not_editable"` |
 
 Do **not** expect approval to change from estimate GET/PDF/preview endpoints. Only `PUT /api/sales/estimates/:estimateId` or `PUT /api/quotations/:quotationId`.
 
@@ -176,23 +175,15 @@ After PUT:
 
 Sales UI: keep showing **Pending Approval**. Optional toast: “Previous approval request cancelled. Updated quotation sent for approval.”
 
-### B) Quotation is approved or rejected
+### B) Quotation is approved, rejected, or was sent
 
-After PUT:
+After PUT (quotation or linked estimate):
 
-- `approval.status` becomes `not_submitted`
-- Send must stay disabled
-- Show **Submit for approval**
-
-Then call:
-
-`POST /api/quotations/:quotationId/submit-approval`
-
-```json
-{ "note": "Please re-review the updated quotation." }
-```
-
-Optional. Then `approval.status` becomes `pending_approval` again.
+- `approval.status` becomes `pending_approval` automatically
+- If quotation was `sent`, `status` becomes `draft`
+- `versionNumber` increments
+- Send stays disabled until admin approves the new version
+- Do **not** call submit-approval (already pending)
 
 ---
 
@@ -287,11 +278,11 @@ Enable send / mark-sent only when:
 
 Disable when:
 
-- `pending_approval`
-- `rejected`
-- `not_submitted` / draft after an approved quotation was edited
+- `pending_approval` (including after any edit)
+- `rejected` (before edit)
+- `draft` after a sent quotation was edited (waiting for re-approval)
 
-If sales edits an approved quotation, backend returns `not_submitted`. Show “Submit for approval” again. Send stays off until admin approves the new `versionNumber`.
+If sales edits an approved or sent quotation, backend auto-returns `pending_approval` and `status = draft` (if it was sent). Show **Pending Approval**. Send stays off until admin approves the new `versionNumber`.
 
 Send still uses:
 
@@ -307,12 +298,12 @@ Same To / CC / message body as `docs/frontend-api-delta-2026-09-07-send-and-mark
 | `workflowStatus` | Badge | Edit | Submit for approval | Send |
 |---|---|---|---|---|
 | `pending_approval` | Pending Approval | Yes (auto new request) | Hide | Disabled |
-| `approved` | Approved | Yes (clears approval) | Hide until they edit | Enabled |
-| `rejected` | Rejected + reason | Yes | Show after edit | Disabled |
-| `draft` / `not_submitted` | Draft / needs resubmit | Yes | Show | Disabled |
-| `sent` | Sent | No | Hide | Hide |
+| `approved` | Approved | Yes (auto pending) | Hide | Enabled |
+| `rejected` | Rejected + reason | Yes (auto pending) | Hide | Disabled |
+| `draft` / `not_submitted` | Draft | Yes (auto pending) | Hide | Disabled |
+| `sent` | Sent | Yes (reopens draft + auto pending) | Hide | Hide until re-approved |
 
-After a **rejected** quotation is edited, status becomes `not_submitted`. Then show Submit.
+After **any** edit on approved, rejected, or sent quotations, badge becomes **Pending Approval**. No manual submit step.
 
 ---
 
@@ -339,9 +330,9 @@ Quotation detail:
 | `400` Only pending approval quotations can be approved/rejected | Quotation is not currently pending |
 | `400` Quotation must be approved by admin before sending | Send clicked too early |
 | `400` Quotation was edited after approval. Please resubmit for admin approval. | Approved, then edited, then send without resubmit |
-| `400` Only draft quotations can be edited | Quotation already sent |
+| `400` Only draft or sent quotations can be edited | Quotation is `accepted` / terminal |
 | `403` Only admin can approve/reject / view pending | Sales hit an admin-only route |
-| `400` Sent quotation cannot be submitted | Wrong lifecycle |
+| `400` Sent quotation cannot be submitted | Still `sent` without an edit (edit auto-submits) |
 | `400` Rejection reason is required | Reject without `reason` |
 
 ---

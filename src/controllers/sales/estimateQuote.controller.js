@@ -64,6 +64,14 @@ const normalizeQuoteOptions = (body = {}) => {
   }
 }
 
+// Mongo enum is Supply / Install / Both; pricing + FE often send lowercase.
+const toStoredScope = (value) => {
+  const key = String(value || 'both').toLowerCase()
+  if (key === 'supply') return 'Supply'
+  if (key === 'install') return 'Install'
+  return 'Both'
+}
+
 const normalizeFullQuoteExtras = (body = {}) => ({
   concrete: body.concrete || body.concreteAddon || undefined,
   insulation: body.insulation || body.insulationAddon || undefined,
@@ -603,7 +611,7 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
     leadId: leadId || null,
     jobType: options.jobType,
-    scope: options.scope === 'supply' ? 'Supply' : options.scope === 'install' ? 'Install' : 'Both',
+    scope: toStoredScope(options.scope),
     roofType: options.roof,
     installLevel: options.install,
     blendPct: options.blendPct,
@@ -688,8 +696,11 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     'statementOfWork', 'exclusions', 'status',
   ]
   EDITABLE.forEach((k) => {
+    if (k === 'scope') return
     if (req.body[k] !== undefined) estimate[k] = req.body[k]
   })
+  if (req.body.scope !== undefined) estimate.scope = toStoredScope(req.body.scope)
+  else estimate.scope = toStoredScope(estimate.scope)
 
   if (req.body.roof !== undefined) estimate.roofType = req.body.roof
   if (req.body.install !== undefined) estimate.installLevel = req.body.install
@@ -746,8 +757,13 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     quotationSync: {
       synced: Boolean(quotationSync.synced),
       skippedReason: quotationSync.skippedReason || null,
+      quotationStatus: linkedQuotation?.status || null,
       approvalStatus: linkedQuotation?.approval?.status || null,
+      workflowStatus: linkedQuotation
+        ? buildEstimateConversionMeta(linkedQuotation).workflowStatus
+        : null,
       versionNumber: linkedQuotation?.versionNumber || null,
+      reopenedFromSent: Boolean(quotationSync.reopenedFromSent),
     },
   })
 })

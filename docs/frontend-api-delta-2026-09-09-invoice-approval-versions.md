@@ -280,7 +280,11 @@ Latest = most recently **admin-approved** quotation on that lead (`approval.stat
     "leadId": "6aa14f4a6f7c6ed87523ff81",
     "quotationId": "6aa1606ff485426a4984769b",
     "quoteNumber": "QUO-0010",
+    "amountWithoutMarkup": 170949.91,
+    "subtotalWithoutMarkup": 170949.91,
+    "markup": 62228.09,
     "subtotal": 233178,
+    "subtotalWithMarkup": 233178,
     "tax": 7846,
     "total": 241024,
     "taxRate": 7,
@@ -294,15 +298,17 @@ Latest = most recently **admin-approved** quotation on that lead (`approval.stat
 }
 ```
 
-Use only these three money fields:
+Money fields:
 
-| Field | Invoice field | QUO-0010 |
-|---|---|---|
-| `subtotal` | Line / Subtotal | 233178 |
-| `tax` | Tax $ | 7846 |
-| `total` | Total | 241024 |
+| Field | Invoice field |
+|---|---|
+| `amountWithoutMarkup` / `subtotalWithoutMarkup` | Line / footer Subtotal |
+| `markup` | Footer `markupTotal` |
+| `subtotal` / `subtotalWithMarkup` | Pretax after markup |
+| `tax` | Tax $ |
+| `total` | Total / `totalAmount` |
 
-`subtotal + tax` = `total`. Do **not** compute `subtotal * taxRate`. `taxRate` is 7% of `taxableBase` (materials + insulation) only. Labor is not taxed.
+`subtotalWithoutMarkup + markup` = `subtotalWithMarkup`. `subtotalWithMarkup + tax` = `total`. Do **not** compute `subtotal * taxRate`. `taxRate` is 7% of `taxableBase` (materials + insulation) only. Labor is not taxed. See `docs/frontend-invoice-tax-breakdown-2026-09-10.md`.
 
 Removed aliases: `quoteValue`, `quoteAmountIncludingTax`, `quoteAmountMinusTax`, `quoteAmountExcludingTax`, `pretaxAmount`, `salesTax`, `taxIncludedInQuoteValue`.
 
