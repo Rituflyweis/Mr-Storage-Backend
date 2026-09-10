@@ -1835,29 +1835,18 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     toNumber(quotation.finalPrice, 0) ||
     estimateGrandTotal ||
     toNumber(quotation.basePrice, 0);
-  const pretaxAmount = Math.max(0, Math.round((quoteValue - tax) * 100) / 100);
+  const subtotal = Math.max(0, Math.round((quoteValue - tax) * 100) / 100);
 
   return success(res, {
     leadId: quotation.leadId,
     quotationId: quotation._id,
     quoteNumber: quotation.quoteNumber || "",
-    quoteValue,
-    quoteAmountIncludingTax: quoteValue,
-    quoteAmountMinusTax: pretaxAmount,
-    quoteAmountExcludingTax: pretaxAmount,
-    subtotal: pretaxAmount,
-    pretaxAmount,
+    subtotal,
     tax,
+    total: quoteValue,
     taxRate,
     taxableBase,
-    taxNote: taxNote || (tax > 0 ? "Tax is not applied to the full pretax amount. Labor is not taxed." : ""),
-    salesTax: {
-      amount: tax,
-      rate: taxRate,
-      taxableBase,
-      note: taxNote || (tax > 0 ? "Tax is not applied to the full pretax amount. Labor is not taxed." : ""),
-    },
-    taxIncludedInQuoteValue: tax > 0,
+    taxNote: taxNote || (tax > 0 ? "Tax is 7% of materials and insulation only. Labor is not taxed." : ""),
     currency: quotation.currency || "USD",
     approvalStatus: quotation.approval?.status || "approved",
     versionNumber: quotation.versionNumber || 1,
