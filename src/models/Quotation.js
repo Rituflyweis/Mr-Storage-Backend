@@ -5,12 +5,13 @@ const QuotationApprovalHistorySchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ["not_submitted", "pending_approval", "approved", "rejected", "sent"],
+      enum: ["not_submitted", "pending_approval", "approved", "rejected", "sent", "cancelled"],
       required: true,
     },
     note: { type: String, default: "" },
     by: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     at: { type: Date, default: Date.now },
+    versionNumber: { type: Number, default: null },
   },
   { _id: false },
 );

@@ -110,6 +110,27 @@ const run = async () => {
       assert(r.json?.data?.quotation?.workflowStatus === "pending_approval", "Expected workflow pending_approval");
     });
 
+    await scenario("Editing pending quotation cancels old request and opens new pending version", async () => {
+      const r = await callApi({
+        method: "PUT",
+        path: `/quotations/${quotationId}`,
+        token: salesToken,
+        body: { basePrice: 14000, changeNote: "Updated pending quotation" },
+      });
+      assert(r.status === 200, `Expected 200, got ${r.status}`);
+      const q = r.json?.data?.quotation;
+      assert(q?.approval?.status === "pending_approval", "Expected still pending_approval after edit");
+      const history = q?.approval?.history || [];
+      const newestTwo = history.slice(0, 2);
+      assert(newestTwo[0]?.status === "pending_approval", "Expected newest history event to be the new pending request");
+      assert(newestTwo[1]?.status === "cancelled", "Expected previous request cancelled just before that");
+      const pendingRequests = (q?.approvalRequests || []).filter((req) => req.status === "pending_approval");
+      const cancelledRequests = (q?.approvalRequests || []).filter((req) => req.status === "cancelled");
+      assert(pendingRequests.length === 1, "Expected exactly one current pending request");
+      assert(cancelledRequests.length >= 1, "Expected cancelled old version request");
+      assert(pendingRequests[0]?.current === true, "Expected new request to be current");
+    });
+
     await scenario("Sales cannot send quotation before admin approval", async () => {
       const r = await callApi({
         method: "POST",

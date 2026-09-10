@@ -100,9 +100,82 @@ const ensureApprovalState = (quotation) => {
   if (!Array.isArray(quotation.approval.history)) quotation.approval.history = [];
 };
 
-const pushApprovalHistory = (quotation, { status, note = "", by = null, at = new Date() }) => {
+const pushApprovalHistory = (
+  quotation,
+  { status, note = "", by = null, at = new Date(), versionNumber = null }
+) => {
   ensureApprovalState(quotation);
-  quotation.approval.history.push({ status, note, by, at });
+  quotation.approval.history.push({
+    status,
+    note,
+    by,
+    at,
+    versionNumber: versionNumber != null ? versionNumber : Number(quotation.versionNumber || 1),
+  });
+};
+
+const buildApprovalRequests = (quotation) => {
+  const history = Array.isArray(quotation.approval?.history) ? quotation.approval.history : [];
+  const requests = [];
+  let open = null;
+
+  const closeOpen = (status, event) => {
+    if (!open) return;
+    open.status = status;
+    open.closedAt = event?.at || null;
+    open.closedNote = event?.note || "";
+    open.current = false;
+    requests.push(open);
+    open = null;
+  };
+
+  for (const event of history) {
+    const status = event?.status;
+    const versionNumber = event?.versionNumber != null ? event.versionNumber : null;
+    if (status === "pending_approval") {
+      closeOpen("cancelled", event);
+      open = {
+        status: "pending_approval",
+        versionNumber,
+        revision: versionNumber,
+        submittedAt: event.at || null,
+        submittedBy: event.by || null,
+        note: event.note || "",
+        current: true,
+      };
+    } else if (status === "cancelled" || status === "not_submitted") {
+      closeOpen("cancelled", event);
+    } else if (status === "approved" || status === "rejected" || status === "sent") {
+      closeOpen(status, event);
+    }
+  }
+
+  if (open) {
+    const currentApproval = quotation.approval?.status || "not_submitted";
+    if (currentApproval === "pending_approval") {
+      open.current = true;
+    } else if (currentApproval === "not_submitted") {
+      open.status = "cancelled";
+      open.current = false;
+    } else {
+      open.status = currentApproval;
+      open.current = false;
+    }
+    requests.push(open);
+  }
+
+  return requests;
+};
+
+const applyApprovalDecorators = (quotation) => {
+  if (!quotation) return quotation;
+  quotation.approvalStatus = quotation.approval?.status || "not_submitted";
+  quotation.workflowStatus = getWorkflowStatus(quotation);
+  quotation.approvalRequests = [...buildApprovalRequests(quotation)].reverse();
+  if (quotation.approval) {
+    quotation.approval.history = [...(quotation.approval.history || [])].reverse();
+  }
+  return quotation;
 };
 
 const assertQuotationReadyToSend = (quotation) => {
@@ -464,11 +537,7 @@ const decorateQuotationResponse = async (
       ? quotationLike.toObject()
       : { ...quotationLike };
 
-  quotation.approvalStatus = quotation.approval?.status || "not_submitted";
-  quotation.workflowStatus = getWorkflowStatus(quotation);
-  if (quotation.approval) {
-    quotation.approval.history = [...(quotation.approval.history || [])].reverse();
-  }
+  applyApprovalDecorators(quotation);
 
   let estimate = null;
   if (includeEstimate && quotation.sourceEstimateId) {
@@ -566,6 +635,7 @@ const mapEstimateToQuotationPayload = (estimate = {}, lead, reqUser) => {
                 note: "Quotation submitted for admin approval on create from estimate",
                 by: reqUser._id,
                 at: new Date(),
+                versionNumber: 1,
               },
             ],
           }
@@ -580,6 +650,7 @@ const mapEstimateToQuotationPayload = (estimate = {}, lead, reqUser) => {
                 note: "Admin-created quotation auto-approved from estimate",
                 by: reqUser._id,
                 at: new Date(),
+                versionNumber: 1,
               },
             ],
           },
@@ -768,6 +839,7 @@ exports.createQuotation = asyncHandler(async (req, res) => {
                 note: "Quotation submitted for admin approval on create",
                 by: req.user._id,
                 at: new Date(),
+                versionNumber: 1,
               },
             ],
           }
@@ -782,6 +854,7 @@ exports.createQuotation = asyncHandler(async (req, res) => {
                 note: "Admin-created quotation auto-approved",
                 by: req.user._id,
                 at: new Date(),
+                versionNumber: 1,
               },
             ],
           },
@@ -999,12 +1072,33 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
   }
 
   // Per spec line 615: auto-increment versionNumber on every save
-  quotation.versionNumber = (quotation.versionNumber || 1) + 1;
+  const prevVersion = Number(quotation.versionNumber || 1);
+  quotation.versionNumber = prevVersion + 1;
   ensureApprovalState(quotation);
-  if (
-    ["pending_approval", "approved", "rejected"].includes(quotation.approval.status)
-  ) {
-    const prevApproval = quotation.approval.status;
+  let replacedPendingApproval = false;
+  const prevApproval = quotation.approval.status;
+  if (prevApproval === "pending_approval") {
+    pushApprovalHistory(quotation, {
+      status: "cancelled",
+      note: `Previous approval request cancelled after edit (version ${prevVersion})`,
+      by: req.user._id,
+      versionNumber: prevVersion,
+    });
+    quotation.approval.status = "pending_approval";
+    quotation.approval.submittedBy = req.user._id;
+    quotation.approval.submittedAt = new Date();
+    quotation.approval.reviewedBy = null;
+    quotation.approval.reviewedAt = null;
+    quotation.approval.rejectionReason = "";
+    quotation.approval.approvedVersionNumber = null;
+    pushApprovalHistory(quotation, {
+      status: "pending_approval",
+      note: `New approval request after edit (version ${quotation.versionNumber})`,
+      by: req.user._id,
+      versionNumber: quotation.versionNumber,
+    });
+    replacedPendingApproval = true;
+  } else if (["approved", "rejected"].includes(prevApproval)) {
     quotation.approval.status = "not_submitted";
     quotation.approval.reviewedBy = null;
     quotation.approval.reviewedAt = null;
@@ -1041,6 +1135,21 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
       approvalStatus: quotation.approval?.status || "not_submitted",
     },
   });
+  if (replacedPendingApproval) {
+    await auditService.log({
+      type: "quotation",
+      action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
+      leadId: quotation.leadId,
+      customerId: quotation.customerId,
+      performedBy: req.user._id,
+      metadata: {
+        quotationId: quotation._id,
+        quoteNumber: quotation.quoteNumber,
+        versionNumber: quotation.versionNumber,
+        source: "edit_pending_quotation",
+      },
+    });
+  }
 
   return success(res, {
     quotation: await decorateQuotationResponse(quotation.toObject(), {
@@ -1528,12 +1637,12 @@ exports.getPendingQuotationApprovals = asyncHandler(async (req, res) => {
     Quotation.countDocuments(filter),
   ]);
 
-  const decorated = quotations.map((q) => ({
-    ...q,
-    approvalStatus: q.approval?.status || "not_submitted",
-    workflowStatus: getWorkflowStatus(q),
-    pdfLink: buildQuotationPdfLink(q),
-  }));
+  const decorated = quotations.map((q) =>
+    applyApprovalDecorators({
+      ...q,
+      pdfLink: buildQuotationPdfLink(q),
+    })
+  );
   await attachCustomerEmails(decorated);
 
   return success(res, {
@@ -1673,12 +1782,12 @@ exports.getLeadQuotations = asyncHandler(async (req, res) => {
     rows = rows.filter((q) => (q.approval?.status || "not_submitted") === approvalStatus);
   }
 
-  const decorated = rows.map((q) => ({
-    ...q,
-    approvalStatus: q.approval?.status || "not_submitted",
-    workflowStatus: getWorkflowStatus(q),
-    pdfLink: buildQuotationPdfLink(q),
-  }));
+  const decorated = rows.map((q) =>
+    applyApprovalDecorators({
+      ...q,
+      pdfLink: buildQuotationPdfLink(q),
+    })
+  );
   await attachCustomerEmails(decorated);
 
   return success(res, {

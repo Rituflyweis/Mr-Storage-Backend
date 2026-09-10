@@ -2,6 +2,8 @@
 
 This document defines the quotation approval flow for frontend integration.
 
+**Update 2026-09-10:** Edit-while-pending now matches invoices (cancel old request + new pending request). Use `docs/frontend-api-delta-2026-09-10-quotation-approval-versions.md` for that contract. Send / estimate conversion below still apply.
+
 It applies to quotations created from your quoting process (including data extracted from XLSX/PDF flows) before the quotation is sent to the customer.
 
 Related docs:
@@ -160,8 +162,10 @@ On successful send, response includes:
 
 When edited:
 - `versionNumber` increments
-- if approval was `pending_approval/approved/rejected`, it resets to `not_submitted`
-- sales must submit again via `submit-approval`
+- if approval was `pending_approval`, old request is **cancelled** and a new pending request is opened automatically (sales does not resubmit)
+- if approval was `approved` / `rejected`, it resets to `not_submitted` and sales must submit again via `submit-approval`
+
+See `docs/frontend-api-delta-2026-09-10-quotation-approval-versions.md`.
 
 ---
 
@@ -208,7 +212,7 @@ Approval user refs are populated on read/list endpoints:
 
 - Disable **Send** button unless `workflowStatus === "approved"`.
 - Show rejection message from `approval.rejectionReason` when rejected.
-- Show timeline from `approval.history`.
+- Timeline from `approvalRequests` (newest first). Do not treat every `approval.history` pending row as still waiting.
 - On edit success, if status changes to `not_submitted`, show CTA: **Submit for Approval**.
 
 ---
