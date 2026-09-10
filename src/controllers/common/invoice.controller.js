@@ -135,7 +135,10 @@ const decorateInvoiceForResponse = (invoiceLike) => {
   invoice.workflowStatus = getWorkflowStatus(invoice)
   // Frontend-friendly single status across approval + payment stages.
   invoice.invoiceStatus = getUnifiedInvoiceStatus(invoice)
-  invoice.approvalRequests = buildApprovalRequests(invoice)
+  invoice.approvalRequests = [...buildApprovalRequests(invoice)].reverse()
+  if (invoice.approval) {
+    invoice.approval.history = [...(invoice.approval.history || [])].reverse()
+  }
   return invoice
 }
 

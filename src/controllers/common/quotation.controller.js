@@ -466,6 +466,9 @@ const decorateQuotationResponse = async (
 
   quotation.approvalStatus = quotation.approval?.status || "not_submitted";
   quotation.workflowStatus = getWorkflowStatus(quotation);
+  if (quotation.approval) {
+    quotation.approval.history = [...(quotation.approval.history || [])].reverse();
+  }
 
   let estimate = null;
   if (includeEstimate && quotation.sourceEstimateId) {

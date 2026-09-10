@@ -119,9 +119,9 @@ const run = async () => {
       const inv = r.json?.data?.invoice
       assert(inv?.approval?.status === 'pending_approval', 'Expected still pending_approval after edit')
       const history = inv?.approval?.history || []
-      const lastTwo = history.slice(-2)
-      assert(lastTwo[0]?.status === 'cancelled', 'Expected previous request cancelled')
-      assert(lastTwo[1]?.status === 'pending_approval', 'Expected new pending request')
+      const newestTwo = history.slice(0, 2)
+      assert(newestTwo[0]?.status === 'pending_approval', 'Expected newest history event to be the new pending request')
+      assert(newestTwo[1]?.status === 'cancelled', 'Expected previous request cancelled just before that')
       const pendingRequests = (inv?.approvalRequests || []).filter((req) => req.status === 'pending_approval')
       const cancelledRequests = (inv?.approvalRequests || []).filter((req) => req.status === 'cancelled')
       assert(pendingRequests.length === 1, 'Expected exactly one current pending request')
