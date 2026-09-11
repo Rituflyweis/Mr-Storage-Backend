@@ -62,6 +62,7 @@ router.post(
 // Resource routes
 router.use("/quotations", ...guard, require("./quotation.routes"));
 router.use("/invoices", ...guard, require("./invoice.routes"));
+router.use("/email-send-jobs", ...guard, require("./emailSendJob.routes"));
 router.use("/payment-schedules", ...guard, require("./payment.routes"));
 router.use("/upload", uploadGuard, require("./upload.routes"));
 router.use("/uploads", uploadGuard, require("./upload.routes"));

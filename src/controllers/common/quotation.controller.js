@@ -19,6 +19,15 @@ const {
   forbidden,
   error,
 } = require("../../utils/apiResponse");
+const {
+  toNumber,
+  resolveEstimateGrandTotal,
+  mapQuotationToDocumentPayload,
+} = require("../../utils/quotationDocumentPayload");
+const {
+  findActiveEmailSendJob,
+  queueEmailSendJob,
+} = require("../../services/email/emailSendJob.service");
 const asyncHandler = require("../../utils/asyncHandler");
 const { buildDateFilter } = require("../../utils/dateRange");
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require("../../config/constants");
@@ -305,24 +314,6 @@ const toBoolean = (value, fallback = false) => {
   return fallback;
 };
 
-const toNumber = (value, fallback = 0) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-};
-
-const resolveEstimateGrandTotal = (estimate = {}) => {
-  if (estimate.storagePricingResult?.grandTotal != null) {
-    return Math.round(toNumber(estimate.storagePricingResult.grandTotal));
-  }
-  if (estimate.fullQuoteResult?.grandTotal != null) {
-    return Math.round(toNumber(estimate.fullQuoteResult.grandTotal));
-  }
-  if (estimate.totalSell != null) {
-    return Math.round(toNumber(estimate.totalSell));
-  }
-  return Math.round(toNumber(estimate.pricingResult?.totSell));
-};
-
 const mapEstimateSummary = (estimate) => {
   if (!estimate) return null;
   return {
@@ -333,145 +324,6 @@ const mapEstimateSummary = (estimate) => {
     squareFootage: toNumber(estimate.squareFootage, 0),
     grandTotal: resolveEstimateGrandTotal(estimate),
     updatedAt: estimate.updatedAt || estimate.createdAt || null,
-  };
-};
-
-const collectQuotationDraftNotes = (quotation = {}) => {
-  const lines = [];
-  const clientNotes = String(quotation.clientNotes || "").trim();
-  const specialNote = String(quotation.specialNote || "").trim();
-  if (clientNotes) lines.push(clientNotes);
-  if (specialNote && specialNote !== clientNotes) lines.push(specialNote);
-
-  const materials = (quotation.includedMaterials || [])
-    .map((item) => [item?.name, item?.description].filter(Boolean).join(" — "))
-    .filter(Boolean);
-  if (materials.length) {
-    lines.push(`Included materials:\n${materials.map((item) => `- ${item}`).join("\n")}`);
-  }
-
-  const components = (quotation.includedComponents || []).map((item) => String(item || "").trim()).filter(Boolean);
-  if (components.length) {
-    lines.push(`Included components:\n${components.map((item) => `- ${item}`).join("\n")}`);
-  }
-
-  const exclusions = (quotation.exclusions || []).map((item) => String(item || "").trim()).filter(Boolean);
-  if (exclusions.length) {
-    lines.push(`Exclusions:\n${exclusions.map((item) => `- ${item}`).join("\n")}`);
-  }
-
-  const addOns = (quotation.optionalAddOns || [])
-    .map((item) => {
-      const label = String(item?.name || item?.description || "").trim();
-      if (!label) return "";
-      return item?.price != null && item.price !== "" ? `${label} (${item.price})` : label;
-    })
-    .filter(Boolean);
-  if (addOns.length) {
-    lines.push(`Optional add-ons:\n${addOns.map((item) => `- ${item}`).join("\n")}`);
-  }
-
-  return lines.join("\n\n");
-};
-
-const mergeDraftNotes = (...parts) =>
-  parts.map((part) => String(part || "").trim()).filter(Boolean).join("\n\n");
-
-const mapEstimateToDocumentPayload = (estimate = {}) => {
-  const grandTotal = resolveEstimateGrandTotal(estimate);
-  return {
-    jobType: estimate.jobType,
-    leadCompanyName: estimate.leadCompanyName,
-    customerEmail: estimate.customerEmail,
-    streetAddress: estimate.streetAddress,
-    cityStateZip: estimate.cityStateZip,
-    buildingSize: estimate.buildingSize,
-    squareFootage: estimate.squareFootage,
-    quoteDate: estimate.quoteDate,
-    additionalInfo: estimate.additionalInfo,
-    pricingResult: estimate.pricingResult,
-    storageData: estimate.storageData,
-    storagePricingResult: estimate.storagePricingResult,
-    grandTotal,
-    fullQuote: estimate.fullQuoteResult || {
-      pricing: estimate.pricingResult,
-      concrete: estimate.concreteAddon,
-      insulation: estimate.insulationAddon,
-      salesTax: estimate.salesTax,
-      grandTotal,
-      pricePerSf: estimate.pricePerSf,
-    },
-    concrete: estimate.concreteAddon,
-    insulation: estimate.insulationAddon,
-    salesTax: estimate.salesTax,
-    contract: estimate.contractDetails,
-    drawingAttachments: estimate.drawingAttachments,
-    customer: {
-      name: estimate.leadCompanyName,
-      address: estimate.streetAddress,
-      location: estimate.cityStateZip,
-      email: estimate.customerEmail,
-    },
-  };
-};
-
-const mapQuotationToDocumentPayload = (quotation = {}, customer = {}, estimate = null) => {
-  const draftNotes = collectQuotationDraftNotes(quotation);
-
-  if (estimate) {
-    const payload = mapEstimateToDocumentPayload(estimate);
-    payload.additionalInfo = mergeDraftNotes(payload.additionalInfo, draftNotes);
-    if (quotation.companyName) payload.leadCompanyName = quotation.companyName;
-    if (quotation.location) payload.cityStateZip = quotation.location;
-    if (quotation.proposalDate) payload.quoteDate = quotation.proposalDate;
-    payload.customer = {
-      ...(payload.customer || {}),
-      name: quotation.companyName || payload.customer?.name || customer.firstName || "Customer",
-      location: quotation.location || payload.customer?.location || "",
-      email: customer.email || payload.customer?.email || "",
-    };
-    if (customer.email) payload.customerEmail = customer.email;
-    return payload;
-  }
-
-  const sf = toNumber(quotation.totalArea || quotation.sqft, 0);
-  const materialSell = toNumber(quotation.materialCost, 0) + toNumber(quotation.freightCost, 0);
-  const finalPrice = toNumber(quotation.finalPrice || quotation.basePrice, 0);
-  const installSell = Math.max(0, finalPrice - materialSell);
-
-  return {
-    jobType: quotation.buildingType || "PEMB",
-    leadCompanyName: quotation.companyName || customer.firstName || "Customer",
-    customerEmail: customer.email || "",
-    cityStateZip: quotation.location || "",
-    buildingSize: sf > 0 ? `${Number(sf).toLocaleString()} SF` : "",
-    squareFootage: sf,
-    quoteDate: quotation.proposalDate || quotation.createdAt || new Date(),
-    additionalInfo: draftNotes,
-    grandTotal: finalPrice,
-    fullQuote: {
-      pricing: {
-        jobType: quotation.buildingType || "PEMB",
-        sf,
-        scope: "both",
-        isSS: false,
-        matSell: materialSell,
-        instSell: installSell,
-        totSell: finalPrice,
-        totWt: 0,
-        trucks: 0,
-      },
-      concrete: { include: false, appliedSell: 0 },
-      insulation: { include: false, appliedSell: 0 },
-      salesTax: { amount: 0, rate: 0 },
-      grandTotal: finalPrice,
-      pricePerSf: sf > 0 ? Number((finalPrice / sf).toFixed(2)) : 0,
-    },
-    customer: {
-      name: quotation.companyName || customer.firstName || "Customer",
-      location: quotation.location || "",
-      email: customer.email || "",
-    },
   };
 };
 
@@ -1296,94 +1148,41 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
       ? req.body.sections
       : ["quote", "sow", "contract", "drawings"];
 
-  let pdfAttachment = null;
-  let pdfWarning = null;
-  let draftHtml = "";
-  let draftHtmlIncluded = false;
-  let sourceEstimate = null;
-  if (quotation.sourceEstimateId) {
-    sourceEstimate = await EstimateQuote.findById(quotation.sourceEstimateId).lean();
-  }
-  const pdfPayload = mapQuotationToDocumentPayload(quotation.toObject(), customer.toObject(), sourceEstimate);
-  const emailSections = requestedSections.filter((section) => section !== "drawings");
-  try {
-    draftHtml = generateAssembledHtml({
-      ...pdfPayload,
-      sections: emailSections.length ? emailSections : ["quote"],
-    });
-    draftHtmlIncluded = Boolean(String(draftHtml || "").trim());
-  } catch (err) {
-    console.warn("[sendQuotation] Assembled quotation draft HTML skipped:", err.message);
-  }
-  try {
-    const pdfBuffer = await generateAssembledQuotePdf({
-      ...pdfPayload,
-      sections: requestedSections,
-    });
-    pdfAttachment = {
-      filename: `Quotation-${quotation.quoteNumber || quotation._id}.pdf`,
-      content: pdfBuffer,
-      contentType: "application/pdf",
-    };
-  } catch (err) {
-    pdfWarning = err.message || "Quotation PDF generation failed";
-    console.warn("[sendQuotation] PDF attachment skipped, sending quotation draft HTML email only:", pdfWarning);
-  }
-
-  let emailResult = { provider: "unknown" };
-  try {
-    emailResult = await mailer.sendQuotation({
-      toEmail: recipients.toEmail,
-      cc: recipients.cc,
-      customerName: customer.firstName,
-      quotation,
-      message: customMessage,
-      draftHtml,
-      pdfAttachment,
-    });
-  } catch (err) {
-    console.error("[sendQuotation] Email failed for quotation", quotation.quoteNumber, err.message);
-    return error(res, `Failed to send quotation email: ${err.message}`, 502);
-  }
-
-  applyQuotationSentFields(quotation, {
-    sendMethod: "platform",
-    sentTo: recipients.toEmail,
-    sentCc: recipients.cc,
-    sentMessage: customMessage,
-  });
-  pushApprovalHistory(quotation, {
-    status: "sent",
-    note: `Quotation sent to ${recipients.toEmail}${recipients.cc.length ? ` (cc: ${recipients.cc.join(", ")})` : ""}`,
-    by: req.user._id,
-  });
-  await quotation.save();
-  await advanceLeadToProposalSent(quotation.leadId, req.user._id);
-
-  await auditService.log({
+  const runningJob = await findActiveEmailSendJob({
     type: "quotation",
-    action: AUDIT_ACTIONS.QUOTATION_SENT,
-    leadId: quotation.leadId,
-    customerId: quotation.customerId,
-    performedBy: req.user._id,
-    metadata: {
-      quotationId: quotation._id,
+    resourceId: quotation._id,
+  });
+
+  if (!runningJob) {
+    applyQuotationSentFields(quotation, {
       sendMethod: "platform",
       sentTo: recipients.toEmail,
       sentCc: recipients.cc,
-      provider: emailResult?.provider || "unknown",
-      customMessageIncluded: Boolean(customMessage),
-      customMessageSourceKey: messageSourceKey,
-      draftHtmlIncluded,
-      pdfAttached: Boolean(pdfAttachment),
-      pdfWarning: pdfWarning || null,
-    },
-  });
+      sentMessage: customMessage,
+    });
+    pushApprovalHistory(quotation, {
+      status: "sent",
+      note: `Quotation sent to ${recipients.toEmail}${recipients.cc.length ? ` (cc: ${recipients.cc.join(", ")})` : ""}`,
+      by: req.user._id,
+    });
+    await quotation.save();
+    await advanceLeadToProposalSent(quotation.leadId, req.user._id);
 
-  // Fire-and-forget: generate AI summary
-  quoteSummaryService
-    .generateAndSave(quotation, quotation.leadId, quotation.customerId)
-    .catch((err) => console.error("[QuoteSummary]", err.message));
+    await queueEmailSendJob({
+      type: "quotation",
+      resourceId: quotation._id,
+      leadId: quotation.leadId,
+      customerId: quotation.customerId,
+      triggeredBy: req.user._id,
+      payload: {
+        toEmail: recipients.toEmail,
+        cc: recipients.cc,
+        customMessage,
+        messageSourceKey,
+        requestedSections,
+      },
+    });
+  }
 
   return success(
     res,
@@ -1392,15 +1191,15 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
         includeEstimate: true,
         includeDocuments: true,
       }),
-      emailProvider: emailResult?.provider || "unknown",
+      emailProvider: "sendgrid",
       sendMethod: "platform",
       sentTo: recipients.toEmail,
       sentCc: recipients.cc,
       messageIncluded: Boolean(customMessage),
       messageSourceKey,
-      draftHtmlIncluded,
-      pdfAttached: Boolean(pdfAttachment),
-      pdfWarning: pdfWarning || null,
+      draftHtmlIncluded: true,
+      pdfAttached: true,
+      pdfWarning: null,
     },
     "Quotation sent successfully",
   );

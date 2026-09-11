@@ -6,6 +6,10 @@ const created = (res, data = {}, message = 'Created') => {
   return success(res, data, message, 201)
 }
 
+const accepted = (res, data = {}, message = 'Accepted') => {
+  return success(res, data, message, 202)
+}
+
 const error = (res, message = 'Something went wrong', statusCode = 500, errors = null) => {
   const body = { success: false, message }
   if (errors) body.errors = errors
@@ -28,4 +32,4 @@ const badRequest = (res, message = 'Bad request', errors = null) => {
   return error(res, message, 400, errors)
 }
 
-module.exports = { success, created, error, notFound, unauthorized, forbidden, badRequest }
+module.exports = { success, created, accepted, error, notFound, unauthorized, forbidden, badRequest }

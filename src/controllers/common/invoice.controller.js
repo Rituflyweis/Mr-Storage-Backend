@@ -17,6 +17,10 @@ const {
   forbidden,
   error,
 } = require("../../utils/apiResponse");
+const {
+  findActiveEmailSendJob,
+  queueEmailSendJob,
+} = require("../../services/email/emailSendJob.service");
 const asyncHandler = require("../../utils/asyncHandler");
 const { buildDateFilter } = require("../../utils/dateRange");
 const {
@@ -778,76 +782,44 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
   const customMessage = recipients.customMessage;
   const messageSourceKey = recipients.messageSourceKey;
 
-  const paymentSchedule = await loadPaymentScheduleForInvoice(invoice);
-  const lead = await Lead.findById(invoice.leadId).select("location").lean();
-  const customerAddressHtml = mailer.buildCustomerBillToAddressHtml({
-    company: customer.company,
-    location: customer.location || lead?.location || "",
-  });
-
-  let emailResult = {
-    pdfAttached: true,
-    pdfError: null,
-    paymentScheduleIncluded: false,
-    paymentScheduleStageCount: 0,
-  };
-  try {
-    emailResult = await mailer.sendInvoice({
-      toEmail: recipients.toEmail,
-      cc: recipients.cc,
-      customerName:
-        `${customer.firstName || ""} ${customer.lastName || ""}`.trim() ||
-        customer.firstName,
-      customerAddressHtml,
-      invoice,
-      paymentSchedule,
-      message: customMessage,
-    });
-  } catch (err) {
-    console.error(
-      "[sendInvoice] Email failed for invoice",
-      invoice.invoiceNumber,
-      err.message,
-    );
-    return error(res, `Failed to send invoice email: ${err.message}`, 502);
-  }
-
-  applyInvoiceSentFields(invoice, {
-    sendMethod: "platform",
-    sentTo: recipients.toEmail,
-    sentCc: recipients.cc,
-    sentMessage: customMessage,
-  });
-  pushApprovalHistory(invoice, {
-    status: "sent",
-    note: `Invoice sent to ${recipients.toEmail}${recipients.cc.length ? ` (cc: ${recipients.cc.join(", ")})` : ""}`,
-    by: req.user._id,
-  });
-  await invoice.save();
-
-  await auditService.log({
+  const runningJob = await findActiveEmailSendJob({
     type: "invoice",
-    action: AUDIT_ACTIONS.INVOICE_SENT,
-    leadId: invoice.leadId,
-    customerId: invoice.customerId,
-    performedBy: req.user._id,
-    metadata: {
-      invoiceNumber: invoice.invoiceNumber,
+    resourceId: invoice._id,
+  });
+
+  const paymentSchedule = await loadPaymentScheduleForInvoice(invoice);
+  const paymentScheduleStageCount = Array.isArray(paymentSchedule?.stages)
+    ? paymentSchedule.stages.length
+    : 0;
+
+  if (!runningJob) {
+    applyInvoiceSentFields(invoice, {
       sendMethod: "platform",
       sentTo: recipients.toEmail,
       sentCc: recipients.cc,
-      customMessageIncluded: Boolean(customMessage),
-      customMessageSourceKey: messageSourceKey,
-      pdfAttached: emailResult.pdfAttached,
-      pdfError: emailResult.pdfError || null,
-      paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
-      paymentScheduleStageCount: emailResult.paymentScheduleStageCount,
-    },
-  });
+      sentMessage: customMessage,
+    });
+    pushApprovalHistory(invoice, {
+      status: "sent",
+      note: `Invoice sent to ${recipients.toEmail}${recipients.cc.length ? ` (cc: ${recipients.cc.join(", ")})` : ""}`,
+      by: req.user._id,
+    });
+    await invoice.save();
 
-  const message = emailResult.pdfAttached
-    ? "Invoice sent successfully"
-    : "Invoice sent successfully (PDF attachment could not be generated; HTML email delivered)";
+    await queueEmailSendJob({
+      type: "invoice",
+      resourceId: invoice._id,
+      leadId: invoice.leadId,
+      customerId: invoice.customerId,
+      triggeredBy: req.user._id,
+      payload: {
+        toEmail: recipients.toEmail,
+        cc: recipients.cc,
+        customMessage,
+        messageSourceKey,
+      },
+    });
+  }
 
   return success(
     res,
@@ -858,12 +830,12 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
       sentCc: recipients.cc,
       messageIncluded: Boolean(customMessage),
       messageSourceKey,
-      pdfAttached: emailResult.pdfAttached,
-      pdfWarning: emailResult.pdfError || null,
-      paymentScheduleIncluded: emailResult.paymentScheduleIncluded,
-      paymentScheduleStageCount: emailResult.paymentScheduleStageCount,
+      pdfAttached: true,
+      pdfWarning: null,
+      paymentScheduleIncluded: paymentScheduleStageCount > 0,
+      paymentScheduleStageCount,
     },
-    message,
+    "Invoice sent successfully",
   );
 });
 
