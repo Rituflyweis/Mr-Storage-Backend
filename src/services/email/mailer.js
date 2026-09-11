@@ -662,17 +662,17 @@ const EMPLOYEE_LOGIN_URLS = {
   plant: PLANT_LOGIN_URL,
 };
 
+const DEFAULT_EMPLOYEE_LOGIN_URLS = {
+  admin: 'https://admin.storagematerials.org/',
+  sales: 'https://sales.storagematerials.org/',
+  plant: 'https://plant.storagematerials.org/',
+}
+
 const normalizeLoginUrl = (url, role) => {
-  const fallbackByRole = {
-    admin: 'https://admin.steelbuildingdepot.com/sign-in/',
-    sales: 'https://sales.steelbuildingdepot.com/sign-in/',
-    plant: 'https://plant.steelbuildingdepot.com/login',
-  }
+  const normalizedRole = ['admin', 'sales', 'plant'].includes(role) ? role : 'admin'
   const trimmed = String(url || '').trim()
-  if (!trimmed) return fallbackByRole[role] || fallbackByRole.admin
-  if (!trimmed.includes('storagematerials.org')) return trimmed
-  const normalizedRole = role === 'sales' ? 'sales' : role === 'plant' ? 'plant' : 'admin'
-  return fallbackByRole[normalizedRole]
+  if (trimmed) return trimmed
+  return DEFAULT_EMPLOYEE_LOGIN_URLS[normalizedRole] || DEFAULT_EMPLOYEE_LOGIN_URLS.admin
 }
 
 const sendEmployeeCredentials = async ({

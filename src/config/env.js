@@ -86,7 +86,7 @@ module.exports = {
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
   TWILIO_FROM_PHONE: process.env.TWILIO_FROM_PHONE || '',
 
-  CLIENT_URL: process.env.CLIENT_URL || "http://localhost:3000",
+  CLIENT_URL: process.env.CLIENT_URL || "https://steelbuildingdepot.com",
   MASTER_OTP:
     process.env.NODE_ENV !== "production"
       ? process.env.MASTER_OTP || null
@@ -99,9 +99,9 @@ module.exports = {
   INVOICE_LOGO_URL: process.env.INVOICE_LOGO_URL || "",
 
   ADMIN_LOGIN_URL:
-    process.env.ADMIN_LOGIN_URL || "https://admin.steelbuildingdepot.com/sign-in/",
+    process.env.ADMIN_LOGIN_URL || "https://admin.storagematerials.org/",
   SALES_LOGIN_URL:
-    process.env.SALES_LOGIN_URL || "https://sales.steelbuildingdepot.com/sign-in/",
+    process.env.SALES_LOGIN_URL || "https://sales.storagematerials.org/",
   PLANT_LOGIN_URL:
-    process.env.PLANT_LOGIN_URL || "https://plant.steelbuildingdepot.com/login",
+    process.env.PLANT_LOGIN_URL || "https://plant.storagematerials.org/",
 };
