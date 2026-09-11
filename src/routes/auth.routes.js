@@ -3,6 +3,14 @@ const { body } = require('express-validator')
 const ctrl = require('../controllers/auth.controller')
 const verifyToken = require('../middleware/auth')
 const validate = require('../middleware/validate')
+const { USER_ROLES } = require('../config/constants')
+
+const optionalStaffRoleValidator = body('role')
+  .optional()
+  .isString()
+  .trim()
+  .isIn(USER_ROLES)
+  .withMessage(`role must be one of: ${USER_ROLES.join(', ')}`)
 
 router.post('/login',
   [body('email').isEmail(), body('password').notEmpty()],
@@ -23,12 +31,16 @@ router.put('/change-password',
 )
 
 router.post('/forgot-password',
-  [body('email').isEmail()],
+  [body('email').isEmail(), optionalStaffRoleValidator],
   validate, ctrl.forgotPassword
 )
 
 router.post('/verify-otp',
-  [body('email').isEmail(), body('otp').isLength({ min: 6, max: 6 }).isNumeric()],
+  [
+    body('email').isEmail(),
+    body('otp').isLength({ min: 6, max: 6 }).isNumeric(),
+    optionalStaffRoleValidator,
+  ],
   validate, ctrl.verifyOtp
 )
 

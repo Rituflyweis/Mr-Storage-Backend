@@ -10,6 +10,20 @@ const { sendOtp } = require('../services/email/mailer')
 const OTP_EXPIRY_MINUTES = 10
 const DEACTIVATED_ACCOUNT_MESSAGE = ACCOUNT_DEACTIVATED_MESSAGE
 
+const normalizeEmail = (email) => String(email || '').toLowerCase().trim()
+
+const normalizeOptionalRole = (role) => {
+  const normalized = String(role ?? '').trim().toLowerCase()
+  return normalized || null
+}
+
+const buildStaffUserQuery = (email, role) => {
+  const query = { email: normalizeEmail(email) }
+  const normalizedRole = normalizeOptionalRole(role)
+  if (normalizedRole) query.role = normalizedRole
+  return query
+}
+
 const signAccess = (user) =>
   jwt.sign(
     {
@@ -89,8 +103,8 @@ exports.logout = asyncHandler(async (req, res) => {
 })
 
 exports.forgotPassword = asyncHandler(async (req, res) => {
-  const { email } = req.body
-  const user = await User.findOne({ email: email.toLowerCase().trim() })
+  const { email, role } = req.body
+  const user = await User.findOne(buildStaffUserQuery(email, role))
 
   // Always respond success to prevent email enumeration
   if (!user || !user.isActive) return success(res, {}, 'If that email exists, an OTP has been sent')
@@ -121,8 +135,8 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 })
 
 exports.verifyOtp = asyncHandler(async (req, res) => {
-  const { email, otp } = req.body
-  const user = await User.findOne({ email: email.toLowerCase().trim() })
+  const { email, otp, role } = req.body
+  const user = await User.findOne(buildStaffUserQuery(email, role))
 
   if (!user || !user.resetOtp || !user.resetOtpExpiry)
     return badRequest(res, 'Invalid or expired OTP')
