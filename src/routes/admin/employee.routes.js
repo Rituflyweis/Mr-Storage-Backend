@@ -2,6 +2,7 @@ const router = require('express').Router()
 const { body, query } = require('express-validator')
 const ctrl = require('../../controllers/admin/employee.controller')
 const validate = require('../../middleware/validate')
+const { LEAD_TEMPERATURES } = require('../../config/constants')
 
 // Special routes before /:userId
 router.get('/stats', ctrl.getStats)
@@ -22,6 +23,25 @@ router.post('/',
   ],
   validate,
   ctrl.createEmployee
+)
+
+router.get(
+  '/:userId/profile',
+  [
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+    query('assignedPage').optional().isInt({ min: 1 }),
+    query('assignedLimit').optional().isInt({ min: 1, max: 200 }),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('lifecycleBucket').optional().isIn(['active', 'closed', 'all']),
+    query('temperature').optional().isIn(LEAD_TEMPERATURES),
+    query('scoreState').optional().isIn(LEAD_TEMPERATURES),
+    query('status').optional().isIn(LEAD_TEMPERATURES),
+    query('revenuePeriod').optional().isIn(['all', 'year', 'month']),
+  ],
+  validate,
+  ctrl.getEmployeeProfile
 )
 
 router.get('/:userId/assigned-leads',

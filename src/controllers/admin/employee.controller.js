@@ -46,6 +46,7 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { formatLog, getEmployeesAuditLog } = require('../../services/auditActivity.service')
+const { buildEmployeeProfile } = require('../../services/admin/employeeProfile.service')
 const { kickStaffSession } = require('../../utils/staffSession')
 const EMPLOYEE_BASE_FILTER = { role: { $ne: 'admin' } }
 const EMAIL_SEND_TIMEOUT_MS = 5000
@@ -437,6 +438,16 @@ const getAccountDetail = async (employee) => {
     },
   }
 }
+
+exports.getEmployeeProfile = asyncHandler(async (req, res) => {
+  const { userId } = req.params
+
+  const employee = await User.findOne({ _id: userId, ...EMPLOYEE_BASE_FILTER }).select('-password').lean()
+  if (!employee) return notFound(res, 'Employee not found')
+
+  const profile = await buildEmployeeProfile(employee, req.query)
+  return success(res, profile)
+})
 
 exports.getEmployeeDetail = asyncHandler(async (req, res) => {
   const { userId } = req.params
