@@ -24,6 +24,24 @@ const buildStaffUserQuery = (email, role) => {
   return query
 }
 
+const ROLE_EMAIL_MISMATCH_MESSAGE = 'Role and email do not match'
+
+/** When `role` is sent, reject if email exists under a different staff role. */
+const resolveStaffUserForPasswordReset = async (email, role) => {
+  const normalizedEmail = normalizeEmail(email)
+  const normalizedRole = normalizeOptionalRole(role)
+
+  if (normalizedRole) {
+    const userByEmail = await User.findOne({ email: normalizedEmail })
+    if (userByEmail && userByEmail.role !== normalizedRole) {
+      return { mismatch: true, user: null }
+    }
+  }
+
+  const user = await User.findOne(buildStaffUserQuery(email, role))
+  return { mismatch: false, user }
+}
+
 const signAccess = (user) =>
   jwt.sign(
     {
@@ -104,9 +122,10 @@ exports.logout = asyncHandler(async (req, res) => {
 
 exports.forgotPassword = asyncHandler(async (req, res) => {
   const { email, role } = req.body
-  const user = await User.findOne(buildStaffUserQuery(email, role))
+  const { mismatch, user } = await resolveStaffUserForPasswordReset(email, role)
+  if (mismatch) return badRequest(res, ROLE_EMAIL_MISMATCH_MESSAGE)
 
-  // Always respond success to prevent email enumeration
+  // Unknown email or inactive — generic success (no OTP)
   if (!user || !user.isActive) return success(res, {}, 'If that email exists, an OTP has been sent')
 
   const otp = String(Math.floor(100000 + Math.random() * 900000))
@@ -136,7 +155,8 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 
 exports.verifyOtp = asyncHandler(async (req, res) => {
   const { email, otp, role } = req.body
-  const user = await User.findOne(buildStaffUserQuery(email, role))
+  const { mismatch, user } = await resolveStaffUserForPasswordReset(email, role)
+  if (mismatch) return badRequest(res, ROLE_EMAIL_MISMATCH_MESSAGE)
 
   if (!user || !user.resetOtp || !user.resetOtpExpiry)
     return badRequest(res, 'Invalid or expired OTP')
