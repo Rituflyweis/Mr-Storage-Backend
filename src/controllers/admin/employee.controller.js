@@ -698,6 +698,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   employee.password = await bcrypt.hash(tempPassword, 12)
   employee.passwordChangedAt = new Date()
   await employee.save()
+  kickStaffSession(employee._id)
 
   await auditService.log({
     type: 'user',
@@ -707,7 +708,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
       userId: String(employee._id),
       email: employee.email,
       role: employee.role,
-      source: 'admin_employee_reset',
+      source: 'admin_employee_reset_auto',
     },
   })
 
@@ -729,5 +730,64 @@ exports.resetPassword = asyncHandler(async (req, res) => {
     credentialsEmailSent
       ? 'New credentials sent to employee email'
       : 'Password reset complete, but credentials email could not be sent'
+  )
+})
+
+exports.updateEmployeePassword = asyncHandler(async (req, res) => {
+  const { newPassword } = req.body
+  const employee = await User.findOne({ _id: req.params.userId, ...EMPLOYEE_BASE_FILTER })
+  if (!employee) return notFound(res, 'Employee not found')
+  if (!employee.isActive) return badRequest(res, 'Cannot update password for inactive employee')
+
+  if (!mailer.isEmailConfigured()) {
+    return badRequest(res, 'Email service is not configured. Set SENDGRID_API_KEY.')
+  }
+
+  employee.password = await bcrypt.hash(newPassword, 12)
+  employee.passwordChangedAt = new Date()
+  employee.resetOtp = null
+  employee.resetOtpExpiry = null
+  employee.resetOtpVerified = false
+  await employee.save()
+  kickStaffSession(employee._id)
+
+  await auditService.log({
+    type: 'user',
+    action: AUDIT_ACTIONS.USER_PASSWORD_RESET,
+    performedBy: req.user._id,
+    metadata: {
+      userId: String(employee._id),
+      email: employee.email,
+      role: employee.role,
+      source: 'admin_employee_password_update',
+    },
+  })
+
+  let passwordEmailSent = true
+  let passwordEmailWarning = null
+  try {
+    await mailer.sendEmployeePasswordUpdated({
+      toEmail: employee.email,
+      name: employee.name,
+      role: employee.role,
+      newPassword,
+    })
+  } catch (err) {
+    passwordEmailSent = false
+    passwordEmailWarning = err.message || 'Failed to send password update email'
+    console.error('[Employee] password update email failed:', passwordEmailWarning)
+  }
+
+  return success(
+    res,
+    {
+      userId: employee._id,
+      email: employee.email,
+      passwordEmailSent,
+      passwordEmailWarning,
+    },
+    passwordEmailSent
+      ? 'Employee password updated and emailed successfully'
+      : 'Password updated, but notification email could not be sent'
   )
 })

@@ -712,6 +712,43 @@ const sendEmployeeCredentials = async ({
   });
 };
 
+const sendEmployeePasswordUpdated = async ({
+  toEmail,
+  name,
+  role,
+  newPassword,
+}) => {
+  const normalizedRole = String(role || "").toLowerCase();
+  const loginUrl = normalizeLoginUrl(
+    EMPLOYEE_LOGIN_URLS[normalizedRole] || EMPLOYEE_LOGIN_URLS.admin,
+    normalizedRole
+  );
+  const roleLabel =
+    normalizedRole === "admin"
+      ? "Admin"
+      : normalizedRole === "sales"
+        ? "Sales"
+        : normalizedRole === "plant"
+          ? "Plant"
+          : "Employee";
+
+  const template = loadTemplate("employee-password-updated");
+  const html = fillTemplate(template, {
+    EMPLOYEE_NAME: name,
+    ROLE: normalizedRole.charAt(0).toUpperCase() + normalizedRole.slice(1),
+    EMAIL: toEmail,
+    NEW_PASSWORD: newPassword,
+    LOGIN_URL: loginUrl,
+  });
+
+  await transporter.sendMail({
+    from: resolvedMailFrom,
+    to: toEmail,
+    subject: `Your ${roleLabel} password has been updated`,
+    html,
+  });
+};
+
 const sendNewCustomerEnquiryNotification = async ({
   toEmail = "info@steelbuildingdepot.com",
   customerName,
@@ -1218,6 +1255,7 @@ module.exports = {
   sendOtp,
   sendFollowUpNudgeEmail,
   sendEmployeeCredentials,
+  sendEmployeePasswordUpdated,
   sendNewCustomerEnquiryNotification,
   sendConsolidatedBOMToVendor,
   sendShipperApprovalEmail,

@@ -56,6 +56,12 @@ router.get('/:userId/assigned-leads',
 )
 router.get('/:userId/timeline', ctrl.getEmployeeTimeline)
 router.patch('/:userId/toggle-status', ctrl.toggleStatus)
+router.put(
+  '/:userId/password',
+  [body('newPassword').isLength({ min: 6 }).withMessage('newPassword must be at least 6 characters')],
+  validate,
+  ctrl.updateEmployeePassword
+)
 router.post('/:userId/reset-password', ctrl.resetPassword)
 router.get('/:userId', ctrl.getEmployeeDetail)
 router.put('/:userId',
