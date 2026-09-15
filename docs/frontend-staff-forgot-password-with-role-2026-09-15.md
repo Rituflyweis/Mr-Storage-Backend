@@ -1,10 +1,12 @@
 # Staff Forgot Password (OTP) — Frontend Contract (with `role`)
 
-**Date:** 2026-09-15  
+**Date:** 2026-09-15 (updated)  
 **Audience:** Admin, Sales, Plant, Account, Construction panel frontend  
 **Scope:** Self-service reset while **logged out** (email OTP → verify → new password)
 
 Customer portal is separate: **`/api/customer/auth/*`** — no `role` field.
+
+**Base URL (UAT example):** `https://mr-storage-backend-025k.onrender.com`
 
 ---
 
@@ -12,29 +14,33 @@ Customer portal is separate: **`/api/customer/auth/*`** — no `role` field.
 
 Three steps, no JWT required on steps 1–2:
 
-| Step | Endpoint                         | Purpose                            |
-| ---- | -------------------------------- | ---------------------------------- |
-| 1    | `POST /api/auth/forgot-password` | Send 6-digit OTP email             |
-| 2    | `POST /api/auth/verify-otp`      | Verify OTP → get `resetToken`      |
-| 3    | `POST /api/auth/reset-password`  | Set new password with `resetToken` |
+| Step | Endpoint | Purpose |
+|------|----------|---------|
+| 1 | `POST /api/auth/forgot-password` | Send 6-digit OTP email |
+| 2 | `POST /api/auth/verify-otp` | Verify OTP → get `resetToken` |
+| 3 | `POST /api/auth/reset-password` | Set new password with `resetToken` |
 
-**New behavior:** Steps **1** and **2** accept an optional **`role`** in the JSON body. When present, the backend only matches a user with that **exact staff role**. Same email can exist on different panels only if you use different roles in DB (one user = one role per email).
+Steps **1** and **2** accept an optional **`role`** in the JSON body. When present:
+
+- OTP is only issued for a user whose **`email` + `role`** match.
+- If the email exists but **`role` does not match** that user → **400** with a clear message (see below).
+- If the email is **not registered** (or user is **inactive**) → **200** with generic message and **`data: {}`** (no OTP).
+
+If **`role` is omitted**, lookup is by **email only** (legacy; any staff role).
 
 ---
 
 ## Why send `role`?
 
-Each panel should reset **its own** login, not another panel’s account that shares the same email.
+Each panel resets **its own** login, not another panel’s account that shares the same email.
 
-| Panel        | Send in body             |
-| ------------ | ------------------------ |
-| Admin        | `"role": "admin"`        |
-| Sales        | `"role": "sales"`        |
-| Plant        | `"role": "plant"`        |
-| Account      | `"role": "account"`      |
+| Panel | Send in body |
+|-------|----------------|
+| Admin | `"role": "admin"` |
+| Sales | `"role": "sales"` |
+| Plant | `"role": "plant"` |
+| Account | `"role": "account"` |
 | Construction | `"role": "construction"` |
-
-If **`role` is omitted**, behavior is legacy: lookup by **email only** (any staff role).
 
 ---
 
@@ -44,11 +50,69 @@ Must match backend enum (case-insensitive after trim):
 
 `admin` | `sales` | `construction` | `plant` | `account`
 
-Invalid `role` → **400** validation error.
+Invalid `role` string → **400** validation error (see bottom of Step 1).
 
 ---
 
-## Step 1 — Send OTP
+## Step 1 — Send OTP — response matrix
+
+Use this table to drive UI after **`POST /api/auth/forgot-password`**.
+
+| Situation | HTTP | `success` | `message` | `data` | OTP sent? | UI |
+|-----------|------|-----------|-----------|--------|-----------|-----|
+| Email **not registered** | 200 | `true` | If that email exists, an OTP has been sent | `{}` | No | Neutral copy; **do not** open OTP screen |
+| Email registered but **inactive** | 200 | `true` | Same as above | `{}` | No | Same as above |
+| Email registered, **wrong `role`** for panel | 400 | `false` | **Role and email do not match** | — | No | Show error on form |
+| Email + **correct `role`**, email OK | 200 | `true` | If that email exists… | `{ sent: true, warning: null }` | Yes | Go to OTP screen |
+| Match but SendGrid failed | 200 | `true` | OTP delivery is delayed… | `{ sent: false, warning: "..." }` | Stored, may not arrive | Warn user; optional retry step 1 |
+
+**Example — plant user, admin panel (wrong role):**
+
+```http
+POST /api/auth/forgot-password
+```
+
+```json
+{ "email": "react6@flyweis.technology", "role": "admin" }
+```
+
+```json
+{
+  "success": false,
+  "message": "Role and email do not match"
+}
+```
+
+**Example — email not in database:**
+
+```json
+{ "email": "notregistered@example.com", "role": "admin" }
+```
+
+```json
+{
+  "success": true,
+  "message": "If that email exists, an OTP has been sent",
+  "data": {}
+}
+```
+
+**Example — success, OTP sent:**
+
+```json
+{ "email": "react6@flyweis.technology", "role": "plant" }
+```
+
+```json
+{
+  "success": true,
+  "message": "If that email exists, an OTP has been sent",
+  "data": {
+    "sent": true,
+    "warning": null
+  }
+}
+```
 
 ### Request
 
@@ -64,68 +128,19 @@ Content-Type: application/json
 }
 ```
 
-| Field   | Required                  | Notes                        |
-| ------- | ------------------------- | ---------------------------- |
-| `email` | Yes                       | Valid email                  |
-| `role`  | **Recommended** per panel | Optional; scopes user lookup |
+| Field | Required | Notes |
+|-------|----------|--------|
+| `email` | Yes | Valid email |
+| `role` | **Required per panel** (recommended) | Must match the panel the user is on |
 
-### Success — `200`
+### Frontend guidance (step 1)
 
-**Email not found or inactive** (no OTP sent — generic message):
+1. **`success === false`** and message **Role and email do not match** → show error; stay on email step.
+2. **`success === true`** and **`data` is `{}`** → show neutral “If an account exists for this panel, check your email” (or similar); **do not** advance to OTP.
+3. **`success === true`** and **`data.sent === true`** → advance to OTP step.
+4. Store **`email`** and **`role`** for step 2 (same values).
 
-```json
-{
-  "success": true,
-  "message": "If that email exists, an OTP has been sent",
-  "data": {}
-}
-```
-
-**Email exists but wrong panel `role`** (no OTP sent):
-
-```json
-{
-  "success": false,
-  "message": "Role and email do not match"
-}
-```
-
-HTTP **400**. Show this on the forgot-password form (e.g. user entered admin email on plant panel).
-
-**User found, active, OTP stored, email send attempted:**
-
-```json
-{
-  "success": true,
-  "message": "If that email exists, an OTP has been sent",
-  "data": {
-    "sent": true,
-    "warning": null
-  }
-}
-```
-
-**User found but SendGrid/email failed:**
-
-```json
-{
-  "success": true,
-  "message": "If that email exists, OTP delivery is delayed. Please try again shortly",
-  "data": {
-    "sent": false,
-    "warning": "..."
-  }
-}
-```
-
-### Frontend guidance
-
-1. After step 1, if **`success: false`** and message **Role and email do not match** → show that error; do not go to OTP screen.
-2. If **`success: true`** with **`data: {}`** → show neutral “If an account exists…” copy; do not advance to OTP (unknown email or inactive).
-3. If **`success: true`** and **`data.sent === true`** → advance to OTP step.
-4. Store **`email`** and **`role`** in memory for step 2 (send the **same `role`** again).
-
-### Validation error — `400`
+### Validation error — `400` (invalid `role` or email format)
 
 ```json
 {
@@ -159,11 +174,11 @@ Content-Type: application/json
 }
 ```
 
-| Field   | Required                                    | Notes                                    |
-| ------- | ------------------------------------------- | ---------------------------------------- |
-| `email` | Yes                                         | Same as step 1                           |
-| `otp`   | Yes                                         | Exactly 6 digits                         |
-| `role`  | **Same as step 1** if you sent it in step 1 | Optional but must match step 1 when used |
+| Field | Required | Notes |
+|-------|----------|--------|
+| `email` | Yes | Same as step 1 |
+| `otp` | Yes | Exactly 6 digits |
+| `role` | Same as step 1 if used in step 1 | Optional only if step 1 omitted `role` |
 
 ### Success — `200`
 
@@ -177,19 +192,16 @@ Content-Type: application/json
 }
 ```
 
-- **`resetToken`**: JWT, **5 minutes**, purpose `password-reset`. Keep in memory only (not localStorage long-term).
+- **`resetToken`**: JWT, **5 minutes**, purpose `password-reset`. Keep in memory only.
 - OTP is single-use; cleared after success.
 
-### Errors — `400` / `401`
+### Errors
 
-| HTTP | Message (examples)                          |
-| ---- | ------------------------------------------- |
-| 400  | Invalid or expired OTP                      |
-| 400  | OTP has expired. Please request a new one   |
-| 400  | Invalid OTP                                 |
-| 401  | Account deactivated message (inactive user) |
-
-Wrong **`role`** vs step 1 behaves like invalid OTP (user not found for that query).
+| HTTP | When | Message (examples) |
+|------|------|---------------------|
+| 400 | Wrong **`role`** for that email | **Role and email do not match** |
+| 400 | Bad/expired OTP | Invalid or expired OTP / Invalid OTP / OTP has expired… |
+| 401 | Inactive user | Account deactivated message |
 
 ---
 
@@ -211,10 +223,10 @@ Content-Type: application/json
 }
 ```
 
-| Field         | Required | Notes            |
-| ------------- | -------- | ---------------- |
-| `resetToken`  | Yes      | From verify-otp  |
-| `newPassword` | Yes      | Min length **6** |
+| Field | Required | Notes |
+|-------|----------|--------|
+| `resetToken` | Yes | From verify-otp |
+| `newPassword` | Yes | Min length **6** |
 
 ### Success — `200`
 
@@ -226,33 +238,33 @@ Content-Type: application/json
 }
 ```
 
-Redirect user to that panel’s login screen.
+Redirect to that panel’s login screen.
 
 ### Errors — `400` / `401`
 
-| HTTP | Message (examples)                  |
-| ---- | ----------------------------------- |
-| 400  | Invalid or expired reset token      |
-| 400  | OTP not verified. Please start over |
-| 401  | Account deactivated                 |
+| HTTP | Message (examples) |
+|------|---------------------|
+| 400 | Invalid or expired reset token |
+| 400 | OTP not verified. Please start over |
+| 401 | Account deactivated |
 
 ---
 
 ## End-to-end example (admin panel)
 
 ```bash
-# 1 — OTP (admin panel always sends role)
-curl -X POST https://<API>/api/auth/forgot-password \
+# 1 — OTP (always send role for staff panels)
+curl -X POST https://mr-storage-backend-025k.onrender.com/api/auth/forgot-password \
   -H "Content-Type: application/json" \
   -d '{"email":"info@steelbuildingdepot.com","role":"admin"}'
 
 # 2 — Verify (same role)
-curl -X POST https://<API>/api/auth/verify-otp \
+curl -X POST https://mr-storage-backend-025k.onrender.com/api/auth/verify-otp \
   -H "Content-Type: application/json" \
   -d '{"email":"info@steelbuildingdepot.com","otp":"123456","role":"admin"}'
 
 # 3 — New password
-curl -X POST https://<API>/api/auth/reset-password \
+curl -X POST https://mr-storage-backend-025k.onrender.com/api/auth/reset-password \
   -H "Content-Type: application/json" \
   -d '{"resetToken":"<token>","newPassword":"Steelman2026!"}'
 ```
@@ -261,11 +273,11 @@ curl -X POST https://<API>/api/auth/reset-password \
 
 ## Timing
 
-| Item         | TTL                                                       |
-| ------------ | --------------------------------------------------------- |
-| OTP in email | **10 minutes**                                            |
-| `resetToken` | **5 minutes**                                             |
-| Resend OTP   | Call step 1 again (invalidates previous OTP on that user) |
+| Item | TTL |
+|------|-----|
+| OTP in email | **10 minutes** |
+| `resetToken` | **5 minutes** |
+| Resend OTP | Call step 1 again (replaces previous OTP on that user) |
 
 ---
 
@@ -275,26 +287,27 @@ If `MASTER_OTP` is set in non-production env, that code can bypass OTP hash chec
 
 ---
 
-## Not in this flow
+## Related admin APIs (not self-service OTP)
 
-| API                                                | What it is                                                         |
-| -------------------------------------------------- | ------------------------------------------------------------------ |
-| `POST /api/admin/employees/:userId/reset-password` | Admin resets **another** employee’s password (temp password email) |
-| `PUT /api/auth/change-password`                    | Logged-in user changes password (needs Bearer token)               |
-| `POST /api/customer/auth/forgot-password`          | Customer portal — **no `role`**                                    |
+| API | What it is |
+|-----|------------|
+| `POST /api/admin/employees/:userId/reset-password` | Admin auto-generates temp password + email |
+| `PUT /api/admin/employees/:userId/password` | Admin sets password + email new password — see [`frontend-admin-employee-update-password-2026-09-15.md`](./frontend-admin-employee-update-password-2026-09-15.md) |
+| `PUT /api/auth/change-password` | Logged-in user changes password (Bearer token) |
+| `POST /api/customer/auth/forgot-password` | Customer portal — **no `role`** |
 
 ---
 
-## Checklist for frontend
+## Frontend checklist
 
-- [ ] Each staff app passes fixed **`role`** on forgot-password and verify-otp.
-- [ ] Use **`data.sent === true`** before showing OTP entry (optional but recommended).
+- [ ] Each staff app sends fixed **`role`** on forgot-password and verify-otp.
+- [ ] On step 1: **400** → show role mismatch; **`data.sent === true`** → OTP screen; **`data: {}`** → neutral message only.
 - [ ] Pass the **same `email` + `role`** on verify-otp as on forgot-password.
 - [ ] Do **not** send `role` on reset-password.
-- [ ] Customer app keeps using `/api/customer/auth/*` without `role`.
+- [ ] Customer app uses `/api/customer/auth/*` without `role`.
 
 ---
 
 ## Related doc
 
-Full staff + customer reference (older, less FE-focused): [`docs/forgot-password-api.md`](./forgot-password-api.md)
+Older full reference: [`docs/forgot-password-api.md`](./forgot-password-api.md)
