@@ -1,47 +1,41 @@
-const mongoose = require("mongoose");
-const { LEAD_SOURCES } = require("../config/constants");
+const mongoose = require('mongoose')
+const { LEAD_SOURCES } = require('../config/constants')
 
 const CustomerSchema = new mongoose.Schema(
   {
-    customerId: { type: String, unique: true },
-    firstName: { type: String, required: true, trim: true },
-    lastName: { type: String, default: "" },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
+    customerId:        { type: String, unique: true },
+    firstName:         { type: String, required: true, trim: true },
+    lastName:          { type: String, default: '' },
+    email:             { type: String, required: true, unique: true, lowercase: true, trim: true },
     phone: {
-      number: { type: String, required: true, trim: true },
-      countryCode: { type: String, required: true, trim: true },
+      number:          { type: String, required: true, trim: true },
+      countryCode:     { type: String, required: true, trim: true },
     },
-    mobile: { type: String, default: "", trim: true },
-    password: { type: String, required: true },
+    mobile:            { type: String, default: '', trim: true },
+    password:          { type: String, required: true },
     passwordChangedAt: { type: Date, default: null },
-    photo: { type: String, default: null },
-    isActive: { type: Boolean, default: true },
-    isOnline: { type: Boolean, default: false, index: true },
-    onlineAt: { type: Date, default: null },
-    lastSeenAt: { type: Date, default: null },
-    source: { type: String, enum: LEAD_SOURCES, default: "chat" },
-    company: { type: String, default: "", trim: true },
-    location: { type: String, default: "", trim: true },
-    resetOtp: { type: String, default: null },
-    resetOtpExpiry: { type: Date, default: null },
-    resetOtpVerified: { type: Boolean, default: false },
+    photo:             { type: String, default: null },
+    isActive:          { type: Boolean, default: true },
+    isOnline:          { type: Boolean, default: false, index: true },
+    onlineAt:          { type: Date, default: null },
+    lastSeenAt:        { type: Date, default: null },
+    source:            { type: String, enum: LEAD_SOURCES, default: 'chat' },
+    company:           { type: String, default: '', trim: true },
+    location:          { type: String, default: '', trim: true },
+    resetOtp:          { type: String,  default: null },
+    resetOtpExpiry:    { type: Date,    default: null },
+    resetOtpVerified:  { type: Boolean, default: false },
   },
-  { timestamps: true },
-);
+  { timestamps: true }
+)
 
 // email is already indexed via unique:true — only add phone index separately
-CustomerSchema.index({ "phone.number": 1 });
+CustomerSchema.index({ 'phone.number': 1 })
 
 CustomerSchema.methods.toJSON = function () {
-  const obj = this.toObject();
-  delete obj.password;
-  return obj;
-};
+  const obj = this.toObject()
+  delete obj.password
+  return obj
+}
 
-module.exports = mongoose.model("Customer", CustomerSchema);
+module.exports = mongoose.model('Customer', CustomerSchema)
