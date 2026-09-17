@@ -2,27 +2,57 @@ const User = require('../../models/User')
 const { success, notFound, badRequest, unauthorized } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const bcrypt = require('bcryptjs')
+const {
+  shapeStaffProfile,
+  parseOptionalTrimmedString,
+} = require('../../utils/profileResponse.util')
 
-// GET /profile — "My Profile" screen basic info
+const normalizeEmail = (email) => String(email || '').toLowerCase().trim()
+
+const PROFILE_UPDATE_FIELDS = ['name', 'email', 'phone', 'mobile', 'avatar']
+
+// GET /api/profile — admin, sales, plant, construction, account
 exports.getProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id).select('-password').lean()
   if (!user) return notFound(res, 'User not found')
-  return success(res, { user })
+  const profile = shapeStaffProfile(user)
+  return success(res, { profile, user: profile })
 })
 
-// PUT /profile — "Save Changes" on Basic Information
+// PUT /api/profile — name, email, phone, mobile (optional), avatar
 exports.updateProfile = asyncHandler(async (req, res) => {
-  const { name, phone, avatar } = req.body
+  const hasUpdate = PROFILE_UPDATE_FIELDS.some((key) => req.body[key] !== undefined)
+  if (!hasUpdate) {
+    return badRequest(res, 'No updatable fields provided — send name, email, phone, mobile, or avatar')
+  }
+
+  const { name, email, phone, mobile, avatar } = req.body
 
   const user = await User.findById(req.user._id)
   if (!user) return notFound(res, 'User not found')
 
-  if (name !== undefined) user.name = name
-  if (phone !== undefined) user.phone = phone
+  if (email !== undefined) {
+    const normalized = normalizeEmail(email)
+    if (!normalized) return badRequest(res, 'Invalid email')
+    const taken = await User.findOne({ email: normalized, _id: { $ne: user._id } })
+    if (taken) return badRequest(res, 'Email is already in use')
+    user.email = normalized
+  }
+
+  const nextName = parseOptionalTrimmedString(name)
+  if (name !== undefined) {
+    if (!nextName) return badRequest(res, 'Name cannot be empty')
+    user.name = nextName
+  }
+
+  if (phone !== undefined) user.phone = parseOptionalTrimmedString(phone)
+  if (mobile !== undefined) user.mobile = parseOptionalTrimmedString(mobile)
   if (avatar !== undefined) user.avatar = avatar
+
   await user.save()
 
-  return success(res, { user }, 'Profile updated')
+  const profile = shapeStaffProfile(user.toObject())
+  return success(res, { profile, user: profile }, 'Profile updated successfully')
 })
 
 // PUT /profile/password — "Update Password" on Security Settings
