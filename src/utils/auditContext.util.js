@@ -73,10 +73,16 @@ const inferEntityFromParams = (req) => {
     ['requestId', 'material_request'],
     ['bundleId', 'bundle'],
     ['packingListId', 'packing_list'],
+    ['packingListPlanId', 'packing_list_plan'],
     ['userId', 'user'],
     ['customerId', 'customer'],
     ['invoiceId', 'invoice'],
     ['quotationId', 'quotation'],
+    ['employeeId', 'user'],
+    ['docId', 'document'],
+    ['jobId', 'bom_job'],
+    ['stepKey', 'project_step'],
+    ['loadId', 'dispatch_load'],
   ]
   for (const [key, entityType] of pairs) {
     if (p[key]) return { entityType, entityId: p[key] }

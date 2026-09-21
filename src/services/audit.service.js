@@ -4,13 +4,21 @@ const {
   resolveActorFromRequest,
   buildRequestAuditMeta,
 } = require('../utils/auditContext.util')
+const { getAuditRequest } = require('../utils/auditRequestContext')
+
+const markRequestAudited = (req) => {
+  if (req) req.auditLogged = true
+}
 
 /**
  * Single write point for all audit logs.
  * Fails silently — an audit failure should never break a business action.
+ *
+ * When `req` is omitted, uses AsyncLocalStorage (current HTTP request) so explicit
+ * domain logs suppress duplicate fallback middleware entries.
  */
 const log = async ({
-  req = null,
+  req: reqArg = undefined,
   type,
   action,
   leadId = null,
@@ -25,7 +33,9 @@ const log = async ({
   httpMethod = null,
   path = null,
 }) => {
-  if (req) req.auditLogged = true
+  const req = reqArg === undefined ? getAuditRequest() : reqArg
+  markRequestAudited(req)
+
   try {
     const doc = {
       type,

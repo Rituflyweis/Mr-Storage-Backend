@@ -31,6 +31,8 @@ app.use((req, res, next) => {
   next()
 })
 
+const { runWithAuditContext } = require('./src/utils/auditRequestContext')
+app.use(runWithAuditContext)
 app.use(require('./src/middleware/auditMutation'))
 
 // // ── Global rate limit ─────────────────────────────────────────────────────────

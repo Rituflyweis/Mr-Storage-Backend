@@ -67,9 +67,11 @@ Authorization: Bearer <admin_access_token>
 | Source | Examples |
 |--------|----------|
 | **Auth** | Staff/customer login success & failure, logout, password change, profile update |
-| **Domain** | Existing quotation, invoice, lead, plant, customer portal actions (unchanged) |
-| **Construction** | Tasks, milestones, work logs, project steps (+ fallback for other construction POST/PUT/DELETE) |
-| **Account** | Fallback `entity.*` for mutating `/api/account/*` routes without explicit audit |
+| **Domain** | Specific actions (`quotation.created`, `lead.edited`, …) wherever handlers call `auditService.log` |
+| **Fallback** | Any successful **POST/PUT/PATCH/DELETE** under `/api/*` or `/sales/*` that did not already log gets `entity.created` / `entity.updated` / `entity.deleted` with route + actor |
+| **Dedup** | Request-scoped context ensures explicit domain logs do **not** also create a fallback row |
+
+**Not logged:** GET/read routes, login/refresh exact paths, presigned-url/download/export/webhook paths, failed responses (4xx/5xx).
 
 ## Checklist
 
