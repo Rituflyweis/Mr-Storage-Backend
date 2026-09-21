@@ -135,15 +135,9 @@ exports.getPackingListPlanProjects = asyncHandler(async (req, res) => {
   return success(res, { projects: paged, total, page: parsedPage, limit: parsedLimit })
 })
 
-exports.getPackingList = asyncHandler(async (req, res) => {
-  const packingList = await PackingList.findById(req.params.packingListId).lean()
-  if (!packingList) return notFound(res, 'Packing list not found')
-
-  const access = await assertPlantProjectAccess(packingList.leadId, req)
-  if (access.error) {
-    if (access.code === 404) return notFound(res, access.error)
-    return forbidden(res, access.error)
-  }
+const buildPackingListDetailPayload = async (packingListId) => {
+  const packingList = await PackingList.findById(packingListId).lean()
+  if (!packingList) return null
 
   const bundles = await Bundle.find({ _id: { $in: packingList.bundleIds || [] } })
     .select('_id bundleNo bundleType title totalQty totalWeight maxLengthFeet items warnings stacking loadSequence notes')
@@ -151,7 +145,7 @@ exports.getPackingList = asyncHandler(async (req, res) => {
 
   const plan = await PackingListPlan.findById(packingList.packingListPlanId).select('_id status').lean()
 
-  return success(res, {
+  return {
     packingList,
     truckInfo: {
       truckType: packingList.truckType,
@@ -164,7 +158,28 @@ exports.getPackingList = asyncHandler(async (req, res) => {
     bundles,
     loadLayout: packingList.loadLayout,
     planStatus: plan?.status || 'generated',
-  })
+  }
+}
+
+/** Public read — no JWT (same pattern as packing-list-plans public). */
+exports.getPackingListPublic = asyncHandler(async (req, res) => {
+  const payload = await buildPackingListDetailPayload(req.params.packingListId)
+  if (!payload) return notFound(res, 'Packing list not found')
+  return success(res, payload)
+})
+
+exports.getPackingList = asyncHandler(async (req, res) => {
+  const packingList = await PackingList.findById(req.params.packingListId).lean()
+  if (!packingList) return notFound(res, 'Packing list not found')
+
+  const access = await assertPlantProjectAccess(packingList.leadId, req)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  const payload = await buildPackingListDetailPayload(req.params.packingListId)
+  return success(res, payload)
 })
 
 exports.updatePackingList = asyncHandler(async (req, res) => {

@@ -52,6 +52,8 @@ app.use('/api/auth',           require('./src/routes/auth.routes'))
 app.use('/api/customer/auth',  require('./src/routes/customerAuth.routes'))
 app.use('/api/customer',       require('./src/routes/customerPortal.routes'))
 app.use('/api/public',        require('./src/routes/public.routes'))
+app.use('/api/packing-lists', require('./src/routes/packingListPublicAlias.routes'))
+app.use('/api/packing-list', require('./src/routes/packingListPublicAlias.routes'))
 app.use('/api/admin',   require('./src/routes/admin/index'))
 app.use('/api/sales',   require('./src/routes/sales/index'))
 // Alias without /api — some clients call /sales/* directly on the API host

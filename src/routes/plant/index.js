@@ -3,6 +3,7 @@ const { param } = require('express-validator')
 const validate = require('../../middleware/validate')
 const bundleCtrl = require('../../controllers/plant/bundle.controller')
 const packingListPlanCtrl = require('../../controllers/plant/packingListPlan.controller')
+const packingListCtrl = require('../../controllers/plant/packingList.controller')
 const verifyToken = require('../../middleware/auth')
 const roleGuard = require('../../middleware/roleGuard')
 
@@ -18,6 +19,12 @@ router.get('/packing-list-plans/:packingListPlanId',
   [param('packingListPlanId').isMongoId()],
   validate,
   packingListPlanCtrl.getPackingListPlanPublic
+)
+
+router.get('/packing-lists/:packingListId',
+  [param('packingListId').isMongoId()],
+  validate,
+  packingListCtrl.getPackingListPublic
 )
 
 router.use(verifyToken, roleGuard(['plant']))

@@ -2,6 +2,8 @@ const router = require('express').Router()
 const { body } = require('express-validator')
 const ctrl = require('../controllers/public.controller')
 const freightBidCtrl = require('../controllers/public/freightBidPublic.controller')
+const packingListCtrl = require('../controllers/plant/packingList.controller')
+const { param } = require('express-validator')
 const validate = require('../middleware/validate')
 const rateLimit = require('express-rate-limit')
 
@@ -52,6 +54,18 @@ router.post('/vendor-upload/:token',
   ],
   validate,
   ctrl.submitVendorUpload
+)
+
+router.get('/packing-lists/:packingListId',
+  [param('packingListId').isMongoId()],
+  validate,
+  packingListCtrl.getPackingListPublic
+)
+
+router.get('/packing-list/:packingListId',
+  [param('packingListId').isMongoId()],
+  validate,
+  packingListCtrl.getPackingListPublic
 )
 
 router.get('/freight-bids/:token',
