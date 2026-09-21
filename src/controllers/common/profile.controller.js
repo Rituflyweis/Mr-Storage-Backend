@@ -6,6 +6,8 @@ const {
   shapeStaffProfile,
   parseOptionalTrimmedString,
 } = require('../../utils/profileResponse.util')
+const auditService = require('../../services/audit.service')
+const { AUDIT_ACTIONS } = require('../../config/constants')
 
 const normalizeEmail = (email) => String(email || '').toLowerCase().trim()
 
@@ -51,6 +53,17 @@ exports.updateProfile = asyncHandler(async (req, res) => {
 
   await user.save()
 
+  req.auditLogged = true
+  await auditService.logFromRequest(req, {
+    type: 'user',
+    action: AUDIT_ACTIONS.AUTH_PROFILE_UPDATED,
+    entityType: 'user',
+    entityId: user._id,
+    metadata: {
+      fields: PROFILE_UPDATE_FIELDS.filter((k) => req.body[k] !== undefined),
+    },
+  })
+
   const profile = shapeStaffProfile(user.toObject())
   return success(res, { profile, user: profile }, 'Profile updated successfully')
 })
@@ -69,6 +82,13 @@ exports.updateProfilePassword = asyncHandler(async (req, res) => {
   user.password = await bcrypt.hash(newPassword, 12)
   user.passwordChangedAt = new Date()
   await user.save()
+
+  req.auditLogged = true
+  await auditService.logFromRequest(req, {
+    type: 'auth',
+    action: AUDIT_ACTIONS.AUTH_PASSWORD_CHANGED,
+    metadata: { source: 'profile.password' },
+  })
 
   return success(res, {}, 'Password updated')
 })

@@ -18,6 +18,7 @@ router.use("/po-orders", require("./po.routes"));
 router.use("/financials", require("./financial.routes"));
 router.use("/reports", require("./reports.routes"));
 router.use("/activity", require("./pageActivity.routes"));
+router.use("/audit-logs", require("./auditLog.routes"));
 router.use("/products", require("./product.routes"));
 router.use("/roles", require("./role.routes"));
 router.use("/invoices", require("./invoice.routes"));

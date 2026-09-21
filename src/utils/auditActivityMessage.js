@@ -197,6 +197,31 @@ const formatAuditActivityMessage = (log, context = {}) => {
       return `${typeLabel} logged${ctx}`
     }
 
+    case AUDIT_ACTIONS.AUTH_LOGIN_SUCCESS:
+      return meta.role
+        ? `Logged in (${ROLE_PANEL_LABELS[meta.role] || meta.role})`
+        : 'Logged in'
+    case AUDIT_ACTIONS.AUTH_LOGIN_FAILED:
+      return 'Login failed'
+    case AUDIT_ACTIONS.AUTH_LOGOUT:
+      return 'Logged out'
+    case AUDIT_ACTIONS.AUTH_PASSWORD_CHANGED:
+      return 'Password changed'
+    case AUDIT_ACTIONS.AUTH_PROFILE_UPDATED:
+      return 'Profile updated'
+    case AUDIT_ACTIONS.CUSTOMER_LOGIN_SUCCESS:
+      return 'Customer logged in'
+    case AUDIT_ACTIONS.CUSTOMER_LOGIN_FAILED:
+      return 'Customer login failed'
+    case AUDIT_ACTIONS.CUSTOMER_PROFILE_UPDATED:
+      return 'Customer profile updated'
+    case AUDIT_ACTIONS.ENTITY_CREATED:
+      return meta.summary || `Created${ctx}`
+    case AUDIT_ACTIONS.ENTITY_UPDATED:
+      return meta.summary || `Updated${ctx}`
+    case AUDIT_ACTIONS.ENTITY_DELETED:
+      return meta.summary || `Deleted${ctx}`
+
     default: {
       const label = action.replace(/\./g, ' ').replace(/_/g, ' ')
       return label.charAt(0).toUpperCase() + label.slice(1) + ctx

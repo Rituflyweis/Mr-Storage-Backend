@@ -2,6 +2,7 @@ const router = require('express').Router()
 const { body } = require('express-validator')
 const ctrl = require('../controllers/auth.controller')
 const verifyToken = require('../middleware/auth')
+const optionalAuth = require('../middleware/optionalAuth')
 const validate = require('../middleware/validate')
 const { USER_ROLES } = require('../config/constants')
 
@@ -22,7 +23,7 @@ router.post('/refresh',
   validate, ctrl.refresh
 )
 
-router.post('/logout', ctrl.logout)
+router.post('/logout', optionalAuth, ctrl.logout)
 
 router.put('/change-password',
   verifyToken,

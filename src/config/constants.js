@@ -100,6 +100,9 @@ const AUDIT_TYPES = [
   "plant",
   "smdt",
   "payment",
+  "auth",
+  "construction",
+  "customer",
 ];
 
 const AUDIT_ACTIONS = {
@@ -216,6 +219,30 @@ const AUDIT_ACTIONS = {
 
   // Backward-compatible alias; remove after payment schedule migration is complete.
   PAYMENT_MARKED_PAID: "payment.stage_paid",
+
+  AUTH_LOGIN_SUCCESS: "auth.login.success",
+  AUTH_LOGIN_FAILED: "auth.login.failed",
+  AUTH_LOGOUT: "auth.logout",
+  AUTH_PASSWORD_CHANGED: "auth.password.changed",
+  AUTH_PROFILE_UPDATED: "auth.profile.updated",
+
+  CUSTOMER_LOGIN_SUCCESS: "customer.login.success",
+  CUSTOMER_LOGIN_FAILED: "customer.login.failed",
+  CUSTOMER_PROFILE_UPDATED: "customer.profile.updated",
+
+  CONSTRUCTION_TASK_CREATED: "construction.task.created",
+  CONSTRUCTION_TASK_UPDATED: "construction.task.updated",
+  CONSTRUCTION_TASK_DELETED: "construction.task.deleted",
+  CONSTRUCTION_WORK_LOG_CREATED: "construction.work_log.created",
+  CONSTRUCTION_MILESTONE_CREATED: "construction.milestone.created",
+  CONSTRUCTION_MILESTONE_UPDATED: "construction.milestone.updated",
+  CONSTRUCTION_PROJECT_STEP_UPDATED: "construction.project_step.updated",
+  CONSTRUCTION_DELIVERY_CREATED: "construction.delivery.created",
+  CONSTRUCTION_MATERIAL_REQUEST_CREATED: "construction.material_request.created",
+
+  ENTITY_CREATED: "entity.created",
+  ENTITY_UPDATED: "entity.updated",
+  ENTITY_DELETED: "entity.deleted",
 };
 
 const BUILDING_STATUSES = [

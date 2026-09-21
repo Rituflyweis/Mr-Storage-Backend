@@ -7,6 +7,8 @@ const ProjectStepDetail = require('../../models/ProjectStepDetail')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const notificationService = require('../../services/notification.service')
+const auditService = require('../../services/audit.service')
+const { AUDIT_ACTIONS } = require('../../config/constants')
 
 exports.getTasks = asyncHandler(async (req, res) => {
   const { leadId, status, priority, assignedTo, search, startDate, endDate, page = 1, limit = 50 } = req.query
@@ -91,6 +93,15 @@ exports.createTask = asyncHandler(async (req, res) => {
     })
   }
 
+  await auditService.logFromRequest(req, {
+    type: 'construction',
+    action: AUDIT_ACTIONS.CONSTRUCTION_TASK_CREATED,
+    leadId: task.leadId,
+    entityType: 'task',
+    entityId: task._id,
+    metadata: { title: task.title },
+  })
+
   return success(res, { task: populated }, 'Task created')
 })
 
@@ -135,12 +146,29 @@ exports.updateTask = asyncHandler(async (req, res) => {
     })
   }
 
+  await auditService.logFromRequest(req, {
+    type: 'construction',
+    action: AUDIT_ACTIONS.CONSTRUCTION_TASK_UPDATED,
+    leadId: task.leadId,
+    entityType: 'task',
+    entityId: task._id,
+    metadata: { title: task.title, status: task.status },
+  })
+
   return success(res, { task: populated }, 'Task updated')
 })
 
 exports.deleteTask = asyncHandler(async (req, res) => {
   const task = await Task.findByIdAndDelete(req.params.taskId)
   if (!task) return notFound(res, 'Task not found')
+  await auditService.logFromRequest(req, {
+    type: 'construction',
+    action: AUDIT_ACTIONS.CONSTRUCTION_TASK_DELETED,
+    leadId: task.leadId,
+    entityType: 'task',
+    entityId: task._id,
+    metadata: { title: task.title },
+  })
   return success(res, {}, 'Task deleted')
 })
 
@@ -160,6 +188,14 @@ exports.createWorkLog = asyncHandler(async (req, res) => {
     description: description || '',
     photos: photos || [],
     issues: issues || '',
+  })
+
+  await auditService.logFromRequest(req, {
+    type: 'construction',
+    action: AUDIT_ACTIONS.CONSTRUCTION_WORK_LOG_CREATED,
+    leadId,
+    entityType: 'work_log',
+    entityId: log._id,
   })
 
   return success(res, { workLog: log }, 'Work log created')
@@ -257,6 +293,15 @@ exports.createMilestone = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
   })
 
+  await auditService.logFromRequest(req, {
+    type: 'construction',
+    action: AUDIT_ACTIONS.CONSTRUCTION_MILESTONE_CREATED,
+    leadId: milestone.leadId,
+    entityType: 'milestone',
+    entityId: milestone._id,
+    metadata: { title: milestone.title },
+  })
+
   return success(res, { milestone }, 'Milestone created')
 })
 
@@ -274,6 +319,16 @@ exports.updateMilestone = asyncHandler(async (req, res) => {
   }
 
   await milestone.save()
+
+  await auditService.logFromRequest(req, {
+    type: 'construction',
+    action: AUDIT_ACTIONS.CONSTRUCTION_MILESTONE_UPDATED,
+    leadId: milestone.leadId,
+    entityType: 'milestone',
+    entityId: milestone._id,
+    metadata: { title: milestone.title, status: milestone.status },
+  })
+
   return success(res, { milestone }, 'Milestone updated')
 })
 
@@ -304,6 +359,14 @@ exports.updateProjectStep = asyncHandler(async (req, res) => {
     { $set: update },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   )
+
+  await auditService.logFromRequest(req, {
+    type: 'construction',
+    action: AUDIT_ACTIONS.CONSTRUCTION_PROJECT_STEP_UPDATED,
+    leadId,
+    entityType: 'project_step',
+    metadata: { stepKey },
+  })
 
   return success(res, { stepDetail: detail }, 'Project step updated')
 })

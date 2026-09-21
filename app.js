@@ -31,6 +31,8 @@ app.use((req, res, next) => {
   next()
 })
 
+app.use(require('./src/middleware/auditMutation'))
+
 // // ── Global rate limit ─────────────────────────────────────────────────────────
 // app.use(rateLimit({
 //   windowMs: 15 * 60 * 1000,

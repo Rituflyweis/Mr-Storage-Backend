@@ -6,6 +6,9 @@ const { success, unauthorized, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
 const { ACCOUNT_DEACTIVATED_MESSAGE } = require('../utils/staffSession')
 const { sendOtp } = require('../services/email/mailer')
+const auditService = require('../services/audit.service')
+const { AUDIT_ACTIONS } = require('../config/constants')
+const { clientIp, buildRequestAuditMeta } = require('../utils/auditContext.util')
 
 const OTP_EXPIRY_MINUTES = 10
 const DEACTIVATED_ACCOUNT_MESSAGE = ACCOUNT_DEACTIVATED_MESSAGE
@@ -65,15 +68,60 @@ const signRefresh = (user) =>
 exports.login = asyncHandler(async (req, res) => {
   const { email, password } = req.body
 
-  const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password')
-  if (!user) return unauthorized(res, 'Invalid credentials')
-  if (!user.isActive) return unauthorized(res, DEACTIVATED_ACCOUNT_MESSAGE)
+  const normalizedEmail = email.toLowerCase().trim()
+  const user = await User.findOne({ email: normalizedEmail }).select('+password')
+  if (!user) {
+    await auditService.log({
+      type: 'auth',
+      action: AUDIT_ACTIONS.AUTH_LOGIN_FAILED,
+      actorType: 'anonymous',
+      panel: normalizeOptionalRole(req.body.role) || null,
+      metadata: buildRequestAuditMeta(req, { email: normalizedEmail, reason: 'user_not_found' }),
+    })
+    return unauthorized(res, 'Invalid credentials')
+  }
+  if (!user.isActive) {
+    await auditService.log({
+      type: 'auth',
+      action: AUDIT_ACTIONS.AUTH_LOGIN_FAILED,
+      actorType: 'staff',
+      actorId: user._id,
+      performedBy: user._id,
+      panel: user.role,
+      metadata: buildRequestAuditMeta(req, { email: normalizedEmail, reason: 'inactive' }),
+    })
+    return unauthorized(res, DEACTIVATED_ACCOUNT_MESSAGE)
+  }
 
   const match = await bcrypt.compare(password, user.password)
-  if (!match) return unauthorized(res, 'Invalid credentials')
+  if (!match) {
+    await auditService.log({
+      type: 'auth',
+      action: AUDIT_ACTIONS.AUTH_LOGIN_FAILED,
+      actorType: 'staff',
+      actorId: user._id,
+      performedBy: user._id,
+      panel: user.role,
+      metadata: buildRequestAuditMeta(req, { email: normalizedEmail, reason: 'bad_password' }),
+    })
+    return unauthorized(res, 'Invalid credentials')
+  }
 
   const accessToken = signAccess(user)
   const refreshToken = signRefresh(user)
+
+  req.auditLogged = true
+  await auditService.log({
+    type: 'auth',
+    action: AUDIT_ACTIONS.AUTH_LOGIN_SUCCESS,
+    performedBy: user._id,
+    actorType: 'staff',
+    actorId: user._id,
+    panel: user.role,
+    httpMethod: req.method,
+    path: req.originalUrl?.split('?')[0],
+    metadata: buildRequestAuditMeta(req, { email: user.email, role: user.role }),
+  })
 
   return success(res, {
     accessToken,
@@ -116,7 +164,17 @@ exports.refresh = asyncHandler(async (req, res) => {
 })
 
 exports.logout = asyncHandler(async (req, res) => {
-  // Client-side token deletion only (no Redis blacklist)
+  if (req.user?._id) {
+    req.auditLogged = true
+    await auditService.logFromRequest(req, {
+      type: 'auth',
+      action: AUDIT_ACTIONS.AUTH_LOGOUT,
+      performedBy: req.user._id,
+      actorType: 'staff',
+      actorId: req.user._id,
+      panel: req.user.role,
+    })
+  }
   return success(res, {}, 'Logged out successfully')
 })
 
@@ -225,6 +283,13 @@ exports.changePassword = asyncHandler(async (req, res) => {
   user.password = await bcrypt.hash(newPassword, 12)
   user.passwordChangedAt = new Date()
   await user.save()
+
+  req.auditLogged = true
+  await auditService.logFromRequest(req, {
+    type: 'auth',
+    action: AUDIT_ACTIONS.AUTH_PASSWORD_CHANGED,
+    metadata: { source: 'auth.change_password' },
+  })
 
   return success(res, {}, 'Password updated successfully')
 })

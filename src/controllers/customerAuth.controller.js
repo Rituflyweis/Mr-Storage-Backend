@@ -7,6 +7,9 @@ const env = require('../config/env')
 const { success, unauthorized, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
 const { sendOtp } = require('../services/email/mailer')
+const auditService = require('../services/audit.service')
+const { AUDIT_ACTIONS } = require('../config/constants')
+const { buildRequestAuditMeta } = require('../utils/auditContext.util')
 
 const OTP_EXPIRY_MINUTES = 10
 
@@ -27,12 +30,44 @@ const signRefresh = (customer) =>
 exports.login = asyncHandler(async (req, res) => {
   const { email, password } = req.body
 
-  const customer = await Customer.findOne({ email: email.toLowerCase().trim() })
-  if (!customer) return unauthorized(res, 'No account found with that email address')
-  if (!customer.isActive) return unauthorized(res, 'This account has been deactivated')
+  const normalizedEmail = email.toLowerCase().trim()
+  const customer = await Customer.findOne({ email: normalizedEmail })
+  if (!customer) {
+    await auditService.log({
+      type: 'auth',
+      action: AUDIT_ACTIONS.CUSTOMER_LOGIN_FAILED,
+      actorType: 'anonymous',
+      panel: 'customer',
+      metadata: buildRequestAuditMeta(req, { email: normalizedEmail, reason: 'not_found' }),
+    })
+    return unauthorized(res, 'No account found with that email address')
+  }
+  if (!customer.isActive) {
+    await auditService.log({
+      type: 'auth',
+      action: AUDIT_ACTIONS.CUSTOMER_LOGIN_FAILED,
+      actorType: 'customer',
+      actorId: customer._id,
+      customerId: customer._id,
+      panel: 'customer',
+      metadata: buildRequestAuditMeta(req, { email: normalizedEmail, reason: 'inactive' }),
+    })
+    return unauthorized(res, 'This account has been deactivated')
+  }
 
   const match = await bcrypt.compare(password, customer.password)
-  if (!match) return unauthorized(res, 'Incorrect password')
+  if (!match) {
+    await auditService.log({
+      type: 'auth',
+      action: AUDIT_ACTIONS.CUSTOMER_LOGIN_FAILED,
+      actorType: 'customer',
+      actorId: customer._id,
+      customerId: customer._id,
+      panel: 'customer',
+      metadata: buildRequestAuditMeta(req, { email: normalizedEmail, reason: 'bad_password' }),
+    })
+    return unauthorized(res, 'Incorrect password')
+  }
 
   // Portal activation gate: 30% payment confirmed AND PO raised
   const leads = await Lead.find({ customerId: customer._id }).lean()
@@ -61,6 +96,19 @@ exports.login = asyncHandler(async (req, res) => {
 
   const accessToken = signAccess(customer)
   const refreshToken = signRefresh(customer)
+
+  req.auditLogged = true
+  await auditService.log({
+    type: 'auth',
+    action: AUDIT_ACTIONS.CUSTOMER_LOGIN_SUCCESS,
+    customerId: customer._id,
+    actorType: 'customer',
+    actorId: customer._id,
+    panel: 'customer',
+    httpMethod: req.method,
+    path: req.originalUrl?.split('?')[0],
+    metadata: buildRequestAuditMeta(req, { email: customer.email }),
+  })
 
   return success(res, {
     accessToken,

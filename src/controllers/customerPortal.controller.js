@@ -248,6 +248,21 @@ exports.updateProfile = asyncHandler(async (req, res) => {
 
   await customer.save()
 
+  await auditService.logFromRequest(req, {
+    type: 'customer',
+    action: AUDIT_ACTIONS.CUSTOMER_PROFILE_UPDATED,
+    customerId: customer._id,
+    actorType: 'customer',
+    actorId: customer._id,
+    entityType: 'customer',
+    entityId: customer._id,
+    metadata: {
+      fields: ['name', 'firstName', 'lastName', 'email', 'phone', 'countryCode', 'mobile', 'photo'].filter(
+        (k) => req.body[k] !== undefined,
+      ),
+    },
+  })
+
   const profile = shapeCustomerProfile(customer.toObject())
   return success(res, { profile, customer: profile }, 'Profile updated successfully')
 })
