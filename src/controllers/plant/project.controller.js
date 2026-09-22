@@ -23,6 +23,11 @@ const {
   buildAmountComparisonForRequest,
   loadConsolidatedBomCostMap,
 } = require('../../utils/shipperAmountComparison')
+const {
+  parseShipperRequestListQuery,
+  filterShipperRequests,
+  paginateArray,
+} = require('../../utils/shipperFileListQuery.util')
 const { validatePlantLifecycleTransition } = require('../../utils/plantLifecycle')
 const {
   buildPlantProjectLifecycle,
@@ -771,20 +776,29 @@ exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
   if (!access) return
   const leadId = access.lead._id
 
-  const requests = sortShipperRequestsByLowestBid(
+  const allRequests = sortShipperRequestsByLowestBid(
     await ShipperRequest.find({ leadId })
       .populate('vendorId', 'vendorName vendorCode email')
       .lean()
   )
-  const bomCostById = await loadConsolidatedBomCostMap(requests)
+  const bomCostById = await loadConsolidatedBomCostMap(allRequests)
+  const listQuery = parseShipperRequestListQuery(req.query)
+  const filtered = filterShipperRequests(allRequests, listQuery)
+  const { items: paged, total, page, limit } = paginateArray(
+    filtered,
+    listQuery.page,
+    listQuery.limit,
+  )
 
   return success(res, {
-    stats: computeShipperFilesStats(requests),
-    shipperFiles: requests.map((r) => ({
+    stats: computeShipperFilesStats(allRequests),
+    shipperFiles: paged.map((r) => ({
       _id: r._id,
       vendorId: r.vendorId?._id || r.vendorId,
       vendorName: r.vendorId?.vendorName || '',
+      vendorCode: r.vendorId?.vendorCode || '',
       status: r.status,
+      comparisonStatus: r.comparisonStatus || 'idle',
       submittedFileUrl: r.submittedFileUrl || null,
       submittedFileName: r.submittedFileName || '',
       submittedAt: r.submittedAt,
@@ -792,6 +806,9 @@ exports.getProjectShipperFiles = asyncHandler(async (req, res) => {
       sentAt: r.sentAt,
       amountComparison: buildAmountComparisonForRequest(r, bomCostById),
     })),
+    total,
+    page,
+    limit,
   })
 })
 

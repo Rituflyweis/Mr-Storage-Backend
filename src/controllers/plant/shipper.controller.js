@@ -42,6 +42,13 @@ const {
 } = require('../../utils/shipperComparisonCategories')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { SHIPPER_REQUEST_LATEST_FIRST_SORT, sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
+const {
+  parseShipperProjectListQuery,
+  parseShipperRequestListQuery,
+  filterShipperProjects,
+  filterShipperRequests,
+  paginateArray,
+} = require('../../utils/shipperFileListQuery.util')
 const { computeShipperFilesStats } = require('../../utils/shipperFilesStats')
 const {
   buildShipperAmountComparison,
@@ -63,7 +70,15 @@ const resolveFileReceivedStatus = (total, received) => {
 
 exports.getShipperProjects = asyncHandler(async (req, res) => {
   const leadIds = await getAssignedLeadIds(req)
-  if (!leadIds.length) return success(res, { projects: [], total: 0 })
+  const emptyListQuery = parseShipperProjectListQuery(req.query)
+  if (!leadIds.length) {
+    return success(res, {
+      projects: [],
+      total: 0,
+      page: emptyListQuery.page,
+      limit: emptyListQuery.limit,
+    })
+  }
 
   const requests = await ShipperRequest.find({ leadId: { $in: leadIds } })
     .populate({
@@ -75,11 +90,15 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
     .lean()
 
   const projectMap = new Map()
+  const requestsByLeadId = new Map()
 
   for (const request of requests) {
     const lead = request.leadId
     if (!lead?._id) continue
     const key = String(lead._id)
+
+    if (!requestsByLeadId.has(key)) requestsByLeadId.set(key, [])
+    requestsByLeadId.get(key).push(request)
 
     if (!projectMap.has(key)) {
       projectMap.set(key, {
@@ -112,20 +131,13 @@ exports.getShipperProjects = asyncHandler(async (req, res) => {
     return bTime - aTime
   })
 
-  if (req.query.fileStatus) {
-    projects = projects.filter((p) => p.fileReceivedStatus === req.query.fileStatus)
-  }
-  if (req.query.search?.trim()) {
-    const term = req.query.search.trim().toLowerCase()
-    projects = projects.filter((p) =>
-      (p.projectName || '').toLowerCase().includes(term) || (p.jobId || '').toLowerCase().includes(term)
-    )
-  }
-
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
-  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20))
-  const total = projects.length
-  const paged = projects.slice((page - 1) * limit, (page - 1) * limit + limit)
+  const listQuery = parseShipperProjectListQuery(req.query)
+  projects = filterShipperProjects(projects, listQuery, requestsByLeadId)
+  const { items: paged, total, page, limit } = paginateArray(
+    projects,
+    listQuery.page,
+    listQuery.limit,
+  )
 
   return success(res, { projects: paged, total, page, limit })
 })
@@ -171,19 +183,26 @@ exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
     return forbidden(res, access.error)
   }
 
-  const requests = sortShipperRequestsByLowestBid(
+  const allRequests = sortShipperRequestsByLowestBid(
     await ShipperRequest.find({ leadId })
       .populate('vendorId', 'vendorName vendorCode')
       .lean()
   )
-  const bomCostById = await loadConsolidatedBomCostMap(requests)
+  const bomCostById = await loadConsolidatedBomCostMap(allRequests)
+  const listQuery = parseShipperRequestListQuery(req.query)
+  const filtered = filterShipperRequests(allRequests, listQuery)
+  const { items: paged, total, page, limit } = paginateArray(
+    filtered,
+    listQuery.page,
+    listQuery.limit,
+  )
 
   return success(res, {
     leadId,
     projectId: access.lead.jobId || '',
     projectName: access.lead.projectName || '',
-    stats: computeShipperFilesStats(requests),
-    shipperRequests: requests.map((r) => ({
+    stats: computeShipperFilesStats(allRequests),
+    shipperRequests: paged.map((r) => ({
       requestId: r._id,
       vendorId: r.vendorId?._id || r.vendorId,
       vendorName: r.vendorId?.vendorName || '',
@@ -198,7 +217,9 @@ exports.getProjectShipperRequests = asyncHandler(async (req, res) => {
       canRequestResubmit: ['submitted', 'comparison_completed', 'comparison_failed', 'resubmit_requested'].includes(r.status),
       amountComparison: buildAmountComparisonForRequest(r, bomCostById),
     })),
-    total: requests.length,
+    total,
+    page,
+    limit,
   })
 })
 

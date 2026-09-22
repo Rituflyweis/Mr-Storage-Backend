@@ -1,5 +1,8 @@
 const router = require('express').Router()
 const { body, param } = require('express-validator')
+const {
+  shipperRequestListQueryValidators,
+} = require('../../../validators/shipperListQuery.validators')
 const ctrl = require('../../../controllers/plant/project.controller')
 const bundlePlanCtrl = require('../../../controllers/plant/bundlePlan.controller')
 const packingListPlanCtrl = require('../../../controllers/plant/packingListPlan.controller')
@@ -46,7 +49,11 @@ router.post('/:leadId/consolidated-bom/send',
   validate,
   ctrl.sendConsolidatedBOM
 )
-router.get('/:leadId/shipper-files', ctrl.getProjectShipperFiles)
+router.get('/:leadId/shipper-files',
+  [param('leadId').isMongoId(), ...shipperRequestListQueryValidators],
+  validate,
+  ctrl.getProjectShipperFiles
+)
 
 router.get('/:projectId/load-planning', bundlePlanCtrl.getProjectLoadPlanning)
 router.put('/:projectId/load-planning',

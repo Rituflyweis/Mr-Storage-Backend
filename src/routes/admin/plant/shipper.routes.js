@@ -2,10 +2,14 @@ const router = require('express').Router()
 const { body, param, query } = require('express-validator')
 const ctrl = require('../../../controllers/plant/shipper.controller')
 const validate = require('../../../middleware/validate')
+const {
+  shipperProjectListQueryValidators,
+  shipperRequestListQueryValidators,
+} = require('../../../validators/shipperListQuery.validators')
 
 router.get('/stats', ctrl.getShipperFilesStats)
 
-router.get('/projects', ctrl.getShipperProjects)
+router.get('/projects', shipperProjectListQueryValidators, validate, ctrl.getShipperProjects)
 
 router.get('/projects/:leadId/stats',
   [param('leadId').isMongoId()],
@@ -14,7 +18,7 @@ router.get('/projects/:leadId/stats',
 )
 
 router.get('/projects/:leadId/requests',
-  [param('leadId').isMongoId()],
+  [param('leadId').isMongoId(), ...shipperRequestListQueryValidators],
   validate,
   ctrl.getProjectShipperRequests
 )

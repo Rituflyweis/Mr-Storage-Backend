@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body, query } = require('express-validator')
+const { body, query, param } = require('express-validator')
 const ctrl = require('../../controllers/plant/project.controller')
 const bundleCtrl = require('../../controllers/plant/bundle.controller')
 const bundlePlanCtrl = require('../../controllers/plant/bundlePlan.controller')
@@ -7,6 +7,9 @@ const packingListPlanCtrl = require('../../controllers/plant/packingListPlan.con
 const deliveryCtrl = require('../../controllers/plant/delivery.controller')
 const validate = require('../../middleware/validate')
 const { PLANT_LIFECYCLE_STAGES, BOM_FILE_FORMATS, TRUCK_TYPES } = require('../../config/constants')
+const {
+  shipperRequestListQueryValidators,
+} = require('../../validators/shipperListQuery.validators')
 
 router.get('/stats',
   [
@@ -87,7 +90,11 @@ router.post('/:leadId/consolidated-bom/send',
   ctrl.sendConsolidatedBOM
 )
 router.get('/:leadId/delivery', deliveryCtrl.getProjectConfirmedDelivery)
-router.get('/:leadId/shipper-files', ctrl.getProjectShipperFiles)
+router.get('/:leadId/shipper-files',
+  [param('leadId').isMongoId(), ...shipperRequestListQueryValidators],
+  validate,
+  ctrl.getProjectShipperFiles
+)
 router.get('/:leadId/bundle-plan', bundleCtrl.getProjectBundlePlan)
 
 // Unified project-id based load/truck planning + freight endpoints (projectId = Mongo _id or jobId like PRO-019)
