@@ -5,7 +5,10 @@ const { LEAD_SOURCES } = require('../config/constants')
 const projectFieldValidators = [
   body('projectName').notEmpty().trim(),
   body('buildingType').notEmpty().trim(),
-  body('location').notEmpty().trim(),
+  body('location').optional({ values: 'falsy' }).trim(),
+  body('city').optional({ values: 'falsy' }).trim(),
+  body('state').optional({ values: 'falsy' }).trim(),
+  body('pincode').optional({ values: 'falsy' }).trim(),
   body('quoteValue').optional().isNumeric(),
   body('roofStyle').optional().trim(),
   body('roofPitch').optional().trim(),

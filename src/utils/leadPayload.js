@@ -50,7 +50,10 @@ const buildLeadCreatePayload = (body, options = {}) => {
   const {
     projectName,
     buildingType,
-    location,
+    location: locationRaw,
+    city,
+    state,
+    pincode,
     source,
     quoteValue,
     estimatedValue,
@@ -79,12 +82,30 @@ const buildLeadCreatePayload = (body, options = {}) => {
   const buildingCount = toNumberOrNull(numberOfBuildings)
   const resolvedBuildingCount = buildingCount != null && buildingCount >= 1 ? buildingCount : 1
 
+  let location = ''
+  if (locationRaw !== undefined && locationRaw !== null && locationRaw !== '') {
+    if (typeof locationRaw === 'object') {
+      location = String(locationRaw.label || locationRaw.value || locationRaw.name || '').trim()
+    } else {
+      location = String(locationRaw).trim()
+    }
+  }
+  const cityStr = city ? String(city).trim() : ''
+  const stateStr = state ? String(state).trim() : ''
+  const pincodeStr = pincode ? String(pincode).trim() : ''
+  if (!location && (cityStr || stateStr || pincodeStr)) {
+    location = [cityStr, stateStr, pincodeStr].filter(Boolean).join(', ')
+  }
+
   return {
     payload: {
       customerId,
       projectName: normalizeProjectName(projectName || ''),
       buildingType: buildingType ? String(buildingType).trim() : '',
-      location: location ? String(location).trim() : '',
+      location,
+      city: cityStr,
+      state: stateStr,
+      pincode: pincodeStr,
       source: resolvedSource,
       quoteValue: toNumberOrNull(quoteValue ?? estimatedValue) ?? 0,
       roofStyle: roofStyle || '',
