@@ -53,3 +53,53 @@ services:
         sync: false
       - key: SMTP_PASS
         sync: false
+      - key: MAIL_FROM_NODE_MAILER
+        sync: false
+      - key: DB_BACKUP_ENABLED
+        value: "true"
+      - key: DB_BACKUP_NOTIFY_EMAIL
+        value: info@steelbuildingdepot.com
+      - key: DB_BACKUP_TIMEZONE
+        value: Asia/Kolkata
+      - key: DB_BACKUP_CRON
+        value: "0 4 * * *"
+      - key: DB_BACKUP_IN_PROCESS_SCHEDULE
+        value: "false"
+
+  - type: cron
+    name: mr-storage-db-backup
+    runtime: node
+    schedule: "30 22 * * *"
+    region: oregon
+    branch: shubham-changes-13-aug
+    buildCommand: npm install && bash scripts/install-mongodb-database-tools.sh
+    startCommand: export PATH="/opt/mongodb-database-tools/bin:$PATH" && node scripts/run-db-backup.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_BACKUP_TRIGGER
+        value: render-cron
+      - key: MONGO_URI
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM_NODE_MAILER
+        sync: false
+      - key: DB_BACKUP_ENABLED
+        value: "true"
+      - key: DB_BACKUP_NOTIFY_EMAIL
+        value: info@steelbuildingdepot.com

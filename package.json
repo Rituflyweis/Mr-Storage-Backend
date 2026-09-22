@@ -7,6 +7,7 @@
     "dev": "vercel dev",
     "seed": "node scripts/seed.js",
     "create-user": "node scripts/createUser.js",
+    "backup:db": "node scripts/run-db-backup.js",
     "postinstall": "npx puppeteer browsers install chrome || true"
   },
   "dependencies": {

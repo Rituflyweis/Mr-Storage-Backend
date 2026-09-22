@@ -104,4 +104,30 @@ module.exports = {
     process.env.SALES_LOGIN_URL || "https://sales.storagematerials.org/",
   PLANT_LOGIN_URL:
     process.env.PLANT_LOGIN_URL || "https://plant.storagematerials.org/",
+
+  DB_BACKUP_ENABLED:
+    process.env.DB_BACKUP_ENABLED !== "false" &&
+    process.env.DB_BACKUP_ENABLED !== "0",
+  /** In-process node-schedule (local dev). Production should use Render cron + set this false on web. */
+  DB_BACKUP_IN_PROCESS_SCHEDULE:
+    process.env.DB_BACKUP_IN_PROCESS_SCHEDULE === "true" ||
+    (process.env.DB_BACKUP_IN_PROCESS_SCHEDULE !== "false" &&
+      (process.env.NODE_ENV || "development") !== "production"),
+  DB_BACKUP_NOTIFY_EMAIL:
+    (process.env.DB_BACKUP_NOTIFY_EMAIL || "").trim() ||
+    "info@steelbuildingdepot.com",
+  DB_BACKUP_S3_PREFIX:
+    (process.env.DB_BACKUP_S3_PREFIX || "").trim() ||
+    `db-backups/${process.env.NODE_ENV || "development"}`,
+  DB_BACKUP_RETENTION_COUNT: parseInt(
+    process.env.DB_BACKUP_RETENTION_COUNT || "30",
+    10,
+  ),
+  DB_BACKUP_PRESIGN_EXPIRY_SEC: parseInt(
+    process.env.DB_BACKUP_PRESIGN_EXPIRY_SEC || "604800",
+    10,
+  ),
+  DB_BACKUP_CRON: (process.env.DB_BACKUP_CRON || "").trim() || "0 4 * * *",
+  DB_BACKUP_TIMEZONE:
+    (process.env.DB_BACKUP_TIMEZONE || "").trim() || "Asia/Kolkata",
 };

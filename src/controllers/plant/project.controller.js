@@ -24,6 +24,11 @@ const {
   loadConsolidatedBomCostMap,
 } = require('../../utils/shipperAmountComparison')
 const { validatePlantLifecycleTransition } = require('../../utils/plantLifecycle')
+const {
+  buildPlantProjectLifecycle,
+  completePlantLifecycleStep,
+} = require('../../utils/projectLifecycleSteps.util')
+const ProjectStepDetail = require('../../models/ProjectStepDetail')
 const { getLatestBomJobsByBuilding, formatBomJobSummary } = require('../../utils/plantBomAccess')
 const { processBOMJob, inferFileFormat } = require('../../services/plant/bom.service')
 const {
@@ -288,10 +293,11 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
   const { lead, poOrder } = access
   const leadId = lead._id
 
-  const [assignedSales, buildings, leadNotes, activityLogs] = await Promise.all([
+  const [assignedSales, buildings, leadNotes, stepDetails, activityLogs] = await Promise.all([
     User.findById(lead.assignedSales).select('_id name email role').lean(),
     Building.find({ leadId }).select('buildingNumber status drawings').sort({ buildingNumber: 1 }).lean(),
     formatLeadNotes(lead),
+    ProjectStepDetail.find({ leadId }).lean(),
     AuditLog.find({ leadId })
       .populate('performedBy', 'name email role')
       .populate({ path: 'leadId', select: 'projectName jobId' })
@@ -305,6 +311,7 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
   const customerDoc = lead.customerId
   const leadLean = lead.toObject()
   const lifecycleHistory = await populateLifecycleHistory(leadLean.lifecycleHistory || [])
+  const projectLifecycle = buildPlantProjectLifecycle(leadLean, { assignedSales, stepDetails })
 
   const activityLog = activityLogs.map((log) => ({
     _id: log._id,
@@ -331,6 +338,8 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
     createdAt: leadLean.createdAt,
     lifecycleStatus: leadLean.lifecycleStatus,
     lifecycleHistory,
+    projectLifecycle,
+    lifecycleSteps: projectLifecycle.steps,
     numberOfBuildings: leadLean.numberOfBuildings ?? buildings.length,
     endDate: leadLean.endDate || null,
     isTerminated: leadLean.isTerminated === true,
@@ -363,20 +372,30 @@ exports.updateProjectLifecycle = asyncHandler(async (req, res) => {
   const access = await guardProject(req, res)
   if (!access) return
   const { lead } = access
-  const { lifecycleStatus, note } = req.body
+  const { lifecycleStatus, note, completeCurrentStep } = req.body
 
-  if (!lifecycleStatus) return badRequest(res, 'lifecycleStatus is required')
+  let resolvedStatus = lifecycleStatus
 
-  const transitionError = validatePlantLifecycleTransition(lead.lifecycleStatus, lifecycleStatus)
-  if (transitionError) return badRequest(res, transitionError.error)
+  if (completeCurrentStep === true) {
+    const result = await completePlantLifecycleStep(lead, req.user, { note })
+    if (result.error) return badRequest(res, result.error)
+    resolvedStatus = result.nextStatus
+  } else {
+    if (!lifecycleStatus) {
+      return badRequest(res, 'Send lifecycleStatus or completeCurrentStep: true')
+    }
+    const transitionError = validatePlantLifecycleTransition(lead.lifecycleStatus, lifecycleStatus)
+    if (transitionError) return badRequest(res, transitionError.error)
 
-  lead.lifecycleStatus = lifecycleStatus
-  lead.lifecycleHistory.push({
-    stage: lifecycleStatus,
-    changedAt: new Date(),
-    changedBy: req.user._id,
-  })
-  await lead.save()
+    lead.lifecycleStatus = lifecycleStatus
+    lead.lifecycleHistory.push({
+      stage: lifecycleStatus,
+      changedAt: new Date(),
+      changedBy: req.user._id,
+    })
+    await lead.save()
+    resolvedStatus = lifecycleStatus
+  }
 
   await auditService.log({
     type: 'plant',
@@ -384,19 +403,30 @@ exports.updateProjectLifecycle = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: lead.customerId,
     performedBy: req.user._id,
-    metadata: { lifecycleStatus, projectName: lead.projectName || '' },
+    metadata: {
+      lifecycleStatus: resolvedStatus,
+      completeCurrentStep: completeCurrentStep === true,
+      projectName: lead.projectName || '',
+    },
   })
 
-  if (note && String(note).trim()) {
+  if (note && String(note).trim() && completeCurrentStep !== true) {
     await appendLeadNote(lead, note, req.user._id)
   }
 
-  const lifecycleHistory = await populateLifecycleHistory(lead.lifecycleHistory)
+  const [lifecycleHistory, assignedSales, stepDetails] = await Promise.all([
+    populateLifecycleHistory(lead.lifecycleHistory),
+    User.findById(lead.assignedSales).select('_id name email role').lean(),
+    ProjectStepDetail.find({ leadId: lead._id }).lean(),
+  ])
+  const projectLifecycle = buildPlantProjectLifecycle(lead.toObject(), { assignedSales, stepDetails })
 
   return success(res, {
     leadId: lead._id,
     lifecycleStatus: lead.lifecycleStatus,
     lifecycleHistory,
+    projectLifecycle,
+    lifecycleSteps: projectLifecycle.steps,
   })
 })
 

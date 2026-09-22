@@ -13,6 +13,7 @@ const {
   ADMIN_LOGIN_URL,
   SALES_LOGIN_URL,
   PLANT_LOGIN_URL,
+  DB_BACKUP_NOTIFY_EMAIL,
 } = require("../../config/env");
 const { getInvoiceCompany } = require("../../config/invoiceCompany");
 const { computeInvoiceDueDate } = require("../../utils/invoiceDueDate");
@@ -1245,6 +1246,109 @@ const sendDeliveryCallbackRequestEmail = async ({
   });
 };
 
+const sendDbBackupNotification = async ({
+  toEmail,
+  dateLabel,
+  dbName,
+  environment,
+  s3Key,
+  s3Uri,
+  downloadUrl,
+  publicStyleUrl,
+  sizeLabel,
+  durationSec,
+  retentionDeleted,
+  retentionKept,
+  retentionWarning,
+}) => {
+  const recipient = toEmail || DB_BACKUP_NOTIFY_EMAIL;
+  const subject = `Mr Storage DB backup — ${dateLabel}`;
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Daily database backup</h2>
+      <p>This is today's full MongoDB snapshot for <strong>${environment}</strong>.</p>
+      <ul>
+        <li><strong>Date:</strong> ${dateLabel}</li>
+        <li><strong>Database:</strong> ${dbName || "mongodb"}</li>
+        <li><strong>Size:</strong> ${sizeLabel || "—"}</li>
+        <li><strong>Duration:</strong> ${durationSec ?? "—"}s</li>
+        <li><strong>S3 key:</strong> ${s3Key || "—"}</li>
+        <li><strong>Retention:</strong> ${
+          retentionWarning
+            ? `not run (${String(retentionWarning).replace(/</g, "&lt;")})`
+            : `keeping ${retentionKept ?? 30} newest file(s)${
+                retentionDeleted ? `, removed ${retentionDeleted} older` : ""
+              }`
+        }</li>
+      </ul>
+      <p><a href="${downloadUrl}">Download backup (presigned link)</a></p>
+      <p style="font-size:12px;color:#64748b">S3 URI: ${s3Uri || "—"}<br/>
+      Object URL (private bucket — use presigned link above): ${publicStyleUrl || "—"}</p>
+    </div>
+  `;
+
+  const text = [
+    `Daily database backup — ${dateLabel}`,
+    `Environment: ${environment}`,
+    `Database: ${dbName}`,
+    `Size: ${sizeLabel}`,
+    `Download: ${downloadUrl}`,
+    `S3: ${s3Uri}`,
+  ].join("\n");
+
+  if (!enquiryTransporter) {
+    throw new Error(
+      "Backup email requires SMTP (SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM_NODE_MAILER).",
+    );
+  }
+
+  const info = await enquiryTransporter.sendMail({
+    from: MAIL_FROM_NODE_MAILER || SMTP_MAIL_FROM,
+    to: recipient,
+    subject,
+    html,
+    text,
+  });
+
+  console.log(
+    `[Nodemailer] DB backup email | to=${recipient} | messageId=${info.messageId || "-"}`,
+  );
+};
+
+const sendDbBackupFailureNotification = async ({
+  toEmail,
+  dateLabel,
+  environment,
+  errorMessage,
+  trigger,
+}) => {
+  const recipient = toEmail || DB_BACKUP_NOTIFY_EMAIL;
+  const subject = `Mr Storage DB backup FAILED — ${dateLabel}`;
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px;color:#b91c1c">Database backup failed</h2>
+      <p>Environment: <strong>${environment}</strong></p>
+      <p>Trigger: ${trigger || "—"}</p>
+      <pre style="background:#fef2f2;padding:12px;border-radius:6px;white-space:pre-wrap">${String(errorMessage || "Unknown error").replace(/</g, "&lt;")}</pre>
+    </div>
+  `;
+
+  if (!enquiryTransporter) {
+    console.warn("[dbBackup] failure email skipped — SMTP not configured");
+    return;
+  }
+
+  await enquiryTransporter.sendMail({
+    from: MAIL_FROM_NODE_MAILER || SMTP_MAIL_FROM,
+    to: recipient,
+    subject,
+    html,
+    text: `DB backup failed (${environment}): ${errorMessage}`,
+  });
+};
+
 module.exports = {
   isEmailConfigured,
   isSmtpConfigured,
@@ -1268,4 +1372,6 @@ module.exports = {
   sendFreightBidRejectedEmail,
   sendDeliveryConfirmationEmail,
   sendDeliveryCallbackRequestEmail,
+  sendDbBackupNotification,
+  sendDbBackupFailureNotification,
 };

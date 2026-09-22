@@ -35,7 +35,11 @@ router.get('/',
 router.get('/:leadId/detail', ctrl.getProjectDetail)
 
 router.put('/:leadId/lifecycle',
-  [body('lifecycleStatus').isIn(PLANT_LIFECYCLE_STAGES), body('note').optional().trim()],
+  [
+    body('completeCurrentStep').optional().isBoolean(),
+    body('lifecycleStatus').optional().isIn(PLANT_LIFECYCLE_STAGES),
+    body('note').optional().trim(),
+  ],
   validate,
   ctrl.updateProjectLifecycle
 )

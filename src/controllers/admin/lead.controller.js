@@ -18,9 +18,15 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { setLeadLifecycleStage } = require('../../utils/leadLifecycle.util')
 const {
+  buildPlantProjectLifecycle,
+  completePlantLifecycleStep,
+} = require('../../utils/projectLifecycleSteps.util')
+const ProjectStepDetail = require('../../models/ProjectStepDetail')
+const {
   AUDIT_ACTIONS,
   LIFECYCLE_STAGES,
   LEAD_TEMPERATURES,
+  PLANT_LIFECYCLE_STAGES,
 } = require('../../config/constants')
 const {
   escapeRegex,
@@ -103,20 +109,31 @@ exports.updateLeadTemperature = asyncHandler(async (req, res) => {
 
 exports.updateLifecycle = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { lifecycleStatus, note } = req.body
+  const { lifecycleStatus, note, completeCurrentStep } = req.body
 
   const lead = await Lead.findById(leadId)
   if (!lead) return notFound(res, 'Lead not found')
 
-  if (!LIFECYCLE_STAGES.includes(lifecycleStatus)) {
-    return badRequest(res, 'Invalid lifecycle status')
+  let resolvedStatus = lifecycleStatus
+
+  if (completeCurrentStep === true) {
+    const result = await completePlantLifecycleStep(lead, req.user, { note })
+    if (result.error) return badRequest(res, result.error)
+    resolvedStatus = result.nextStatus
+  } else {
+    if (!lifecycleStatus) {
+      return badRequest(res, 'Send lifecycleStatus or completeCurrentStep: true')
+    }
+    if (!LIFECYCLE_STAGES.includes(lifecycleStatus)) {
+      return badRequest(res, 'Invalid lifecycle status')
+    }
+    setLeadLifecycleStage(lead, lifecycleStatus, req.user._id)
+    await lead.save()
+    resolvedStatus = lifecycleStatus
   }
 
-  setLeadLifecycleStage(lead, lifecycleStatus, req.user._id)
-  await lead.save()
-
   let addedNote = null
-  if (note !== undefined && note !== null && String(note).trim()) {
+  if (note !== undefined && note !== null && String(note).trim() && completeCurrentStep !== true) {
     try {
       addedNote = await appendLeadNote(lead, note, req.user._id)
     } catch (err) {
@@ -131,12 +148,30 @@ exports.updateLifecycle = asyncHandler(async (req, res) => {
     leadId,
     customerId: lead.customerId,
     performedBy: req.user._id,
-    metadata: { lifecycleStatus, noteAdded: !!addedNote },
+    metadata: {
+      lifecycleStatus: resolvedStatus,
+      completeCurrentStep: completeCurrentStep === true,
+      noteAdded: !!addedNote,
+    },
   })
   await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'lifecycle', includeScoreRow: true })
 
   const data = { lead: enrichLeadDocument(lead) }
   if (addedNote) data.note = addedNote
+
+  const inPlantPipeline =
+    PLANT_LIFECYCLE_STAGES.includes(lead.lifecycleStatus) ||
+    PLANT_LIFECYCLE_STAGES.includes(resolvedStatus)
+  if (inPlantPipeline) {
+    const [assignedSales, stepDetails] = await Promise.all([
+      User.findById(lead.assignedSales).select('_id name email role').lean(),
+      ProjectStepDetail.find({ leadId: lead._id }).lean(),
+    ])
+    const projectLifecycle = buildPlantProjectLifecycle(lead.toObject(), { assignedSales, stepDetails })
+    data.projectLifecycle = projectLifecycle
+    data.lifecycleSteps = projectLifecycle.steps
+  }
+
   return success(res, data)
 })
 
@@ -506,12 +541,22 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
 
   const leadNotes = await formatLeadNotes(lead)
 
+  let projectLifecycle = null
+  if (PLANT_LIFECYCLE_STAGES.includes(lead.lifecycleStatus)) {
+    const stepDetails = await ProjectStepDetail.find({ leadId }).lean()
+    projectLifecycle = buildPlantProjectLifecycle(lead, {
+      assignedSales: lead.assignedSales,
+      stepDetails,
+    })
+  }
+
   return success(res, {
     lead: enrichLeadDocument(lead),
     lifecycle: {
       status: lead.lifecycleStatus || '',
       history: Array.isArray(lead.lifecycleHistory) ? lead.lifecycleHistory : [],
     },
+    projectLifecycle,
     customer,
     rfq: { aiQuoteData: lead.aiQuoteData, aiContextSummary: lead.aiContextSummary },
     quotations: flaggedQuotations,

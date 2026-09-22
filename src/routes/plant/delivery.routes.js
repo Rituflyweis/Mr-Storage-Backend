@@ -202,18 +202,17 @@ router.get('/:deliveryId/bids',
   ctrl.getDeliveryBids
 )
 
-router.patch('/:deliveryId/reschedule',
-  [
-    param('deliveryId').isMongoId(),
-    body('date').isISO8601().withMessage('date is required'),
-    body('timeWindowStart').trim().notEmpty().withMessage('timeWindowStart is required'),
-    body('timeWindowEnd').trim().notEmpty().withMessage('timeWindowEnd is required'),
-    body('rescheduleReason').trim().notEmpty().withMessage('rescheduleReason is required'),
-    body('additionalNotes').optional().isString().trim(),
-  ],
-  validate,
-  ctrl.rescheduleDelivery
-)
+const rescheduleDeliveryValidators = [
+  param('deliveryId').isMongoId(),
+  body('date').isISO8601().withMessage('date is required'),
+  body('timeWindowStart').trim().notEmpty().withMessage('timeWindowStart is required'),
+  body('timeWindowEnd').trim().notEmpty().withMessage('timeWindowEnd is required'),
+  body('rescheduleReason').trim().notEmpty().withMessage('rescheduleReason is required'),
+  body('additionalNotes').optional().isString().trim(),
+]
+
+router.patch('/:deliveryId/reschedule', rescheduleDeliveryValidators, validate, ctrl.rescheduleDelivery)
+router.post('/:deliveryId/reschedule', rescheduleDeliveryValidators, validate, ctrl.rescheduleDelivery)
 
 router.patch('/:deliveryId/status',
   [

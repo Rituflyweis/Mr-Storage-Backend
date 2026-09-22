@@ -89,8 +89,9 @@ router.put('/:leadId/temperature',
 
 router.put('/:leadId/lifecycle',
   [
-    body('lifecycleStatus').notEmpty().isIn(LIFECYCLE_STAGES),
-    body('note').optional().trim().notEmpty(),
+    body('completeCurrentStep').optional().isBoolean(),
+    body('lifecycleStatus').optional().isIn(LIFECYCLE_STAGES),
+    body('note').optional().trim(),
   ],
   validate,
   ctrl.updateLifecycle

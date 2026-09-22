@@ -7,6 +7,7 @@ const { PORT, NODE_ENV } = require("./src/config/env");
 const {
   initFollowUpScheduler,
 } = require("./src/utils/scheduler/followUpScheduler");
+const { initDbBackupScheduler } = require("./src/utils/scheduler/dbBackupScheduler");
 const { startAutomationRunner } = require("./src/services/followup/followUpAutomation.service");
 
 const server = http.createServer(app);
@@ -22,6 +23,7 @@ initSocket(io);
 
 connectDB().then(async () => {
   await initFollowUpScheduler(); // pending followups schedule
+  initDbBackupScheduler();
   startAutomationRunner();
 
   const customerPresence = require("./src/services/socket/customerPresence.service");
