@@ -24,7 +24,7 @@ const {
   loadFreightLoadDetailsByBundlePlanId,
 } = require('../../services/plant/freightLoadDetails.service')
 const { CLIENT_URL } = require('../../config/env')
-const { AUDIT_ACTIONS } = require('../../config/constants')
+const { AUDIT_ACTIONS, FREIGHT_BID_STATUSES } = require('../../config/constants')
 const {
   parseFlexibleDate,
   buildRescheduleReasonText,
@@ -341,6 +341,36 @@ const buildDeliveryBaseFilter = ({
   }
 
   return filter
+}
+
+const isFreightBidStatusFilter = (status) =>
+  Boolean(status && FREIGHT_BID_STATUSES.includes(String(status).trim()))
+
+const appendFreightBidStatusPipeline = (pipeline, bidStatus) => {
+  pipeline.push({
+    $lookup: {
+      from: 'freightbids',
+      localField: '_id',
+      foreignField: 'deliveryId',
+      as: 'bidStatusDocs',
+    },
+  })
+
+  if (bidStatus === 'selected') {
+    pipeline.push({
+      $match: {
+        $or: [
+          { selectedCarrierBidId: { $ne: null } },
+          { 'bidStatusDocs.status': 'selected' },
+        ],
+      },
+    })
+    return
+  }
+
+  pipeline.push({
+    $match: { 'bidStatusDocs.status': bidStatus },
+  })
 }
 
 const mapDeliveryListRow = (delivery) => {
@@ -1280,7 +1310,15 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20))
   const skip = (page - 1) * limit
 
+  const bidStatusFilter = isFreightBidStatusFilter(req.query.status)
+    ? String(req.query.status).trim()
+    : null
+
   const baseFilter = buildDeliveryBaseFilter(req.query)
+  // freight-loads/filters exposes bid statuses (sent, submitted, …); those are not Delivery.status values.
+  if (bidStatusFilter) {
+    delete baseFilter.status
+  }
   if (!baseFilter.status) {
     // Freight loads view excludes unsent draft requests by default.
     baseFilter.status = { $ne: 'draft' }
@@ -1332,6 +1370,10 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
         ],
       },
     })
+  }
+
+  if (bidStatusFilter) {
+    appendFreightBidStatusPipeline(pipeline, bidStatusFilter)
   }
 
   pipeline.push({

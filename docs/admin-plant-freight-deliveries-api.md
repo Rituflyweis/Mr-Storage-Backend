@@ -82,7 +82,7 @@ Paginated **delivery requests** in the freight workflow (one row per delivery), 
 | `page` | No | Integer ≥ 1 (default `1`) | Pagination |
 | `limit` | No | Integer 1–200 (default `20`) | Pagination |
 | `search` | No | String, trimmed | Case-insensitive match on delivery fields **or** lead `projectName` / `jobId` (see below) |
-| `status` | No | String, trimmed | **`Delivery.status`** — use delivery enum above, **not** `submitted` |
+| `status` | No | String, trimmed | **`Delivery.status`** *or* **freight bid status** (`sent`, `submitted`, … from `freight-loads/filters`). Bid values match deliveries that have ≥1 bid with that status; `selected` also includes deliveries with `selectedCarrierBidId` set. |
 | `projectId` | No | String, trimmed | **`Delivery.leadId`** if value is a valid MongoDB ObjectId; invalid IDs are ignored |
 | `customerId` | No | MongoDB ObjectId | Lead’s **`customerId`** (post-lookup on lead) |
 | `carrierId` | No | MongoDB ObjectId | **Selected** carrier only (`selectedCarrierBidId` → bid → carrier). Invalid ID → **400** `Invalid carrierId` |
@@ -212,7 +212,9 @@ No query parameters.
 
 | Field | Description |
 |--------|-------------|
-| `statuses` | `FREIGHT_BID_STATUSES` (bid enum table above) |
+| `statuses` | Same as `bidStatuses` — use with `GET .../deliveries/freight?status=` or `GET .../freight-loads?status=` |
+| `bidStatuses` | `FREIGHT_BID_STATUSES` (bid enum table above) |
+| `deliveryStatuses` | `DELIVERY_STATUSES` except `draft` — delivery pipeline filter on `.../deliveries/freight?status=` |
 | `carriers` | `{ _id, carrierName }[]` |
 | `projects` | `{ _id, projectName, jobId }[]` |
 | `customers` | `{ _id, name }[]` |

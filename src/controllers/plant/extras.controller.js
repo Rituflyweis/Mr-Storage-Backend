@@ -17,7 +17,16 @@ const Vendor = require('../../models/Vendor')
 const asyncHandler = require('../../utils/asyncHandler')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { FREIGHT_BID_STATUSES, DELIVERY_FULFILLMENT_STATUSES, DELIVERY_MATERIAL_CATEGORIES, DELIVERY_EQUIPMENT_OPTIONS } = require('../../config/constants')
+const {
+  FREIGHT_BID_STATUSES,
+  DELIVERY_STATUSES,
+  DELIVERY_FULFILLMENT_STATUSES,
+  DELIVERY_MATERIAL_CATEGORIES,
+  DELIVERY_EQUIPMENT_OPTIONS,
+} = require('../../config/constants')
+
+// Shown on GET /deliveries/freight when filtering Delivery.status (not freight bid status).
+const FREIGHT_DELIVERY_STATUS_FILTERS = DELIVERY_STATUSES.filter((s) => s !== 'draft')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse calendar stat.
 const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered')
 const {
@@ -395,7 +404,10 @@ exports.getFreightLoadFilters = asyncHandler(async (req, res) => {
     : []
 
   return success(res, {
+    // Bid-level statuses — use on GET .../deliveries/freight?status=... or GET .../freight-loads?status=...
     statuses: FREIGHT_BID_STATUSES,
+    bidStatuses: FREIGHT_BID_STATUSES,
+    deliveryStatuses: FREIGHT_DELIVERY_STATUS_FILTERS,
     carriers: carriers.map((c) => ({ _id: c._id, carrierName: c.carrierName })),
     projects: leads.map((l) => ({ _id: l._id, projectName: l.projectName, jobId: l.jobId })),
     customers: customers.map((c) => ({ _id: c._id, name: `${c.firstName} ${c.lastName || ''}`.trim() })),
