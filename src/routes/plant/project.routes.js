@@ -67,6 +67,48 @@ router.post('/:leadId/drawings',
   ctrl.uploadProjectDrawings
 )
 router.get('/:leadId/drawings', ctrl.getProjectDrawings)
+
+const drawingDocParams = [
+  param('leadId').isMongoId(),
+  param('docId').isMongoId(),
+]
+const drawingRevisionBody = [
+  body('note').optional().isString().trim(),
+  body('notes').optional().isString().trim(),
+  body('reviewNotes').optional().isString().trim(),
+  body('revisionNote').optional().isString().trim(),
+]
+const drawingReviewBody = [
+  body('status').optional().isString().trim(),
+  body('approvalStatus').optional().isString().trim(),
+  ...drawingRevisionBody,
+]
+
+router.post('/:leadId/drawings/:docId/approve', drawingDocParams, validate, ctrl.approveProjectDrawing)
+router.put('/:leadId/drawings/:docId/approve', drawingDocParams, validate, ctrl.approveProjectDrawing)
+router.post('/:leadId/drawings/:docId/request-revision', [...drawingDocParams, ...drawingRevisionBody], validate, ctrl.requestProjectDrawingRevision)
+router.post('/:leadId/drawings/:docId/reject', [...drawingDocParams, ...drawingRevisionBody], validate, ctrl.requestProjectDrawingRevision)
+router.put('/:leadId/drawings/:docId/review', [...drawingDocParams, ...drawingReviewBody], validate, ctrl.reviewProjectDrawing)
+router.post('/:leadId/drawings/:docId/review', [...drawingDocParams, ...drawingReviewBody], validate, ctrl.reviewProjectDrawing)
+
+const invoiceCtrl = require('../../controllers/common/invoice.controller')
+const assertInvoiceMatchesProjectParams = require('../../middleware/assertInvoiceProjectParams')
+const paymentProofRejectValidators = [
+  body('reviewNotes').optional().isString(),
+  body('notes').optional().isString(),
+  body('note').optional().isString(),
+]
+const projectInvoiceParams = [
+  param('leadId').isMongoId(),
+  param('invoiceId').isMongoId(),
+]
+
+router.put('/:leadId/invoices/:invoiceId/payment-proof/verify', projectInvoiceParams, validate, assertInvoiceMatchesProjectParams, invoiceCtrl.verifyPaymentProof)
+router.post('/:leadId/invoices/:invoiceId/payment-proof/verify', projectInvoiceParams, validate, assertInvoiceMatchesProjectParams, invoiceCtrl.verifyPaymentProof)
+router.put('/:leadId/invoices/:invoiceId/payment-proof/approve', projectInvoiceParams, validate, assertInvoiceMatchesProjectParams, invoiceCtrl.verifyPaymentProof)
+router.post('/:leadId/invoices/:invoiceId/payment-proof/approve', projectInvoiceParams, validate, assertInvoiceMatchesProjectParams, invoiceCtrl.verifyPaymentProof)
+router.put('/:leadId/invoices/:invoiceId/payment-proof/reject', [...projectInvoiceParams, ...paymentProofRejectValidators], validate, assertInvoiceMatchesProjectParams, invoiceCtrl.rejectPaymentProof)
+router.post('/:leadId/invoices/:invoiceId/payment-proof/reject', [...projectInvoiceParams, ...paymentProofRejectValidators], validate, assertInvoiceMatchesProjectParams, invoiceCtrl.rejectPaymentProof)
 router.post('/:leadId/bom',
   [
     body('bomFiles').isArray({ min: 1 }),

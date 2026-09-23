@@ -5,6 +5,14 @@ const leadCtrl = require('../../controllers/admin/lead.controller')
 const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { projectFieldValidators, leadCreateFieldValidators } = require('../../utils/leadCreateValidators')
+const invoiceCtrl = require('../../controllers/common/invoice.controller')
+const assertInvoiceMatchesProjectParams = require('../../middleware/assertInvoiceProjectParams')
+
+const paymentProofRejectValidators = [
+  body('reviewNotes').optional().isString(),
+  body('notes').optional().isString(),
+  body('note').optional().isString(),
+]
 
 // ── Static routes BEFORE /:customerId ─────────────────────────────────────────
 router.get('/stats', ctrl.getCustomerStats)
@@ -99,6 +107,54 @@ router.get(
   ],
   validate,
   ctrl.getProjectInvoices
+)
+
+const projectInvoiceIdValidators = [
+  ...projectInvoiceValidators,
+  param('invoiceId').isMongoId(),
+]
+
+router.put(
+  '/:customerId/projects/:leadId/invoices/:invoiceId/payment-proof/verify',
+  projectInvoiceIdValidators,
+  validate,
+  assertInvoiceMatchesProjectParams,
+  invoiceCtrl.verifyPaymentProof
+)
+router.post(
+  '/:customerId/projects/:leadId/invoices/:invoiceId/payment-proof/verify',
+  projectInvoiceIdValidators,
+  validate,
+  assertInvoiceMatchesProjectParams,
+  invoiceCtrl.verifyPaymentProof
+)
+router.put(
+  '/:customerId/projects/:leadId/invoices/:invoiceId/payment-proof/approve',
+  projectInvoiceIdValidators,
+  validate,
+  assertInvoiceMatchesProjectParams,
+  invoiceCtrl.verifyPaymentProof
+)
+router.post(
+  '/:customerId/projects/:leadId/invoices/:invoiceId/payment-proof/approve',
+  projectInvoiceIdValidators,
+  validate,
+  assertInvoiceMatchesProjectParams,
+  invoiceCtrl.verifyPaymentProof
+)
+router.put(
+  '/:customerId/projects/:leadId/invoices/:invoiceId/payment-proof/reject',
+  [...projectInvoiceIdValidators, ...paymentProofRejectValidators],
+  validate,
+  assertInvoiceMatchesProjectParams,
+  invoiceCtrl.rejectPaymentProof
+)
+router.post(
+  '/:customerId/projects/:leadId/invoices/:invoiceId/payment-proof/reject',
+  [...projectInvoiceIdValidators, ...paymentProofRejectValidators],
+  validate,
+  assertInvoiceMatchesProjectParams,
+  invoiceCtrl.rejectPaymentProof
 )
 
 router.get('/:customerId/projects', ctrl.getCustomerProjects)

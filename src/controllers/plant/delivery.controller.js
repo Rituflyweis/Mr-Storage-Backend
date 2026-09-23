@@ -7,6 +7,7 @@ const PackingListPlan = require('../../models/PackingListPlan')
 const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Lead = require('../../models/Lead')
+const Customer = require('../../models/Customer')
 const POOrder = require('../../models/POOrder')
 const ShipperRequest = require('../../models/ShipperRequest')
 const Vendor = require('../../models/Vendor')
@@ -14,7 +15,8 @@ const auditService = require('../../services/audit.service')
 const notificationService = require('../../services/notification.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { getScopedLeadIds } = require('../../utils/plantAccessScope')
-const { sendFreightBidRequestEmail } = require('../../services/email/mailer')
+const { sendFreightBidRequestEmail, sendDeliveryConfirmationEmail } = require('../../services/email/mailer')
+const { sendSms, isTwilioConfigured } = require('../../services/sms/sms.service')
 const generateDeliveryNumber = require('../../utils/generateDeliveryNumber')
 const {
   computeFreightEnvelopeDimensions,
@@ -23,6 +25,10 @@ const {
 } = require('../../services/plant/freightLoadDetails.service')
 const { CLIENT_URL } = require('../../config/env')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const {
+  parseFlexibleDate,
+  buildRescheduleReasonText,
+} = require('../../utils/deliveryReschedule.util')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
 const { SHIPPER_REQUEST_LATEST_FIRST_SORT } = require('../../utils/shipperRequestSort')
 const {
@@ -39,12 +45,12 @@ const asyncHandler = require('../../utils/asyncHandler')
 const DELIVERY_STATUS_TRANSITIONS = {
   draft: ['scheduled', 'cancelled'],
   bidding_sent: ['scheduled', 'cancelled'],
-  carrier_selected: ['scheduled', 'confirmed', 'material_prepared', 'in_transit', 'delayed', 'cancelled'],
-  scheduled: ['confirmed', 'material_prepared', 'in_transit', 'delayed', 'cancelled'],
-  confirmed: ['material_prepared', 'loaded', 'picked_up', 'in_transit', 'delayed', 'cancelled'],
-  material_prepared: ['loaded', 'picked_up', 'in_transit', 'delayed', 'cancelled'],
-  loaded: ['picked_up', 'in_transit', 'delayed', 'cancelled'],
-  picked_up: ['in_transit', 'delayed', 'cancelled'],
+  carrier_selected: ['scheduled', 'confirmed', 'material_prepared', 'in_transit', 'delivered', 'delayed', 'cancelled'],
+  scheduled: ['confirmed', 'material_prepared', 'in_transit', 'delivered', 'delayed', 'cancelled'],
+  confirmed: ['material_prepared', 'loaded', 'picked_up', 'in_transit', 'delivered', 'delayed', 'cancelled'],
+  material_prepared: ['loaded', 'picked_up', 'in_transit', 'delivered', 'delayed', 'cancelled'],
+  loaded: ['picked_up', 'in_transit', 'delivered', 'delayed', 'cancelled'],
+  picked_up: ['in_transit', 'delivered', 'delayed', 'cancelled'],
   in_transit: ['staged', 'dispatched_to_site', 'delivered', 'delayed', 'cancelled'],
   delayed: [
     'scheduled', 'confirmed', 'material_prepared', 'loaded', 'picked_up', 'in_transit',
@@ -1693,7 +1699,6 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
     date,
     timeWindowStart,
     timeWindowEnd,
-    rescheduleReason,
     additionalNotes,
   } = req.body
 
@@ -1710,15 +1715,16 @@ exports.rescheduleDelivery = asyncHandler(async (req, res) => {
     return badRequest(res, `Cannot reschedule a delivery with status ${delivery.status}`)
   }
 
-  const newDate = normalizeDateOnly(date)
+  const newDate = parseFlexibleDate(date)
   if (!newDate) return badRequest(res, 'Valid date is required')
 
   const start = String(timeWindowStart || '').trim()
   const end = String(timeWindowEnd || '').trim()
-  const reason = String(rescheduleReason || '').trim()
+  const reasonResult = buildRescheduleReasonText(req.body)
+  if (reasonResult.error) return badRequest(res, reasonResult.error)
+  const reason = reasonResult.reason
   if (!start) return badRequest(res, 'timeWindowStart is required')
   if (!end) return badRequest(res, 'timeWindowEnd is required')
-  if (!reason) return badRequest(res, 'rescheduleReason is required')
 
   const notes = additionalNotes !== undefined
     ? String(additionalNotes).trim()
@@ -1845,4 +1851,121 @@ exports.updateDeliveryStatus = asyncHandler(async (req, res) => {
   }
 
   return success(res, { delivery }, 'Delivery status updated')
+})
+
+const formatSmsPhone = (phone) => {
+  if (!phone) return ''
+  if (typeof phone === 'string') return phone.trim()
+  const cc = String(phone.countryCode || '').trim()
+  const num = String(phone.number || '').trim()
+  if (!num) return ''
+  return `${cc}${num}`.replace(/\s+/g, '')
+}
+
+exports.markDeliveryDelivered = asyncHandler(async (req, res) => {
+  req.body.status = 'delivered'
+  return exports.updateDeliveryStatus(req, res)
+})
+
+exports.sendDeliveryReminder = asyncHandler(async (req, res) => {
+  const { deliveryId } = req.params
+  const delivery = await Delivery.findById(deliveryId)
+  if (!delivery) return notFound(res, 'Delivery not found')
+
+  const access = await assertPlantProjectAccess(delivery.leadId, req)
+  if (access.error) {
+    if (access.code === 404) return notFound(res, access.error)
+    return forbidden(res, access.error)
+  }
+
+  if (delivery.status === 'cancelled') {
+    return badRequest(res, 'Cannot send a reminder for a cancelled delivery')
+  }
+  if (delivery.status === 'delivered') {
+    return badRequest(res, 'Delivery is already marked delivered')
+  }
+
+  const [lead, customer] = await Promise.all([
+    Lead.findById(delivery.leadId).select('projectName jobId customerId').lean(),
+    Lead.findById(delivery.leadId).select('customerId').lean().then(async (l) => {
+      if (!l?.customerId) return null
+      return Customer.findById(l.customerId).select('firstName lastName email phone').lean()
+    }),
+  ])
+
+  const channels = { email: false, sms: false, inApp: false }
+  const reviewNotes = String(req.body?.message || req.body?.note || '').trim()
+  const dateLabel = delivery.deliveryDate
+    ? new Date(delivery.deliveryDate).toLocaleDateString('en-US')
+    : 'TBD'
+  const windowLabel = formatDeliveryTimeWindow(delivery.timeWindowStart, delivery.timeWindowEnd)
+
+  if (customer?.email) {
+    try {
+      await sendDeliveryConfirmationEmail({
+        toEmail: customer.email,
+        customerName: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
+        projectName: lead?.projectName || '',
+        jobId: lead?.jobId || '',
+        deliveryNumber: delivery.deliveryNumber,
+        deliveryDate: delivery.deliveryDate,
+        timings: windowLabel || delivery.timings || '',
+        deliveryLocation: delivery.deliveryLocation || '',
+      })
+      channels.email = true
+    } catch (err) {
+      console.error('[sendDeliveryReminder] email failed:', err.message)
+    }
+  }
+
+  const smsTarget =
+    formatSmsPhone(delivery.siteContact?.phone) ||
+    String(delivery.pickupContactPhone || '').trim() ||
+    formatSmsPhone(customer?.phone)
+
+  if (smsTarget && isTwilioConfigured()) {
+    try {
+      const body = reviewNotes
+        || `Reminder: delivery ${delivery.deliveryNumber || ''} for ${lead?.projectName || 'your project'} is scheduled ${dateLabel}${windowLabel ? ` (${windowLabel})` : ''}.`
+      await sendSms({ to: smsTarget, body })
+      channels.sms = true
+    } catch (err) {
+      console.error('[sendDeliveryReminder] sms failed:', err.message)
+    }
+  }
+
+  if (customer?._id) {
+    await notificationService.notify({
+      customerId: customer._id,
+      leadId: delivery.leadId,
+      title: 'Delivery reminder',
+      body:
+        reviewNotes
+        || `Delivery ${delivery.deliveryNumber || ''} is scheduled for ${dateLabel}${windowLabel ? `, ${windowLabel}` : ''}.`,
+      type: 'delivery',
+      priority: 'medium',
+      refId: delivery._id,
+      refModel: 'Delivery',
+    })
+    channels.inApp = true
+  }
+
+  if (!channels.email && !channels.sms && !channels.inApp) {
+    return badRequest(res, 'No reminder channel available (customer email, SMS, or in-app)')
+  }
+
+  await auditService.log({
+    type: 'plant',
+    action: AUDIT_ACTIONS.DELIVERY_REMINDER_SENT,
+    leadId: delivery.leadId,
+    customerId: customer?._id || access.lead.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      deliveryId: delivery._id,
+      deliveryNumber: delivery.deliveryNumber,
+      channels,
+    },
+  })
+
+  return success(res, { deliveryId: delivery._id, channels }, 'Delivery reminder sent')
 })

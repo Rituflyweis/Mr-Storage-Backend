@@ -30,8 +30,18 @@ router.put('/:invoiceId/reject', [body('reason').optional().isString(), body('no
 router.post('/:invoiceId/send', outboundSendBodyValidators, validate, ctrl.sendInvoice)
 router.post('/:invoiceId/mark-sent', markSentBodyValidators, validate, ctrl.markInvoiceSent)
 router.put('/:invoiceId/mark-paid', ctrl.markAsPaid)
+const paymentProofRejectValidators = [
+  body('reviewNotes').optional().isString(),
+  body('notes').optional().isString(),
+  body('note').optional().isString(),
+]
+
 router.put('/:invoiceId/payment-proof/verify', ctrl.verifyPaymentProof)
-router.put('/:invoiceId/payment-proof/reject', [body('reviewNotes').optional().isString()], validate, ctrl.rejectPaymentProof)
+router.post('/:invoiceId/payment-proof/verify', ctrl.verifyPaymentProof)
+router.put('/:invoiceId/payment-proof/approve', ctrl.verifyPaymentProof)
+router.post('/:invoiceId/payment-proof/approve', ctrl.verifyPaymentProof)
+router.put('/:invoiceId/payment-proof/reject', paymentProofRejectValidators, validate, ctrl.rejectPaymentProof)
+router.post('/:invoiceId/payment-proof/reject', paymentProofRejectValidators, validate, ctrl.rejectPaymentProof)
 
 
 module.exports = router

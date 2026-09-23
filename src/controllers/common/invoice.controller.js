@@ -28,6 +28,31 @@ const {
   resolveInvoiceLeadIds,
   getScopedLeadIds,
 } = require("../../utils/invoiceScope");
+const { assertPlantProjectAccess } = require("../../utils/plantProjectAccess");
+
+const pickPaymentProofReviewNotes = (body = {}) =>
+  String(body.reviewNotes || body.notes || body.note || "").trim();
+
+const assertPaymentProofReviewerAccess = async (invoice, req, res) => {
+  if (req.user.role === "sales") {
+    const lead = await Lead.findById(invoice.leadId);
+    if (lead && String(lead.assignedSales) !== String(req.user._id)) {
+      forbidden(res, "Access denied");
+      return false;
+    }
+    return true;
+  }
+  if (req.user.role === "plant") {
+    const access = await assertPlantProjectAccess(invoice.leadId, req);
+    if (access.error) {
+      if (access.code === 404) notFound(res, access.error);
+      else forbidden(res, access.error);
+      return false;
+    }
+    return true;
+  }
+  return true;
+};
 const {
   AUDIT_ACTIONS,
   INVOICE_STATUSES,
@@ -1188,16 +1213,13 @@ exports.verifyPaymentProof = asyncHandler(async (req, res) => {
   if (invoice.paymentProof?.status !== "pending_review")
     return badRequest(res, "No pending receipt to verify for this invoice");
 
-  if (req.user.role === "sales") {
-    const lead = await Lead.findById(invoice.leadId);
-    if (lead && String(lead.assignedSales) !== String(req.user._id))
-      return forbidden(res, "Access denied");
-  }
+  const allowed = await assertPaymentProofReviewerAccess(invoice, req, res);
+  if (!allowed) return;
 
   invoice.paymentProof.status = "verified";
   invoice.paymentProof.reviewedBy = req.user._id;
   invoice.paymentProof.reviewedAt = new Date();
-  invoice.paymentProof.reviewNotes = req.body.reviewNotes || "";
+  invoice.paymentProof.reviewNotes = pickPaymentProofReviewNotes(req.body);
 
   invoice.status = "paid";
   invoice.paidAt = new Date();
@@ -1240,16 +1262,13 @@ exports.rejectPaymentProof = asyncHandler(async (req, res) => {
   if (invoice.paymentProof?.status !== "pending_review")
     return badRequest(res, "No pending receipt to reject for this invoice");
 
-  if (req.user.role === "sales") {
-    const lead = await Lead.findById(invoice.leadId);
-    if (lead && String(lead.assignedSales) !== String(req.user._id))
-      return forbidden(res, "Access denied");
-  }
+  const allowed = await assertPaymentProofReviewerAccess(invoice, req, res);
+  if (!allowed) return;
 
   invoice.paymentProof.status = "rejected";
   invoice.paymentProof.reviewedBy = req.user._id;
   invoice.paymentProof.reviewedAt = new Date();
-  invoice.paymentProof.reviewNotes = req.body.reviewNotes || "";
+  invoice.paymentProof.reviewNotes = pickPaymentProofReviewNotes(req.body);
   await invoice.save();
 
   await auditService.log({

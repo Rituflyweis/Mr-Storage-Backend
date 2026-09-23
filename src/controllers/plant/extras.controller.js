@@ -20,6 +20,10 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { FREIGHT_BID_STATUSES, DELIVERY_FULFILLMENT_STATUSES, DELIVERY_MATERIAL_CATEGORIES, DELIVERY_EQUIPMENT_OPTIONS } = require('../../config/constants')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse calendar stat.
 const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered')
+const {
+  filterNotificationRows,
+  formatDeliveryStatusLabel,
+} = require('../../utils/notificationDetailsQuery.util')
 
 const computeSavings = async ({ startDate, endDate, status, search, projectId }) => {
   const dateFilter = buildDateFilter({ startDate, endDate })
@@ -623,6 +627,56 @@ exports.exportAllDeliveriesCsv = asyncHandler(async (req, res) => {
   return res.send(lines.join('\n'))
 })
 
+const loadAllDeliveriesExportRows = async (query) => {
+  const filter = await buildAllDeliveriesFilter(query)
+  const deliveriesRaw = await Delivery.find(filter)
+    .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
+    .populate({ path: 'selectedCarrierBidId', select: 'carrierId', populate: { path: 'carrierId', select: 'carrierName' } })
+    .sort({ deliveryDate: -1 })
+    .lean()
+  return enrichDeliveriesWithVendorAndOwner(deliveriesRaw)
+}
+
+exports.exportAllDeliveriesExcel = asyncHandler(async (req, res) => {
+  const deliveries = await loadAllDeliveriesExportRows(req.query)
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('All Deliveries')
+  sheet.columns = [
+    { header: 'Delivery #', key: 'deliveryNumber', width: 16 },
+    { header: 'Project', key: 'project', width: 24 },
+    { header: 'Customer', key: 'customer', width: 22 },
+    { header: 'Vendor', key: 'vendor', width: 18 },
+    { header: 'Carrier', key: 'carrier', width: 18 },
+    { header: 'Internal Owner', key: 'owner', width: 18 },
+    { header: 'Material', key: 'material', width: 16 },
+    { header: 'Status', key: 'status', width: 14 },
+    { header: 'Delivery Date', key: 'date', width: 14 },
+    { header: 'Pickup', key: 'pickup', width: 22 },
+    { header: 'Delivery Location', key: 'dropoff', width: 22 },
+  ]
+  for (const d of deliveries) {
+    const customer = d.leadId?.customerId
+    sheet.addRow({
+      deliveryNumber: d.deliveryNumber || '',
+      project: d.leadId?.projectName || d.leadId?.jobId || '',
+      customer: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '',
+      vendor: d.vendorName || '',
+      carrier: d.selectedCarrierBidId?.carrierId?.carrierName || '',
+      owner: d.internalOwnerName || '',
+      material: d.materialType || '',
+      status: d.status || '',
+      date: d.deliveryDate ? new Date(d.deliveryDate).toISOString().slice(0, 10) : '',
+      pickup: d.pickupLocation || '',
+      dropoff: d.deliveryLocation || '',
+    })
+  }
+  sheet.getRow(1).font = { bold: true }
+  const buffer = await workbook.xlsx.writeBuffer()
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="all-deliveries.xlsx"')
+  return res.send(buffer)
+})
+
 const buildQRLabelsFilter = async ({ projectId, search }) => {
   const filter = {}
   if (projectId) filter.leadId = projectId
@@ -871,23 +925,36 @@ exports.exportItemCostListExcel = asyncHandler(async (req, res) => {
 // no separately persisted "notification sent" log), so "channel" is inferred from the status
 // transition rather than read from a real send record.
 const buildNotificationDetailRows = async (req) => {
-  const { startDate, endDate, search, leadId, status, channel: channelFilter, deliveryId } = req.query
+  const { search, leadId, projectId, deliveryId } = req.query
   const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 
-  const scopedLeadIds = await getScopedLeadIds(req)
+  const scopedLeadIds = await getScopedLeadIds(req, {})
   if (!scopedLeadIds.length) return []
 
-  const leadIds = leadId ? scopedLeadIds.filter((id) => String(id) === String(leadId)) : scopedLeadIds
+  const projectRef = leadId || projectId
+  const leadIds = projectRef
+    ? scopedLeadIds.filter((id) => String(id) === String(projectRef))
+    : scopedLeadIds
   if (!leadIds.length) return []
 
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'createdAt')
-  const deliveryFilter = { leadId: { $in: leadIds }, ...dateFilter }
+  const deliveryFilter = { leadId: { $in: leadIds } }
   if (deliveryId) deliveryFilter._id = deliveryId
 
-  if (search) {
+  const searchKeyword = String(search || '').trim()
+  if (searchKeyword) {
+    const rx = new RegExp(searchKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+    const matchingLeads = await Lead.find({
+      _id: { $in: leadIds },
+      $or: [{ projectName: rx }, { jobId: rx }],
+    }).select('_id').lean()
+    const matchingLeadIds = matchingLeads.map((l) => l._id)
     deliveryFilter.$or = [
-      { deliveryNumber: { $regex: search, $options: 'i' } },
-      { description:    { $regex: search, $options: 'i' } },
+      { deliveryNumber: rx },
+      { description: rx },
+      { materialType: rx },
+      { receivingPoc: rx },
+      { pickupContactPhone: rx },
+      ...(matchingLeadIds.length ? [{ leadId: { $in: matchingLeadIds } }] : []),
     ]
   }
 
@@ -939,6 +1006,9 @@ const buildNotificationDetailRows = async (req) => {
         recipientContact,
         recipientType,
         deliveryStatus,
+        deliveryStatusLabel: formatDeliveryStatusLabel(d),
+        rawDeliveryStatus: d.status || '',
+        hasReschedule: Array.isArray(d.rescheduleHistory) && d.rescheduleHistory.length > 0,
         sentAt:         h.changedAt || d.createdAt,
         project:        d.leadId?.projectName || d.leadId?.jobId || '',
         leadId:         d.leadId?._id || null,
@@ -950,17 +1020,29 @@ const buildNotificationDetailRows = async (req) => {
     }
   }
 
-  const statusFilter = status ? String(status).toLowerCase() : null
-  const channelFilterNorm = channelFilter ? String(channelFilter).toLowerCase() : null
-  const filtered = rows.filter((r) => {
-    if (statusFilter && r.deliveryStatus.toLowerCase() !== statusFilter) return false
-    if (channelFilterNorm && r.channel.toLowerCase() !== channelFilterNorm) return false
-    return true
-  })
-
+  const filtered = filterNotificationRows(rows, req.query)
   filtered.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))
   return filtered
 }
+
+exports.getNotificationDetailsFilterLookups = asyncHandler(async (req, res) => {
+  const { getScopedLeadIds } = require('../../utils/plantAccessScope')
+  const scopedLeadIds = await getScopedLeadIds(req, {})
+  const projects = scopedLeadIds.length
+    ? await Lead.find({ _id: { $in: scopedLeadIds } }).select('projectName jobId').sort({ projectName: 1 }).lean()
+    : []
+
+  return success(res, {
+    deliveryStatuses: ['Sent', 'Pending', 'Delivered', 'Failed', 'Scheduled', 'Rescheduled'],
+    channels: ['Email', 'SMS'],
+    recipientTypes: ['Customer', 'Internal Staff'],
+    projects: projects.map((p) => ({
+      leadId: p._id,
+      projectId: p.jobId || '',
+      projectName: p.projectName || p.jobId || '',
+    })),
+  })
+})
 
 // GET /notification-details
 // Delivery-level notification history: who was notified, via what channel, when.
@@ -1013,4 +1095,31 @@ exports.exportNotificationDetailsExcel = asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   res.setHeader('Content-Disposition', 'attachment; filename="notification-history.xlsx"')
   return res.send(buffer)
+})
+
+exports.exportNotificationDetailsCsv = asyncHandler(async (req, res) => {
+  const rows = await buildNotificationDetailRows(req)
+  const escapeCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const header = [
+    'Notification ID', 'Type', 'Channel', 'Delivery #', 'Project', 'Recipient',
+    'Recipient Contact', 'Recipient Type', 'Delivery Status', 'Sent Date',
+  ]
+  const lines = [header.map(escapeCsv).join(',')]
+  for (const r of rows) {
+    lines.push([
+      r.notificationId,
+      r.notificationType,
+      r.channel,
+      r.deliveryNumber,
+      r.project,
+      r.recipient,
+      r.recipientContact,
+      r.recipientType,
+      r.deliveryStatusLabel || r.deliveryStatus,
+      r.sentAt ? new Date(r.sentAt).toISOString() : '',
+    ].map(escapeCsv).join(','))
+  }
+  res.setHeader('Content-Type', 'text/csv')
+  res.setHeader('Content-Disposition', 'attachment; filename="notification-history.csv"')
+  return res.send(lines.join('\n'))
 })

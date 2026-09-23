@@ -44,6 +44,7 @@ const {
 } = require('../../services/plant/consolidator.service')
 const { sendConsolidatedBOMToVendor } = require('../../services/email/mailer')
 const { buildVendorUploadPageUrl } = require('../../utils/vendorUpload.util')
+const { resolveDrawingRef } = require('../../utils/drawingSources')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS } = require('../../config/constants')
@@ -622,6 +623,173 @@ exports.uploadProjectDrawings = asyncHandler(async (req, res) => {
     uploaded,
     projectDrawingStatus,
   }, 'Drawing(s) uploaded')
+})
+
+const emitDrawingStatusUpdated = (leadId, documentId, status, approvedAt) => {
+  if (!global.io) return
+  const payload = {
+    documentId: String(documentId),
+    leadId: String(leadId),
+    status,
+    approvedAt,
+  }
+  global.io.of('/chat').to(`lead:${leadId}`).emit('drawing_status_updated', payload)
+  global.io.of('/admin').to(`lead:${leadId}`).emit('drawing_status_updated', payload)
+}
+
+const pickRevisionNote = (body = {}) =>
+  String(body.note || body.notes || body.reviewNotes || body.revisionNote || '').trim()
+
+const approveDrawingRef = async (ref, userId) => {
+  if (ref.source === 'document') {
+    const { doc } = ref
+    doc.status = 'approved'
+    doc.approvedBy = userId
+    doc.approvedAt = new Date()
+    doc.revisionNote = ''
+    doc.revisionRequestedAt = null
+    await doc.save()
+    return { _id: doc._id, name: doc.name, status: doc.status, source: 'drawing_document' }
+  }
+
+  const { building, drawing } = ref
+  drawing.status = 'approved'
+  drawing.reviewedAt = new Date()
+  drawing.rejectionReason = ''
+  await building.save()
+  return {
+    _id: drawing._id,
+    name: drawing.fileName,
+    status: 'approved',
+    source: 'plant_building',
+    buildingNumber: building.buildingNumber,
+  }
+}
+
+const rejectDrawingRef = async (ref, userId, note) => {
+  if (ref.source === 'document') {
+    const { doc } = ref
+    doc.status = 'rejected'
+    doc.approvedBy = userId
+    doc.approvedAt = new Date()
+    doc.revisionNote = note
+    doc.revisionRequestedAt = new Date()
+    await doc.save()
+    return {
+      _id: doc._id,
+      name: doc.name,
+      status: doc.status,
+      revisionNote: doc.revisionNote,
+      source: 'drawing_document',
+    }
+  }
+
+  const { building, drawing } = ref
+  drawing.status = 'rejected'
+  drawing.rejectionReason = note
+  drawing.reviewedAt = new Date()
+  await building.save()
+  return {
+    _id: drawing._id,
+    name: drawing.fileName,
+    status: drawing.status,
+    revisionNote: drawing.rejectionReason,
+    source: 'plant_building',
+    buildingNumber: building.buildingNumber,
+  }
+}
+
+exports.approveProjectDrawing = asyncHandler(async (req, res) => {
+  const access = await guardProject(req, res)
+  if (!access) return
+
+  const { leadId, docId } = req.params
+  const ref = await resolveDrawingRef(leadId, docId)
+  if (!ref) return notFound(res, 'Drawing not found')
+
+  const drawing = await approveDrawingRef(ref, req.user._id)
+  emitDrawingStatusUpdated(leadId, drawing._id, 'approved', new Date())
+
+  await auditService.log({
+    type: 'drawing',
+    action: 'drawing.approved',
+    leadId: access.lead._id,
+    customerId: access.lead.customerId,
+    performedBy: req.user._id,
+    metadata: { docId: drawing._id, name: drawing.name, source: drawing.source },
+  })
+
+  return success(res, { message: 'Drawing approved', drawing })
+})
+
+exports.requestProjectDrawingRevision = asyncHandler(async (req, res) => {
+  const access = await guardProject(req, res)
+  if (!access) return
+
+  const note = pickRevisionNote(req.body)
+  if (!note) return badRequest(res, 'Revision note is required')
+
+  const { leadId, docId } = req.params
+  const ref = await resolveDrawingRef(leadId, docId)
+  if (!ref) return notFound(res, 'Drawing not found')
+
+  const drawing = await rejectDrawingRef(ref, req.user._id, note)
+  emitDrawingStatusUpdated(leadId, drawing._id, drawing.status, new Date())
+
+  await auditService.log({
+    type: 'drawing',
+    action: 'drawing.revision_requested',
+    leadId: access.lead._id,
+    customerId: access.lead.customerId,
+    performedBy: req.user._id,
+    metadata: { docId: drawing._id, name: drawing.name, note, source: drawing.source },
+  })
+
+  return success(res, { message: 'Revision requested', drawing })
+})
+
+exports.reviewProjectDrawing = asyncHandler(async (req, res) => {
+  const access = await guardProject(req, res)
+  if (!access) return
+
+  const status = String(req.body.status || req.body.approvalStatus || '').trim().toLowerCase()
+  if (!['approved', 'rejected'].includes(status)) {
+    return badRequest(res, 'status must be approved or rejected')
+  }
+
+  const { leadId, docId } = req.params
+  const ref = await resolveDrawingRef(leadId, docId)
+  if (!ref) return notFound(res, 'Drawing not found')
+
+  let drawing
+  if (status === 'approved') {
+    drawing = await approveDrawingRef(ref, req.user._id)
+  } else {
+    const note = pickRevisionNote(req.body)
+    if (!note) return badRequest(res, 'Revision note is required when rejecting a drawing')
+    drawing = await rejectDrawingRef(ref, req.user._id, note)
+  }
+
+  emitDrawingStatusUpdated(leadId, drawing._id, drawing.status, new Date())
+
+  await auditService.log({
+    type: 'drawing',
+    action: status === 'approved' ? 'drawing.approved' : 'drawing.revision_requested',
+    leadId: access.lead._id,
+    customerId: access.lead.customerId,
+    performedBy: req.user._id,
+    metadata: {
+      docId: drawing._id,
+      name: drawing.name,
+      source: drawing.source,
+      ...(status === 'rejected' ? { note: pickRevisionNote(req.body) } : {}),
+    },
+  })
+
+  return success(res, {
+    message: status === 'approved' ? 'Drawing approved' : 'Revision requested',
+    drawing,
+  })
 })
 
 exports.uploadProjectBom = asyncHandler(async (req, res) => {

@@ -1,9 +1,11 @@
 const router = require('express').Router()
 const { body, param, query } = require('express-validator')
 const ctrl = require('../../../controllers/plant/delivery.controller')
+const extrasCtrl = require('../../../controllers/plant/extras.controller')
 const freightBidCtrl = require('../../../controllers/plant/freightBid.controller')
 const validate = require('../../../middleware/validate')
 const { DELIVERY_STATUSES } = require('../../../config/constants')
+const { rescheduleDeliveryValidators } = require('../../../validators/deliveryReschedule.validators')
 
 // 'draft' / 'bidding_sent' / 'carrier_selected' are set by the dedicated bidding endpoints, not
 // this generic status update, so they're excluded from the dropdown here.
@@ -85,6 +87,10 @@ router.get('/project/:leadId',
   ctrl.getProjectDeliveries
 )
 
+router.get('/export', extrasCtrl.exportAllDeliveriesCsv)
+router.get('/export/csv', extrasCtrl.exportAllDeliveriesCsv)
+router.get('/export/excel', extrasCtrl.exportAllDeliveriesExcel)
+
 router.get('/',
   [
     query('page').optional().isInt({ min: 1 }),
@@ -158,6 +164,38 @@ router.get('/:deliveryId/bids',
   ctrl.getDeliveryBids
 )
 
+router.patch('/:deliveryId',
+  [
+    param('deliveryId').isMongoId(),
+    body('description').optional().isString().trim(),
+    body('loadDescription').optional().isString().trim(),
+    body('weight').optional({ nullable: true }).isFloat({ min: 0 }),
+    body('dimensions').optional().isObject(),
+    body('metalType').optional().isString().trim(),
+    body('packageCount').optional({ nullable: true }).isInt({ min: 0 }),
+    body('loadingEquipment').optional().isArray(),
+    body('bidDeadline').optional({ nullable: true }).isISO8601(),
+    body('documentUrl').optional().isString().trim(),
+    body('pickupLocation').optional().isString().trim(),
+    body('pickupLocationData').optional().isObject(),
+    body('deliveryLocation').optional().isString().trim(),
+    body('deliveryLocationData').optional().isObject(),
+    body('pickupDate').optional({ nullable: true }).isISO8601(),
+    body('pickupTime').optional().isString().trim(),
+    body('deliveryDate').optional({ nullable: true }).isISO8601(),
+    body('deliveryTime').optional().isString().trim(),
+    body('timeWindowStart').optional().isString().trim(),
+    body('timeWindowEnd').optional().isString().trim(),
+    body('timings').optional().isString().trim(),
+    body('receivingPoc').optional().isString().trim(),
+    body('pickupContactPhone').optional().isString().trim(),
+    body('specialRequirements').optional().isString().trim(),
+    body('additionalNotes').optional().isString().trim(),
+  ],
+  validate,
+  ctrl.updateDelivery
+)
+
 router.put('/:deliveryId',
   [
     param('deliveryId').isMongoId(),
@@ -201,17 +239,30 @@ router.post('/:deliveryId/send-bids',
   ctrl.sendDeliveryBids
 )
 
-const rescheduleDeliveryValidators = [
-  param('deliveryId').isMongoId(),
-  body('date').isISO8601().withMessage('date is required'),
-  body('timeWindowStart').trim().notEmpty().withMessage('timeWindowStart is required'),
-  body('timeWindowEnd').trim().notEmpty().withMessage('timeWindowEnd is required'),
-  body('rescheduleReason').trim().notEmpty().withMessage('rescheduleReason is required'),
-  body('additionalNotes').optional().isString().trim(),
-]
-
 router.patch('/:deliveryId/reschedule', rescheduleDeliveryValidators, validate, ctrl.rescheduleDelivery)
 router.post('/:deliveryId/reschedule', rescheduleDeliveryValidators, validate, ctrl.rescheduleDelivery)
+
+router.post('/:deliveryId/send-reminder',
+  [
+    param('deliveryId').isMongoId(),
+    body('message').optional().isString().trim(),
+    body('note').optional().isString().trim(),
+  ],
+  validate,
+  ctrl.sendDeliveryReminder
+)
+
+router.post('/:deliveryId/mark-delivered',
+  [param('deliveryId').isMongoId()],
+  validate,
+  ctrl.markDeliveryDelivered
+)
+
+router.patch('/:deliveryId/mark-delivered',
+  [param('deliveryId').isMongoId()],
+  validate,
+  ctrl.markDeliveryDelivered
+)
 
 router.patch('/:deliveryId/status',
   [

@@ -2,6 +2,7 @@ const router = require('express').Router()
 const { body, param, query } = require('express-validator')
 const ctrl = require('../../../controllers/plant/extras.controller')
 const validate = require('../../../middleware/validate')
+const { notificationDetailsQueryValidators } = require('../../../validators/notificationDetails.validators')
 const { FREIGHT_BID_STATUSES } = require('../../../config/constants')
 
 // Savings
@@ -62,6 +63,8 @@ router.get('/deliveries-calendar', ctrl.getDeliveriesCalendar)
 router.get('/all-deliveries',      ctrl.getAllDeliveries)
 router.get('/all-deliveries/filters/lookups', ctrl.getAllDeliveriesFilterLookups)
 router.get('/all-deliveries/export', ctrl.exportAllDeliveriesCsv)
+router.get('/all-deliveries/export/csv', ctrl.exportAllDeliveriesCsv)
+router.get('/all-deliveries/export/excel', ctrl.exportAllDeliveriesExcel)
 
 // QR Labels
 router.get('/qr-labels', [query('search').optional().trim()], validate, ctrl.getQRLabels)
@@ -79,7 +82,10 @@ router.post('/costing',
 router.put('/costing/:itemId',    [param('itemId').isMongoId()], validate, ctrl.updateItemCost)
 
 // Notification Details (delivery notification history)
-router.get('/notification-details', ctrl.getNotificationDetails)
-router.get('/notification-details/export', ctrl.exportNotificationDetailsExcel)
+router.get('/notification-details/filters/lookups', ctrl.getNotificationDetailsFilterLookups)
+router.get('/notification-details', notificationDetailsQueryValidators, validate, ctrl.getNotificationDetails)
+router.get('/notification-details/export', notificationDetailsQueryValidators, validate, ctrl.exportNotificationDetailsExcel)
+router.get('/notification-details/export/excel', notificationDetailsQueryValidators, validate, ctrl.exportNotificationDetailsExcel)
+router.get('/notification-details/export/csv', notificationDetailsQueryValidators, validate, ctrl.exportNotificationDetailsCsv)
 
 module.exports = router

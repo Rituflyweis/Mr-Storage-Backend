@@ -5,6 +5,7 @@ const auditService = require('../../services/audit.service')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, ACTIVE_SHIPPER_REQUEST_STATUSES } = require('../../config/constants')
+const { normalizeVendorType, parseOptionalNumber } = require('../../utils/vendorRequestBody.util')
 
 const formatPickupLocation = (address = {}) => {
   const parts = [address.city, address.state].filter(Boolean)
@@ -81,18 +82,27 @@ const buildVendorListFilter = (query) => {
   return filter
 }
 
-const normalizeAddress = (address = {}) => ({
-  placeNumber: address.placeNumber?.trim() || '',
-  streetAddress: address.streetAddress?.trim() || '',
-  landmark: address.landmark?.trim() || '',
-  city: address.city?.trim() || '',
-  state: address.state?.trim() || '',
-  postalCode: address.postalCode?.trim() || '',
-  gpsCoordinates: {
-    lat: address.gpsCoordinates?.lat ?? null,
-    lng: address.gpsCoordinates?.lng ?? null,
-  },
-})
+const normalizeAddress = (address = {}) => {
+  const lat = address.gpsCoordinates?.lat
+  const lng = address.gpsCoordinates?.lng
+  const toCoord = (v) => {
+    if (v === undefined || v === null || v === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }
+  return {
+    placeNumber: address.placeNumber?.trim() || '',
+    streetAddress: address.streetAddress?.trim() || '',
+    landmark: address.landmark?.trim() || '',
+    city: address.city?.trim() || '',
+    state: address.state?.trim() || '',
+    postalCode: address.postalCode?.trim() || '',
+    gpsCoordinates: {
+      lat: toCoord(lat),
+      lng: toCoord(lng),
+    },
+  }
+}
 
 const normalizeDocuments = (documents = []) =>
   documents
@@ -158,7 +168,7 @@ exports.createVendor = asyncHandler(async (req, res) => {
     phone: phone?.trim() || '',
     yearsWithCompany: yearsWithCompany ?? null,
     serviceCategory: serviceCategory?.trim() || '',
-    vendorType: vendorType || 'other',
+    vendorType: normalizeVendorType(vendorType) || 'other',
     materialTypes: Array.isArray(materialTypes) ? materialTypes : [],
     address: normalizeAddress(address),
     documents: normalizeDocuments(documents),
@@ -260,9 +270,14 @@ exports.updateVendor = asyncHandler(async (req, res) => {
   if (vendorName !== undefined) vendor.vendorName = vendorName.trim()
   if (contactName !== undefined) vendor.contactName = contactName.trim()
   if (phone !== undefined) vendor.phone = phone.trim()
-  if (yearsWithCompany !== undefined) vendor.yearsWithCompany = yearsWithCompany
+  if (yearsWithCompany !== undefined) {
+    const parsed = parseOptionalNumber(yearsWithCompany)
+    vendor.yearsWithCompany = parsed === undefined ? null : parsed
+  }
   if (serviceCategory !== undefined) vendor.serviceCategory = serviceCategory.trim()
-  if (vendorType !== undefined) vendor.vendorType = vendorType
+  if (vendorType !== undefined) {
+    vendor.vendorType = normalizeVendorType(vendorType) || vendor.vendorType
+  }
   if (materialTypes !== undefined) vendor.materialTypes = materialTypes
   if (address !== undefined) vendor.address = normalizeAddress(address)
   if (documents !== undefined) vendor.documents = normalizeDocuments(documents)

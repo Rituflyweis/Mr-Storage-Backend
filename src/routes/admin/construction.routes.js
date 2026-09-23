@@ -11,6 +11,25 @@ router.get('/drawings',              ctrl.getDrawings)
 router.get('/drawings/:docId',       [param('docId').isMongoId()], validate, ctrl.getDrawingDetail)
 router.post('/drawings/:leadId',     [param('leadId').isMongoId(), body('name').notEmpty()], validate, ctrl.uploadDrawing)
 router.put('/drawings/:docId/review', [param('docId').isMongoId()], validate, ctrl.approveDrawing)
+router.post('/drawings/:docId/review', [param('docId').isMongoId()], validate, ctrl.approveDrawing)
+router.post('/drawings/:docId/approve',
+  [param('docId').isMongoId()],
+  validate,
+  (req, _res, next) => {
+    if (!req.body.status) req.body.status = 'approved'
+    next()
+  },
+  ctrl.approveDrawing
+)
+router.post('/drawings/:docId/reject',
+  [param('docId').isMongoId()],
+  validate,
+  (req, _res, next) => {
+    req.body.status = 'rejected'
+    next()
+  },
+  ctrl.approveDrawing
+)
 router.post('/drawings/:docId/comments', [param('docId').isMongoId(), body('text').notEmpty()], validate, ctrl.addDrawingComment)
 
 router.get('/deliveries',            ctrl.getConstructionDeliveries)
