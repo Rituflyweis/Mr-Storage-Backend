@@ -2,6 +2,7 @@ const POOrder = require('../../models/POOrder')
 const Quotation = require('../../models/Quotation')
 const BOMJob = require('../../models/BOMJob')
 const ShipperRequest = require('../../models/ShipperRequest')
+const QuoteComparisonResult = require('../../models/QuoteComparisonResult')
 const Vendor = require('../../models/Vendor')
 const BundlePlan = require('../../models/BundlePlan')
 const PackingListPlan = require('../../models/PackingListPlan')
@@ -12,6 +13,13 @@ const { ACTIVE_SHIPPER_REQUEST_STATUSES, DELIVERY_FULFILLMENT_STATUSES } = requi
 // Granular fulfillment steps still read as "in transit" on this coarse dashboard rollup.
 const DASHBOARD_IN_TRANSIT_STATUSES = new Set([...DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered'), 'delayed'])
 const { buildDateFilter } = require('../../utils/dateRange')
+
+/** Admin UI may send employeeId / plantEmployeeId instead of assignedTo (PO plant owner). */
+const normalizeDashboardQuery = (query = {}) => {
+  const assignedTo =
+    query.assignedTo || query.employeeId || query.plantEmployeeId || query.userId || null
+  return assignedTo ? { ...query, assignedTo: String(assignedTo) } : query
+}
 
 const getLatestBomJobsForLeadIds = async (leadIds) => {
   if (!leadIds.length) return []
@@ -24,14 +32,189 @@ const getLatestBomJobsForLeadIds = async (leadIds) => {
 }
 
 const getApprovedPlantLeadIds = async (query = {}) => {
-  const poFilter = { status: 'approved', ...buildDateFilter(query, 'createdAt') }
-  if (query.assignedTo) poFilter.assignedTo = query.assignedTo
+  const q = normalizeDashboardQuery(query)
+  const poFilter = { status: 'approved', ...buildDateFilter(q, 'createdAt') }
+  if (q.assignedTo) poFilter.assignedTo = q.assignedTo
   return POOrder.distinct('leadId', poFilter)
 }
 
 const resolveLeadScope = async (query = {}) => {
   const leadIds = await getApprovedPlantLeadIds(query)
   return { leadIds, isEmpty: !leadIds.length }
+}
+
+const emptyMismatchSummary = () => ({
+  missingItems: 0,
+  quantityMismatches: 0,
+  specificationMismatches: 0,
+  extraItems: 0,
+  missingItemsFromQuote: 0,
+  qtyMismatches: 0,
+  specMismatches: 0,
+  extraItemsInShipper: 0,
+  totalComparedLines: 0,
+})
+
+const buildMismatchSummary = async (query = {}) => {
+  const { leadIds, isEmpty } = await resolveLeadScope(query)
+  if (isEmpty) return emptyMismatchSummary()
+
+  const requestIds = await ShipperRequest.distinct('_id', {
+    leadId: { $in: leadIds },
+    comparisonStatus: 'completed',
+  })
+  if (!requestIds.length) return emptyMismatchSummary()
+
+  const grouped = await QuoteComparisonResult.aggregate([
+    { $match: { shipperRequestId: { $in: requestIds } } },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
+  ])
+
+  const counts = {}
+  for (const row of grouped) counts[row._id] = row.count
+
+  const missingItems = counts.missing_in_vendor_quote || 0
+  const quantityMismatches = counts.qty_mismatch || 0
+  const specificationMismatches =
+    (counts.part_mismatch || 0) +
+    (counts.length_mismatch || 0) +
+    (counts.weight_mismatch || 0) +
+    (counts.ambiguous_match || 0) +
+    (counts.price_mismatch || 0)
+  const extraItems = counts.extra_in_vendor_quote || 0
+  const totalComparedLines = Object.values(counts).reduce((s, n) => s + n, 0)
+
+  return {
+    missingItems,
+    quantityMismatches,
+    specificationMismatches,
+    extraItems,
+    missingItemsFromQuote: missingItems,
+    qtyMismatches: quantityMismatches,
+    specMismatches: specificationMismatches,
+    extraItemsInShipper: extraItems,
+    totalComparedLines,
+    statusBreakdown: counts,
+  }
+}
+
+const buildMismatchReport = async (query = {}) => {
+  const page = Math.max(1, Number(query.page) || 1)
+  const limit = Math.min(200, Math.max(1, Number(query.limit) || 20))
+  const skip = (page - 1) * limit
+
+  const { leadIds, isEmpty } = await resolveLeadScope(query)
+  if (isEmpty) {
+    return { items: [], total: 0, page, limit }
+  }
+
+  const requests = await ShipperRequest.find({
+    leadId: { $in: leadIds },
+    comparisonStatus: 'completed',
+  })
+    .select('_id leadId vendorId submittedFileName')
+    .populate('leadId', 'projectName jobId')
+    .populate('vendorId', 'vendorName vendorCode')
+    .lean()
+
+  const requestIds = requests.map((r) => r._id)
+  if (!requestIds.length) {
+    return { items: [], total: 0, page, limit }
+  }
+
+  const requestMap = new Map(requests.map((r) => [String(r._id), r]))
+
+  const statusFilter = query.category === 'missing'
+    ? ['missing_in_vendor_quote']
+    : query.category === 'qty'
+      ? ['qty_mismatch']
+      : query.category === 'spec'
+        ? ['part_mismatch', 'length_mismatch', 'weight_mismatch', 'ambiguous_match', 'price_mismatch']
+        : query.category === 'extra'
+          ? ['extra_in_vendor_quote']
+          : [
+              'missing_in_vendor_quote',
+              'qty_mismatch',
+              'part_mismatch',
+              'length_mismatch',
+              'weight_mismatch',
+              'ambiguous_match',
+              'price_mismatch',
+              'extra_in_vendor_quote',
+            ]
+
+  const match = { shipperRequestId: { $in: requestIds }, status: { $in: statusFilter } }
+  const search = String(query.search || '').trim()
+  if (search) {
+    const rx = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+    match.$or = [{ reason: rx }, { status: rx }]
+  }
+
+  const [rows, total] = await Promise.all([
+    QuoteComparisonResult.find(match)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    QuoteComparisonResult.countDocuments(match),
+  ])
+
+  const items = rows.map((row) => {
+    const req = requestMap.get(String(row.shipperRequestId)) || {}
+    const lead = req.leadId
+    const vendor = req.vendorId
+    return {
+      resultId: row._id,
+      shipperRequestId: row.shipperRequestId,
+      leadId: lead?._id || req.leadId,
+      projectName: lead?.projectName || '',
+      jobId: lead?.jobId || '',
+      vendorName: vendor?.vendorName || '',
+      vendorCode: vendor?.vendorCode || '',
+      fileName: req.submittedFileName || '',
+      status: row.status,
+      severity: row.severity,
+      reason: row.reason || '',
+      expected: row.expected,
+      received: row.received,
+      createdAt: row.createdAt,
+    }
+  })
+
+  return { items, total, page, limit }
+}
+
+const buildPlantOverviewExportPayload = async (query = {}) => {
+  const [
+    orderProgress,
+    loadPlanning,
+    shipperQuotation,
+    packingList,
+    qrLabels,
+    shippers,
+    deliveries,
+    mismatchSummary,
+  ] = await Promise.all([
+    buildOrderProgressReview(query),
+    buildLoadPlanningStatus(query),
+    buildShipperQuotationSummary(query),
+    buildPackingListSummary(query),
+    buildQrLabelsSummary(query),
+    buildShippersSummary(query),
+    buildDeliveriesSummary(query),
+    buildMismatchSummary(query),
+  ])
+
+  return {
+    orderProgress,
+    loadPlanning,
+    shipperQuotation,
+    packingList,
+    qrLabels,
+    shippers,
+    deliveries,
+    mismatchSummary,
+  }
 }
 
 const fetchApprovedShipperVendorByLeadIds = async (leadIds) => {
@@ -390,6 +573,7 @@ const buildUpcomingShipments = async (query = {}) => {
 
 module.exports = {
   getApprovedPlantLeadIds,
+  normalizeDashboardQuery,
   buildOrderProgressReview,
   buildLoadPlanningStatus,
   buildShipperQuotationSummary,
@@ -398,4 +582,7 @@ module.exports = {
   buildShippersSummary,
   buildDeliveriesSummary,
   buildUpcomingShipments,
+  buildMismatchSummary,
+  buildMismatchReport,
+  buildPlantOverviewExportPayload,
 }

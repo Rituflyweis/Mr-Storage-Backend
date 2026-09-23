@@ -1,5 +1,6 @@
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const { generatePlantOverviewExcel } = require('../../utils/exportPlantDashboard')
 const {
   buildOrderProgressReview,
   buildLoadPlanningStatus,
@@ -9,6 +10,9 @@ const {
   buildShippersSummary,
   buildDeliveriesSummary,
   buildUpcomingShipments,
+  buildMismatchSummary,
+  buildMismatchReport,
+  buildPlantOverviewExportPayload,
 } = require('../../services/admin/plantDashboard.service')
 
 exports.getOrderProgressReview = asyncHandler(async (req, res) => {
@@ -49,4 +53,22 @@ exports.getDeliveriesSummary = asyncHandler(async (req, res) => {
 exports.getUpcomingShipments = asyncHandler(async (req, res) => {
   const data = await buildUpcomingShipments(req.query)
   return success(res, data)
+})
+
+exports.getMismatchSummary = asyncHandler(async (req, res) => {
+  const data = await buildMismatchSummary(req.query)
+  return success(res, data)
+})
+
+exports.getMismatchReport = asyncHandler(async (req, res) => {
+  const data = await buildMismatchReport(req.query)
+  return success(res, data)
+})
+
+exports.exportPlantOverview = asyncHandler(async (req, res) => {
+  const payload = await buildPlantOverviewExportPayload(req.query)
+  const buffer = await generatePlantOverviewExcel(payload)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="plant-overview.xlsx"')
+  return res.send(buffer)
 })
