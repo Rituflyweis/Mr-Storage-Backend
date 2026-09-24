@@ -785,6 +785,8 @@ Authorization: Bearer <token>
 
 ### 17.2 Row actions
 
+**Frontend (quick actions only):** see **`docs/frontend-delivery-quick-actions-api.md`** — Send reminder, Download details, View documents (detail + All Deliveries + Calendar).
+
 | UI action | Method | Path |
 |-----------|--------|------|
 | **View** | `GET` | `/api/admin/plant/deliveries/:deliveryId/detail` |

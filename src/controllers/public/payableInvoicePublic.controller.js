@@ -1,13 +1,18 @@
 const ShipperRequest = require('../../models/ShipperRequest')
 const FreightBid = require('../../models/FreightBid')
 const Delivery = require('../../models/Delivery')
+const Lead = require('../../models/Lead')
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3')
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner')
 const { v4: uuidv4 } = require('uuid')
 const env = require('../../config/env')
 const asyncHandler = require('../../utils/asyncHandler')
-const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
-const { createPayableInvoice } = require('../../utils/payableInvoice.util')
+const { success, created, badRequest } = require('../../utils/apiResponse')
+const { createPayableInvoice, buildPayableListRow } = require('../../utils/payableInvoice.util')
+const {
+  buildVendorPayablePublicBootstrap,
+  buildFreightPayablePublicBootstrap,
+} = require('../../utils/payablePublicBootstrap.util')
 
 const s3 = new S3Client({
   region: env.AWS_REGION,
@@ -19,8 +24,11 @@ const s3 = new S3Client({
 
 const resolveTokenContext = async (token) => {
   const shipper = await ShipperRequest.findOne({ payableUploadToken: token })
-    .populate('vendorId', 'vendorName')
-    .populate('leadId', 'projectName jobId')
+    .populate('vendorId')
+    .populate('leadId')
+    .populate('consolidatedBOMId')
+    .lean()
+
   if (shipper) {
     if (shipper.status !== 'approved') {
       return { error: 'Quote must be approved before uploading an invoice' }
@@ -29,13 +37,18 @@ const resolveTokenContext = async (token) => {
   }
 
   const bid = await FreightBid.findOne({ payableUploadToken: token })
-    .populate('carrierId', 'carrierName')
+    .populate('carrierId')
+    .lean()
+
   if (bid) {
     if (bid.status !== 'selected') {
       return { error: 'Bid must be awarded before uploading an invoice' }
     }
-    const delivery = await Delivery.findById(bid.deliveryId).populate('leadId', 'projectName jobId')
+    const delivery = await Delivery.findById(bid.deliveryId).lean()
     if (!delivery) return { error: 'Delivery not found' }
+    if (delivery.leadId) {
+      delivery.leadId = await Lead.findById(delivery.leadId).lean()
+    }
     return { kind: 'freight_carrier', bid, delivery }
   }
 
@@ -44,38 +57,21 @@ const resolveTokenContext = async (token) => {
 
 exports.getPayableUploadInfo = asyncHandler(async (req, res) => {
   const ctx = await resolveTokenContext(req.params.token)
-  if (!ctx) return notFound(res, 'Invalid or expired upload link')
+  if (!ctx) return badRequest(res, 'Invalid or expired upload link')
   if (ctx.error) return badRequest(res, ctx.error)
 
   if (ctx.kind === 'vendor') {
-    const { shipper } = ctx
-    return success(res, {
-      invoiceType: 'vendor',
-      projectName: shipper.leadId?.projectName || '',
-      jobId: shipper.leadId?.jobId || '',
-      payeeName: shipper.vendorId?.vendorName || '',
-      suggestedAmount: shipper.quoteValue,
-      existingInvoiceId: shipper.payableInvoiceId || null,
-      alreadySubmitted: Boolean(shipper.payableInvoiceId),
-    })
+    const data = buildVendorPayablePublicBootstrap(ctx.shipper)
+    return success(res, data)
   }
 
-  const { bid, delivery } = ctx
-  return success(res, {
-    invoiceType: 'freight_carrier',
-    projectName: delivery.leadId?.projectName || '',
-    jobId: delivery.leadId?.jobId || '',
-    payeeName: bid.carrierId?.carrierName || '',
-    deliveryNumber: delivery.deliveryNumber,
-    suggestedAmount: bid.quotedAmount,
-    existingInvoiceId: bid.payableInvoiceId || null,
-    alreadySubmitted: Boolean(bid.payableInvoiceId),
-  })
+  const data = await buildFreightPayablePublicBootstrap(ctx.bid, ctx.delivery)
+  return success(res, data)
 })
 
 exports.getPayableUploadPresignedUrl = asyncHandler(async (req, res) => {
   const ctx = await resolveTokenContext(req.params.token)
-  if (!ctx) return notFound(res, 'Invalid upload link')
+  if (!ctx) return badRequest(res, 'Invalid or expired upload link')
   if (ctx.error) return badRequest(res, ctx.error)
 
   const { fileName, fileType, folder = 'payable-invoices' } = req.body
@@ -97,7 +93,7 @@ exports.getPayableUploadPresignedUrl = asyncHandler(async (req, res) => {
 
 exports.submitPayableUpload = asyncHandler(async (req, res) => {
   const ctx = await resolveTokenContext(req.params.token)
-  if (!ctx) return notFound(res, 'Invalid upload link')
+  if (!ctx) return badRequest(res, 'Invalid or expired upload link')
   if (ctx.error) return badRequest(res, ctx.error)
 
   const {
@@ -136,14 +132,19 @@ exports.submitPayableUpload = asyncHandler(async (req, res) => {
       initialPayableStatus: 'pending_admin_approval',
     })
 
-    shipper.payableInvoiceId = invoice._id
-    await shipper.save()
+    await ShipperRequest.updateOne({ _id: shipper._id }, { payableInvoiceId: invoice._id })
 
-    return created(res, {
-      invoiceId: invoice._id,
-      invoiceNumber: invoice.invoiceNumber,
-      payableStatus: invoice.payableWorkflow?.status,
-    }, 'Invoice submitted for admin approval')
+    return created(
+      res,
+      {
+        invoiceId: invoice._id,
+        invoiceNumber: invoice.invoiceNumber,
+        payableStatus: invoice.payableWorkflow?.status,
+        row: buildPayableListRow(invoice),
+        alreadySubmitted: true,
+      },
+      'Invoice submitted for admin approval'
+    )
   }
 
   const { bid, delivery } = ctx
@@ -168,12 +169,17 @@ exports.submitPayableUpload = asyncHandler(async (req, res) => {
     initialPayableStatus: 'pending_admin_approval',
   })
 
-  bid.payableInvoiceId = invoice._id
-  await bid.save()
+  await FreightBid.updateOne({ _id: bid._id }, { payableInvoiceId: invoice._id })
 
-  return created(res, {
-    invoiceId: invoice._id,
-    invoiceNumber: invoice.invoiceNumber,
-    payableStatus: invoice.payableWorkflow?.status,
-  }, 'Invoice submitted for admin approval')
+  return created(
+    res,
+    {
+      invoiceId: invoice._id,
+      invoiceNumber: invoice.invoiceNumber,
+      payableStatus: invoice.payableWorkflow?.status,
+      row: buildPayableListRow(invoice),
+      alreadySubmitted: true,
+    },
+    'Invoice submitted for admin approval'
+  )
 })

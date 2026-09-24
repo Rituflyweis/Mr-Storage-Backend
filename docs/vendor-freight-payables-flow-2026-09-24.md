@@ -1,128 +1,351 @@
-# Vendor & freight carrier payables — flow & API
+# Vendor & freight payables — frontend guide
 
 **Date:** 2026-09-24  
-**Scope:** Accounts-payable invoices (`invoiceType: vendor | freight_carrier`) with admin approval, account payment, acceptance-email upload, and admin ↔ account comments.
+**Audience:** Frontend (plant, admin, account, public acceptance-upload page)  
+**UAT base:** `https://mr-storage-backend-025k.onrender.com`
 
-Base URL: `/api` (JWT unless noted **Public**).
+This doc covers the **whole AP (accounts payable) flow**: how a vendor/carrier gets a link, where the upload **token** comes from, how they upload an invoice PDF **without login**, then how admin / account / plant panels consume the invoice.
 
 ---
 
-## 1. Lifecycle
+## 0. Quick map — who does what
 
-```mermaid
-stateDiagram-v2
-  [*] --> pending_admin_approval: acceptance upload OR admin manual upload
-  pending_admin_approval --> approved_for_payment: admin approve
-  pending_admin_approval --> rejected: admin reject
-  approved_for_payment --> paid: account mark paid
-  unpaid --> paid: account mark paid
-  paid --> unpaid: account mark unpaid
-  rejected --> [*]
+| Actor | Auth | What they do |
+|--------|------|----------------|
+| **Plant** | JWT (`plant` or admin plant) | Approves vendor quote / awards freight bid → **creates upload token + emails link**. Later: **read-only** invoice list + stats. |
+| **Vendor / carrier** | **No JWT** | Opens email link → public page with `:token` → upload PDF → submit amount. |
+| **Admin** | JWT (`admin`) | Optional **manual** upload; **approve / reject** queue; comments; vendor/freight invoice lists. |
+| **Account** | JWT (`account` or `admin`) | Payment queue → **mark paid / unpaid**; comments. |
+
+```text
+Plant approve/award ──email──► Vendor/Carrier public page (token)
+                                      │
+                                      ▼
+                              Invoice (pending_admin_approval)
+                                      │
+                         Admin approve / reject
+                                      │
+                         Account mark paid / unpaid
 ```
 
-| `payableWorkflow.status` | Meaning | Typical UI |
-|--------------------------|---------|------------|
-| `pending_admin_approval` | Submitted, waiting for admin | Approve / Reject |
-| `approved_for_payment` | Admin approved; account may pay | Payment **Pending** |
-| `rejected` | Admin rejected | — |
-| `paid` | Account marked paid | Payment **Completed** |
-| `unpaid` | Reopened after paid, or ready to pay (same queue as approved) | Payment **Pending** |
+---
 
-**Sources (`payableWorkflow.source`):**
+## 1. Important: two different tokens (do not mix them)
 
-| Value | How created |
-|--------|-------------|
-| `acceptance_upload` | Vendor/carrier uploads PDF after award email |
-| `admin_manual` | Admin **Upload Invoice** form |
+Vendors and carriers already have **quote / bid** public pages. Payable invoice upload is a **separate** token and URL.
 
-Legacy seed rows without `payableWorkflow` still appear on admin lists; `payableStatus` is derived from top-level `status`.
+| Purpose | When created | Stored on | Email / FE path | Public API |
+|---------|--------------|-----------|-----------------|------------|
+| **Shipper quote upload** | Plant sends BOM to vendor | `ShipperRequest.token` | `{CLIENT_URL}/vendor-upload/{token}` (existing) | `/api/public/vendor-upload/:token` |
+| **Freight bid submit** | Plant invites carriers | `FreightBid.token` | freight bid public page | `/api/public/freight-bids/:token` |
+| **Payable invoice upload** | Plant **approves** shipper **or** **selects** freight bid | `ShipperRequest.payableUploadToken` **or** `FreightBid.payableUploadToken` | `{CLIENT_URL}/payable-invoice-upload/{token}` | `/api/public/payable-invoice-upload/:token` |
+
+**Frontend rule**
+
+- Route: **`/payable-invoice-upload/:token`** (public, no login).
+- Read `token` from the URL path only.
+- Call **`/api/public/payable-invoice-upload/...`** with that token.
+- Do **not** call `vendor-upload` or `freight-bids` with this token — those use different tokens.
+
+Backend resolves the payable token by looking up:
+
+1. `ShipperRequest` where `payableUploadToken === token` → **vendor** invoice, or  
+2. `FreightBid` where `payableUploadToken === token` → **freight** invoice.
 
 ---
 
-## 2. End-to-end flow
+## 2. Where does the payable upload token come from?
 
-### A — Acceptance email (vendor shipper approve)
+Frontend **does not** generate the token. Backend creates it when plant finishes the award step, then puts it in the email link.
 
-1. Plant approves shipper → `POST /api/plant/shipper-requests/:requestId/approve` (or admin plant mirror).
-2. Backend sets `ShipperRequest.payableUploadToken` and emails vendor with link:  
-   `{CLIENT_URL}/payable-invoice-upload/{token}` (FE public page).
-3. Vendor (no JWT):
-   - `GET /api/public/payable-invoice-upload/:token` — bootstrap
-   - `POST .../presigned-url` — S3 upload
-   - `POST .../token` — create payable invoice
-4. Creates `Invoice` (`invoiceType: vendor`, `payableWorkflow.status: pending_admin_approval`).
-5. Admin approves → account queue → account marks paid.
+### 2.1 Vendor path (after shipper quote approved)
 
-### B — Acceptance email (freight bid awarded)
+**Plant action (authenticated):**
 
-Same as A, triggered by `POST /api/plant/freight-bids/:bidId/select` (token on `FreightBid.payableUploadToken`), `invoiceType: freight_carrier`.
+```http
+POST /api/plant/shipper-requests/:requestId/approve
+Authorization: Bearer <plant_or_admin_jwt>
+```
 
-### C — Admin manual upload
+Admin plant mirror: `POST /api/admin/plant/shipper-requests/:requestId/approve` (same controller).
 
-1. `POST /api/admin/invoices/payables/vendor` or `.../freight-carrier` with project, payee, amount, PDF URL.
-2. Status `pending_admin_approval` (another admin approves in queue).
-3. After approve → account panel.
+**Backend side effects:**
 
-### D — Admin ↔ account comments
+1. Sets `ShipperRequest.status = approved`.
+2. If missing, generates `ShipperRequest.payableUploadToken` (random hex).
+3. Emails the **vendor** (`vendor.email`) with:
 
-Either role posts comments on the same invoice; both see full thread on detail GET.
+```text
+{CLIENT_URL}/payable-invoice-upload/{payableUploadToken}
+```
+
+Example: `https://your-app.com/payable-invoice-upload/a1b2c3...`
+
+**FE does not need the token from the approve API response for the public page** — the vendor gets it from the email. Plant UI only needs to show “approval + email sent” success.
+
+### 2.2 Freight path (after bid selected / awarded)
+
+**Plant action (authenticated):**
+
+```http
+POST /api/plant/freight-bids/:bidId/select
+Authorization: Bearer <plant_or_admin_jwt>
+```
+
+Admin plant: `POST /api/admin/plant/freight-bids/:bidId/select` (or deliveries bid select — same award flow).
+
+**Backend side effects:**
+
+1. Sets bid `status = selected`, delivery confirmed.
+2. If missing, generates `FreightBid.payableUploadToken`.
+3. Emails the **carrier** with:
+
+```text
+{CLIENT_URL}/payable-invoice-upload/{payableUploadToken}
+```
+
+### 2.3 Admin manual upload (no public token)
+
+Admin can create a payable invoice **without** email token:
+
+```http
+POST /api/admin/invoices/payables/vendor
+POST /api/admin/invoices/payables/freight-carrier
+```
+
+Body includes `documentUrl` (already uploaded file URL). Status starts at `pending_admin_approval` → another admin approves in the queue. **No public page / no token.**
 
 ---
 
-## 3. Public (acceptance upload)
+## 3. Public acceptance upload page (full FE flow)
 
-| Step | Method | Path |
-|------|--------|------|
-| Page bootstrap | GET | `/api/public/payable-invoice-upload/:token` |
-| Presign | POST | `/api/public/payable-invoice-upload/:token/presigned-url` |
-| Submit invoice | POST | `/api/public/payable-invoice-upload/:token` |
+**Auth:** none. No `Authorization` header.  
+**Page route (FE):** `/payable-invoice-upload/:token`  
+**API base:** `/api/public/payable-invoice-upload/:token`
 
-**Submit body:**
+Same UX pattern as existing **vendor quote upload** and **freight bid** public pages.
+
+### 3.1 Step A — Bootstrap (load page)
+
+```http
+GET /api/public/payable-invoice-upload/:token
+```
+
+**Success `200` — common fields**
+
+| Field | Use |
+|--------|-----|
+| `requiresAuth` | Always `false` |
+| `invoiceType` | `"vendor"` \| `"freight_carrier"` — pick UI variant |
+| `uploadKind` | Same as invoiceType |
+| `projectName`, `jobId`, `leadId` | Header |
+| `payeeName` | Vendor or carrier name |
+| `suggestedAmount` | Prefill amount (quote value or awarded bid) |
+| `alreadySubmitted` | If `true`, disable form (invoice already created) |
+| `existingInvoiceId` | Prior invoice id when already submitted |
+
+**Vendor-only extras:** `shipperRequest`, `vendor`, `project`, `approvedQuote` (quote file URLs, amounts).  
+**Freight-only extras:** `delivery`, `freightBid`, `carrier`, `awardedBid`, load fields (`pickupLocation`, `bundlePlan`, `bundles`, `packingLists`, …) — same richness as freight bid public page.
+
+**Errors (no JWT):**
+
+| HTTP | Meaning |
+|------|---------|
+| `400` | Invalid/expired token, quote not approved yet, bid not awarded, etc. |
+
+Show the API `message` on the page.
+
+### 3.2 Step B — Presign (get S3 upload URL)
+
+```http
+POST /api/public/payable-invoice-upload/:token/presigned-url
+Content-Type: application/json
+
+{
+  "fileName": "invoice.pdf",
+  "fileType": "application/pdf",
+  "folder": "payable-invoices"
+}
+```
+
+**Response `data`:**
 
 ```json
 {
-  "documentUrl": "https://.../payable-invoices/...pdf",
+  "uploadUrl": "https://s3....presigned...",
+  "fileUrl": "https://bucket.s3.region.amazonaws.com/payable-invoices/.../uuid.pdf",
+  "key": "payable-invoices/.../uuid.pdf"
+}
+```
+
+### 3.3 Step C — PUT file to S3
+
+```http
+PUT {uploadUrl}
+Content-Type: application/pdf
+
+<raw file bytes>
+```
+
+Use the **same** `Content-Type` as `fileType`. No Authorization header on this PUT (presigned).
+
+### 3.4 Step D — Submit invoice
+
+```http
+POST /api/public/payable-invoice-upload/:token
+Content-Type: application/json
+
+{
+  "documentUrl": "<fileUrl from presign>",
   "documentFileName": "invoice.pdf",
   "totalAmount": 45000,
-  "description": "Optional note",
+  "description": "Optional",
   "vendorInvoiceNumber": "Their INV-123",
   "daysToPay": 30
 }
 ```
 
-**Bootstrap response (example):**
+| Body field | Required | Notes |
+|------------|----------|--------|
+| `documentUrl` | Yes | Must be the `fileUrl` from presign (after successful PUT) |
+| `totalAmount` | Yes | Number |
+| `documentFileName` | No | Display name |
+| `description` | No | |
+| `vendorInvoiceNumber` | No | Their reference |
+| `daysToPay` | No | Default 30 |
+
+**Response `201`:**
 
 ```json
 {
-  "invoiceType": "vendor",
-  "projectName": "Dev Warehouse One",
-  "jobId": "PRO-005",
-  "payeeName": "React6",
-  "suggestedAmount": 42000,
-  "alreadySubmitted": false
+  "success": true,
+  "message": "Invoice submitted for admin approval",
+  "data": {
+    "invoiceId": "...",
+    "invoiceNumber": "VINV-2026-1005",
+    "payableStatus": "pending_admin_approval",
+    "alreadySubmitted": true,
+    "row": { }
+  }
 }
 ```
 
-One invoice per approval token (`alreadySubmitted: true` if resubmit attempted).
+**One submission per token.** Second submit → `400` “An invoice was already submitted…”. Bootstrap will show `alreadySubmitted: true`.
+
+### 3.5 Pseudo-code (public page)
+
+```javascript
+const token = params.token // from /payable-invoice-upload/:token
+
+// 1) Bootstrap
+const info = await fetch(`/api/public/payable-invoice-upload/${token}`).then(r => r.json())
+if (!info.success) showError(info.message)
+if (info.data.alreadySubmitted) disableForm()
+
+// 2) User picks PDF + amount
+const { uploadUrl, fileUrl } = (await fetch(
+  `/api/public/payable-invoice-upload/${token}/presigned-url`,
+  { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: file.name, fileType: file.type || 'application/pdf' }) }
+).then(r => r.json())).data
+
+// 3) Upload to S3
+await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+
+// 4) Submit
+await fetch(`/api/public/payable-invoice-upload/${token}`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    documentUrl: fileUrl,
+    documentFileName: file.name,
+    totalAmount: Number(amount),
+  }),
+})
+```
 
 ---
 
-## 4. Admin APIs
+## 4. Status lifecycle (UI labels)
 
-Auth: **admin** (`Authorization: Bearer`).
+| `payableWorkflow.status` / list `payableStatus` | Meaning | Typical UI |
+|--------------------------------------------------|---------|------------|
+| `pending_admin_approval` | Just uploaded (public or admin manual) | Admin: Approve / Reject · list: **Awaiting admin** |
+| `approved_for_payment` | Admin approved | Account: ready to pay · **Pending** |
+| `rejected` | Admin rejected | Show reason |
+| `paid` | Account marked paid | **Completed** |
+| `unpaid` | Reopened after paid | Treat like pending payment |
 
-| Action | Method | Path |
-|--------|--------|------|
-| Filter enums | GET | `/api/admin/invoices/payables/filters` |
-| Approval queue (default pending) | GET | `/api/admin/invoices/payables/approval-queue?invoiceType=vendor&page=1&limit=20` |
-| Manual vendor payable | POST | `/api/admin/invoices/payables/vendor` |
-| Manual freight payable | POST | `/api/admin/invoices/payables/freight-carrier` |
-| Detail + comments | GET | `/api/admin/invoices/payables/:invoiceId` |
-| Approve | PUT | `/api/admin/invoices/payables/:invoiceId/approve` |
-| Reject | PUT | `/api/admin/invoices/payables/:invoiceId/reject` |
-| Comment | POST | `/api/admin/invoices/payables/:invoiceId/comments` |
+**Sources (`payableWorkflow.source`):**
 
-**Manual create body (vendor):**
+| Value | Created by |
+|--------|------------|
+| `acceptance_upload` | Public page (email token) |
+| `admin_manual` | Admin Upload Invoice form |
+
+List rows also expose **`paymentLabel`**: `Awaiting admin` | `Pending` | `Completed` | `Rejected` | `—`.
+
+---
+
+## 5. End-to-end flows (by scenario)
+
+### Flow A — Vendor invoice via acceptance email
+
+```text
+1. Plant compares shipper quotes
+2. POST /api/plant/shipper-requests/:id/approve
+3. Backend sets payableUploadToken + emails vendor
+4. Vendor opens /payable-invoice-upload/:token (no login)
+5. GET bootstrap → POST presign → PUT S3 → POST submit
+6. Invoice appears in admin approval queue (pending_admin_approval)
+7. Admin PUT .../approve
+8. Account sees it in payables queue → PUT .../mark-paid
+9. Plant can see it on GET /api/plant/payables/vendor (read-only)
+```
+
+### Flow B — Freight carrier invoice via award email
+
+```text
+1. Plant selects freight bid
+2. POST /api/plant/freight-bids/:bidId/select
+3. Backend sets payableUploadToken + emails carrier
+4. Carrier opens same public page + APIs (token resolves to freight)
+5. Submit → invoiceType freight_carrier
+6. Same admin approve → account pay → plant list under .../payables/freight-carrier
+```
+
+### Flow C — Admin uploads invoice manually
+
+```text
+1. Admin uploads PDF (use your existing staff S3/presign if any), then:
+2. POST /api/admin/invoices/payables/vendor  (or .../freight-carrier)
+3. Status pending_admin_approval
+4. Admin approve → account pay (same as A/B from step 7)
+```
+
+### Flow D — Comments
+
+Admin and account both post comments on the **same** invoice; both see the thread on detail GET.
+
+---
+
+## 6. Admin panel APIs
+
+**Auth:** `Authorization: Bearer <admin_jwt>`  
+**Prefix:** `/api/admin/invoices/payables`
+
+| UI | Method | Path |
+|----|--------|------|
+| Filter enums | `GET` | `/filters` |
+| Approval queue (default pending) | `GET` | `/approval-queue?invoiceType=vendor&page=1&limit=20` |
+| Manual vendor create | `POST` | `/vendor` |
+| Manual freight create | `POST` | `/freight-carrier` |
+| Detail (full data) | `GET` | `/:invoiceId` |
+| Approve | `PUT` | `/:invoiceId/approve` |
+| Reject | `PUT` | `/:invoiceId/reject` |
+| Comment | `POST` | `/:invoiceId/comments` |
+
+### Manual create (vendor) body
 
 ```json
 {
@@ -138,44 +361,53 @@ Auth: **admin** (`Authorization: Bearer`).
 }
 ```
 
-**Reject body:** `{ "reason": "Amount does not match PO" }`
+Freight: use `carrierId` instead of `vendorId`.
 
-**Comment body:** `{ "text": "Please confirm W-9" }`
+**Reject:** `{ "reason": "Amount does not match PO" }`  
+**Comment:** `{ "text": "Please confirm W-9" }`
 
-### Existing list screens (unchanced paths, richer rows)
+### Detail response `data`
 
-| List | GET |
-|------|-----|
-| Vendor invoices | `/api/admin/invoices/vendor?status=All&payableStatus=approved_for_payment&projectId=&startDate=&endDate=&search=` |
-| Freight carrier | `/api/admin/invoices/freight-carrier` (same query params) |
+| Key | Contents |
+|-----|----------|
+| `invoice` | Full Invoice + populated lead, vendor/carrier, shipperRequest / freightBid / delivery (tokens stripped) |
+| `row` | Flat table row |
+| `delivery` | Linked delivery when present |
+| `loadDetails` | `{ bundlePlan, packingListPlan, bundles, packingLists }` |
+
+### Existing admin list screens (same paths, richer rows)
+
+| Screen | GET |
+|--------|-----|
+| Vendor invoices | `/api/admin/invoices/vendor?payableStatus=&projectId=&search=&page=&limit=` |
+| Freight carrier | `/api/admin/invoices/freight-carrier` (same query) |
 | Export | `/api/admin/invoices/vendor/export`, `.../freight-carrier/export` |
 
-List items now include **`payableStatus`**, **`paymentLabel`**, **`documentUrl`** (via `buildPayableListRow`).
+Optional `payableStatus`: `pending_admin_approval` | `approved_for_payment` | `rejected` | `paid` | `unpaid`.
 
-Optional query **`payableStatus`**: `pending_admin_approval` | `approved_for_payment` | `rejected` | `paid` | `unpaid`.
-
-Legacy **`status`** filter still works for old rows without `payableWorkflow`.
+Each list item includes at least: `_id`, `invoiceNumber`, `payableStatus`, `paymentLabel`, `documentUrl`, `amount` / `totalAmount`, project + payee names.
 
 ---
 
-## 5. Account APIs
+## 7. Account panel APIs
 
-Auth: **account** or **admin**.
+**Auth:** `Authorization: Bearer <account_or_admin_jwt>`  
+**Prefix:** `/api/account/payables`
 
-| Action | Method | Path |
-|--------|--------|------|
-| Filter enums | GET | `/api/account/payables/filters` |
-| Payment queue + stats | GET | `/api/account/payables?invoiceType=vendor&payableStatus=&page=1&limit=20` |
-| Detail + comments | GET | `/api/account/payables/:invoiceId` |
-| Mark paid | PUT | `/api/account/payables/:invoiceId/mark-paid` |
-| Mark unpaid | PUT | `/api/account/payables/:invoiceId/mark-unpaid` |
-| Comment | POST | `/api/account/payables/:invoiceId/comments` |
+| UI | Method | Path |
+|----|--------|------|
+| Filters | `GET` | `/filters` |
+| Payment queue + stats | `GET` | `?invoiceType=vendor&payableStatus=&page=1&limit=20` |
+| Detail | `GET` | `/:invoiceId` |
+| Mark paid | `PUT` | `/:invoiceId/mark-paid` |
+| Mark unpaid | `PUT` | `/:invoiceId/mark-unpaid` |
+| Comment | `POST` | `/:invoiceId/comments` |
 
-Default list: `payableWorkflow.status` in **`approved_for_payment`**, **`paid`**, **`unpaid`**.
+Default list statuses: `approved_for_payment`, `paid`, `unpaid`.
 
-**Mark paid body (optional):** `{ "paymentMethod": "bank_transfer" }`
+**Mark paid (optional body):** `{ "paymentMethod": "bank_transfer" }`
 
-**List stats object:**
+**List `stats` example:**
 
 ```json
 {
@@ -188,139 +420,105 @@ Default list: `payableWorkflow.status` in **`approved_for_payment`**, **`paid`**
 }
 ```
 
+**Legacy note:** `GET /api/account/financial/invoices/vendor` still uses old `PaymentApproval`. New UI should use **`/api/account/payables`**.
+
 ---
 
-## 6. Plant panel — vendor / freight invoice list + stats
+## 8. Plant panel APIs (read-only invoices)
 
-Auth: **plant** (`/api/plant/...`) or **admin plant** (`/api/admin/plant/...`, same handlers, all approved PO projects).
+**Auth:** plant JWT → `/api/plant/...` · admin plant → `/api/admin/plant/...` (same handlers).
 
-Scope: only payables whose **`leadId`** is on an **approved PO** assigned to the plant user (admin plant sees all approved PO projects).
-
-Each response includes **summary cards (`stats`)** and the **table (`invoices`)** in one call — mirror the admin Vendor Invoices screen.
+Plant **does not** create payables here. Creation = public email upload or admin manual. Plant only **lists / views** after shipper approve / freight award triggered the email.
 
 | Screen | Method | Path |
 |--------|--------|------|
-| Filter enums | GET | `.../payables/filters` |
-| Vendor invoices + stats | GET | `.../payables/vendor` |
-| Freight carrier invoices + stats | GET | `.../payables/freight-carrier` |
-| Read-only detail | GET | `.../payables/:invoiceId` |
+| Filters | `GET` | `.../payables/filters` |
+| Vendor list + stats | `GET` | `.../payables/vendor` |
+| Freight list + stats | `GET` | `.../payables/freight-carrier` |
+| Detail | `GET` | `.../payables/:invoiceId` |
 
-**Query params (vendor and freight-carrier lists):**
+**Query:** `page`, `limit`, `projectId`, `payableStatus`, `status`, `startDate`, `endDate`, `search`.
 
-| Param | Notes |
-|--------|--------|
-| `page`, `limit` | Pagination (default 20, max 100) |
-| `projectId` | Filter to one project (`leadId`); must be in plant scope |
-| `payableStatus` | `pending_admin_approval`, `approved_for_payment`, `paid`, `unpaid`, `rejected` |
-| `status` | Legacy top-level invoice `status` when `payableWorkflow` is null |
-| `startDate`, `endDate` | Filter on invoice `date` (ISO) |
-| `search` | Invoice number (partial) |
+**Example:** `GET /api/plant/payables/vendor?page=1&limit=20`
 
-**Example:** `GET /api/plant/payables/vendor?status=All&payableStatus=&projectId=&page=1&limit=20`
-
-**Response `200` (shape):**
-
-```json
-{
-  "success": true,
-  "data": {
-    "stats": {
-      "totalIncome": 111500,
-      "productSales": 75000,
-      "serviceRevenue": 30000,
-      "otherIncome": 6500,
-      "pendingAdminApproval": 2,
-      "approvedForPayment": 1,
-      "paid": 4
-    },
-    "invoices": [
-      {
-        "invoiceNumber": "VINV-2026-1005",
-        "vendorName": "React6",
-        "projectName": "Dev Warehouse One",
-        "jobId": "PRO-005",
-        "amount": 1002,
-        "dueDate": "2026-10-24T07:54:08.189Z",
-        "payableStatus": "paid",
-        "paymentLabel": "Completed",
-        "documentUrl": "https://..."
-      }
-    ],
-    "total": 5,
-    "page": 1,
-    "limit": 20
-  }
-}
-```
-
-Plant is **read-only** on this flow (no approve, pay, or upload here). Upload remains **admin manual** or **acceptance-email public** link after shipper approve / freight award.
-
-**Project dropdown:** use existing `GET /api/plant/projects` (or admin plant projects list) for the filter control.
+**Response:** `{ stats, invoices[], total, page, limit }` — use `stats` for cards, `invoices` for table.  
+**Project filter dropdown:** existing `GET /api/plant/projects`.
 
 ---
 
-## 7. Data model (Invoice)
+## 9. Comparison with existing public quote / bid flows
 
-Payables use the same **`Invoice`** collection:
+| Step | Vendor quote (existing) | Freight bid (existing) | Payable invoice (this feature) |
+|------|-------------------------|------------------------|--------------------------------|
+| Token source | Plant “send to vendor” | Plant invite carriers | Plant **approve** / **select bid** |
+| FE route | `/vendor-upload/:token` | freight bid page | `/payable-invoice-upload/:token` |
+| Bootstrap | `GET /api/public/vendor-upload/:token` | `GET /api/public/freight-bids/:token` | `GET /api/public/payable-invoice-upload/:token` |
+| Presign | `POST .../presigned-url` | (bid has no PDF usually) | `POST .../presigned-url` |
+| Submit | `POST .../vendor-upload/:token` | `POST .../freight-bids/:token/submit` | `POST .../payable-invoice-upload/:token` |
+| JWT? | No | No | No |
+
+Implement the payable public page by **copying the vendor-upload upload UX**, but point all calls at `payable-invoice-upload` and bind amount to invoice `totalAmount`.
+
+---
+
+## 10. Data model cheat sheet
 
 | Field | Notes |
 |--------|--------|
 | `invoiceType` | `vendor` \| `freight_carrier` |
 | `vendorId` / `carrierId` | Payee |
 | `leadId` | Project |
-| `totalAmount`, `dueDate`, `category` | Display / export |
-| `payableWorkflow.status` | AP lifecycle |
+| `payableWorkflow.status` | Lifecycle (see §4) |
 | `payableWorkflow.source` | `acceptance_upload` \| `admin_manual` |
-| `payableWorkflow.documentUrl` | Uploaded PDF |
-| `payableWorkflow.shipperRequestId` / `freightBidId` | Source link |
+| `payableWorkflow.documentUrl` | PDF |
+| `payableWorkflow.shipperRequestId` / `freightBidId` / `deliveryId` | Links |
 | `payableWorkflow.comments[]` | `{ text, authorRole, authorId, createdAt }` |
 
-Invoice numbers: **`VINV-{year}-{seq}`** (vendor), **`FINV-{year}-{seq}`** (freight).
+Numbers: **`VINV-{year}-{seq}`** (vendor), **`FINV-{year}-{seq}`** (freight).
 
 ---
 
-## 8. Frontend checklist
+## 11. Frontend checklist
 
-### Acceptance upload page (`/payable-invoice-upload/:token`)
+### Public page `/payable-invoice-upload/:token`
 
-- [ ] GET bootstrap → show project, suggested amount, disable if `alreadySubmitted`
-- [ ] Presign → PUT file to S3 → POST submit with `documentUrl` + `totalAmount`
-
-### Admin
-
-- [ ] Upload Invoice → POST payables vendor/freight-carrier
-- [ ] Approval queue tab → GET `.../payables/approval-queue`
-- [ ] Approve / Reject on pending rows
-- [ ] Vendor/Freight lists → use `payableStatus` + `paymentLabel`; filter `payableStatus`
-- [ ] Comment thread on detail
-
-### Account
-
-- [ ] Payables queue → GET `/api/account/payables`
-- [ ] Mark paid / unpaid
-- [ ] Comments
+- [ ] No Bearer header — only URL `:token`
+- [ ] Do not reuse `vendor-upload` or `freight-bids` APIs with this token
+- [ ] Bootstrap → branch UI on `invoiceType` / `uploadKind`
+- [ ] If `alreadySubmitted`, show success / disable resubmit
+- [ ] Presign → PUT S3 → POST submit with `documentUrl` + `totalAmount`
+- [ ] Prefill amount from `suggestedAmount`
 
 ### Plant
 
-- [ ] Vendor Invoices tab → `GET /api/plant/payables/vendor` (stats + table)
-- [ ] Freight Carrier Invoices tab → `GET /api/plant/payables/freight-carrier`
-- [ ] Row detail / PDF → `GET /api/plant/payables/:invoiceId` (`documentUrl`)
-- [ ] Project filter → `projectId` query + projects list API
-- [ ] Shipper approve / freight award still trigger acceptance upload emails (no create on plant)
+- [ ] Approve shipper / select freight bid as today (emails go out automatically)
+- [ ] Vendor invoices tab → `GET .../payables/vendor`
+- [ ] Freight invoices tab → `GET .../payables/freight-carrier`
+- [ ] Detail / open PDF → `GET .../payables/:invoiceId` → `documentUrl`
+- [ ] No plant create/approve/pay for this flow
+
+### Admin
+
+- [ ] Approval queue → `GET .../payables/approval-queue`
+- [ ] Approve / Reject
+- [ ] Optional Upload Invoice → POST vendor / freight-carrier
+- [ ] Lists → filter `payableStatus`; show `paymentLabel` + `documentUrl`
+- [ ] Comments on detail
+
+### Account
+
+- [ ] Queue → `GET /api/account/payables`
+- [ ] Mark paid / unpaid
+- [ ] Comments
+- [ ] Prefer this over legacy financial vendor invoices API
 
 ---
 
-## 9. Relation to old account “vendor invoices” tab
+## 12. Plant triggers (token + email)
 
-`GET /api/account/financial/invoices/vendor` still reads **`PaymentApproval`** (legacy). New work should use **`/api/account/payables`** tied to **`Invoice`**. Migrate UI when ready.
+| Event | Authenticated API | Token field | Email link |
+|--------|-------------------|-------------|------------|
+| Vendor quote approved | `POST /api/plant/shipper-requests/:requestId/approve` | `ShipperRequest.payableUploadToken` | `{CLIENT_URL}/payable-invoice-upload/{token}` |
+| Freight bid selected | `POST /api/plant/freight-bids/:bidId/select` | `FreightBid.payableUploadToken` | same path |
 
----
-
-## 10. Plant triggers (reference)
-
-| Event | API | Side effect |
-|--------|-----|-------------|
-| Vendor quote approved | `POST /api/plant/shipper-requests/:requestId/approve` | `payableUploadToken` + email link |
-| Freight bid selected | `POST /api/plant/freight-bids/:bidId/select` | `payableUploadToken` + email link |
-
-Admin plant routes mirror the same plant controllers under `/api/admin/plant/...`.
+Admin plant routes under `/api/admin/plant/...` call the same handlers.

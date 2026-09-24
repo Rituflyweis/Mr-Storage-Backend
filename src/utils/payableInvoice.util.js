@@ -3,6 +3,8 @@ const Invoice = require('../models/Invoice')
 const User = require('../models/User')
 const generatePayableInvoiceNumber = require('./generatePayableInvoiceNumber')
 const { computeInvoiceDueDate } = require('./invoiceDueDate')
+const { loadFreightLoadDetailsByLeadId } = require('../services/plant/freightLoadDetails.service')
+const { redactPayableLinkedSecrets } = require('./payablePublicBootstrap.util')
 
 const ensurePayableUploadToken = () => crypto.randomBytes(32).toString('hex')
 
@@ -34,21 +36,31 @@ const buildPayableListRow = (inv) => {
     invoiceType: inv.invoiceType,
     vendorName: inv.vendorId?.vendorName || inv.payeeName || '—',
     carrierName: inv.carrierId?.carrierName || inv.payeeName || '—',
+    vendorId: inv.vendorId?._id || inv.vendorId || null,
+    carrierId: inv.carrierId?._id || inv.carrierId || null,
     projectName: inv.leadId?.projectName || '—',
     jobId: inv.leadId?.jobId || '',
     leadId: inv.leadId?._id || inv.leadId,
     amount: inv.totalAmount ?? 0,
+    totalAmount: inv.totalAmount ?? 0,
     dueDate: inv.dueDate,
     date: inv.date,
     category: inv.category,
+    description: inv.description || '',
     status: inv.status,
     payableStatus,
     paymentLabel,
     payableWorkflow: inv.payableWorkflow || null,
     documentUrl: wf.documentUrl || '',
+    documentFileName: wf.documentFileName || '',
     source: wf.source || null,
+    shipperRequestId: wf.shipperRequestId?._id || wf.shipperRequestId || null,
+    freightBidId: wf.freightBidId?._id || wf.freightBidId || null,
+    deliveryId: wf.deliveryId?._id || wf.deliveryId || null,
     paidAt: inv.paidAt,
+    paymentMethod: inv.paymentMethod || null,
     createdAt: inv.createdAt,
+    updatedAt: inv.updatedAt,
   }
 }
 
@@ -129,10 +141,57 @@ const createPayableInvoice = async ({
   return invoice
 }
 
+const populatePayableQuery = (q) =>
+  q
+    .populate('leadId')
+    .populate('vendorId')
+    .populate('carrierId')
+    .populate('createdBy', 'name email role')
+    .populate('paidBy', 'name email role')
+    .populate({
+      path: 'payableWorkflow.shipperRequestId',
+      populate: [
+        { path: 'vendorId' },
+        { path: 'leadId' },
+        { path: 'reviewedBy', select: 'name email' },
+        { path: 'consolidatedBOMId', select: 'status fileUrl' },
+      ],
+    })
+    .populate({
+      path: 'payableWorkflow.freightBidId',
+      populate: [{ path: 'carrierId' }],
+    })
+    .populate('payableWorkflow.deliveryId')
+    .populate('payableWorkflow.adminReviewedBy', 'name email')
+    .populate('payableWorkflow.accountPaymentUpdatedBy', 'name email')
+    .populate('payableWorkflow.comments.authorId', 'name email role')
+
+const enrichPayableForDetailResponse = async (invoice) => {
+  const sanitized = redactPayableLinkedSecrets(invoice)
+  const leadId = sanitized.leadId?._id || sanitized.leadId
+  const loadDetails = leadId
+    ? await loadFreightLoadDetailsByLeadId(leadId)
+    : { bundlePlan: null, packingListPlan: null, bundles: [], packingLists: [] }
+
+  const delivery =
+    sanitized.payableWorkflow?.deliveryId && typeof sanitized.payableWorkflow.deliveryId === 'object'
+      ? sanitized.payableWorkflow.deliveryId
+      : null
+
+  return {
+    invoice: sanitized,
+    row: buildPayableListRow(sanitized),
+    delivery,
+    loadDetails,
+  }
+}
+
 module.exports = {
   ensurePayableUploadToken,
   buildPayableListRow,
   syncTopLevelStatusFromPayable,
   createPayableInvoice,
   mapLegacyStatus,
+  populatePayableQuery,
+  enrichPayableForDetailResponse,
 }

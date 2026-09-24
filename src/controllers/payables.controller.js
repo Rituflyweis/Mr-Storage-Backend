@@ -9,6 +9,8 @@ const {
   createPayableInvoice,
   buildPayableListRow,
   syncTopLevelStatusFromPayable,
+  populatePayableQuery,
+  enrichPayableForDetailResponse,
 } = require('../utils/payableInvoice.util')
 const { INVOICE_TYPES, INVOICE_CATEGORIES, PAYABLE_WORKFLOW_STATUSES } = require('../config/constants')
 
@@ -45,15 +47,6 @@ const buildPayableFilter = ({ invoiceType, payableStatus, status, projectId, sta
 
   return filter
 }
-
-const populatePayableQuery = (q) =>
-  q
-    .populate({ path: 'leadId', select: 'projectName jobId' })
-    .populate({ path: 'vendorId', select: 'vendorName' })
-    .populate({ path: 'carrierId', select: 'carrierName' })
-    .populate({ path: 'payableWorkflow.adminReviewedBy', select: 'name email' })
-    .populate({ path: 'payableWorkflow.accountPaymentUpdatedBy', select: 'name email' })
-    .populate({ path: 'payableWorkflow.comments.authorId', select: 'name email role' })
 
 const loadPayableDetail = async (invoiceId) => {
   const invoice = await populatePayableQuery(Invoice.findById(invoiceId)).lean()
@@ -116,7 +109,8 @@ exports.createFreightCarrierPayable = asyncHandler((req, res) => createManualPay
 exports.getPayableDetail = asyncHandler(async (req, res) => {
   const { invoice, error, code } = await loadPayableDetail(req.params.invoiceId)
   if (error) return code === 404 ? notFound(res, error) : badRequest(res, error)
-  return success(res, { invoice, row: buildPayableListRow(invoice) })
+  const payload = await enrichPayableForDetailResponse(invoice)
+  return success(res, payload)
 })
 
 exports.approvePayable = asyncHandler(async (req, res) => {
@@ -474,5 +468,6 @@ exports.getPlantPayableDetail = asyncHandler(async (req, res) => {
     return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
   }
 
-  return success(res, { invoice, row: buildPayableListRow(invoice) })
+  const payload = await enrichPayableForDetailResponse(invoice)
+  return success(res, payload)
 })
