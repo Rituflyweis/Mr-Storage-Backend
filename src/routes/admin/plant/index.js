@@ -22,6 +22,7 @@ router.use('/freight-bids', require('./freightBid.routes'))
 router.use('/bundles', require('../../plant/bundle.routes'))
 router.use('/smdt', require('./smdt.routes'))
 router.use('/deliveries', require('./delivery.routes'))
+router.use('/payables', require('../../plant/payables.routes'))
 router.use('/', require('./extras.routes'))
 
 module.exports = router

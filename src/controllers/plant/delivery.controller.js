@@ -18,6 +18,12 @@ const { getScopedLeadIds } = require('../../utils/plantAccessScope')
 const { sendFreightBidRequestEmail, sendDeliveryConfirmationEmail } = require('../../services/email/mailer')
 const { sendSms, isTwilioConfigured } = require('../../services/sms/sms.service')
 const generateDeliveryNumber = require('../../utils/generateDeliveryNumber')
+const { mapDeliveryForPdfExport } = require('../../utils/deliveryPdfMap.util')
+const {
+  generateDeliveryInfoPdf,
+  generatePackingListPdf,
+  generateInstructionsPdf,
+} = require('../../utils/exportDelivery')
 const {
   computeFreightEnvelopeDimensions,
   loadFreightLoadDetailsByLeadId,
@@ -2010,4 +2016,98 @@ exports.sendDeliveryReminder = asyncHandler(async (req, res) => {
   })
 
   return success(res, { deliveryId: delivery._id, channels }, 'Delivery reminder sent')
+})
+
+const loadPlantDeliveryExportContext = async (req, res) => {
+  const delivery = await Delivery.findById(req.params.deliveryId).lean()
+  if (!delivery) return { error: notFound(res, 'Delivery not found') }
+
+  const access = await assertPlantProjectAccess(delivery.leadId, req)
+  if (access.error) {
+    if (access.code === 404) return { error: notFound(res, access.error) }
+    return { error: forbidden(res, access.error) }
+  }
+
+  const lead = await Lead.findById(delivery.leadId).select('jobId projectName').lean()
+  let carrier = null
+  if (delivery.selectedCarrierBidId) {
+    const bid = await FreightBid.findById(delivery.selectedCarrierBidId)
+      .select('carrierId')
+      .populate('carrierId', 'carrierName contactName phone email')
+      .lean()
+    carrier = bid?.carrierId || null
+  }
+  const loadDetails = await loadFreightLoadDetailsByLeadId(delivery.leadId)
+  return { delivery, lead, carrier, loadDetails }
+}
+
+exports.getDeliveryDocuments = asyncHandler(async (req, res) => {
+  const ctx = await loadPlantDeliveryExportContext(req, res)
+  if (ctx.error) return ctx.error
+
+  const { delivery } = ctx
+  const base = `${req.baseUrl.replace(/\/$/, '')}/${delivery._id}/download`
+  const fileAttachments = (delivery.attachments || []).map((url, i) => ({
+    name: `Attachment ${i + 1}`,
+    type: 'file',
+    url,
+  }))
+
+  return success(res, {
+    documents: [
+      { name: 'Delivery Details PDF', type: 'pdf', url: base },
+      { name: 'Packing List PDF', type: 'pdf', url: `${base}/packing-list` },
+      { name: 'Instructions PDF', type: 'pdf', url: `${base}/instructions` },
+      ...(delivery.documentUrl
+        ? [{ name: 'Uploaded delivery document', type: 'file', url: delivery.documentUrl }]
+        : []),
+      ...fileAttachments,
+    ],
+  })
+})
+
+exports.downloadDeliveryDetailsPdf = asyncHandler(async (req, res) => {
+  const ctx = await loadPlantDeliveryExportContext(req, res)
+  if (ctx.error) return ctx.error
+
+  const mapped = mapDeliveryForPdfExport(ctx.delivery, ctx.lead, ctx.carrier, ctx.loadDetails)
+  const buffer = await generateDeliveryInfoPdf(mapped)
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="delivery-${ctx.delivery.deliveryNumber || ctx.delivery._id}-details.pdf"`
+  )
+  return res.send(buffer)
+})
+
+exports.downloadDeliveryPackingListPdf = asyncHandler(async (req, res) => {
+  const ctx = await loadPlantDeliveryExportContext(req, res)
+  if (ctx.error) return ctx.error
+
+  const mapped = mapDeliveryForPdfExport(ctx.delivery, ctx.lead, ctx.carrier, ctx.loadDetails)
+  const buffer = await generatePackingListPdf(
+    mapped,
+    ctx.loadDetails?.bundles || [],
+    ctx.loadDetails?.packingLists || []
+  )
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="delivery-${ctx.delivery.deliveryNumber || ctx.delivery._id}-packing-list.pdf"`
+  )
+  return res.send(buffer)
+})
+
+exports.downloadDeliveryInstructionsPdf = asyncHandler(async (req, res) => {
+  const ctx = await loadPlantDeliveryExportContext(req, res)
+  if (ctx.error) return ctx.error
+
+  const mapped = mapDeliveryForPdfExport(ctx.delivery, ctx.lead, ctx.carrier, ctx.loadDetails)
+  const buffer = await generateInstructionsPdf(mapped)
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="delivery-${ctx.delivery.deliveryNumber || ctx.delivery._id}-instructions.pdf"`
+  )
+  return res.send(buffer)
 })

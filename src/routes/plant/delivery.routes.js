@@ -22,6 +22,30 @@ router.get('/project/:leadId',
   ctrl.getProjectDeliveries
 )
 
+router.get('/:deliveryId/documents',
+  [param('deliveryId').isMongoId()],
+  validate,
+  ctrl.getDeliveryDocuments
+)
+
+router.get('/:deliveryId/download/instructions',
+  [param('deliveryId').isMongoId()],
+  validate,
+  ctrl.downloadDeliveryInstructionsPdf
+)
+
+router.get('/:deliveryId/download/packing-list',
+  [param('deliveryId').isMongoId()],
+  validate,
+  ctrl.downloadDeliveryPackingListPdf
+)
+
+router.get('/:deliveryId/download',
+  [param('deliveryId').isMongoId()],
+  validate,
+  ctrl.downloadDeliveryDetailsPdf
+)
+
 router.get('/:deliveryId/detail',
   [param('deliveryId').isMongoId()],
   validate,

@@ -190,7 +190,76 @@ Default list: `payableWorkflow.status` in **`approved_for_payment`**, **`paid`**
 
 ---
 
-## 6. Data model (Invoice)
+## 6. Plant panel — vendor / freight invoice list + stats
+
+Auth: **plant** (`/api/plant/...`) or **admin plant** (`/api/admin/plant/...`, same handlers, all approved PO projects).
+
+Scope: only payables whose **`leadId`** is on an **approved PO** assigned to the plant user (admin plant sees all approved PO projects).
+
+Each response includes **summary cards (`stats`)** and the **table (`invoices`)** in one call — mirror the admin Vendor Invoices screen.
+
+| Screen | Method | Path |
+|--------|--------|------|
+| Filter enums | GET | `.../payables/filters` |
+| Vendor invoices + stats | GET | `.../payables/vendor` |
+| Freight carrier invoices + stats | GET | `.../payables/freight-carrier` |
+| Read-only detail | GET | `.../payables/:invoiceId` |
+
+**Query params (vendor and freight-carrier lists):**
+
+| Param | Notes |
+|--------|--------|
+| `page`, `limit` | Pagination (default 20, max 100) |
+| `projectId` | Filter to one project (`leadId`); must be in plant scope |
+| `payableStatus` | `pending_admin_approval`, `approved_for_payment`, `paid`, `unpaid`, `rejected` |
+| `status` | Legacy top-level invoice `status` when `payableWorkflow` is null |
+| `startDate`, `endDate` | Filter on invoice `date` (ISO) |
+| `search` | Invoice number (partial) |
+
+**Example:** `GET /api/plant/payables/vendor?status=All&payableStatus=&projectId=&page=1&limit=20`
+
+**Response `200` (shape):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "stats": {
+      "totalIncome": 111500,
+      "productSales": 75000,
+      "serviceRevenue": 30000,
+      "otherIncome": 6500,
+      "pendingAdminApproval": 2,
+      "approvedForPayment": 1,
+      "paid": 4
+    },
+    "invoices": [
+      {
+        "invoiceNumber": "VINV-2026-1005",
+        "vendorName": "React6",
+        "projectName": "Dev Warehouse One",
+        "jobId": "PRO-005",
+        "amount": 1002,
+        "dueDate": "2026-10-24T07:54:08.189Z",
+        "payableStatus": "paid",
+        "paymentLabel": "Completed",
+        "documentUrl": "https://..."
+      }
+    ],
+    "total": 5,
+    "page": 1,
+    "limit": 20
+  }
+}
+```
+
+Plant is **read-only** on this flow (no approve, pay, or upload here). Upload remains **admin manual** or **acceptance-email public** link after shipper approve / freight award.
+
+**Project dropdown:** use existing `GET /api/plant/projects` (or admin plant projects list) for the filter control.
+
+---
+
+## 7. Data model (Invoice)
 
 Payables use the same **`Invoice`** collection:
 
@@ -210,7 +279,7 @@ Invoice numbers: **`VINV-{year}-{seq}`** (vendor), **`FINV-{year}-{seq}`** (frei
 
 ---
 
-## 7. Frontend checklist
+## 8. Frontend checklist
 
 ### Acceptance upload page (`/payable-invoice-upload/:token`)
 
@@ -233,17 +302,21 @@ Invoice numbers: **`VINV-{year}-{seq}`** (vendor), **`FINV-{year}-{seq}`** (frei
 
 ### Plant
 
-- [ ] No invoice create UI required; shipper approve + freight select trigger email links automatically
+- [ ] Vendor Invoices tab → `GET /api/plant/payables/vendor` (stats + table)
+- [ ] Freight Carrier Invoices tab → `GET /api/plant/payables/freight-carrier`
+- [ ] Row detail / PDF → `GET /api/plant/payables/:invoiceId` (`documentUrl`)
+- [ ] Project filter → `projectId` query + projects list API
+- [ ] Shipper approve / freight award still trigger acceptance upload emails (no create on plant)
 
 ---
 
-## 8. Relation to old account “vendor invoices” tab
+## 9. Relation to old account “vendor invoices” tab
 
 `GET /api/account/financial/invoices/vendor` still reads **`PaymentApproval`** (legacy). New work should use **`/api/account/payables`** tied to **`Invoice`**. Migrate UI when ready.
 
 ---
 
-## 9. Plant triggers (reference)
+## 10. Plant triggers (reference)
 
 | Event | API | Side effect |
 |--------|-----|-------------|

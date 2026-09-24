@@ -58,12 +58,24 @@ const publicSubmitValidators = [
   body('daysToPay').optional({ checkFalsy: true }).isInt({ min: 1, max: 365 }),
 ]
 
+const plantPayablesListQuery = [
+  query('status').optional({ checkFalsy: true }).isString().trim(),
+  query('payableStatus').optional({ checkFalsy: true }).isIn(PAYABLE_WORKFLOW_STATUSES),
+  query('projectId').optional({ checkFalsy: true }).isMongoId(),
+  query('page').optional({ checkFalsy: true }).isInt({ min: 1 }),
+  query('limit').optional({ checkFalsy: true }).isInt({ min: 1, max: 100 }),
+  query('search').optional({ checkFalsy: true }).isString().trim(),
+  query('startDate').optional({ checkFalsy: true }).isISO8601(),
+  query('endDate').optional({ checkFalsy: true }).isISO8601(),
+]
+
 module.exports = {
   createVendorPayableValidators,
   createFreightPayableValidators,
   commentValidators,
   rejectValidators,
   accountListQuery,
+  plantPayablesListQuery,
   publicSubmitValidators,
   mongoId,
 }

@@ -3,7 +3,7 @@ const Lead = require('../models/Lead')
 const Vendor = require('../models/Vendor')
 const FreightCarrier = require('../models/FreightCarrier')
 const asyncHandler = require('../utils/asyncHandler')
-const { success, created, notFound, badRequest } = require('../utils/apiResponse')
+const { success, created, notFound, badRequest, forbidden } = require('../utils/apiResponse')
 const { buildDateFilter } = require('../utils/dateRange')
 const {
   createPayableInvoice,
@@ -345,4 +345,134 @@ exports.payableFilterMeta = asyncHandler(async (req, res) => {
     invoiceTypes: PAYABLE_TYPES,
     categories: INVOICE_CATEGORIES,
   })
+})
+
+const emptyPlantPayableStats = () => ({
+  totalIncome: 0,
+  productSales: 0,
+  serviceRevenue: 0,
+  otherIncome: 0,
+  pendingAdminApproval: 0,
+  approvedForPayment: 0,
+  paid: 0,
+})
+
+const resolvePlantPayableLeadFilter = async (req, projectId) => {
+  const { getScopedLeadIds } = require('../utils/plantAccessScope')
+  const scopedLeadIds = await getScopedLeadIds(req, {})
+  if (!scopedLeadIds.length) return { leadIds: [], empty: true }
+
+  if (projectId) {
+    const allowed = scopedLeadIds.some((id) => String(id) === String(projectId))
+    if (!allowed) return { leadIds: [], empty: true, denied: true }
+    return { leadIds: [projectId], empty: false }
+  }
+
+  return { leadIds: scopedLeadIds, empty: false }
+}
+
+const buildPlantPayableListFilter = async (req, invoiceType) => {
+  const { status, payableStatus, projectId, startDate, endDate, search } = req.query
+  const scope = await resolvePlantPayableLeadFilter(req, projectId)
+  if (scope.empty) {
+    return { scope, filter: null }
+  }
+
+  const filter = buildPayableFilter({
+    invoiceType,
+    payableStatus,
+    status,
+    startDate,
+    endDate,
+    search,
+  })
+  filter.leadId = scope.leadIds.length === 1 ? scope.leadIds[0] : { $in: scope.leadIds }
+  return { scope, filter }
+}
+
+const listPlantPayablesByType = async (req, res, invoiceType) => {
+  if (!PAYABLE_TYPES.includes(invoiceType)) return badRequest(res, 'Invalid invoiceType')
+
+  const { page = 1, limit = 20 } = req.query
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1)
+  const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
+  const skip = (parsedPage - 1) * parsedLimit
+
+  const { scope, filter } = await buildPlantPayableListFilter(req, invoiceType)
+  if (scope.denied) return forbidden(res, 'Access denied for this project')
+  if (scope.empty || !filter) {
+    return success(res, {
+      stats: emptyPlantPayableStats(),
+      invoices: [],
+      total: 0,
+      page: parsedPage,
+      limit: parsedLimit,
+    })
+  }
+
+  const [invoices, count, categoryStats, statusStats] = await Promise.all([
+    populatePayableQuery(Invoice.find(filter)).sort({ date: -1 }).skip(skip).limit(parsedLimit).lean(),
+    Invoice.countDocuments(filter),
+    Invoice.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalIncome: { $sum: '$totalAmount' },
+          productSales: { $sum: { $cond: [{ $eq: ['$category', 'product'] }, '$totalAmount', 0] } },
+          serviceRevenue: { $sum: { $cond: [{ $eq: ['$category', 'service'] }, '$totalAmount', 0] } },
+          otherIncome: { $sum: { $cond: [{ $eq: ['$category', 'other'] }, '$totalAmount', 0] } },
+        },
+      },
+    ]),
+    Invoice.aggregate([
+      { $match: { ...filter, payableWorkflow: { $ne: null } } },
+      { $group: { _id: '$payableWorkflow.status', count: { $sum: 1 } } },
+    ]),
+  ])
+
+  const s = categoryStats[0] || {}
+  const stats = {
+    totalIncome: s.totalIncome || 0,
+    productSales: s.productSales || 0,
+    serviceRevenue: s.serviceRevenue || 0,
+    otherIncome: s.otherIncome || 0,
+    pendingAdminApproval: 0,
+    approvedForPayment: 0,
+    paid: 0,
+  }
+  for (const row of statusStats) {
+    if (row._id === 'pending_admin_approval') stats.pendingAdminApproval = row.count
+    if (row._id === 'approved_for_payment' || row._id === 'unpaid') {
+      stats.approvedForPayment += row.count
+    }
+    if (row._id === 'paid') stats.paid = row.count
+  }
+
+  return success(res, {
+    stats,
+    invoices: invoices.map(buildPayableListRow),
+    total: count,
+    page: parsedPage,
+    limit: parsedLimit,
+  })
+}
+
+exports.listPlantVendorPayables = asyncHandler((req, res) => listPlantPayablesByType(req, res, 'vendor'))
+exports.listPlantFreightCarrierPayables = asyncHandler((req, res) =>
+  listPlantPayablesByType(req, res, 'freight_carrier')
+)
+
+exports.getPlantPayableDetail = asyncHandler(async (req, res) => {
+  const { invoice, error, code } = await loadPayableDetail(req.params.invoiceId)
+  if (error) return code === 404 ? notFound(res, error) : badRequest(res, error)
+
+  const leadId = invoice.leadId?._id || invoice.leadId
+  const { assertPlantProjectAccess } = require('../utils/plantProjectAccess')
+  const access = await assertPlantProjectAccess(leadId, req)
+  if (access.error) {
+    return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+  }
+
+  return success(res, { invoice, row: buildPayableListRow(invoice) })
 })
