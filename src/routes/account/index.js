@@ -13,6 +13,7 @@ router.use('/analytics', ...guard, require('./analytics.routes'))
 router.use('/payments',  ...guard, require('./payments.routes'))
 router.use('/reports',   ...guard, require('./reports.routes'))
 router.use('/financial', ...guard, require('./financial.routes'))
+router.use('/payables', ...guard, require('./payables.routes'))
 // Reuses the admin financial controller wholesale — margin analysis, budget vs actual,
 // tax filing (state-wise/project-wise/export/prepare/file), payment approvals & status,
 // WIP profits, richer expense management, and profit/loss with export — none of this had

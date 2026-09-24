@@ -395,9 +395,15 @@ exports.approveShipperRequest = asyncHandler(async (req, res) => {
     return badRequest(res, 'Another vendor is already approved for this consolidated BOM')
   }
 
+  const { ensurePayableUploadToken } = require('../../utils/payableInvoice.util')
+  const { CLIENT_URL } = require('../../config/env')
+
   selected.status = 'approved'
   selected.reviewedBy = req.user._id
   selected.reviewedAt = new Date()
+  if (!selected.payableUploadToken) {
+    selected.payableUploadToken = ensurePayableUploadToken()
+  }
   await selected.save()
 
   const rejectedRequests = []
@@ -418,11 +424,13 @@ exports.approveShipperRequest = asyncHandler(async (req, res) => {
   const emailFailures = []
   try {
     if (selected.vendorId?.email) {
+      const invoiceUploadUrl = `${CLIENT_URL}/payable-invoice-upload/${selected.payableUploadToken}`
       await sendShipperApprovalEmail({
         toEmail: selected.vendorId.email,
         vendorName: selected.vendorId.vendorName,
         projectName: selected.leadId.projectName,
         jobId: selected.leadId.jobId,
+        invoiceUploadUrl,
       })
     }
   } catch (err) {

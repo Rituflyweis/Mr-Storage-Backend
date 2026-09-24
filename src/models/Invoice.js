@@ -1,5 +1,15 @@
 const mongoose = require('mongoose')
-const { INVOICE_STATUSES, INVOICE_VALUE_TYPES, PAYMENT_PROOF_STATUSES, PAYMENT_METHODS, INVOICE_TYPES, INVOICE_CATEGORIES } = require('../config/constants')
+const {
+  INVOICE_STATUSES,
+  INVOICE_VALUE_TYPES,
+  PAYMENT_PROOF_STATUSES,
+  PAYMENT_METHODS,
+  INVOICE_TYPES,
+  INVOICE_CATEGORIES,
+  PAYABLE_WORKFLOW_STATUSES,
+  PAYABLE_SOURCES,
+  PAYABLE_COMMENT_AUTHOR_ROLES,
+} = require('../config/constants')
 
 const PaymentProofFileSchema = new mongoose.Schema(
   { url: { type: String, required: true }, name: { type: String, default: '' } },
@@ -49,6 +59,39 @@ const InvoiceApprovalHistorySchema = new mongoose.Schema(
     by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     at: { type: Date, default: Date.now },
     revision: { type: Number, default: null },
+  },
+  { _id: false }
+)
+
+const PayableCommentSchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true, trim: true },
+    authorRole: { type: String, enum: PAYABLE_COMMENT_AUTHOR_ROLES, required: true },
+    authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+)
+
+const PayableWorkflowSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: PAYABLE_WORKFLOW_STATUSES,
+      default: 'pending_admin_approval',
+    },
+    source: { type: String, enum: PAYABLE_SOURCES, default: 'admin_manual' },
+    documentUrl: { type: String, default: '' },
+    documentFileName: { type: String, default: '' },
+    shipperRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'ShipperRequest', default: null },
+    freightBidId: { type: mongoose.Schema.Types.ObjectId, ref: 'FreightBid', default: null },
+    deliveryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Delivery', default: null },
+    adminReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    adminReviewedAt: { type: Date, default: null },
+    adminRejectionReason: { type: String, default: '', trim: true },
+    accountPaymentUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    accountPaymentUpdatedAt: { type: Date, default: null },
+    comments: { type: [PayableCommentSchema], default: [] },
   },
   { _id: false }
 )
@@ -119,6 +162,8 @@ const InvoiceSchema = new mongoose.Schema(
 
     // Customer-submitted payment receipt review — separate from `status`, since the invoice only
     // flips to 'paid' once admin/sales verifies the proof (see PAYMENT_PROOF_STATUSES).
+    payableWorkflow: { type: PayableWorkflowSchema, default: null },
+
     paymentProof: {
       status:         { type: String, enum: PAYMENT_PROOF_STATUSES, default: 'none' },
       files:          { type: [PaymentProofFileSchema], default: [] },
@@ -137,6 +182,9 @@ const InvoiceSchema = new mongoose.Schema(
 
 InvoiceSchema.index({ leadId: 1, createdAt: -1 })
 InvoiceSchema.index({ customerId: 1 })
+InvoiceSchema.index({ invoiceType: 1, 'payableWorkflow.status': 1 })
+InvoiceSchema.index({ 'payableWorkflow.shipperRequestId': 1 }, { sparse: true })
+InvoiceSchema.index({ 'payableWorkflow.freightBidId': 1 }, { sparse: true })
 
 InvoiceSchema.pre('save', function setDueDate(next) {
   this.dueDate = computeInvoiceDueDate(this.date, this.daysToPay)

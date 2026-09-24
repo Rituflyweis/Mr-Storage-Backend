@@ -76,6 +76,16 @@ const PAYMENT_METHODS = ['cash', 'bank_transfer', 'credit_card', 'upi', 'cheque'
 /** Who the invoice bills — the customer (revenue) vs money the company owes a vendor/carrier (expense). */
 const INVOICE_TYPES = ['customer', 'vendor', 'freight_carrier']
 const INVOICE_CATEGORIES = ['product', 'service', 'other']
+/** Accounts-payable workflow for vendor / freight_carrier invoices (not customer AR). */
+const PAYABLE_WORKFLOW_STATUSES = [
+  'pending_admin_approval',
+  'approved_for_payment',
+  'rejected',
+  'paid',
+  'unpaid',
+]
+const PAYABLE_SOURCES = ['acceptance_upload', 'admin_manual']
+const PAYABLE_COMMENT_AUTHOR_ROLES = ['admin', 'account']
 const FOLLOW_UP_STATUSES = ['pending', 'completed']
 const FOLLOW_UP_MODES = ['call', 'email', 'meeting', 'sms']
 const MEETING_MODES = ['online', 'offline']
@@ -375,6 +385,9 @@ module.exports = {
   PAYMENT_METHODS,
   INVOICE_TYPES,
   INVOICE_CATEGORIES,
+  PAYABLE_WORKFLOW_STATUSES,
+  PAYABLE_SOURCES,
+  PAYABLE_COMMENT_AUTHOR_ROLES,
   FOLLOW_UP_STATUSES,
   FOLLOW_UP_MODES,
   MEETING_MODES,

@@ -2,6 +2,7 @@ const router = require('express').Router()
 const { body } = require('express-validator')
 const ctrl = require('../controllers/public.controller')
 const freightBidCtrl = require('../controllers/public/freightBidPublic.controller')
+const payableInvoiceCtrl = require('../controllers/public/payableInvoicePublic.controller')
 const packingListCtrl = require('../controllers/plant/packingList.controller')
 const { param } = require('express-validator')
 const validate = require('../middleware/validate')
@@ -43,6 +44,25 @@ router.post('/vendor-upload/:token/presigned-url',
   [body('fileName').notEmpty(), body('fileType').notEmpty(), body('folder').optional().notEmpty()],
   validate,
   ctrl.getVendorUploadPresignedUrl
+)
+
+router.get('/payable-invoice-upload/:token', payableInvoiceCtrl.getPayableUploadInfo)
+router.post('/payable-invoice-upload/:token/presigned-url',
+  [body('fileName').notEmpty(), body('fileType').notEmpty(), body('folder').optional().notEmpty()],
+  validate,
+  payableInvoiceCtrl.getPayableUploadPresignedUrl
+)
+router.post('/payable-invoice-upload/:token',
+  [
+    body('documentUrl').notEmpty().trim(),
+    body('totalAmount').notEmpty().custom((v) => !Number.isNaN(Number(v))),
+    body('documentFileName').optional().isString().trim(),
+    body('description').optional().isString().trim(),
+    body('vendorInvoiceNumber').optional().isString().trim(),
+    body('daysToPay').optional().isInt({ min: 1, max: 365 }),
+  ],
+  validate,
+  payableInvoiceCtrl.submitPayableUpload
 )
 
 router.post('/vendor-upload/:token',

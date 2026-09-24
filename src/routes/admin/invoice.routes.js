@@ -9,6 +9,8 @@ router.get('/vendor/export',        ctrl.exportVendorInvoices)
 router.get('/freight-carrier',      ctrl.getFreightCarrierInvoices)
 router.get('/freight-carrier/export', ctrl.exportFreightCarrierInvoices)
 
+router.use('/payables', require('./payables.routes'))
+
 // Individual Invoice detail screen — param routes last so they don't shadow the static ones above.
 router.get('/:invoiceId',            ctrl.getInvoiceDetail)
 router.get('/:invoiceId/export',     ctrl.exportInvoiceDetail)

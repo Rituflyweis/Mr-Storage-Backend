@@ -41,8 +41,13 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
     { $set: { status: 'rejected', selectedAt: null } }
   )
 
+  const { ensurePayableUploadToken } = require('../../utils/payableInvoice.util')
+
   selectedBid.status = 'selected'
   selectedBid.selectedAt = now
+  if (!selectedBid.payableUploadToken) {
+    selectedBid.payableUploadToken = ensurePayableUploadToken()
+  }
   await selectedBid.save()
 
   delivery.selectedCarrierBidId = selectedBid._id
@@ -64,6 +69,7 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
   const emailFailures = []
   try {
     if (awardedRow?.carrierId?.email) {
+      const invoiceUploadUrl = `${CLIENT_URL}/payable-invoice-upload/${selectedBid.payableUploadToken}`
       await sendFreightBidAwardedEmail({
         toEmail: awardedRow.carrierId.email,
         carrierName: awardedRow.carrierId.carrierName,
@@ -71,6 +77,7 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
         jobId: lead?.jobId || '',
         deliveryNumber: delivery.deliveryNumber,
         quotedAmount: awardedRow.quotedAmount,
+        invoiceUploadUrl,
       })
     }
   } catch (err) {

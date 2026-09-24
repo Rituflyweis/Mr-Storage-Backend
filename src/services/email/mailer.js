@@ -838,12 +838,14 @@ const sendShipperApprovalEmail = async ({
   vendorName,
   projectName,
   jobId,
+  invoiceUploadUrl,
 }) => {
   const template = loadTemplate("vendor-shipper-approved");
   const html = fillTemplate(template, {
     VENDOR_NAME: vendorName || "Vendor",
     PROJECT_NAME: projectName || "",
     JOB_ID: jobId || "",
+    INVOICE_UPLOAD_URL: invoiceUploadUrl || "",
   });
 
   await transporter.sendMail({
@@ -1065,7 +1067,11 @@ const sendFreightBidAwardedEmail = async ({
   jobId,
   deliveryNumber,
   quotedAmount,
+  invoiceUploadUrl,
 }) => {
+  const uploadBlock = invoiceUploadUrl
+    ? `<p style="margin-top:16px"><strong>Submit your invoice:</strong><br/><a href="${escapeHtml(invoiceUploadUrl)}">Upload invoice PDF</a></p>`
+    : ""
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
       <h2 style="margin:0 0 12px">Freight Bid Awarded</h2>
@@ -1078,6 +1084,7 @@ const sendFreightBidAwardedEmail = async ({
         <li><strong>Awarded Amount:</strong> ${quotedAmount != null ? formatInvoiceMoney(quotedAmount) : "—"}</li>
       </ul>
       <p>Our team will coordinate next steps with you shortly.</p>
+      ${uploadBlock}
     </div>
   `;
 

@@ -4,6 +4,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { generateVendorInvoicesExcel, generateFreightCarrierInvoicesExcel, generateSingleInvoiceExcel } = require('../../utils/exportInvoiceAdmin')
+const { buildPayableListRow } = require('../../utils/payableInvoice.util')
 
 exports.getInvoiceReport = asyncHandler(async (req, res) => {
   const { status, projectId, startDate, endDate, page = 1, limit = 20 } = req.query
@@ -56,18 +57,27 @@ exports.getInvoiceReport = asyncHandler(async (req, res) => {
   })
 })
 
-const buildVendorLikeInvoiceFilter = ({ invoiceType, status, projectId, startDate, endDate, search }) => {
+const buildVendorLikeInvoiceFilter = ({ invoiceType, status, payableStatus, projectId, startDate, endDate, search }) => {
   const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
   const filter = { invoiceType, ...dateFilter }
-  if (status && status !== 'All') filter.status = status
+  if (payableStatus) {
+    filter['payableWorkflow.status'] = payableStatus
+  } else if (status && status !== 'All') {
+    filter.$or = [
+      { 'payableWorkflow.status': status },
+      { payableWorkflow: null, status },
+    ]
+  }
   if (projectId) filter.leadId = projectId
-  if (search) filter.$or = [{ invoiceNumber: { $regex: search, $options: 'i' } }]
+  if (search?.trim()) {
+    filter.invoiceNumber = { $regex: search.trim(), $options: 'i' }
+  }
   return filter
 }
 
 exports.getVendorInvoices = asyncHandler(async (req, res) => {
-  const { status, projectId, startDate, endDate, page = 1, limit = 20, search } = req.query
-  const filter = buildVendorLikeInvoiceFilter({ invoiceType: 'vendor', status, projectId, startDate, endDate, search })
+  const { status, payableStatus, projectId, startDate, endDate, page = 1, limit = 20, search } = req.query
+  const filter = buildVendorLikeInvoiceFilter({ invoiceType: 'vendor', status, payableStatus, projectId, startDate, endDate, search })
 
   const [invoices, count, stats] = await Promise.all([
     Invoice.find(filter)
@@ -98,7 +108,7 @@ exports.getVendorInvoices = asyncHandler(async (req, res) => {
       serviceRevenue: s.serviceRevenue || 0,
       otherIncome:    s.otherIncome || 0,
     },
-    invoices,
+    invoices: invoices.map(buildPayableListRow),
     total: count,
     page: parseInt(page),
     limit: parseInt(limit),
@@ -107,8 +117,8 @@ exports.getVendorInvoices = asyncHandler(async (req, res) => {
 
 // GET /vendor/export
 exports.exportVendorInvoices = asyncHandler(async (req, res) => {
-  const { status, projectId, startDate, endDate, search } = req.query
-  const filter = buildVendorLikeInvoiceFilter({ invoiceType: 'vendor', status, projectId, startDate, endDate, search })
+  const { status, payableStatus, projectId, startDate, endDate, search } = req.query
+  const filter = buildVendorLikeInvoiceFilter({ invoiceType: 'vendor', status, payableStatus, projectId, startDate, endDate, search })
 
   const invoices = await Invoice.find(filter)
     .populate({ path: 'leadId', select: 'projectName jobId' })
@@ -123,8 +133,8 @@ exports.exportVendorInvoices = asyncHandler(async (req, res) => {
 })
 
 exports.getFreightCarrierInvoices = asyncHandler(async (req, res) => {
-  const { status, projectId, startDate, endDate, page = 1, limit = 20, search } = req.query
-  const filter = buildVendorLikeInvoiceFilter({ invoiceType: 'freight_carrier', status, projectId, startDate, endDate, search })
+  const { status, payableStatus, projectId, startDate, endDate, page = 1, limit = 20, search } = req.query
+  const filter = buildVendorLikeInvoiceFilter({ invoiceType: 'freight_carrier', status, payableStatus, projectId, startDate, endDate, search })
 
   const [invoices, count] = await Promise.all([
     Invoice.find(filter)
@@ -137,13 +147,18 @@ exports.getFreightCarrierInvoices = asyncHandler(async (req, res) => {
     Invoice.countDocuments(filter),
   ])
 
-  return success(res, { invoices, total: count, page: parseInt(page), limit: parseInt(limit) })
+  return success(res, {
+    invoices: invoices.map(buildPayableListRow),
+    total: count,
+    page: parseInt(page),
+    limit: parseInt(limit),
+  })
 })
 
 // GET /freight-carrier/export
 exports.exportFreightCarrierInvoices = asyncHandler(async (req, res) => {
-  const { status, projectId, startDate, endDate, search } = req.query
-  const filter = buildVendorLikeInvoiceFilter({ invoiceType: 'freight_carrier', status, projectId, startDate, endDate, search })
+  const { status, payableStatus, projectId, startDate, endDate, search } = req.query
+  const filter = buildVendorLikeInvoiceFilter({ invoiceType: 'freight_carrier', status, payableStatus, projectId, startDate, endDate, search })
 
   const invoices = await Invoice.find(filter)
     .populate({ path: 'leadId', select: 'projectName jobId' })

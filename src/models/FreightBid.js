@@ -30,6 +30,8 @@ const FreightBidSchema = new mongoose.Schema(
     resubmitRequestedAmount:   { type: Number, default: null },
     resubmitCount:             { type: Number, default: 0 },
     submissionHistory:     { type: [FreightBidSubmissionHistorySchema], default: [] },
+    payableUploadToken: { type: String, default: null, unique: true, sparse: true },
+    payableInvoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
   },
   { timestamps: true }
 )
