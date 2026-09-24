@@ -1,4 +1,5 @@
 const crypto = require('crypto')
+const Invoice = require('../models/Invoice')
 const User = require('../models/User')
 const generatePayableInvoiceNumber = require('./generatePayableInvoiceNumber')
 const { computeInvoiceDueDate } = require('./invoiceDueDate')
