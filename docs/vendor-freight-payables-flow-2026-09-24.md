@@ -38,13 +38,13 @@ Vendors and carriers already have **quote / bid** public pages. Payable invoice 
 |---------|--------------|-----------|-----------------|------------|
 | **Shipper quote upload** | Plant sends BOM to vendor | `ShipperRequest.token` | `{CLIENT_URL}/vendor-upload/{token}` (existing) | `/api/public/vendor-upload/:token` |
 | **Freight bid submit** | Plant invites carriers | `FreightBid.token` | freight bid public page | `/api/public/freight-bids/:token` |
-| **Payable invoice upload** | Plant **approves** shipper **or** **selects** freight bid | `ShipperRequest.payableUploadToken` **or** `FreightBid.payableUploadToken` | `{CLIENT_URL}/payable-invoice-upload/{token}` | `/api/public/payable-invoice-upload/:token` |
+| **Payable invoice upload** | Plant **approves** shipper **or** **selects** freight bid | `ShipperRequest.payableUploadToken` **or** `FreightBid.payableUploadToken` | `{CLIENT_URL}/invoice-upload/{token}` | `/api/public/payable-invoice-upload/:token` |
 
 **Frontend rule**
 
-- Route: **`/payable-invoice-upload/:token`** (public, no login).
+- FE route: **`/invoice-upload/:token`** (public, no login). Same page for **vendor and carrier**.
 - Read `token` from the URL path only.
-- Call **`/api/public/payable-invoice-upload/...`** with that token.
+- Call **`/api/public/payable-invoice-upload/...`** with that token (API path is the same for both).
 - Do **not** call `vendor-upload` or `freight-bids` with this token — those use different tokens.
 
 Backend resolves the payable token by looking up:
@@ -76,10 +76,10 @@ Admin plant mirror: `POST /api/admin/plant/shipper-requests/:requestId/approve` 
 3. Emails the **vendor** (`vendor.email`) with:
 
 ```text
-{CLIENT_URL}/payable-invoice-upload/{payableUploadToken}
+{CLIENT_URL}/invoice-upload/{payableUploadToken}
 ```
 
-Example: `https://your-app.com/payable-invoice-upload/a1b2c3...`
+Example: `https://storage-material-vendor-deployment.vercel.app/invoice-upload/a1b2c3...`
 
 **FE does not need the token from the approve API response for the public page** — the vendor gets it from the email. Plant UI only needs to show “approval + email sent” success.
 
@@ -101,8 +101,10 @@ Admin plant: `POST /api/admin/plant/freight-bids/:bidId/select` (or deliveries b
 3. Emails the **carrier** with:
 
 ```text
-{CLIENT_URL}/payable-invoice-upload/{payableUploadToken}
+{CLIENT_URL}/invoice-upload/{payableUploadToken}
 ```
+
+Same FE path as vendor — only the token differs (stored on `FreightBid`).
 
 ### 2.3 Admin manual upload (no public token)
 
@@ -120,8 +122,8 @@ Body includes `documentUrl` (already uploaded file URL). Status starts at `pendi
 ## 3. Public acceptance upload page (full FE flow)
 
 **Auth:** none. No `Authorization` header.  
-**Page route (FE):** `/payable-invoice-upload/:token`  
-**API base:** `/api/public/payable-invoice-upload/:token`
+**Page route (FE):** `/invoice-upload/:token` (vendor **and** carrier)  
+**API base:** `/api/public/payable-invoice-upload/:token` (same for both)
 
 Same UX pattern as existing **vendor quote upload** and **freight bid** public pages.
 
@@ -235,7 +237,7 @@ Content-Type: application/json
 ### 3.5 Pseudo-code (public page)
 
 ```javascript
-const token = params.token // from /payable-invoice-upload/:token
+const token = params.token // from /invoice-upload/:token
 
 // 1) Bootstrap
 const info = await fetch(`/api/public/payable-invoice-upload/${token}`).then(r => r.json())
@@ -295,7 +297,7 @@ List rows also expose **`paymentLabel`**: `Awaiting admin` | `Pending` | `Comple
 1. Plant compares shipper quotes
 2. POST /api/plant/shipper-requests/:id/approve
 3. Backend sets payableUploadToken + emails vendor
-4. Vendor opens /payable-invoice-upload/:token (no login)
+4. Vendor opens /invoice-upload/:token (no login)
 5. GET bootstrap → POST presign → PUT S3 → POST submit
 6. Invoice appears in admin approval queue (pending_admin_approval)
 7. Admin PUT .../approve
@@ -451,7 +453,7 @@ Plant **does not** create payables here. Creation = public email upload or admin
 | Step | Vendor quote (existing) | Freight bid (existing) | Payable invoice (this feature) |
 |------|-------------------------|------------------------|--------------------------------|
 | Token source | Plant “send to vendor” | Plant invite carriers | Plant **approve** / **select bid** |
-| FE route | `/vendor-upload/:token` | freight bid page | `/payable-invoice-upload/:token` |
+| FE route | `/vendor-upload/:token` | freight bid page | `/invoice-upload/:token` |
 | Bootstrap | `GET /api/public/vendor-upload/:token` | `GET /api/public/freight-bids/:token` | `GET /api/public/payable-invoice-upload/:token` |
 | Presign | `POST .../presigned-url` | (bid has no PDF usually) | `POST .../presigned-url` |
 | Submit | `POST .../vendor-upload/:token` | `POST .../freight-bids/:token/submit` | `POST .../payable-invoice-upload/:token` |
@@ -480,7 +482,7 @@ Numbers: **`VINV-{year}-{seq}`** (vendor), **`FINV-{year}-{seq}`** (freight).
 
 ## 11. Frontend checklist
 
-### Public page `/payable-invoice-upload/:token`
+### Public page `/invoice-upload/:token`
 
 - [ ] No Bearer header — only URL `:token`
 - [ ] Do not reuse `vendor-upload` or `freight-bids` APIs with this token
@@ -518,7 +520,7 @@ Numbers: **`VINV-{year}-{seq}`** (vendor), **`FINV-{year}-{seq}`** (freight).
 
 | Event | Authenticated API | Token field | Email link |
 |--------|-------------------|-------------|------------|
-| Vendor quote approved | `POST /api/plant/shipper-requests/:requestId/approve` | `ShipperRequest.payableUploadToken` | `{CLIENT_URL}/payable-invoice-upload/{token}` |
+| Vendor quote approved | `POST /api/plant/shipper-requests/:requestId/approve` | `ShipperRequest.payableUploadToken` | `{CLIENT_URL}/invoice-upload/{token}` |
 | Freight bid selected | `POST /api/plant/freight-bids/:bidId/select` | `FreightBid.payableUploadToken` | same path |
 
 Admin plant routes under `/api/admin/plant/...` call the same handlers.

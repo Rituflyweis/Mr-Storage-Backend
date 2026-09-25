@@ -18,6 +18,7 @@ router.use('/chat', require('../admin/chat.routes'))
 
 // Dashboard
 router.get('/dashboard', dashCtrl.getDashboard)
+router.get('/dashboard/filters', dashCtrl.getDashboardFilters)
 
 // Projects & Calendar (static routes before param routes)
 router.get('/projects', projectCtrl.getProjects)
@@ -53,6 +54,9 @@ router.post('/work-logs', taskCtrl.createWorkLog)
 // Material Requests
 router.get('/material-requests', materialRequestCtrl.getMaterialRequests)
 router.get('/material-requests/filters', materialRequestCtrl.getMaterialRequestFilters)
+router.get('/material-requests/export/csv', materialRequestCtrl.exportMaterialRequests)
+router.get('/material-requests/export/excel', materialRequestCtrl.exportMaterialRequests)
+router.get('/material-requests/export', materialRequestCtrl.exportMaterialRequests)
 router.post('/material-requests', materialRequestCtrl.createMaterialRequest)
 router.get('/material-requests/:requestId', materialRequestCtrl.getMaterialRequest)
 router.put('/material-requests/:requestId/status', materialRequestCtrl.updateMaterialRequestStatus)

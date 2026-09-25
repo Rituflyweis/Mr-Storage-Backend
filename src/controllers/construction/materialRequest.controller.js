@@ -3,6 +3,7 @@ const { MR_STATUSES, MR_PRIORITIES } = require('../../models/MaterialRequest')
 const OrderQuotation = require('../../models/OrderQuotation')
 const Delivery = require('../../models/Delivery')
 const Lead = require('../../models/Lead')
+const ExcelJS = require('exceljs')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const notificationService = require('../../services/notification.service')
@@ -27,25 +28,91 @@ const mapRow = (mr) => ({
   totalAmount: mr.totalAmount,
 })
 
-exports.getMaterialRequests = asyncHandler(async (req, res) => {
-  const { leadId, department, status, requestedBy, priority, siteLocation, search, dateFrom, dateTo, page = 1, limit = 20 } = req.query
+const buildMaterialRequestFilter = (query) => {
+  const {
+    leadId,
+    projectId,
+    department,
+    status,
+    requestedBy,
+    priority,
+    siteLocation,
+    search,
+    dateFrom,
+    dateTo,
+    fromDate,
+    toDate,
+  } = query
 
   const filter = {}
-  if (leadId) filter.leadId = leadId
+  const project = leadId || projectId
+  if (project) filter.leadId = project
   if (department) filter.department = department
-  if (status) filter.status = status
-  if (requestedBy) filter.requestedBy = requestedBy
-  if (priority) filter.priority = priority
+  if (status && status !== 'All') filter.status = status
+  if (requestedBy && requestedBy !== 'All') filter.requestedBy = requestedBy
+  if (priority && priority !== 'All') filter.priority = priority
   if (siteLocation) filter.siteLocation = siteLocation
   if (search?.trim()) filter.requestId = { $regex: search.trim(), $options: 'i' }
-  if (dateFrom || dateTo) {
+
+  const start = dateFrom || fromDate
+  const end = dateTo || toDate
+  if (start || end) {
     filter.requestDate = {}
-    if (dateFrom) filter.requestDate.$gte = new Date(dateFrom)
-    if (dateTo) filter.requestDate.$lte = new Date(dateTo)
+    if (start) filter.requestDate.$gte = new Date(start)
+    if (end) {
+      const endDate = new Date(end)
+      if (!String(end).includes('T')) endDate.setHours(23, 59, 59, 999)
+      filter.requestDate.$lte = endDate
+    }
   }
 
+  return filter
+}
+
+const formatItemsSummary = (items = []) => {
+  if (!items.length) return ''
+  const names = items.map((i) => i.name).filter(Boolean)
+  const unique = [...new Set(names)]
+  const label = unique.slice(0, 3).join(', ')
+  const more = unique.length > 3 ? ` +${unique.length - 3}` : ''
+  return `${items.length} Item${items.length === 1 ? '' : 's'}${label ? `, ${label}${more}` : ''}`
+}
+
+const loadMaterialRequestsForExport = async (query) => {
+  const filter = buildMaterialRequestFilter(query)
+  return MaterialRequest.find(filter)
+    .populate('leadId', 'projectName jobId location')
+    .populate('requestedBy', 'name email')
+    .sort({ createdAt: -1 })
+    .lean()
+}
+
+const toExportRow = (mr) => {
+  const projectName = mr.leadId?.projectName || ''
+  const jobId = mr.leadId?.jobId || ''
+  const site = mr.siteLocation || mr.leadId?.location || ''
+  return {
+    requestId: mr.requestId || String(mr._id),
+    projectSite: [projectName || jobId, site].filter(Boolean).join(', '),
+    jobId,
+    department: mr.department || '',
+    items: formatItemsSummary(mr.requestedItems),
+    itemCount: mr.requestedItems?.length || 0,
+    requestDate: mr.requestDate ? new Date(mr.requestDate).toISOString() : '',
+    requiredBy: mr.requiredBy ? new Date(mr.requiredBy).toISOString().slice(0, 10) : '',
+    status: mr.status || '',
+    priority: mr.priority || '',
+    requestedBy: mr.requestedBy?.name || '',
+    totalAmount: mr.totalAmount ?? 0,
+  }
+}
+
+exports.getMaterialRequests = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20 } = req.query
+  const filter = buildMaterialRequestFilter(req.query)
+
   const skip = (Number(page) - 1) * Number(limit)
-  const [rows, total] = await Promise.all([
+  const [rows, total, pending, approved, rejected, totalRequests] = await Promise.all([
     MaterialRequest.find(filter)
       .populate('leadId', 'projectName jobId location')
       .populate('requestedBy', 'name email')
@@ -54,19 +121,98 @@ exports.getMaterialRequests = asyncHandler(async (req, res) => {
       .limit(Number(limit))
       .lean(),
     MaterialRequest.countDocuments(filter),
+    MaterialRequest.countDocuments({ status: 'pending' }),
+    MaterialRequest.countDocuments({ status: 'approved' }),
+    MaterialRequest.countDocuments({ status: 'rejected' }),
+    MaterialRequest.countDocuments({}),
   ])
 
-  const stats = {
-    totalRequests: await MaterialRequest.countDocuments({}),
-    pending: await MaterialRequest.countDocuments({ status: 'pending' }),
-    approved: await MaterialRequest.countDocuments({ status: 'approved' }),
-    rejected: await MaterialRequest.countDocuments({ status: 'rejected' }),
-  }
-
-  return success(res, { materialRequests: rows.map(mapRow), total, stats })
+  return success(res, {
+    materialRequests: rows.map(mapRow),
+    total,
+    stats: { totalRequests, pending, approved, rejected },
+  })
 })
 
-// GET /material-requests/filters — populates the Apply Filters screen's dropdowns
+// GET /material-requests/export — Excel (default) or CSV; same filters as list
+exports.exportMaterialRequests = asyncHandler(async (req, res) => {
+  const path = String(req.path || req.originalUrl || '')
+  let format = String(req.query.format || '').toLowerCase()
+  if (!format) {
+    format = path.includes('/export/csv') || path.endsWith('/csv') ? 'csv' : 'excel'
+  }
+  const rows = (await loadMaterialRequestsForExport(req.query)).map(toExportRow)
+
+  if (format === 'csv') {
+    const escapeCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const header = [
+      'Request ID',
+      'Project / Site',
+      'Job ID',
+      'Department',
+      'Items',
+      'Item Count',
+      'Request Date',
+      'Required By',
+      'Status',
+      'Priority',
+      'Requested By',
+      'Total Amount',
+    ]
+    const lines = [header.map(escapeCsv).join(',')]
+    for (const r of rows) {
+      lines.push(
+        [
+          r.requestId,
+          r.projectSite,
+          r.jobId,
+          r.department,
+          r.items,
+          r.itemCount,
+          r.requestDate,
+          r.requiredBy,
+          r.status,
+          r.priority,
+          r.requestedBy,
+          r.totalAmount,
+        ]
+          .map(escapeCsv)
+          .join(',')
+      )
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', 'attachment; filename="material-requests.csv"')
+    return res.send(lines.join('\n'))
+  }
+
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Material Requests')
+  sheet.columns = [
+    { header: 'Request ID', key: 'requestId', width: 18 },
+    { header: 'Project / Site', key: 'projectSite', width: 36 },
+    { header: 'Job ID', key: 'jobId', width: 12 },
+    { header: 'Department', key: 'department', width: 16 },
+    { header: 'Items', key: 'items', width: 32 },
+    { header: 'Item Count', key: 'itemCount', width: 12 },
+    { header: 'Request Date', key: 'requestDate', width: 22 },
+    { header: 'Required By', key: 'requiredBy', width: 14 },
+    { header: 'Status', key: 'status', width: 12 },
+    { header: 'Priority', key: 'priority', width: 12 },
+    { header: 'Requested By', key: 'requestedBy', width: 20 },
+    { header: 'Total Amount', key: 'totalAmount', width: 14 },
+  ]
+  sheet.getRow(1).font = { bold: true }
+  for (const r of rows) sheet.addRow(r)
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  )
+  res.setHeader('Content-Disposition', 'attachment; filename="material-requests.xlsx"')
+  return res.send(Buffer.from(buffer))
+})
+
 exports.getMaterialRequestFilters = asyncHandler(async (req, res) => {
   const [leadIds, siteLocations, departments] = await Promise.all([
     MaterialRequest.distinct('leadId'),
@@ -148,7 +294,6 @@ exports.updateMaterialRequestStatus = asyncHandler(async (req, res) => {
   return success(res, { requestId: mr._id, status: mr.status }, 'Material request updated')
 })
 
-// POST /material-requests/:requestId/quotations — staff sends a coil-order quotation back to the customer
 exports.createOrderQuotation = asyncHandler(async (req, res) => {
   const mr = await MaterialRequest.findById(req.params.requestId).populate('leadId', 'customerId')
   if (!mr) return notFound(res, 'Material request not found')
@@ -188,7 +333,6 @@ exports.createOrderQuotation = asyncHandler(async (req, res) => {
   return created(res, { quotation }, 'Quotation sent to customer')
 })
 
-// POST /material-requests/:requestId/items/:itemId/deliver — marks one coil line item delivered
 exports.markOrderItemDelivered = asyncHandler(async (req, res) => {
   const { deliveryId, deliveryReference } = req.body
 
@@ -215,5 +359,14 @@ exports.markOrderItemDelivered = asyncHandler(async (req, res) => {
 
   await mr.save()
 
-  return success(res, { requestId: mr._id, itemId: item._id, deliveryStatus: item.deliveryStatus, orderStatus: mr.status }, 'Item marked delivered')
+  return success(
+    res,
+    {
+      requestId: mr._id,
+      itemId: item._id,
+      deliveryStatus: item.deliveryStatus,
+      orderStatus: mr.status,
+    },
+    'Item marked delivered'
+  )
 })

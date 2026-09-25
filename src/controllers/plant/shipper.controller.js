@@ -424,7 +424,7 @@ exports.approveShipperRequest = asyncHandler(async (req, res) => {
   const emailFailures = []
   try {
     if (selected.vendorId?.email) {
-      const invoiceUploadUrl = `${CLIENT_URL}/payable-invoice-upload/${selected.payableUploadToken}`
+      const invoiceUploadUrl = `${CLIENT_URL}/invoice-upload/${selected.payableUploadToken}`
       await sendShipperApprovalEmail({
         toEmail: selected.vendorId.email,
         vendorName: selected.vendorId.vendorName,

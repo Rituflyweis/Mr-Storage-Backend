@@ -69,7 +69,7 @@ exports.selectFreightBid = asyncHandler(async (req, res) => {
   const emailFailures = []
   try {
     if (awardedRow?.carrierId?.email) {
-      const invoiceUploadUrl = `${CLIENT_URL}/payable-invoice-upload/${selectedBid.payableUploadToken}`
+      const invoiceUploadUrl = `${CLIENT_URL}/invoice-upload/${selectedBid.payableUploadToken}`
       await sendFreightBidAwardedEmail({
         toEmail: awardedRow.carrierId.email,
         carrierName: awardedRow.carrierId.carrierName,
