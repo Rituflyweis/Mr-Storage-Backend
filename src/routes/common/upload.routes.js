@@ -12,7 +12,11 @@ router.post('/presigned-url',
 
 // Save document URL to lead after S3 upload completes
 router.post('/leads/:leadId/documents',
-  [body('url').notEmpty(), body('name').notEmpty()],
+  [
+    body('url').notEmpty(),
+    body('name').notEmpty(),
+    body('type').optional().isIn(['drawing', 'approval', 'general', 'contract', 'photo', 'video', 'other']),
+  ],
   validate,
   ctrl.addDocument
 )

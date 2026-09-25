@@ -33,6 +33,12 @@ router.get('/drawings/:leadId', drawingCtrl.getProjectDrawings)
 router.post('/drawings/:leadId', drawingCtrl.uploadDrawing)
 router.put('/drawings/:leadId/documents/:docId/review', drawingCtrl.reviewDrawing)
 
+// Photos & Videos (Lead.documents type photo|video)
+const mediaCtrl = require('../../controllers/common/leadMedia.controller')
+router.get('/media', mediaCtrl.listMediaProjects)
+router.get('/media/:leadId', mediaCtrl.getLeadMedia)
+router.post('/media/:leadId', mediaCtrl.uploadLeadMedia)
+
 // Tasks
 router.get('/tasks/stats', taskCtrl.getTaskStats)
 router.get('/tasks', taskCtrl.getTasks)

@@ -42,7 +42,8 @@ const LeadScoringSchema = new mongoose.Schema(
   { _id: false }
 )
 
-const DOCUMENT_TYPES = ['drawing', 'approval', 'general', 'contract', 'photo', 'other']
+const DOCUMENT_TYPES = ['drawing', 'approval', 'general', 'contract', 'photo', 'video', 'other']
+const MEDIA_DOCUMENT_TYPES = ['photo', 'video']
 
 const DOCUMENT_APPROVAL_STATUSES = ['pending', 'approved', 'rejected']
 
@@ -208,4 +209,6 @@ LeadSchema.post('init', function () {
 })
 
 module.exports = mongoose.model('Lead', LeadSchema)
+module.exports.DOCUMENT_TYPES = DOCUMENT_TYPES
+module.exports.MEDIA_DOCUMENT_TYPES = MEDIA_DOCUMENT_TYPES
 module.exports.DOCUMENT_APPROVAL_STATUSES = DOCUMENT_APPROVAL_STATUSES

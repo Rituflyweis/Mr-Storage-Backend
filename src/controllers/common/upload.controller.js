@@ -37,8 +37,11 @@ exports.getPresignedUrl = asyncHandler(async (req, res) => {
 
 exports.addDocument = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { url, name } = req.body
+  const { url, name, type } = req.body
   if (!url || !name) return badRequest(res, 'url and name are required')
+
+  const { DOCUMENT_TYPES } = require('../../models/Lead')
+  const docType = type && DOCUMENT_TYPES.includes(type) ? type : 'general'
 
   const lead = await Lead.findById(leadId)
   if (!lead) return notFound(res, 'Lead not found')
@@ -46,7 +49,13 @@ exports.addDocument = asyncHandler(async (req, res) => {
     return forbidden(res, 'Access denied')
   }
 
-  lead.documents.push({ url, name, uploadedBy: req.user._id, uploadedAt: new Date() })
+  lead.documents.push({
+    url,
+    name,
+    type: docType,
+    uploadedBy: req.user._id,
+    uploadedAt: new Date(),
+  })
   await lead.save()
 
   await auditService.log({
@@ -55,7 +64,7 @@ exports.addDocument = asyncHandler(async (req, res) => {
     leadId,
     customerId: lead.customerId,
     performedBy: req.user._id,
-    metadata: { name, url },
+    metadata: { name, url, documentType: docType },
   })
 
   return success(res, { documents: lead.documents })

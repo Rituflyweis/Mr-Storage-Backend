@@ -49,9 +49,24 @@ router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
 router.get('/:leadId/detail', ctrl.getLeadDetail)
 router.get('/:leadId/timeline', ctrl.getLeadTimeline)
 router.get('/:leadId/documents',
-  [query('type').optional().isIn(['drawing', 'approval', 'general', 'contract', 'photo', 'other'])],
+  [query('type').optional().isIn(['drawing', 'approval', 'general', 'contract', 'photo', 'video', 'other'])],
   validate,
   ctrl.getLeadDocuments
+)
+const mediaCtrl = require('../../controllers/common/leadMedia.controller')
+router.get('/:leadId/media',
+  [query('type').optional().isIn(['photo', 'video'])],
+  validate,
+  mediaCtrl.getLeadMedia
+)
+router.post('/:leadId/media',
+  [
+    body('url').notEmpty(),
+    body('name').notEmpty(),
+    body('type').isIn(['photo', 'video']),
+  ],
+  validate,
+  mediaCtrl.uploadLeadMedia
 )
 router.get('/:leadId/notes', ctrl.getLeadNotes)
 router.post('/:leadId/notes',

@@ -67,6 +67,11 @@ exports.uploadDrawing = asyncHandler(async (req, res) => {
   const { url, name, type = 'drawing' } = req.body
   if (!url || !name) return badRequest(res, 'url and name are required')
 
+  const { DOCUMENT_TYPES } = require('../../models/Lead')
+  if (!DOCUMENT_TYPES.includes(type)) {
+    return badRequest(res, `type must be one of: ${DOCUMENT_TYPES.join(', ')}`)
+  }
+
   const lead = await Lead.findById(leadId)
   if (!lead) return notFound(res, 'Project not found')
 

@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body, param } = require('express-validator')
+const { body, param, query } = require('express-validator')
 const {
   shipperRequestListQueryValidators,
 } = require('../../../validators/shipperListQuery.validators')
@@ -15,6 +15,25 @@ router.get('/:leadId/drawings',
   [param('leadId').isMongoId()],
   validate,
   ctrl.getProjectDrawings
+)
+const mediaCtrl = require('../../../controllers/common/leadMedia.controller')
+router.get('/:leadId/media',
+  [
+    param('leadId').isMongoId(),
+    query('type').optional().isIn(['photo', 'video']),
+  ],
+  validate,
+  mediaCtrl.getLeadMedia
+)
+router.post('/:leadId/media',
+  [
+    param('leadId').isMongoId(),
+    body('url').notEmpty(),
+    body('name').notEmpty(),
+    body('type').isIn(['photo', 'video']),
+  ],
+  validate,
+  mediaCtrl.uploadLeadMedia
 )
 router.post('/:leadId/drawings',
   [

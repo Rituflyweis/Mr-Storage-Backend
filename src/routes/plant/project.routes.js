@@ -68,6 +68,22 @@ router.post('/:leadId/drawings',
 )
 router.get('/:leadId/drawings', ctrl.getProjectDrawings)
 
+const mediaCtrl = require('../../controllers/common/leadMedia.controller')
+router.get('/:leadId/media',
+  [query('type').optional().isIn(['photo', 'video'])],
+  validate,
+  mediaCtrl.getLeadMedia
+)
+router.post('/:leadId/media',
+  [
+    body('url').notEmpty(),
+    body('name').notEmpty(),
+    body('type').isIn(['photo', 'video']),
+  ],
+  validate,
+  mediaCtrl.uploadLeadMedia
+)
+
 const drawingDocParams = [
   param('leadId').isMongoId(),
   param('docId').isMongoId(),

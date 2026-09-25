@@ -891,6 +891,7 @@ Allowed for dashboard / projects `status` filters and projects list scope:
 | Area | Path |
 |------|------|
 | Drawings | `GET /api/construction/drawings` |
+| Photos & Videos | `GET /api/construction/media` · `GET/POST /api/construction/media/:leadId` |
 | Deliveries | `GET /api/construction/deliveries` |
 | Tasks | `GET /api/construction/tasks` |
 | Packing lists | `GET /api/construction/packing-lists` |
