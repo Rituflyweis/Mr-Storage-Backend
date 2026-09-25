@@ -99,9 +99,9 @@ module.exports = {
   INVOICE_LOGO_URL: process.env.INVOICE_LOGO_URL || "",
 
   ADMIN_LOGIN_URL:
-    process.env.ADMIN_LOGIN_URL || "https://admin.steelbuildingdepot.com/sign-in/",
+    process.env.ADMIN_LOGIN_URL || "https://admin.storagematerials.org/sign-in",
   SALES_LOGIN_URL:
-    process.env.SALES_LOGIN_URL || "https://sales.steelbuildingdepot.com/sign-in/",
+    process.env.SALES_LOGIN_URL || "https://sales.storagematerials.org",
   PLANT_LOGIN_URL:
-    process.env.PLANT_LOGIN_URL || "https://plant.steelbuildingdepot.com/login",
+    process.env.PLANT_LOGIN_URL || "https://plant.storagematerials.org/login",
 };

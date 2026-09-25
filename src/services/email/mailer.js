@@ -662,17 +662,32 @@ const EMPLOYEE_LOGIN_URLS = {
   plant: PLANT_LOGIN_URL,
 };
 
+/** Canonical panel login links used in employee credential emails. */
+const EMPLOYEE_PANEL_LOGIN_FALLBACKS = {
+  admin: 'https://admin.storagematerials.org/sign-in',
+  sales: 'https://sales.storagematerials.org',
+  plant: 'https://plant.storagematerials.org/login',
+}
+
+const isLegacyEmployeeLoginHost = (url) => {
+  const u = String(url || '').toLowerCase()
+  return (
+    u.includes('storagematerials.com') ||
+    u.includes('steelbuildingdepot.com')
+  )
+}
+
 const normalizeLoginUrl = (url, role) => {
-  const fallbackByRole = {
-    admin: 'https://admin.steelbuildingdepot.com/sign-in/',
-    sales: 'https://sales.steelbuildingdepot.com/sign-in/',
-    plant: 'https://plant.steelbuildingdepot.com/login',
-  }
+  const normalizedRole =
+    role === 'sales' ? 'sales' : role === 'plant' ? 'plant' : 'admin'
+  const fallback =
+    EMPLOYEE_PANEL_LOGIN_FALLBACKS[normalizedRole] ||
+    EMPLOYEE_PANEL_LOGIN_FALLBACKS.admin
   const trimmed = String(url || '').trim()
-  if (!trimmed) return fallbackByRole[role] || fallbackByRole.admin
-  if (!trimmed.includes('storagematerials.org')) return trimmed
-  const normalizedRole = role === 'sales' ? 'sales' : role === 'plant' ? 'plant' : 'admin'
-  return fallbackByRole[normalizedRole]
+  if (!trimmed) return fallback
+  // Replace old .com / steelbuildingdepot hosts with the correct .org panel URL for the role.
+  if (isLegacyEmployeeLoginHost(trimmed)) return fallback
+  return trimmed
 }
 
 const sendEmployeeCredentials = async ({
