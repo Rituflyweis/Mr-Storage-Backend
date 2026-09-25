@@ -99,11 +99,11 @@ module.exports = {
   INVOICE_LOGO_URL: process.env.INVOICE_LOGO_URL || "",
 
   ADMIN_LOGIN_URL:
-    process.env.ADMIN_LOGIN_URL || "https://admin.storagematerials.org/",
+    process.env.ADMIN_LOGIN_URL || "https://admin.storagematerials.org/sign-in",
   SALES_LOGIN_URL:
-    process.env.SALES_LOGIN_URL || "https://sales.storagematerials.org/",
+    process.env.SALES_LOGIN_URL || "https://sales.storagematerials.org",
   PLANT_LOGIN_URL:
-    process.env.PLANT_LOGIN_URL || "https://plant.storagematerials.org/",
+    process.env.PLANT_LOGIN_URL || "https://plant.storagematerials.org/login",
 
   DB_BACKUP_ENABLED:
     process.env.DB_BACKUP_ENABLED !== "false" &&
