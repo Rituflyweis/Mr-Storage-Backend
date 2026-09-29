@@ -1,310 +1,206 @@
-# Construction panel — Plant manufacturing data (read-only)
+# Construction — Project detail manufacturing data
 
 **Date:** 2026-09-29  
-**Audience:** Frontend (Construction mobile / web)  
-**Base URL (UAT):** `https://mr-storage-backend-025k.onrender.com`  
-**Auth:** `Authorization: Bearer <accessToken>`  
-**Roles:** `construction` or `admin`
+**Audience:** Frontend (Construction panel — **Project Details** screen)  
+**Base URL:** `https://mr-storage-backend-025k.onrender.com`  
+**Auth:** `Authorization: Bearer <token>` · roles: `construction` | `admin`
 
-These endpoints expose the **same payloads** as the Plant panel for BOM, freight deliveries, building drawings, bundles, and packing lists. Construction uses them **read-only** (GET/HEAD only). Writes stay on Plant.
+Manufacturing data (BOM, plant freight, building drawings, bundles, truck packing) is **scoped to one project**. There are **no global list APIs** for construction for these features — open a project from **Projects & Calendar**, then use the buttons and the endpoints below.
 
-### Scope
-
-Data is limited to projects in **plant/construction lifecycle stages** (same pool as `GET /api/construction/projects`), not plant PO assignment.
-
-### Do not confuse with site workflows
-
-| Topic | Manufacturing (this doc) | Construction site workflow |
-|--------|-------------------------|----------------------------|
-| Deliveries | `/api/construction/plant/deliveries/*` — freight loads, calendar, PDFs | `/api/construction/deliveries/*` — scan bundle, mark received |
-| Drawings | `/api/construction/projects/:leadId/building-drawings` — per-building plant drawings | `/api/construction/drawings/*` — lead document drawings |
-| Packing lists | `/api/construction/plant/packing-lists/*` | `/api/construction/packing-lists/*` — dispatch / loading |
-| Bundles | `/api/construction/plant/bundles/:bundleId` | `/api/construction/bundles/:bundleId` — verify / stage / load |
-
-### Plant path mapping
-
-If you already integrated Plant, swap the base path:
-
-| Plant | Construction |
-|-------|----------------|
-| `GET /api/plant/bom/...` | `GET /api/construction/bom/...` |
-| `GET /api/plant/deliveries/...` | `GET /api/construction/plant/deliveries/...` |
-| `GET /api/plant/packing-lists/...` | `GET /api/construction/plant/packing-lists/...` |
-| `GET /api/plant/bundles/:bundleId` | `GET /api/construction/plant/bundles/:bundleId` |
-| `GET /api/plant/bundle-plans/:id` | `GET /api/construction/plant/bundle-plans/:id` |
-| `GET /api/plant/packing-list-plans/:id` | `GET /api/construction/plant/packing-list-plans/:id` |
-| `GET /api/plant/projects/:leadId/drawings` | `GET /api/construction/projects/:leadId/building-drawings` |
-| `GET /api/plant/projects/:leadId/bundle-plan` | `GET /api/construction/projects/:leadId/bundle-plan` |
-
-Non-GET requests to construction BOM or `/construction/plant/*` return **403** with message `This endpoint is read-only for construction`.
+All manufacturing routes are **read-only** (GET/HEAD).
 
 ---
 
-## Quick map
+## 1. Project detail (main screen)
 
-| UI need | Method | Path |
-|--------|--------|------|
-| BOM dashboard stats | `GET` | `/api/construction/bom/stats` |
-| BOM project list | `GET` | `/api/construction/bom/projects` |
-| BOM job detail + line items | `GET` | `/api/construction/bom/:jobId` |
-| Consolidated BOM file URL | `GET` | `/api/construction/bom/projects/:leadId/consolidated-url` |
-| Job processing status | `GET` | `/api/construction/bom/job/:jobId/status` |
-| Batch job statuses | `POST` | **Not allowed** — use per-job GET or poll from project list |
-| Building drawings (manufacturing) | `GET` | `/api/construction/projects/:leadId/building-drawings` |
-| Project bundle plan + bundle list | `GET` | `/api/construction/projects/:leadId/bundle-plan` |
-| Freight / delivery lists & detail | `GET` | `/api/construction/plant/deliveries/...` (§4) |
-| Packing list projects overview | `GET` | `/api/construction/plant/packing-lists/projects` |
-| Packing list detail / PDF | `GET` | `/api/construction/plant/packing-lists/:packingListId` |
-| Single manufacturing bundle | `GET` | `/api/construction/plant/bundles/:bundleId` |
-| Bundle plan detail | `GET` | `/api/construction/plant/bundle-plans/:bundlePlanId` |
-| Packing list plan | `GET` | `/api/construction/plant/packing-list-plans/:packingListPlanId` |
-
----
-
-## 1. BOM
-
-### 1.1 Stats
+Loads the header card, action buttons, and the **Upcoming Material Delivery** table.
 
 ```http
-GET /api/construction/bom/stats
+GET /api/construction/projects/:leadId
 Authorization: Bearer <token>
 ```
 
-**Response `data`:**
+### Response `data` (relevant fields)
 
 ```json
 {
-  "totalBomFilesUploaded": 12,
-  "pendingUploads": 2,
-  "readyForShipper": 5,
-  "issuesDetected": 1
+  "project": {
+    "_id": "…",
+    "projectName": "Project 1- ABC Warehouse",
+    "jobId": "Q-2025-1047",
+    "businessUnit": "steel",
+    "businessUnitLabel": "Steel",
+    "buildingType": "Workshop",
+    "numberOfBuildings": 3,
+    "lifecycleStatus": "in_progress",
+    "location": "…",
+    "createdAt": "2024-10-10T00:00:00.000Z",
+    "customerId": { "firstName": "…", "lastName": "…", "email": "…" }
+  },
+  "upcomingMaterialDeliveries": [
+    {
+      "deliveryId": "…",
+      "id": "DEL-1012",
+      "deliveryNumber": "DEL-1012",
+      "status": "scheduled",
+      "deliveryDate": "2026-04-01T00:00:00.000Z",
+      "timeWindowStart": "07:30",
+      "timeWindowEnd": "11:30",
+      "item": "Roofing Materials",
+      "carrier": "Rapid Delivery Services",
+      "poc": "John Site Manager",
+      "pocPhone": "…",
+      "pocEmail": "…"
+    }
+  ],
+  "tasks": [],
+  "manufacturing": {
+    "bomFilesPath": "/api/construction/projects/{leadId}/bom-files",
+    "consolidatedBomPath": "/api/construction/projects/{leadId}/consolidated-bom",
+    "buildingDrawingsPath": "/api/construction/projects/{leadId}/building-drawings",
+    "photosVideosPath": "/api/construction/projects/{leadId}/photos-videos",
+    "materialDeliveriesPath": "/api/construction/projects/{leadId}/material-deliveries",
+    "bundlePlanPath": "/api/construction/projects/{leadId}/bundle-plan",
+    "truckPlanPath": "/api/construction/projects/{leadId}/truck-plan",
+    "hasConsolidatedBom": true,
+    "hasBundlePlan": true
+  }
 }
 ```
 
-### 1.2 Project list (BOM jobs per project)
+| UI control | Call on tap |
+|------------|-------------|
+| **View BOM** | `GET` `manufacturing.bomFilesPath` → optional job drill-down (§2) |
+| **View Drawings & Photos** | `buildingDrawingsPath` + `photosVideosPath` (§3) |
+| **Material Delivery** | `materialDeliveriesPath` (§4) |
+| **Bundle Scan** | Existing construction flow: `POST /api/construction/deliveries/scan-bundle` (site workflow, not this doc) |
+| **Upcoming Material Delivery table** | Use `upcomingMaterialDeliveries` from this same response (or refresh via §4) |
+
+`siteDeliveries` is the older construction-site delivery list (same `Delivery` collection, filtered for on-site tracking). Prefer **`upcomingMaterialDeliveries`** for the freight-style table on the mock.
+
+---
+
+## 2. View BOM (this project only)
+
+### BOM files per building
 
 ```http
-GET /api/construction/bom/projects?page=1&limit=20
-Authorization: Bearer <token>
+GET /api/construction/projects/:leadId/bom-files
 ```
 
-Optional query: `projectId` (Mongo lead `_id`) to narrow to one project.
+**Response `data`:** `{ bomFiles: [{ buildingId, buildingNumber, bomJobId, fileName, fileUrl, status, totalItems, … }] }`
 
-**Response `data`:** `{ projects[], total, page, limit }` — same shape as Plant BOM project list (project name, jobId, buildings, latest job status, costs where available).
-
-### 1.3 Job detail
+### Open one BOM job (line items)
 
 ```http
-GET /api/construction/bom/:jobId?filter=all&page=1&limit=50
-Authorization: Bearer <token>
+GET /api/construction/projects/:leadId/bom/jobs/:jobId?page=1&limit=50&filter=all
 ```
 
-`filter` (optional): `all` | `unpriced` | `frames` | `matched` | `bom_priced` (same as Plant).
+`filter`: `all` | `unpriced` | `frames` | `matched` | `bom_priced`
 
-### 1.4 Consolidated BOM download URL
+### Consolidated BOM
 
 ```http
-GET /api/construction/bom/projects/:leadId/consolidated-url
-Authorization: Bearer <token>
+GET /api/construction/projects/:leadId/consolidated-bom
+GET /api/construction/projects/:leadId/bom/consolidated-url
 ```
 
-Returns presigned or stored URL for the consolidated BOM file when generated.
-
-### 1.5 Job status
+### Job status poll
 
 ```http
-GET /api/construction/bom/job/:jobId/status
-Authorization: Bearer <token>
+GET /api/construction/projects/:leadId/bom/jobs/:jobId/status
 ```
 
 ---
 
-## 2. Building drawings (manufacturing)
+## 3. View Drawings & Photos
 
-Per-building drawing revisions from the Plant workflow (not `Lead.documents` construction drawings).
+### Manufacturing drawings (per building)
 
 ```http
 GET /api/construction/projects/:leadId/building-drawings
-Authorization: Bearer <token>
 ```
 
-**Response `data`:**
+**Response `data`:** `{ buildings: [{ buildingId, buildingNumber, drawings[], latestDrawingStatus }] }`
 
-```json
-{
-  "buildings": [
-    {
-      "buildingId": "…",
-      "buildingNumber": 1,
-      "drawings": [],
-      "latestDrawingStatus": "approved"
-    }
-  ]
-}
+### Photos & videos on the lead
+
+```http
+GET /api/construction/projects/:leadId/photos-videos
+GET /api/construction/projects/:leadId/photos-videos?type=photo
 ```
 
-Each `drawings[]` entry matches Plant building drawing objects (fileUrl, status, revisions, etc.).
+Same payload as `GET /api/construction/media/:leadId`.
+
+**Note:** `GET /api/construction/drawings/:leadId` is the **construction document** drawing workflow (upload/review), not plant building drawings.
 
 ---
 
-## 3. Bundle plan & bundle list (per project)
+## 4. Material delivery (plant freight — this project)
+
+### Full list (Material Delivery screen)
 
 ```http
-GET /api/construction/projects/:leadId/bundle-plan
-Authorization: Bearer <token>
+GET /api/construction/projects/:leadId/material-deliveries
 ```
 
-**Response `data`:**
+**Response `data`:** `{ requests[], total, selectedDeliveryId }` — same shape as Plant `GET /api/plant/deliveries/project/:leadId`.
 
-```json
-{
-  "bundlePlan": {
-    "_id": "…",
-    "leadId": "…",
-    "planNumber": "…",
-    "status": "confirmed",
-    "totalBundles": 8,
-    "totalWeight": 42000,
-    "warnings": []
-  },
-  "bundles": [
-    {
-      "bundleId": "…",
-      "bundleNo": "B-001",
-      "bundleType": "panels",
-      "totalWeight": 5200,
-      "itemCount": 14
-    }
-  ],
-  "summary": {}
-}
-```
-
-**Single bundle detail** (line items, stacking, etc.):
-
-```http
-GET /api/construction/plant/bundles/:bundleId
-Authorization: Bearer <token>
-```
-
-**Bundle plan by id** (when you only have `bundlePlanId`):
-
-```http
-GET /api/construction/plant/bundle-plans/:bundlePlanId
-GET /api/construction/plant/bundle-plans/:bundlePlanId/coverage
-```
-
----
-
-## 4. Freight & deliveries (Plant freight module)
-
-Base: `/api/construction/plant/deliveries`
-
-### 4.1 Lists & stats
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/` | All deliveries (paginated) |
-| `GET` | `/stats` | Aggregate stats |
-| `GET` | `/freight` | Freight loads list |
-| `GET` | `/freight/stats` | Freight stats |
-| `GET` | `/awarded` | Awarded loads |
-| `GET` | `/awarded/stats` | Awarded stats |
-| `GET` | `/calendar` | Calendar view |
-| `GET` | `/export` or `/export/csv` | CSV export |
-| `GET` | `/export/excel` | Excel export |
-
-**Common query params:** `page`, `limit`, `search`, `status`, `projectId` (job id string), `carrierId`, `customerId`, `fromDate`, `toDate` (ISO dates).
-
-### 4.2 Per project
-
-```http
-GET /api/construction/plant/deliveries/project/:leadId
-Authorization: Bearer <token>
-```
-
-### 4.3 Delivery detail & downloads
+### Detail & PDFs
 
 | Method | Path |
 |--------|------|
-| `GET` | `/:deliveryId/detail` |
-| `GET` | `/:deliveryId/documents` |
-| `GET` | `/:deliveryId/download` |
-| `GET` | `/:deliveryId/download/instructions` |
-| `GET` | `/:deliveryId/download/packing-list` |
-| `GET` | `/:deliveryId/bids?sort=low_to_high` |
-
-Response bodies match Plant `delivery.controller` (same `success` + `data` envelope).
+| `GET` | `/api/construction/projects/:leadId/material-deliveries/:deliveryId/detail` |
+| `GET` | `/api/construction/projects/:leadId/material-deliveries/:deliveryId/documents` |
+| `GET` | `/api/construction/projects/:leadId/material-deliveries/:deliveryId/download` |
+| `GET` | `/api/construction/projects/:leadId/material-deliveries/:deliveryId/download/instructions` |
+| `GET` | `/api/construction/projects/:leadId/material-deliveries/:deliveryId/download/packing-list` |
 
 ---
 
-## 5. Packing lists (manufacturing / truck loads)
+## 5. Bundles & packing (this project)
 
-Base: `/api/construction/plant/packing-lists`
-
-### 5.1 Project overview (packing list plan per project)
+### Bundle plan + bundle list
 
 ```http
-GET /api/construction/plant/packing-lists/projects
-Authorization: Bearer <token>
+GET /api/construction/projects/:leadId/bundle-plan
 ```
 
-**Response `data`:** `{ projects[], total }` — one row per project with latest `packingListPlanId`, counts, status.
-
-### 5.2 Export
+### One bundle (e.g. after scan lookup)
 
 ```http
-GET /api/construction/plant/packing-lists/export
-Authorization: Bearer <token>
+GET /api/construction/projects/:leadId/bundles/:bundleId
 ```
 
-Returns Excel (same as Plant).
-
-### 5.3 Detail & PDF
+### Truck / packing list plan (all trucks + bundles for the job)
 
 ```http
-GET /api/construction/plant/packing-lists/:packingListId
-GET /api/construction/plant/packing-lists/:packingListId/download-pdf
-Authorization: Bearer <token>
+GET /api/construction/projects/:leadId/truck-plan
 ```
 
-### 5.4 Packing list plan
+**Response `data`:** `{ project, packingListPlan, packingLists[], bundles[], summary }`
+
+### One truck packing list
 
 ```http
-GET /api/construction/plant/packing-list-plans/:packingListPlanId
-Authorization: Bearer <token>
+GET /api/construction/projects/:leadId/packing-lists/:packingListId
+GET /api/construction/projects/:leadId/packing-lists/:packingListId/download-pdf
 ```
 
 ---
 
-## 6. Suggested UI flows
+## 6. Plant vs construction path cheat sheet
 
-### BOM screen
+Use **project-scoped** construction paths only (left column):
 
-1. `GET /api/construction/bom/stats` — header KPIs  
-2. `GET /api/construction/bom/projects` — table  
-3. On row tap → `GET /api/construction/bom/:jobId`  
-4. Optional consolidated file → `GET /api/construction/bom/projects/:leadId/consolidated-url`
-
-### Drawings (manufacturing)
-
-1. Pick project from `GET /api/construction/projects`  
-2. `GET /api/construction/projects/:leadId/building-drawings`  
-3. Render per-building drawing list / approval status
-
-### Bundles & packing
-
-1. `GET /api/construction/plant/packing-lists/projects` — landing list  
-2. `GET /api/construction/projects/:leadId/bundle-plan` — bundles for that job  
-3. `GET /api/construction/plant/bundles/:bundleId` — bundle detail  
-4. `GET /api/construction/plant/packing-lists/:packingListId` — truck load detail  
-5. PDF → `…/download-pdf`
-
-### Freight / delivery tracking (manufacturing)
-
-1. `GET /api/construction/plant/deliveries/freight` or `/awarded` or `/calendar`  
-2. Detail → `GET /api/construction/plant/deliveries/:deliveryId/detail`  
-3. Site receive flow → use **construction** `/api/construction/deliveries/*` (separate module)
+| Feature | Construction (use this) | Plant (reference) |
+|---------|-------------------------|---------------------|
+| BOM files | `GET /api/construction/projects/:leadId/bom-files` | `GET /api/plant/projects/:leadId/bom-files` |
+| BOM job | `GET /api/construction/projects/:leadId/bom/jobs/:jobId` | `GET /api/plant/bom/:jobId` |
+| Drawings | `GET /api/construction/projects/:leadId/building-drawings` | `GET /api/plant/projects/:leadId/drawings` |
+| Freight list | `GET /api/construction/projects/:leadId/material-deliveries` | `GET /api/plant/deliveries/project/:leadId` |
+| Bundle plan | `GET /api/construction/projects/:leadId/bundle-plan` | `GET /api/plant/projects/:leadId/bundle-plan` |
+| Truck plan | `GET /api/construction/projects/:leadId/truck-plan` | `GET /api/plant/projects/:projectId/load-planning/truck-plan` |
 
 ---
 
@@ -312,17 +208,14 @@ Authorization: Bearer <token>
 
 | HTTP | Meaning |
 |------|---------|
-| 401 | Missing or invalid token |
-| 403 | Project outside construction scope, or non-GET on read-only routes |
-| 404 | Resource not found (or no access — some routes return 404 instead of 403) |
-
-Standard envelope: `{ success: false, message: "…" }` or `{ success: true, data: { … } }`.
+| 403 | Not in construction project scope, or non-GET on manufacturing routes |
+| 404 | Unknown project or resource |
 
 ---
 
-## 8. Checklist
+## 8. FE checklist
 
-- [ ] Use `/api/construction/plant/deliveries` for freight, not `/api/construction/deliveries`
-- [ ] Use `building-drawings` for plant buildings, not `/api/construction/drawings/:leadId`
-- [ ] Use `/api/construction/plant/packing-lists` for manufacturing truck lists
-- [ ] Do not call Plant POST/PUT from construction token — use Plant role or expect 403
+- [ ] Project list: `GET /api/construction/projects` → navigate with `leadId`
+- [ ] Detail: single `GET /api/construction/projects/:leadId` for card + delivery table
+- [ ] BOM / Drawings / Material Delivery modals: only call `…/projects/:leadId/…` routes from §2–5
+- [ ] Do not use removed global routes `/api/construction/bom/*` or `/api/construction/plant/*`

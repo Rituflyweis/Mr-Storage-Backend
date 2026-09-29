@@ -5,6 +5,10 @@ const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
 const { businessUnitFields, applyBusinessUnitFilter } = require('../../utils/businessUnit')
+const { listUpcomingMaterialDeliveries } = require('../../utils/constructionProjectMaterialDeliveries')
+const Building = require('../../models/Building')
+const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
+const BundlePlan = require('../../models/BundlePlan')
 
 /** Construction panel only lists projects handed into plant/construction (not sales pipeline). */
 const CONSTRUCTION_STAGES = [...PLANT_LIFECYCLE_STAGES]
@@ -148,19 +152,47 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
     return notFound(res, 'Project is not in construction scope (still in sales pipeline)')
   }
 
-  const now = new Date()
-  const [upcomingDeliveries, tasks] = await Promise.all([
-    Delivery.find({
-      leadId: lead._id,
-      status: { $nin: ['draft', 'cancelled', 'delivered'] },
-      deliveryDate: { $gte: now },
-    })
-      .select('deliveryNumber status deliveryDate description materialType loadWeight')
-      .sort({ deliveryDate: 1 })
-      .limit(5)
-      .lean(),
-    Task.find({ leadId: lead._id }).select('title status priority dueDate assignedTo').lean(),
-  ])
+  const [upcomingMaterialDeliveries, siteDeliveries, tasks, buildingCount, hasConsolidatedBom, hasBundlePlan] =
+    await Promise.all([
+      listUpcomingMaterialDeliveries(lead._id, { limit: 10 }),
+      Delivery.find({
+        leadId: lead._id,
+        status: { $nin: ['draft', 'cancelled', 'delivered'] },
+        deliveryDate: { $gte: new Date() },
+      })
+        .select('deliveryNumber status deliveryDate description materialType loadWeight')
+        .sort({ deliveryDate: 1 })
+        .limit(5)
+        .lean(),
+      Task.find({ leadId: lead._id }).select('title status priority dueDate assignedTo').lean(),
+      Building.countDocuments({ leadId: lead._id }),
+      ConsolidatedBOM.exists({ leadId: lead._id, fileUrl: { $ne: null } }),
+      BundlePlan.exists({ leadId: lead._id, status: { $ne: 'cancelled' } }),
+    ])
 
-  return success(res, { project: withBusinessUnit(lead), deliveries: upcomingDeliveries, tasks })
+  const project = {
+    ...withBusinessUnit(lead),
+    numberOfBuildings: lead.numberOfBuildings ?? buildingCount,
+  }
+
+  return success(res, {
+    project,
+    /** Plant freight — powers "Upcoming Material Delivery" on project detail */
+    upcomingMaterialDeliveries,
+    /** @deprecated use upcomingMaterialDeliveries; kept for older clients */
+    deliveries: upcomingMaterialDeliveries,
+    siteDeliveries,
+    tasks,
+    manufacturing: {
+      bomFilesPath: `/api/construction/projects/${lead._id}/bom-files`,
+      consolidatedBomPath: `/api/construction/projects/${lead._id}/consolidated-bom`,
+      buildingDrawingsPath: `/api/construction/projects/${lead._id}/building-drawings`,
+      photosVideosPath: `/api/construction/projects/${lead._id}/photos-videos`,
+      materialDeliveriesPath: `/api/construction/projects/${lead._id}/material-deliveries`,
+      bundlePlanPath: `/api/construction/projects/${lead._id}/bundle-plan`,
+      truckPlanPath: `/api/construction/projects/${lead._id}/truck-plan`,
+      hasConsolidatedBom: Boolean(hasConsolidatedBom),
+      hasBundlePlan: Boolean(hasBundlePlan),
+    },
+  })
 })
