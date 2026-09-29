@@ -17,21 +17,33 @@ const materialRequestCtrl = require('../../controllers/construction/materialRequ
 router.use('/chat', require('../admin/chat.routes'))
 
 const validate = require('../../middleware/validate')
+const { param } = require('express-validator')
 const { businessUnitQueryValidator } = require('../../utils/businessUnit')
 const businessUnitQuery = [businessUnitQueryValidator(), validate]
+const constructionPlantScope = require('../../middleware/constructionPlantScope')
+const plantProjectCtrl = require('../../controllers/plant/project.controller')
+const plantBundleCtrl = require('../../controllers/plant/bundle.controller')
+const constructionPlantReadOnly = require('../../middleware/constructionPlantReadOnly')
+const leadIdParam = [param('leadId').isMongoId(), validate]
 
 // Dashboard
 router.get('/dashboard', businessUnitQuery, dashCtrl.getDashboard)
 router.get('/dashboard/filters', dashCtrl.getDashboardFilters)
 
+// Plant manufacturing data (read-only; paths mirror /api/plant where noted)
+router.use('/bom', constructionPlantScope, constructionPlantReadOnly, require('../plant/bom.routes'))
+router.use('/plant', constructionPlantScope, require('./plantData.routes'))
+
 // Projects & Calendar (static routes before param routes)
 router.get('/projects', businessUnitQuery, projectCtrl.getProjects)
 router.get('/projects/calendar', businessUnitQuery, projectCtrl.getProjectCalendar)
+router.get('/projects/:leadId/building-drawings', constructionPlantScope, leadIdParam, plantProjectCtrl.getProjectDrawings)
+router.get('/projects/:leadId/bundle-plan', constructionPlantScope, leadIdParam, plantBundleCtrl.getProjectBundlePlan)
 router.get('/projects/:leadId/progress', taskCtrl.getProjectProgress)
 router.post('/projects/:leadId/milestones', taskCtrl.createMilestone)
 router.get('/projects/:leadId', projectCtrl.getProjectDetail)
 
-// Drawings & Attachments
+// Drawings & Attachments (construction site workflow — Lead.documents)
 router.get('/drawings', drawingCtrl.getDrawings)
 router.get('/drawings/:leadId', drawingCtrl.getProjectDrawings)
 router.post('/drawings/:leadId', drawingCtrl.uploadDrawing)
