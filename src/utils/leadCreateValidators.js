@@ -1,9 +1,20 @@
 const { body } = require('express-validator')
 const { LEAD_SOURCES } = require('../config/constants')
+const { normalizeBusinessUnit } = require('./businessUnit')
+
+const businessUnitBodyValidator = () =>
+  body('businessUnit')
+    .optional({ nullable: true })
+    .custom((value) => {
+      const { error } = normalizeBusinessUnit(value)
+      if (error) throw new Error(error)
+      return true
+    })
 
 /** Shared project fields — no `source` (create project flows). */
 const projectFieldValidators = [
   body('projectName').notEmpty().trim(),
+  businessUnitBodyValidator(),
   body('buildingType').notEmpty().trim(),
   body('location').optional({ values: 'falsy' }).trim(),
   body('city').optional({ values: 'falsy' }).trim(),
@@ -31,6 +42,7 @@ const leadCreateFieldValidators = [
 /** PUT /leads/:leadId — partial update (admin + sales). */
 const leadEditFieldValidators = [
   body('projectName').optional().trim(),
+  businessUnitBodyValidator(),
   body('buildingType').optional().trim(),
   body('location').optional().trim(),
   body('source').optional().isIn(LEAD_SOURCES),
@@ -51,6 +63,7 @@ const leadEditFieldValidators = [
 ]
 
 module.exports = {
+  businessUnitBodyValidator,
   projectFieldValidators,
   leadCreateFieldValidators,
   leadEditFieldValidators,

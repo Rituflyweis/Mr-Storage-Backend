@@ -11,6 +11,12 @@ const DailyProductionLog = require('../../models/DailyProductionLog')
 const { success, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { DELIVERY_FULFILLMENT_STATUSES, PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
+const {
+  BUSINESS_UNITS,
+  getBusinessUnitLabel,
+  buildBusinessUnitFilter,
+  businessUnitFields,
+} = require('../../utils/businessUnit')
 
 const IN_TRANSIT_ROLLUP_STATUSES = new Set(
   DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
@@ -118,10 +124,13 @@ const parseDashboardFilters = (query) => {
     return { error: 'Invalid toDate' }
   }
 
+  const businessUnitFilter = buildBusinessUnitFilter(query.businessUnit)
+
   return {
     projectId: projectFilterId,
     buildingId: buildingId || null,
     status: statusFilter,
+    businessUnit: businessUnitFilter ? businessUnitFilter.businessUnit : undefined,
     fromDate: rangeStart ? new Date(rangeStart) : null,
     toDate: rangeEnd ? new Date(rangeEnd) : null,
   }
@@ -134,6 +143,7 @@ const getConstructionLeadIds = async (filters) => {
   }
   if (filters.projectId) filter._id = filters.projectId
   if (filters.status) filter.lifecycleStatus = filters.status
+  if (filters.businessUnit !== undefined) filter.businessUnit = filters.businessUnit
 
   if (filters.buildingId) {
     const building = await Building.findById(filters.buildingId).select('leadId').lean()
@@ -226,6 +236,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         projectId: parsed.projectId,
         buildingId: parsed.buildingId,
         status: parsed.status,
+        businessUnit: parsed.businessUnit ?? null,
         fromDate: parsed.fromDate,
         toDate: parsed.toDate,
       },
@@ -298,7 +309,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     productionLog,
   ] = await Promise.all([
     Lead.find(leadFilter)
-      .select('projectName jobId location lifecycleStatus endDate plannedStartDate lifecycleHistory numberOfBuildings buildingType')
+      .select('projectName jobId businessUnit location lifecycleStatus endDate plannedStartDate lifecycleHistory numberOfBuildings buildingType')
       .lean(),
     Lead.countDocuments(leadFilter),
     Lead.countDocuments({ ...leadFilter, lifecycleStatus: 'delivered' }),
@@ -474,6 +485,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         leadId: l._id,
         projectName: l.projectName || '',
         jobId: l.jobId || '',
+        ...businessUnitFields(l),
         site: l.location || '',
         buildingType: l.buildingType || '',
         numberOfBuildings: l.numberOfBuildings ?? 1,
@@ -607,6 +619,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       projectId: parsed.projectId,
       buildingId: parsed.buildingId,
       status: parsed.status,
+      businessUnit: parsed.businessUnit ?? null,
       fromDate: parsed.fromDate,
       toDate: parsed.toDate,
     },
@@ -625,18 +638,20 @@ exports.getDashboard = asyncHandler(async (req, res) => {
 
 /** Filter dropdown helpers for the dashboard controls. */
 exports.getDashboardFilters = asyncHandler(async (req, res) => {
+  const businessUnits = BUSINESS_UNITS.map((value) => ({ value, label: getBusinessUnitLabel(value) }))
   const leadIds = await getConstructionLeadIds({})
   if (!leadIds.length) {
     return success(res, {
       projects: [],
       buildings: [],
       statuses: CONSTRUCTION_STAGES,
+      businessUnits,
     })
   }
 
   const [projects, buildings] = await Promise.all([
     Lead.find({ _id: { $in: leadIds } })
-      .select('projectName jobId lifecycleStatus location')
+      .select('projectName jobId businessUnit lifecycleStatus location')
       .sort({ projectName: 1 })
       .lean(),
     Building.find({ leadId: { $in: leadIds } })
@@ -649,6 +664,7 @@ exports.getDashboardFilters = asyncHandler(async (req, res) => {
       _id: p._id,
       projectName: p.projectName || '',
       jobId: p.jobId || '',
+      ...businessUnitFields(p),
       lifecycleStatus: p.lifecycleStatus,
       location: p.location || '',
     })),
@@ -660,5 +676,6 @@ exports.getDashboardFilters = asyncHandler(async (req, res) => {
       status: b.status,
     })),
     statuses: CONSTRUCTION_STAGES,
+    businessUnits,
   })
 })

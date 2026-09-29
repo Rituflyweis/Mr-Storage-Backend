@@ -6,6 +6,7 @@ const validate = require("../../middleware/validate");
 const {
   invoiceCreateValidators,
 } = require("../../utils/invoiceRouteValidators");
+const { businessUnitQueryValidator } = require("../../utils/businessUnit");
 
 const notifGuard = [
   verifyToken,
@@ -37,7 +38,7 @@ router.get(
 router.get(
   "/leads",
   ...lookupGuard,
-  lookupValidators,
+  [...lookupValidators, businessUnitQueryValidator()],
   validate,
   lookupCtrl.listLeads,
 );

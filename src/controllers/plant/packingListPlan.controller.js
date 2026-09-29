@@ -4,6 +4,7 @@ const PackingList = require('../../models/PackingList')
 const Bundle = require('../../models/Bundle')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
+const { businessUnitFields } = require('../../utils/businessUnit')
 const packingListCtrl = require('./packingList.controller')
 const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
@@ -38,7 +39,7 @@ const loadPackingListPlanByProjectWithAccess = async (projectRef, req) => {
 
 const loadProjectSummary = async (leadId) => {
   const lead = await Lead.findById(leadId)
-    .select('projectName jobId buildingType location lifecycleStatus customerId')
+    .select('projectName jobId businessUnit buildingType location lifecycleStatus customerId')
     .populate('customerId', 'firstName lastName email customerId')
     .lean()
 
@@ -52,6 +53,7 @@ const loadProjectSummary = async (leadId) => {
     projectId: lead.jobId || '',
     jobId: lead.jobId || '',
     projectName: lead.projectName || '',
+    ...businessUnitFields(lead),
     buildingType: lead.buildingType || '',
     location: lead.location || '',
     lifecycleStatus: lead.lifecycleStatus || '',

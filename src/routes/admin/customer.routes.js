@@ -5,6 +5,7 @@ const leadCtrl = require('../../controllers/admin/lead.controller')
 const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { projectFieldValidators, leadCreateFieldValidators } = require('../../utils/leadCreateValidators')
+const { businessUnitQueryValidator } = require('../../utils/businessUnit')
 const invoiceCtrl = require('../../controllers/common/invoice.controller')
 const assertInvoiceMatchesProjectParams = require('../../middleware/assertInvoiceProjectParams')
 
@@ -157,7 +158,7 @@ router.post(
   invoiceCtrl.rejectPaymentProof
 )
 
-router.get('/:customerId/projects', ctrl.getCustomerProjects)
+router.get('/:customerId/projects', [businessUnitQueryValidator()], validate, ctrl.getCustomerProjects)
 router.get('/:customerId/projects/:leadId/agreement', agreementCtrl.getProjectAgreement)
 router.get('/:customerId/projects/:leadId', ctrl.getCustomerProject)
 

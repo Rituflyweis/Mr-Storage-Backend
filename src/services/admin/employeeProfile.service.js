@@ -12,6 +12,7 @@ const Building = require('../../models/Building')
 const { CLOSED_STAGES, LEAD_TEMPERATURES } = require('../../config/constants')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
+const { businessUnitFields } = require('../../utils/businessUnit')
 const { buildDeliveryCard } = require('../../controllers/construction/delivery.controller')
 const {
   formatLifecycleStatusLabel,
@@ -84,6 +85,7 @@ const mapSalesLeadItem = (lead) => {
     jobId,
     projectId: jobId,
     projectName: lead.projectName || '',
+    ...businessUnitFields(lead),
     buildingType: lead.buildingType || '',
     location: lead.location || '',
     status: lead.lifecycleStatus,
@@ -164,6 +166,7 @@ const buildPlantAssignedWork = async (employeeId, query = {}) => {
   const items = leads.map((lead) => ({
     leadId: lead._id,
     projectName: lead.projectName || '',
+    ...businessUnitFields(lead),
     jobId: lead.jobId || '',
     projectId: lead.jobId || '',
     buildingType: lead.buildingType || '',

@@ -1,7 +1,9 @@
 const { LEAD_SOURCES, LIFECYCLE_STAGES } = require('../config/constants')
+const { normalizeBusinessUnit } = require('./businessUnit')
 
 const LEAD_EDIT_BODY_KEYS = [
   'projectName',
+  'businessUnit',
   'buildingType',
   'location',
   'source',
@@ -69,7 +71,11 @@ const buildLeadCreatePayload = (body, options = {}) => {
     door,
     window,
     numberOfBuildings,
+    businessUnit,
   } = body
+
+  const unit = normalizeBusinessUnit(businessUnit)
+  if (unit.error) return { error: unit.error }
 
   let resolvedSource = defaultSource
   if (acceptSource) {
@@ -101,6 +107,7 @@ const buildLeadCreatePayload = (body, options = {}) => {
     payload: {
       customerId,
       projectName: normalizeProjectName(projectName || ''),
+      businessUnit: unit.skip ? null : unit.value,
       buildingType: buildingType ? String(buildingType).trim() : '',
       location,
       city: cityStr,
@@ -142,6 +149,11 @@ const applyLeadUpdateFromBody = (lead, body) => {
 
   if (body.projectName !== undefined) {
     lead.projectName = normalizeProjectName(body.projectName ?? '')
+  }
+  if (body.businessUnit !== undefined) {
+    const unit = normalizeBusinessUnit(body.businessUnit)
+    if (unit.error) return { error: unit.error }
+    lead.businessUnit = unit.value
   }
   if (body.buildingType !== undefined) {
     lead.buildingType = body.buildingType === null ? '' : String(body.buildingType).trim()

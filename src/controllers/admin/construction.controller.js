@@ -14,6 +14,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { generateDeliveriesExcel, generateReportExcel, generateMaterialRequestsExcel } = require('../../utils/exportConstructionAdmin')
 const { DELIVERY_STATUSES, DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+const { businessUnitFields } = require('../../utils/businessUnit')
 const { notifyCustomerDrawingUploadedForLabel } = require('../../services/customerNotification.service')
 const generateDeliveryNumber = require('../../utils/generateDeliveryNumber')
 const generateMaterialRequestId = require('../../utils/generateMaterialRequestId')
@@ -88,7 +89,7 @@ exports.getOverview = asyncHandler(async (req, res) => {
   // anywhere in this codebase (no Worker/Equipment/Site collection exists) — returned as `null`
   // rather than fabricated. See docs for what a real implementation would need.
   const activeLeads = await Lead.find({ ...leadFilter, lifecycleStatus: { $ne: 'delivered' } })
-    .select('projectName jobId location buildingType')
+    .select('projectName jobId businessUnit location buildingType')
     .sort({ updatedAt: -1 })
     .limit(6)
     .lean()
@@ -115,6 +116,7 @@ exports.getOverview = asyncHandler(async (req, res) => {
       leadId: lead._id,
       projectName: lead.projectName,
       jobId: lead.jobId,
+      ...businessUnitFields(lead),
       location: lead.location,
       progressPct: totalTasks > 0 ? Math.round((counts.done / totalTasks) * 100) : 0,
       tasks: totalTasks,

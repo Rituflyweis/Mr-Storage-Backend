@@ -391,6 +391,7 @@ const processChatDropOff = async (config) => {
   const now = Date.now()
   const leads = await Lead.find({
     isTerminated: { $ne: true },
+    isArchived: { $ne: true },
     isRaisedToPO: { $ne: true },
     lifecycleStatus: { $nin: INACTIVE_LIFECYCLE_STAGES },
     isChatEnded: { $ne: true },
@@ -456,6 +457,7 @@ const processTemperatureLeadFollowUp = async ({
 
   const leads = await Lead.find({
     isTerminated: { $ne: true },
+    isArchived: { $ne: true },
     isRaisedToPO: { $ne: true },
     lifecycleStatus: { $nin: INACTIVE_LIFECYCLE_STAGES },
     assignedSales: { $ne: null },

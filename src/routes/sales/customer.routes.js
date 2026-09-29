@@ -4,6 +4,7 @@ const ctrl = require('../../controllers/sales/customer.controller')
 const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { projectFieldValidators } = require('../../utils/leadCreateValidators')
+const { businessUnitQueryValidator } = require('../../utils/businessUnit')
 
 // ── Static routes BEFORE /:customerId ─────────────────────────────────────────
 router.get('/stats', ctrl.getCustomerStats)
@@ -22,7 +23,7 @@ router.put('/:customerId',
 )
 
 router.get('/:customerId', ctrl.getCustomerDetail)
-router.get('/:customerId/projects', ctrl.getCustomerProjects)
+router.get('/:customerId/projects', [businessUnitQueryValidator()], validate, ctrl.getCustomerProjects)
 router.get('/:customerId/projects/:leadId/agreement', agreementCtrl.getProjectAgreement)
 
 router.post('/:customerId/projects', projectFieldValidators, validate, ctrl.createProject)

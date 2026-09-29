@@ -14,6 +14,7 @@ const auditService = require('../../services/audit.service')
 const { notifyCustomerDrawingUploaded } = require('../../services/customerNotification.service')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
+const { businessUnitFields, applyBusinessUnitFilter } = require('../../utils/businessUnit')
 const { formatLog } = require('../../services/auditActivity.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { getScopedLeadIds } = require('../../utils/plantAccessScope')
@@ -131,6 +132,7 @@ const buildPlantProjectFilter = (leadIds, query) => {
 
   if (customerId) filter.customerId = customerId
   if (buildingType) filter.buildingType = buildingType.trim()
+  applyBusinessUnitFilter(filter, query.businessUnit)
   if (search?.trim()) {
     const regex = { $regex: search.trim(), $options: 'i' }
     filter.$or = [{ projectName: regex }, { jobId: regex }]
@@ -146,6 +148,7 @@ const mapProjectRow = (lead, buildings = []) => {
   return {
     _id: lead._id,
     projectName: lead.projectName || '',
+    ...businessUnitFields(lead),
     jobId: lead.jobId || '',
     projectId: lead.jobId || '',
     location: lead.location || '',
@@ -177,6 +180,7 @@ exports.getProjectStats = asyncHandler(async (req, res) => {
   }
 
   const leadFilter = { _id: { $in: leadIds } }
+  applyBusinessUnitFilter(leadFilter, req.query.businessUnit)
 
   const [totalProjects, cancelledProjects, activeProjects, pendingApprovalLeadIds] = await Promise.all([
     Lead.countDocuments(leadFilter),
@@ -336,6 +340,7 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
   return success(res, {
     lead: enrichLeadDocument(leadLean),
     projectName: leadLean.projectName || '',
+    ...businessUnitFields(leadLean),
     jobId,
     projectId: jobId,
     buildingType: leadLean.buildingType || '',

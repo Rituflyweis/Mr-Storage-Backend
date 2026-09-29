@@ -5,6 +5,7 @@ const { success } = require('../../utils/apiResponse')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildActiveLeadMatch } = require('../../utils/activeLeadScope')
+const { applyBusinessUnitFilter } = require('../../utils/businessUnit')
 
 const buildCustomerSearchFilter = (search) => {
   if (!search || !search.trim()) return {}
@@ -106,6 +107,7 @@ exports.listLeads = asyncHandler(async (req, res) => {
   if (Object.keys(searchFilter).length) {
     Object.assign(filter, searchFilter)
   }
+  applyBusinessUnitFilter(filter, req.query.businessUnit)
 
   const [leads, total] = await Promise.all([
     Lead.find(filter)

@@ -2,6 +2,7 @@ const Customer = require('../models/Customer')
 const { buildDateFilter } = require('./dateRange')
 const { LEAD_TEMPERATURES, resolveLeadTemperatureFromScore } = require('../config/constants')
 const { buildActiveLeadMatch } = require('./activeLeadScope')
+const { applyBusinessUnitFilter, businessUnitFields } = require('./businessUnit')
 
 // buildDateFilter only understands explicit startDate/endDate — a quick-filter pill sending
 // `period=today` (the convention already used on the Account Dashboard) was silently ignored
@@ -48,6 +49,7 @@ const buildAdminLeadFilter = async (query = {}) => {
   if (isQuoteReady !== undefined) filter.isQuoteReady = isQuoteReady === 'true'
   if (isHandedToSales !== undefined) filter.isHandedToSales = isHandedToSales === 'true'
   if (isTerminated !== undefined) filter.isTerminated = isTerminated === 'true'
+  applyBusinessUnitFilter(filter, query.businessUnit)
   if (quoteValueMin || quoteValueMax) {
     filter.quoteValue = {}
     if (quoteValueMin) filter.quoteValue.$gte = Number(quoteValueMin)
@@ -72,6 +74,7 @@ const buildSalesLeadFilter = async (query = {}, salesId) => {
   if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
   if (isQuoteReady !== undefined) filter.isQuoteReady = isQuoteReady === 'true'
+  applyBusinessUnitFilter(filter, query.businessUnit)
   if (search && search.trim()) {
     const regex = new RegExp(search.trim(), 'i')
     const matchingCustomerIds = await Customer.find({
@@ -95,6 +98,7 @@ const buildSalesLeadFilter = async (query = {}, salesId) => {
 const buildLeadsByScoreFilter = async (query = {}, { assignedSales } = {}) => {
   const filter = { ...buildActiveLeadMatch(), ...buildLeadDateFilter(query, 'updatedAt') }
   if (assignedSales) filter.assignedSales = assignedSales
+  applyBusinessUnitFilter(filter, query.businessUnit)
 
   const temperature = query.temperature || query.status
   if (temperature) {
@@ -136,6 +140,7 @@ const mapLeadByScoreRow = (lead) => {
     projectId: jobId,
     customerName: lead.customerId?.firstName || '',
     projectName: lead.projectName || '',
+    ...businessUnitFields(lead),
     location: lead.location || '',
     lifecycleStatus: lead.lifecycleStatus,
     lifecycleHistory: Array.isArray(lead.lifecycleHistory) ? lead.lifecycleHistory : [],

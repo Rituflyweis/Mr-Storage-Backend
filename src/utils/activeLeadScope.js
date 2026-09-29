@@ -6,13 +6,14 @@ const INACTIVE_LIFECYCLE_STAGES = [
 
 const buildActiveLeadMatch = () => ({
   isDeleted: { $ne: true },
+  isArchived: { $ne: true },
   isTerminated: { $ne: true },
   isRaisedToPO: { $ne: true },
   lifecycleStatus: { $nin: INACTIVE_LIFECYCLE_STAGES },
 });
 
 const isLeadActive = (lead = {}) => {
-  if (!lead || lead.isDeleted === true || lead.isTerminated === true) return false;
+  if (!lead || lead.isDeleted === true || lead.isArchived === true || lead.isTerminated === true) return false;
   if (lead.isRaisedToPO === true) return false;
   return !INACTIVE_LIFECYCLE_STAGES.includes(String(lead.lifecycleStatus || ""));
 };

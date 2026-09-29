@@ -1,3 +1,5 @@
+const { businessUnitFields } = require('./businessUnit')
+
 /** Fields for FE project title fallback when projectName is empty. */
 const mapProjectNameFallbackFields = (lead) => {
   if (!lead) {
@@ -5,6 +7,7 @@ const mapProjectNameFallbackFields = (lead) => {
       customerName: '',
       buildingType: '',
       location: '',
+      ...businessUnitFields(null),
     }
   }
 
@@ -18,10 +21,11 @@ const mapProjectNameFallbackFields = (lead) => {
     customerName,
     buildingType: lead.buildingType || '',
     location: lead.location || '',
+    ...businessUnitFields(lead),
   }
 }
 
-const LEAD_PROJECT_LIST_SELECT = 'projectName jobId buildingType location customerId'
+const LEAD_PROJECT_LIST_SELECT = 'projectName jobId businessUnit buildingType location customerId'
 
 const LEAD_PROJECT_LIST_POPULATE = {
   path: 'customerId',

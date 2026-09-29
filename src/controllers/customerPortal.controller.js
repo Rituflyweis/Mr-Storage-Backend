@@ -198,7 +198,7 @@ const paymentScheduleForInvoice = (schedule, invoice) => {
 }
 
 const PROJECT_DETAIL_LEAD_FIELDS = [
-  'customerId', 'jobId', 'projectName', 'buildingType', 'location', 'city', 'state', 'pincode',
+  'customerId', 'jobId', 'projectName', 'businessUnit', 'buildingType', 'location', 'city', 'state', 'pincode',
   'roofStyle', 'sqft', 'width', 'length', 'height', 'numDoors', 'numWindows', 'numInsulation',
   'notes', 'numberOfBuildings', 'lifecycleStatus', 'lifecycleHistory',
   'quoteValue', 'documents', 'assignedSales', 'createdAt', 'plannedStartDate', 'endDate',
@@ -498,7 +498,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
 
   const [projects, total, activeCount, wipCount, cancelledCount, proposedCount, confirmedCount] = await Promise.all([
     Lead.find(filter)
-      .select('jobId projectName buildingType location lifecycleStatus quoteValue isQuoteReady isRaisedToPO source documents assignedSales plannedStartDate endDate')
+      .select('jobId projectName businessUnit buildingType location lifecycleStatus quoteValue isQuoteReady isRaisedToPO source documents assignedSales plannedStartDate endDate')
       .populate('assignedSales', 'name email')
       .sort({ createdAt: -1 })
       .skip(skip)

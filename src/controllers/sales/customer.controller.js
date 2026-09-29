@@ -12,6 +12,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
 const { withProjectIdFields, enrichLeadDocument } = require('../../utils/leadProjectId')
 const { buildLeadCreatePayload, escapeRegex } = require('../../utils/leadPayload')
+const { applyBusinessUnitFilter, businessUnitFields } = require('../../utils/businessUnit')
 const {
   PO_PROJECT_MATCH,
   getSalesCustomerIdsWithRaisedPO,
@@ -174,7 +175,9 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
   const isOwn = poCustomerIds.some(id => String(id) === customerId)
   if (!isOwn) return forbidden(res, 'Access denied')
 
-  const leads = await Lead.find({ customerId, assignedSales: req.user._id, ...PO_PROJECT_MATCH })
+  const leadFilter = { customerId, assignedSales: req.user._id, ...PO_PROJECT_MATCH }
+  applyBusinessUnitFilter(leadFilter, req.query.businessUnit)
+  const leads = await Lead.find(leadFilter)
     .sort({ createdAt: -1 })
     .lean()
 
@@ -187,6 +190,7 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
     return withProjectIdFields({
       _id: l._id,
       projectName: l.projectName || '',
+      ...businessUnitFields(l),
       numberOfBuildings: l.numberOfBuildings,
       lifecycleStatus: l.lifecycleStatus,
       quoteValue: l.quoteValue || 0,

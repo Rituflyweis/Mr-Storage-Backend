@@ -7,6 +7,7 @@ const {
   LEAD_TEMPERATURES,
   resolveLeadTemperatureFromScore,
   PRIORITY_LEVELS,
+  BUSINESS_UNITS,
 } = require('../config/constants')
 
 const AssigningHistorySchema = new mongoose.Schema(
@@ -87,6 +88,8 @@ const LeadSchema = new mongoose.Schema(
     source:          { type: String, enum: LEAD_SOURCES, default: 'chat' },
     jobId:           { type: String, default: null },
     projectName:     { type: String, default: '' },
+    // Mongoose skips enum validation for null, so older leads without a unit stay valid.
+    businessUnit:    { type: String, enum: BUSINESS_UNITS, default: null },
     priority:        { type: String, enum: PRIORITY_LEVELS, default: 'medium' },
     endDate:           { type: Date, default: null },
     plannedStartDate:  { type: Date, default: null },
@@ -94,6 +97,10 @@ const LeadSchema = new mongoose.Schema(
     isTerminated:    { type: Boolean, default: false },
     terminationReason: { type: String, default: '' },
     terminatedAt:    { type: Date, default: null },
+    isArchived:      { type: Boolean, default: false },
+    archiveReason:   { type: String, default: '' },
+    archivedAt:      { type: Date, default: null },
+    archivedBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     isDeleted:       { type: Boolean, default: false },
     deletedAt:       { type: Date, default: null },
     deletedBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -146,7 +153,9 @@ LeadSchema.index({ jobId: 1 }, { unique: true, sparse: true })
 LeadSchema.index({ customerId: 1 })
 LeadSchema.index({ assignedSales: 1 })
 LeadSchema.index({ lifecycleStatus: 1 })
+LeadSchema.index({ businessUnit: 1 })
 LeadSchema.index({ isTerminated: 1 })
+LeadSchema.index({ isArchived: 1 })
 LeadSchema.index({ isDeleted: 1 })
 LeadSchema.index({ 'leadScoring.lastScoredAt': -1 })
 LeadSchema.index({ isQuoteReady: 1 })

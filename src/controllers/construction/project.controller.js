@@ -4,11 +4,14 @@ const Task = require('../../models/Task')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
+const { businessUnitFields, applyBusinessUnitFilter } = require('../../utils/businessUnit')
 
 /** Construction panel only lists projects handed into plant/construction (not sales pipeline). */
 const CONSTRUCTION_STAGES = [...PLANT_LIFECYCLE_STAGES]
 
-const PROJECT_SELECT = 'projectName jobId buildingType location lifecycleStatus priority endDate plannedStartDate customerId createdAt'
+const PROJECT_SELECT = 'projectName jobId businessUnit buildingType location lifecycleStatus priority endDate plannedStartDate customerId createdAt'
+
+const withBusinessUnit = (lead) => ({ ...lead, ...businessUnitFields(lead) })
 const PROJECT_POPULATE = { path: 'customerId', select: 'firstName lastName email' }
 
 const isConstructionProject = (lead) =>
@@ -30,6 +33,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
     filter.lifecycleStatus = status
   }
   if (priority) filter.priority = priority
+  applyBusinessUnitFilter(filter, req.query.businessUnit)
   if (search?.trim()) {
     const regex = { $regex: search.trim(), $options: 'i' }
     filter.$or = [{ projectName: regex }, { jobId: regex }]
@@ -56,7 +60,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
   ])
 
   return success(res, {
-    projects: leads,
+    projects: leads.map(withBusinessUnit),
     total,
     page: Number(page),
     limit: Number(limit),
@@ -74,10 +78,12 @@ exports.getProjectCalendar = asyncHandler(async (req, res) => {
   const startOfMonth = new Date(y, m - 1, 1)
   const endOfMonth = new Date(y, m, 0, 23, 59, 59)
 
-  const constructionLeadIds = await Lead.find({
-    isTerminated: { $ne: true },
-    lifecycleStatus: { $in: CONSTRUCTION_STAGES },
-  })
+  const constructionLeadIds = await Lead.find(
+    applyBusinessUnitFilter(
+      { isTerminated: { $ne: true }, lifecycleStatus: { $in: CONSTRUCTION_STAGES } },
+      req.query.businessUnit
+    )
+  )
     .select('_id')
     .lean()
     .then((rows) => rows.map((r) => r._id))
@@ -100,7 +106,7 @@ exports.getProjectCalendar = asyncHandler(async (req, res) => {
 
   const deliveries = await Delivery.find(deliveryFilter)
     .select('deliveryDate deliveryNumber status description leadId')
-    .populate('leadId', 'projectName jobId location lifecycleStatus')
+    .populate('leadId', 'projectName jobId businessUnit location lifecycleStatus')
     .lean()
 
   const calendarMap = {}
@@ -117,6 +123,7 @@ exports.getProjectCalendar = asyncHandler(async (req, res) => {
         leadId: d.leadId?._id,
         projectName: d.leadId?.projectName,
         jobId: d.leadId?.jobId,
+        ...businessUnitFields(d.leadId),
         location: d.leadId?.location,
         lifecycleStatus: d.leadId?.lifecycleStatus,
       },
@@ -155,5 +162,5 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
     Task.find({ leadId: lead._id }).select('title status priority dueDate assignedTo').lean(),
   ])
 
-  return success(res, { project: lead, deliveries: upcomingDeliveries, tasks })
+  return success(res, { project: withBusinessUnit(lead), deliveries: upcomingDeliveries, tasks })
 })

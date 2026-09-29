@@ -16,13 +16,17 @@ const materialRequestCtrl = require('../../controllers/construction/materialRequ
 // under the construction-role-accessible router so the mobile app's chat screens work.
 router.use('/chat', require('../admin/chat.routes'))
 
+const validate = require('../../middleware/validate')
+const { businessUnitQueryValidator } = require('../../utils/businessUnit')
+const businessUnitQuery = [businessUnitQueryValidator(), validate]
+
 // Dashboard
-router.get('/dashboard', dashCtrl.getDashboard)
+router.get('/dashboard', businessUnitQuery, dashCtrl.getDashboard)
 router.get('/dashboard/filters', dashCtrl.getDashboardFilters)
 
 // Projects & Calendar (static routes before param routes)
-router.get('/projects', projectCtrl.getProjects)
-router.get('/projects/calendar', projectCtrl.getProjectCalendar)
+router.get('/projects', businessUnitQuery, projectCtrl.getProjects)
+router.get('/projects/calendar', businessUnitQuery, projectCtrl.getProjectCalendar)
 router.get('/projects/:leadId/progress', taskCtrl.getProjectProgress)
 router.post('/projects/:leadId/milestones', taskCtrl.createMilestone)
 router.get('/projects/:leadId', projectCtrl.getProjectDetail)

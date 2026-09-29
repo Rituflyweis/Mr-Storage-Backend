@@ -3,6 +3,7 @@ const ExcelJS = require('exceljs')
 const { v4: uuidv4 } = require('uuid')
 const Lead = require('../models/Lead')
 const env = require('../config/env')
+const { getBusinessUnitLabel } = require('../utils/businessUnit')
 
 const s3 = new S3Client({
   region: env.AWS_REGION,
@@ -16,6 +17,7 @@ const EXPORT_COLUMNS = [
   { header: 'Lead ID', key: 'leadId', width: 26 },
   { header: 'Job ID', key: 'jobId', width: 14 },
   { header: 'Project Name', key: 'projectName', width: 28 },
+  { header: 'Business Unit', key: 'businessUnit', width: 18 },
   { header: 'Building Type', key: 'buildingType', width: 18 },
   { header: 'Location', key: 'location', width: 22 },
   { header: 'Roof Style', key: 'roofStyle', width: 14 },
@@ -63,6 +65,7 @@ const mapLeadToRow = (lead) => {
     leadId: String(lead._id),
     jobId: lead.jobId || '',
     projectName: lead.projectName || '',
+    businessUnit: getBusinessUnitLabel(lead.businessUnit),
     buildingType: lead.buildingType || '',
     location: lead.location || '',
     roofStyle: lead.roofStyle || '',

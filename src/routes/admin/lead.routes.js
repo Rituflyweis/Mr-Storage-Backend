@@ -6,15 +6,20 @@ const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
 const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { leadCreateFieldValidators, leadEditFieldValidators } = require('../../utils/leadCreateValidators')
+const { businessUnitQueryValidator } = require('../../utils/businessUnit')
+
+const businessUnitQuery = [businessUnitQueryValidator(), validate]
 
 // ── Static routes BEFORE /:leadId ─────────────────────────────────────────────
 router.get('/stats', ctrl.getLeadStats)
-router.get('/ai-handled', ctrl.getAiHandledLeads)
-router.get('/signed-contracts', ctrl.getSignedContracts)
-router.get('/terminated', ctrl.getTerminatedLeads)
+router.get('/ai-handled', businessUnitQuery, ctrl.getAiHandledLeads)
+router.get('/signed-contracts', businessUnitQuery, ctrl.getSignedContracts)
+router.get('/terminated', businessUnitQuery, ctrl.getTerminatedLeads)
+router.get('/archived', businessUnitQuery, ctrl.getArchivedLeads)
 router.get('/scoring/today', ctrl.getScoringToday)
 router.get('/by-score',
   [
+    businessUnitQueryValidator(),
     query('startDate').optional().isISO8601(),
     query('endDate').optional().isISO8601(),
     query('temperature').optional().isIn(LEAD_TEMPERATURES),
@@ -27,9 +32,9 @@ router.get('/by-score',
   ctrl.getLeadsByScore
 )
 router.post('/import', ctrl.importLeads)
-router.get('/export/excel', ctrl.exportLeadsExcel)
+router.get('/export/excel', businessUnitQuery, ctrl.exportLeadsExcel)
 
-router.get('/', ctrl.getAllLeads)
+router.get('/', businessUnitQuery, ctrl.getAllLeads)
 router.post('/',
   [
     body('customerId').notEmpty().isMongoId(),
@@ -93,6 +98,14 @@ router.put('/:leadId/terminate',
   validate,
   ctrl.terminateLead
 )
+
+router.put('/:leadId/archive',
+  [body('reason').optional().trim()],
+  validate,
+  ctrl.archiveLead
+)
+
+router.put('/:leadId/unarchive', ctrl.unarchiveLead)
 
 router.delete('/:leadId', ctrl.deleteLead)
 

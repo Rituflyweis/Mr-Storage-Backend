@@ -3,6 +3,7 @@ const FollowUp = require('../models/FollowUp')
 const ProjectBudget = require('../models/ProjectBudget')
 const { enrichLeadDocument, withProjectIdFields } = require('../utils/leadProjectId')
 const { mapLeadByScoreRow } = require('../utils/leadQueryFilter')
+const { businessUnitFields } = require('../utils/businessUnit')
 
 const getIo = () => global.io?.of('/admin')
 
@@ -31,7 +32,7 @@ const getLeadForAdminList = async (leadId, { includeDeleted = false } = {}) => {
 
 const getLeadForSalesList = async (leadId, { includeDeleted = false } = {}) => {
   const lead = await Lead.findById(leadId)
-    .select('_id jobId projectName customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO assignedSales isOnline onlineAt lastSeenAt isDeleted')
+    .select('_id jobId projectName businessUnit customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO assignedSales isOnline onlineAt lastSeenAt isDeleted')
     .populate({ path: 'customerId', select: 'firstName email isOnline onlineAt lastSeenAt' })
     .setOptions({ includeDeleted })
     .lean()
@@ -45,6 +46,7 @@ const getLeadForSalesList = async (leadId, { includeDeleted = false } = {}) => {
   return withProjectIdFields({
     _id: lead._id,
     projectName: lead.projectName || '',
+    ...businessUnitFields(lead),
     customerId: lead.customerId
       ? {
         _id: lead.customerId._id,
@@ -78,7 +80,7 @@ const getLeadForSalesList = async (leadId, { includeDeleted = false } = {}) => {
 const getScoreRow = async (leadId) => {
   const lead = await Lead.findById(leadId)
     .populate({ path: 'customerId', select: 'firstName email customerId' })
-    .select('_id jobId projectName location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt')
+    .select('_id jobId projectName businessUnit location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt')
     .lean()
   if (!lead) return null
   return mapLeadByScoreRow(lead)
@@ -156,19 +158,22 @@ const emitLeadListUpdated = async (leadId, options = {}) => {
 
   // Soft-deleted leads are hidden by default; include them so clients can remove the row
   const includeDeleted = trigger === 'deleted'
+  const removeFromActiveList = includeDeleted || trigger === 'archived'
   const adminLead = await getLeadForAdminList(leadId, { includeDeleted })
   if (!adminLead) return
+
+  const listAction = includeDeleted ? 'deleted' : (trigger === 'archived' ? 'archived' : 'updated')
 
   const payload = {
     leadId,
     lead: adminLead,
     meta: {
-      action: includeDeleted ? 'deleted' : 'updated',
+      action: listAction,
       trigger,
     },
   }
 
-  if (includeScoreRow && !includeDeleted) {
+  if (includeScoreRow && !removeFromActiveList) {
     payload.scoreRow = await getScoreRow(leadId)
   }
 
@@ -187,7 +192,7 @@ const emitLeadListUpdated = async (leadId, options = {}) => {
           lead: salesLead,
           scoreRow: payload.scoreRow || null,
           meta: {
-            action: includeDeleted ? 'deleted' : 'updated',
+            action: listAction,
             trigger,
           },
         }

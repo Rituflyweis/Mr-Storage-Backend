@@ -6,11 +6,15 @@ const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
 const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { leadCreateFieldValidators, leadEditFieldValidators } = require('../../utils/leadCreateValidators')
+const { businessUnitQueryValidator } = require('../../utils/businessUnit')
+
+const businessUnitQuery = [businessUnitQueryValidator(), validate]
 
 // ── Static routes BEFORE /:leadId ─────────────────────────────────────────────
 router.get('/stats', ctrl.getLeadsStats)
 router.get('/by-score',
   [
+    businessUnitQueryValidator(),
     query('startDate').optional().isISO8601(),
     query('endDate').optional().isISO8601(),
     query('temperature').optional().isIn(LEAD_TEMPERATURES),
@@ -22,10 +26,12 @@ router.get('/by-score',
   validate,
   ctrl.getLeadsByScore
 )
-router.get('/scored', ctrl.getScoredLeads)
+router.get('/scored', businessUnitQuery, ctrl.getScoredLeads)
 router.get('/escalated', ctrl.getEscalatedLeads)
+router.get('/archived', businessUnitQuery, ctrl.getArchivedLeads)
 router.get('/with-po',
   [
+    businessUnitQueryValidator(),
     query('poStatus').optional().isIn(['pending', 'approved', 'rejected']),
     query('search').optional().trim(),
     query('page').optional().isInt({ min: 1 }),
@@ -36,8 +42,8 @@ router.get('/with-po',
   validate,
   ctrl.getLeadsWithPo
 )
-router.get('/export', ctrl.exportLeads)
-router.get('/export/excel', ctrl.exportLeadsExcel)
+router.get('/export', businessUnitQuery, ctrl.exportLeads)
+router.get('/export/excel', businessUnitQuery, ctrl.exportLeadsExcel)
 
 router.post('/import',
   [body('csv').notEmpty().withMessage('csv is required')],
@@ -45,7 +51,7 @@ router.post('/import',
   ctrl.importLeads
 )
 
-router.get('/', ctrl.getLeads)
+router.get('/', businessUnitQuery, ctrl.getLeads)
 
 router.post('/',
   [
@@ -99,6 +105,14 @@ router.put('/:leadId/temperature',
   validate,
   ctrl.updateLeadTemperature
 )
+
+router.put('/:leadId/archive',
+  [body('reason').optional().trim()],
+  validate,
+  ctrl.archiveLead
+)
+
+router.put('/:leadId/unarchive', ctrl.unarchiveLead)
 
 router.put('/:leadId', leadEditFieldValidators, validate, ctrl.editLead)
 

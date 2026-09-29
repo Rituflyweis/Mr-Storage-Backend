@@ -10,9 +10,11 @@ const { PLANT_LIFECYCLE_STAGES, BOM_FILE_FORMATS, TRUCK_TYPES } = require('../..
 const {
   shipperRequestListQueryValidators,
 } = require('../../validators/shipperListQuery.validators')
+const { businessUnitQueryValidator } = require('../../utils/businessUnit')
 
 router.get('/stats',
   [
+    businessUnitQueryValidator(),
     query('startDate').optional().isISO8601(),
     query('endDate').optional().isISO8601(),
   ],
@@ -30,6 +32,7 @@ router.get('/',
     query('customerId').optional().isMongoId(),
     query('buildingType').optional().trim(),
     query('drawingStatus').optional().isIn(['all_approved', 'pending', 'rejected', 'none']),
+    businessUnitQueryValidator(),
   ],
   validate,
   ctrl.getProjects
@@ -155,7 +158,7 @@ router.get('/:leadId/shipper-files',
 )
 router.get('/:leadId/bundle-plan', bundleCtrl.getProjectBundlePlan)
 
-// Unified project-id based load/truck planning + freight endpoints (projectId = Mongo _id or jobId like PRO-019)
+// Unified project-id based load/truck planning + freight endpoints (projectId = Mongo _id or jobId like 2026019 / legacy PRO-019)
 router.get('/:projectId/load-planning', bundlePlanCtrl.getProjectLoadPlanning)
 router.put('/:projectId/load-planning',
   [

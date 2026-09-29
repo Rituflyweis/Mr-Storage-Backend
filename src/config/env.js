@@ -130,4 +130,6 @@ module.exports = {
   DB_BACKUP_CRON: (process.env.DB_BACKUP_CRON || "").trim() || "0 4 * * *",
   DB_BACKUP_TIMEZONE:
     (process.env.DB_BACKUP_TIMEZONE || "").trim() || "Asia/Kolkata",
+  PROJECT_ID_TIMEZONE:
+    (process.env.PROJECT_ID_TIMEZONE || "").trim() || "America/New_York",
 };

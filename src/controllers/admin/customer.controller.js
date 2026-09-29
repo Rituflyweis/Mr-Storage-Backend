@@ -14,6 +14,7 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, INVOICE_STATUSES } = require('../../config/constants')
 const { withProjectIdFields, enrichLeadDocument } = require('../../utils/leadProjectId')
 const { buildLeadCreatePayload } = require('../../utils/leadPayload')
+const { applyBusinessUnitFilter, businessUnitFields } = require('../../utils/businessUnit')
 const {
   PO_PROJECT_MATCH,
   getCustomerIdsWithRaisedPO,
@@ -399,7 +400,9 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
   const customer = await Customer.findById(customerId).lean()
   if (!customer) return notFound(res, 'Customer not found')
 
-  const leads = await Lead.find({ customerId, ...PO_PROJECT_MATCH })
+  const leadFilter = { customerId, ...PO_PROJECT_MATCH }
+  applyBusinessUnitFilter(leadFilter, req.query.businessUnit)
+  const leads = await Lead.find(leadFilter)
     .populate({ path: 'assignedSales', select: 'name' })
     .sort({ createdAt: -1 })
     .lean()
@@ -413,6 +416,7 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
     return withProjectIdFields({
       _id: l._id,
       projectName: l.projectName || '',
+      ...businessUnitFields(l),
       numberOfBuildings: l.numberOfBuildings,
       lifecycleStatus: l.lifecycleStatus,
       assignedSales: l.assignedSales,

@@ -2,6 +2,14 @@ const USER_ROLES = ["admin", "sales", "construction", "plant", "account"];
 const LEAD_SOURCES = ["chat", "manual", "import", "customer_portal"];
 const LEAD_TEMPERATURES = ["hot", "warm", "cold"];
 
+/** Which of the client's businesses a project (lead) belongs to. */
+const BUSINESS_UNITS = ["storage_material", "platform", "steel"];
+const BUSINESS_UNIT_LABELS = {
+  storage_material: "Storage Material",
+  platform: "Platform",
+  steel: "Steel",
+};
+
 /** Score 0–100 → hot (≥70), warm (40–69), cold (<40). */
 const resolveLeadTemperatureFromScore = (score = 0) => {
   const n = Math.min(100, Math.max(0, Number(score) || 0));
@@ -130,6 +138,8 @@ const AUDIT_ACTIONS = {
   LEAD_EDITED: "lead.edited",
   LEAD_TEMPERATURE_UPDATED: "lead.temperature_updated",
   LEAD_TERMINATED: "lead.terminated",
+  LEAD_ARCHIVED: "lead.archived",
+  LEAD_UNARCHIVED: "lead.unarchived",
   LEAD_DELETED: "lead.deleted",
   LEAD_NOTE_ADDED: "lead.note_added",
   BUILDINGS_CREATED: "lead.buildings_created",
@@ -370,6 +380,8 @@ module.exports = {
   USER_ROLES,
   LEAD_SOURCES,
   LEAD_TEMPERATURES,
+  BUSINESS_UNITS,
+  BUSINESS_UNIT_LABELS,
   resolveLeadTemperatureFromScore,
   SALES_LIFECYCLE_STAGES,
   PLANT_LIFECYCLE_STAGES,

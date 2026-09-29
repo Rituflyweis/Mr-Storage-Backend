@@ -47,11 +47,17 @@ const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
+const {
+  normalizeBusinessUnit,
+  businessUnitFields,
+  applyBusinessUnitFilter,
+} = require('../../utils/businessUnit')
 const leadListSocket = require('../../services/leadListSocket.service')
+const { buildArchivedLeadListFilter } = require('../../utils/leadArchive')
 
 exports.getLeadStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
-  const activeFilter = { isDeleted: { $ne: true }, ...dateFilter }
+  const activeFilter = { isDeleted: { $ne: true }, isArchived: { $ne: true }, ...dateFilter }
 
   const [total, assigned, unassigned, unread] = await Promise.all([
     Lead.countDocuments(activeFilter),
@@ -75,7 +81,7 @@ exports.getLeadsByScore = asyncHandler(async (req, res) => {
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName email customerId' })
-      .select('_id jobId projectName location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt')
+      .select('_id jobId projectName businessUnit location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt')
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -243,14 +249,16 @@ exports.getAiHandledLeads = asyncHandler(async (req, res) => {
 
   const filter = {
     isDeleted: { $ne: true },
+    isArchived: { $ne: true },
     isHandedToSales: false,
     assignedSales: null,
     isStaffChatActive: { $ne: true },
   }
+  applyBusinessUnitFilter(filter, req.query.businessUnit)
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName email' })
-      .select('_id jobId customerId buildingType location lifecycleStatus leadScoring createdAt')
+      .select('_id jobId customerId buildingType businessUnit location lifecycleStatus leadScoring createdAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -267,12 +275,13 @@ exports.getSignedContracts = asyncHandler(async (req, res) => {
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const filter = { isDeleted: { $ne: true }, 'documents.type': 'contract' }
+  const filter = { isDeleted: { $ne: true }, isArchived: { $ne: true }, 'documents.type': 'contract' }
+  applyBusinessUnitFilter(filter, req.query.businessUnit)
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName' })
       .populate({ path: 'assignedSales', select: 'name' })
-      .select('_id jobId projectName customerId assignedSales documents lifecycleStatus')
+      .select('_id jobId projectName businessUnit customerId assignedSales documents lifecycleStatus')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -285,6 +294,7 @@ exports.getSignedContracts = asyncHandler(async (req, res) => {
     return withProjectIdFields({
       _id: l._id,
       projectName: l.projectName || '',
+      ...businessUnitFields(l),
       customerId: l.customerId,
       agreementUploadedAt: contractDoc?.uploadedAt || null,
       assignedSales: l.assignedSales,
@@ -302,11 +312,12 @@ exports.getTerminatedLeads = asyncHandler(async (req, res) => {
   const skip = (parsedPage - 1) * parsedLimit
 
   const filter = { isDeleted: { $ne: true }, isTerminated: true }
+  applyBusinessUnitFilter(filter, req.query.businessUnit)
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName' })
       .populate({ path: 'assignedSales', select: 'name' })
-      .select('_id jobId projectName customerId assignedSales terminatedAt terminationReason lifecycleStatus')
+      .select('_id jobId projectName businessUnit customerId assignedSales terminatedAt terminationReason lifecycleStatus')
       .sort({ terminatedAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -315,6 +326,30 @@ exports.getTerminatedLeads = asyncHandler(async (req, res) => {
   ])
 
   return success(res, { projects: leads.map(enrichLeadDocument), total })
+})
+
+exports.getArchivedLeads = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20 } = req.query
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+  const skip = (parsedPage - 1) * parsedLimit
+
+  const filter = buildArchivedLeadListFilter()
+  applyBusinessUnitFilter(filter, req.query.businessUnit)
+  const [leads, total] = await Promise.all([
+    Lead.find(filter)
+      .populate({ path: 'customerId', select: 'firstName email' })
+      .populate({ path: 'assignedSales', select: 'name' })
+      .populate({ path: 'archivedBy', select: 'name' })
+      .select('_id jobId projectName businessUnit customerId assignedSales archivedAt archiveReason lifecycleStatus isTerminated')
+      .sort({ archivedAt: -1 })
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean(),
+    Lead.countDocuments(filter),
+  ])
+
+  return success(res, { leads: leads.map(enrichLeadDocument), total, page: parsedPage, limit: parsedLimit })
 })
 
 exports.createLead = asyncHandler(async (req, res) => {
@@ -379,7 +414,7 @@ exports.importLeads = asyncHandler(async (req, res) => {
 
   for (const row of records) {
     try {
-      const { name, email, phone, projectType } = row
+      const { name, email, phone, projectType, businessUnit } = row
       if (!email || !phone) { results.skipped++; continue }
 
       const normalized = email.toLowerCase().trim()
@@ -400,7 +435,13 @@ exports.importLeads = asyncHandler(async (req, res) => {
         })
       }
 
-      const lead = await Lead.create({ customerId: customer._id, buildingType: projectType || '', source: 'import' })
+      const unit = normalizeBusinessUnit(businessUnit)
+      const lead = await Lead.create({
+        customerId: customer._id,
+        buildingType: projectType || '',
+        source: 'import',
+        businessUnit: unit.value || null,
+      })
       await syncLeadBuildings(lead, { createdBy: req.user._id })
       results.created++
     } catch (err) {
@@ -417,6 +458,7 @@ exports.editLead = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(leadId)
   if (!lead || lead.isDeleted) return notFound(res, 'Lead not found')
 
+  const previousBusinessUnit = lead.businessUnit || null
   const { error: updateError, lifecycleStatus } = applyLeadUpdateFromBody(lead, req.body)
   if (updateError) return badRequest(res, updateError)
 
@@ -457,7 +499,10 @@ exports.editLead = asyncHandler(async (req, res) => {
     leadId,
     customerId: lead.customerId,
     performedBy: req.user._id,
-    metadata: req.body,
+    metadata:
+      req.body.businessUnit !== undefined
+        ? { ...req.body, previousBusinessUnit, businessUnit: lead.businessUnit || null }
+        : req.body,
   })
   await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'lead_edited', includeScoreRow: true })
 
@@ -782,6 +827,58 @@ exports.terminateLead = asyncHandler(async (req, res) => {
   await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'terminated' })
 
   return success(res, { lead: enrichLeadDocument(lead) })
+})
+
+exports.archiveLead = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const reason = req.body?.reason != null ? String(req.body.reason).trim() : ''
+
+  const lead = await Lead.findById(leadId)
+  if (!lead || lead.isDeleted) return notFound(res, 'Lead not found')
+  if (lead.isArchived) return badRequest(res, 'Lead is already archived')
+
+  lead.isArchived = true
+  lead.archiveReason = reason
+  lead.archivedAt = new Date()
+  lead.archivedBy = req.user._id
+  await lead.save()
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_ARCHIVED,
+    leadId,
+    customerId: lead.customerId,
+    performedBy: req.user._id,
+    metadata: { reason },
+  })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'archived' })
+
+  return success(res, { lead: enrichLeadDocument(lead) }, 'Lead archived')
+})
+
+exports.unarchiveLead = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+
+  const lead = await Lead.findById(leadId)
+  if (!lead || lead.isDeleted) return notFound(res, 'Lead not found')
+  if (!lead.isArchived) return badRequest(res, 'Lead is not archived')
+
+  lead.isArchived = false
+  lead.archiveReason = ''
+  lead.archivedAt = null
+  lead.archivedBy = null
+  await lead.save()
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_UNARCHIVED,
+    leadId,
+    customerId: lead.customerId,
+    performedBy: req.user._id,
+  })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'unarchived', includeScoreRow: true })
+
+  return success(res, { lead: enrichLeadDocument(lead) }, 'Lead restored to active list')
 })
 
 exports.deleteLead = asyncHandler(async (req, res) => {

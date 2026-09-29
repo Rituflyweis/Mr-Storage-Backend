@@ -250,7 +250,7 @@ exports.getTodayTasks = asyncHandler(async (req, res) => {
       assignedSales: salesId,
       ...createdDateFilter,
     })
-      .select('_id projectName buildingType lifecycleStatus customerId')
+      .select('_id projectName businessUnit buildingType lifecycleStatus customerId')
       .populate({ path: 'customerId', select: 'firstName' })
       .sort({ createdAt: -1 })
       .lean(),
