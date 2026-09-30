@@ -9,6 +9,8 @@ They are **separate from drawings** — use the `/media` endpoints below for the
 
 **Does not break drawings:** existing `GET/POST /api/construction/drawings*` stay unchanged.
 
+**No approval workflow for media:** photos and videos are **published on upload**. API returns `requiresApproval: false` and `approvalStatus: null` (do not show a “Pending” badge). Drawing review uses `/api/construction/drawings/.../review` and `DrawingDocument` / plant drawing statuses — that is separate from `/media`.
+
 ---
 
 ## Quick map (what to call for which UI)

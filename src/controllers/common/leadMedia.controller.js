@@ -8,6 +8,7 @@ const {
   MEDIA_DOCUMENT_TYPES,
   isMediaType,
   pickMediaDocuments,
+  formatMediaDocuments,
   buildLeadMediaPayload,
 } = require('../../services/leadMedia.service')
 
@@ -98,15 +99,16 @@ exports.listMediaProjects = asyncHandler(async (req, res) => {
   for (const lead of leads) {
     const docs = pickMediaDocuments(lead.documents, type)
     if (!docs.length) continue
-    const photos = docs.filter((d) => d.type === 'photo')
-    const videos = docs.filter((d) => d.type === 'video')
+    const documents = await formatMediaDocuments(docs)
+    const photos = documents.filter((d) => d.type === 'photo')
+    const videos = documents.filter((d) => d.type === 'video')
     result.push({
       leadId: lead._id,
       projectId: lead.jobId,
       projectName: lead.projectName,
       location: lead.location,
       lastUpdate: lead.updatedAt,
-      documents: docs,
+      documents,
       photos,
       videos,
       photoCount: photos.length,
@@ -141,6 +143,9 @@ exports.uploadLeadMedia = asyncHandler(async (req, res) => {
     type,
     uploadedBy: req.user._id,
     uploadedAt: new Date(),
+    approvalStatus: 'approved',
+    reviewedAt: new Date(),
+    reviewedBy: req.user._id,
   })
   await lead.save()
 
@@ -153,6 +158,7 @@ exports.uploadLeadMedia = asyncHandler(async (req, res) => {
     metadata: { name, url, documentType: type },
   })
 
-  const document = lead.documents[lead.documents.length - 1]
+  const saved = lead.documents[lead.documents.length - 1]
+  const [document] = await formatMediaDocuments([saved.toObject ? saved.toObject() : saved])
   return success(res, { document }, `${type} uploaded`)
 })

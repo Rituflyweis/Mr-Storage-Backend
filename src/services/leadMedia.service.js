@@ -36,8 +36,10 @@ const formatMediaDocuments = async (documents = []) => {
     name: doc.name,
     type: doc.type,
     uploadedAt: doc.uploadedAt,
-    approvalStatus: doc.approvalStatus || 'pending',
-    reviewedAt: doc.reviewedAt || null,
+    /** Photos/videos are published on upload — no drawing-style review workflow. */
+    requiresApproval: false,
+    approvalStatus: null,
+    reviewedAt: null,
     uploadedBy: doc.uploadedBy
       ? uploaderMap.get(String(doc.uploadedBy)) || { _id: doc.uploadedBy }
       : null,
