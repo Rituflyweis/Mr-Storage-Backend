@@ -188,6 +188,7 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
       consolidatedBomPath: `/api/construction/projects/${lead._id}/consolidated-bom`,
       buildingDrawingsPath: `/api/construction/projects/${lead._id}/building-drawings`,
       photosVideosPath: `/api/construction/projects/${lead._id}/photos-videos`,
+      materialDeliveryDetailPath: `/api/construction/projects/${lead._id}/material-delivery`,
       materialDeliveriesPath: `/api/construction/projects/${lead._id}/material-deliveries`,
       bundlePlanPath: `/api/construction/projects/${lead._id}/bundle-plan`,
       truckPlanPath: `/api/construction/projects/${lead._id}/truck-plan`,

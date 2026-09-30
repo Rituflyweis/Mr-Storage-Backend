@@ -59,6 +59,7 @@ Authorization: Bearer <token>
     "consolidatedBomPath": "/api/construction/projects/{leadId}/consolidated-bom",
     "buildingDrawingsPath": "/api/construction/projects/{leadId}/building-drawings",
     "photosVideosPath": "/api/construction/projects/{leadId}/photos-videos",
+    "materialDeliveryDetailPath": "/api/construction/projects/{leadId}/material-delivery",
     "materialDeliveriesPath": "/api/construction/projects/{leadId}/material-deliveries",
     "bundlePlanPath": "/api/construction/projects/{leadId}/bundle-plan",
     "truckPlanPath": "/api/construction/projects/{leadId}/truck-plan",
@@ -72,7 +73,8 @@ Authorization: Bearer <token>
 |------------|-------------|
 | **View BOM** | `GET` `manufacturing.bomFilesPath` → optional job drill-down (§2) |
 | **View Drawings & Photos** | `buildingDrawingsPath` + `photosVideosPath` (§3) |
-| **Material Delivery** | `materialDeliveriesPath` (§4) |
+| **Material Delivery** (details page) | `materialDeliveryDetailPath` (§4.1) — **one confirmed delivery by project** |
+| **Material Delivery** (list / pick row) | `materialDeliveriesPath` (§4.2) |
 | **Bundle Scan** | Existing construction flow: `POST /api/construction/deliveries/scan-bundle` (site workflow, not this doc) |
 | **Upcoming Material Delivery table** | Use `upcomingMaterialDeliveries` from this same response (or refresh via §4) |
 
@@ -138,7 +140,71 @@ Same payload as `GET /api/construction/media/:leadId`.
 
 ## 4. Material delivery (plant freight — this project)
 
-### Full list (Material Delivery screen)
+### 4.1 Delivery details page — **by project id** (confirmed delivery)
+
+Use this when the user opens **Material Delivery** from project detail and you need the **full delivery details page** without knowing `deliveryId`.
+
+Returns the **latest carrier-selected / confirmed** freight delivery for the project (has `selectedCarrierBidId` and status in the post-award flow). Same payload as the per-id detail endpoint.
+
+```http
+GET /api/construction/projects/:leadId/material-delivery
+Authorization: Bearer <token>
+```
+
+Plant equivalent: `GET /api/plant/projects/:leadId/delivery`
+
+**404** when no confirmed delivery exists yet (`No selected/confirmed delivery found for this project`).
+
+**Response `data`:** `{ delivery: { … } }` — top-level fields on `delivery` include:
+
+| Field | Use on UI |
+|--------|-----------|
+| `deliveryId`, `deliveryNumber`, `status`, `statusHistory` | Header / timeline |
+| `project`, `customer` | Context |
+| `formDetails` | Load description, locations, dates, POC |
+| `deliverySchedule` | Date, time window, pickup/dropoff |
+| `deliveryInformation` | Item / material category |
+| `deliveryCompanyDetails` | Carrier |
+| `shipperDetails` / `vendorDetails` | Vendor |
+| `selectedBid` | Awarded bid |
+| `receivingPocDetails` | POC name & phone |
+| `documents` | URLs & attachments |
+| `bundlePlan`, `packingListPlan`, `bundles`, `packingLists` | Load contents |
+| `deliveryTypeAndSize` | Bundle count, weight |
+
+Example (truncated):
+
+```json
+{
+  "success": true,
+  "data": {
+    "delivery": {
+      "deliveryId": "…",
+      "deliveryNumber": "DEL-1012",
+      "status": "scheduled",
+      "project": { "leadId": "…", "projectName": "…", "jobId": "…" },
+      "deliverySchedule": {
+        "deliveryDate": "2026-04-01T00:00:00.000Z",
+        "timeWindowStart": "07:30",
+        "timeWindowEnd": "11:30",
+        "dropoffAddress": "…"
+      },
+      "deliveryCompanyDetails": {
+        "carrierName": "Rapid Delivery Services",
+        "personName": "…",
+        "number": "…",
+        "email": "…"
+      },
+      "receivingPocDetails": {
+        "receivingPoc": "John Site Manager",
+        "pickupContactPhone": "…"
+      }
+    }
+  }
+}
+```
+
+### 4.2 Full list (when you need every freight request)
 
 ```http
 GET /api/construction/projects/:leadId/material-deliveries
@@ -146,7 +212,19 @@ GET /api/construction/projects/:leadId/material-deliveries
 
 **Response `data`:** `{ requests[], total, selectedDeliveryId }` — same shape as Plant `GET /api/plant/deliveries/project/:leadId`.
 
-### Detail & PDFs
+Use **§4.1** for the default details page; use **§4.2** only if the UI lists multiple loads or lets the user pick a non-primary delivery.
+
+### 4.3 Detail by delivery id (specific load)
+
+When the user taps a row from the upcoming table and you already have `deliveryId`:
+
+```http
+GET /api/construction/projects/:leadId/material-deliveries/:deliveryId/detail
+```
+
+Same `data.delivery` shape as §4.1.
+
+### 4.4 PDFs & documents (by delivery id)
 
 | Method | Path |
 |--------|------|
@@ -198,6 +276,7 @@ Use **project-scoped** construction paths only (left column):
 | BOM files | `GET /api/construction/projects/:leadId/bom-files` | `GET /api/plant/projects/:leadId/bom-files` |
 | BOM job | `GET /api/construction/projects/:leadId/bom/jobs/:jobId` | `GET /api/plant/bom/:jobId` |
 | Drawings | `GET /api/construction/projects/:leadId/building-drawings` | `GET /api/plant/projects/:leadId/drawings` |
+| Delivery details (confirmed) | `GET /api/construction/projects/:leadId/material-delivery` | `GET /api/plant/projects/:leadId/delivery` |
 | Freight list | `GET /api/construction/projects/:leadId/material-deliveries` | `GET /api/plant/deliveries/project/:leadId` |
 | Bundle plan | `GET /api/construction/projects/:leadId/bundle-plan` | `GET /api/plant/projects/:leadId/bundle-plan` |
 | Truck plan | `GET /api/construction/projects/:leadId/truck-plan` | `GET /api/plant/projects/:projectId/load-planning/truck-plan` |

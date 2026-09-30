@@ -46,6 +46,8 @@ router.get(
 )
 
 // —— Material delivery (plant freight for this project) ——
+/** Confirmed / carrier-selected delivery — full detail page payload (one per project). */
+router.get('/:leadId/material-delivery', ...scope, leadIdParam, plantDeliveryCtrl.getProjectConfirmedDelivery)
 router.get('/:leadId/material-deliveries', ...scope, leadIdParam, plantDeliveryCtrl.getProjectDeliveries)
 router.get(
   '/:leadId/material-deliveries/:deliveryId/detail',
