@@ -38,8 +38,8 @@ const ShipperRequestSchema = new mongoose.Schema(
     comparisonSummary: { type: mongoose.Schema.Types.Mixed, default: null },
     comparisonError:   { type: String, default: null },
     comparisonRanAt:   { type: Date, default: null },
-    /** Token for vendor to upload their invoice PDF after quote approval (acceptance email). */
-    payableUploadToken: { type: String, default: null, unique: true, sparse: true },
+    /** Token for vendor invoice upload after quote approval; omit until set (sparse unique — do not default null). */
+    payableUploadToken: { type: String, unique: true, sparse: true },
     payableInvoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
   },
   { timestamps: true }
