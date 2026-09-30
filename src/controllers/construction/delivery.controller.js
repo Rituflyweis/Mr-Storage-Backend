@@ -7,8 +7,21 @@ const { success, created, notFound, badRequest } = require('../../utils/apiRespo
 const asyncHandler = require('../../utils/asyncHandler')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
 const { generatePackingListPdf, generateBillOfLadingPdf } = require('../../utils/exportDelivery')
-const { DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+const { DELIVERY_FULFILLMENT_STATUSES, PACKING_LIST_STATUSES } = require('../../config/constants')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
+const {
+  buildConstructionDeliveryFilter,
+  getDeliveryFilterOptions,
+} = require('../../utils/constructionDeliveryQuery')
+const { generateDeliveriesExcel } = require('../../utils/exportConstructionAdmin')
+const {
+  parseSortBy,
+  deliverySortMap,
+  CONSTRUCTION_SORT_BY,
+  BUNDLE_SCAN_UI_STATUSES,
+  LABEL_UI_STATUSES,
+  DISPATCH_VERIFICATION_UI_STATUSES,
+} = require('../../utils/constructionListQuery')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
 const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
 
@@ -62,28 +75,30 @@ const buildDeliveryCard = async (delivery) => {
   }
 }
 
-exports.getDeliveries = asyncHandler(async (req, res) => {
-  const { status, leadId, materialType, search, startDate, endDate, page = 1, limit = 20 } = req.query
+exports.getDeliveryFilters = asyncHandler(async (req, res) => {
+  const options = await getDeliveryFilterOptions()
+  return success(res, {
+    ...options,
+    sortBy: CONSTRUCTION_SORT_BY.filter((s) => deliverySortMap[s]),
+    relatedEnums: {
+      bundleScanStatus: BUNDLE_SCAN_UI_STATUSES,
+      labelStatus: LABEL_UI_STATUSES,
+      packingListStatus: PACKING_LIST_STATUSES,
+      dispatchVerificationStatus: DISPATCH_VERIFICATION_UI_STATUSES,
+    },
+  })
+})
 
-  const filter = { status: { $ne: 'draft' } }
-  if (status) filter.status = status
-  if (leadId) filter.leadId = leadId
-  if (materialType) filter.materialType = materialType
-  if (search?.trim()) {
-    const regex = { $regex: search.trim(), $options: 'i' }
-    filter.$or = [{ deliveryNumber: regex }, { materialType: regex }, { description: regex }]
-  }
-  if (startDate || endDate) {
-    filter.deliveryDate = {}
-    if (startDate) filter.deliveryDate.$gte = new Date(startDate)
-    if (endDate) filter.deliveryDate.$lte = new Date(endDate)
-  }
+exports.getDeliveries = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, sortBy } = req.query
+  const filter = await buildConstructionDeliveryFilter(req.query)
+  const sort = parseSortBy(sortBy, deliverySortMap)
 
   const skip = (Number(page) - 1) * Number(limit)
   const [deliveries, total] = await Promise.all([
     Delivery.find(filter)
       .populate('leadId', 'projectName jobId location')
-      .sort({ deliveryDate: 1 })
+      .sort(sort)
       .skip(skip)
       .limit(Number(limit))
       .lean(),
@@ -105,7 +120,38 @@ exports.getDeliveries = asyncHandler(async (req, res) => {
   }
 
   const cards = await Promise.all(deliveries.map(buildDeliveryCard))
-  return success(res, { deliveries: cards, total, stats })
+  return success(res, { deliveries: cards, total, stats, page: Number(page), limit: Number(limit) })
+})
+
+exports.exportDeliveries = asyncHandler(async (req, res) => {
+  const filter = await buildConstructionDeliveryFilter(req.query)
+  const sort = parseSortBy(req.query.sortBy, deliverySortMap)
+
+  const deliveries = await Delivery.find(filter)
+    .populate('leadId', 'projectName jobId')
+    .populate({
+      path: 'selectedCarrierBidId',
+      select: 'carrierId',
+      populate: { path: 'carrierId', select: 'carrierName contactName' },
+    })
+    .sort(sort)
+    .lean()
+
+  const rows = deliveries.map((d) => ({
+    deliveryNumber: d.deliveryNumber,
+    projectName: d.leadId?.projectName || '',
+    jobId: d.leadId?.jobId || '',
+    material: d.materialType || d.loadDescription || '',
+    deliveryDate: d.deliveryDate,
+    transporter: d.selectedCarrierBidId?.carrierId?.carrierName || '',
+    driver: d.selectedCarrierBidId?.carrierId?.contactName || '',
+    status: d.status,
+  }))
+
+  const buffer = await generateDeliveriesExcel(rows)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="construction-deliveries.xlsx"')
+  return res.send(buffer)
 })
 
 exports.getDelivery = asyncHandler(async (req, res) => {

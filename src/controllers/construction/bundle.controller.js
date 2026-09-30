@@ -7,23 +7,174 @@ const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { generatePackingListDetailPdf } = require('../../utils/exportDelivery')
 const { generatePackingListExcel } = require('../../utils/exportPackingLists')
+const {
+  generateBundleLabelsExcel,
+  generateBundleScanExcel,
+  generateDispatchVerificationExcel,
+} = require('../../utils/exportConstructionLogistics')
+const {
+  BUNDLE_STATUSES,
+  PACKING_LIST_STATUSES,
+} = require('../../config/constants')
+const {
+  parseSortBy,
+  bundleSortMap,
+  packingListSortMap,
+  dispatchSortMap,
+  bundleScanStatusToDb,
+  labelStatusToFilter,
+  dispatchVerificationStatusFilter,
+  appendLeadProjectSearch,
+  appendPackingListSearch,
+  CONSTRUCTION_SORT_BY,
+  BUNDLE_SCAN_UI_STATUSES,
+  LABEL_UI_STATUSES,
+  DISPATCH_VERIFICATION_UI_STATUSES,
+} = require('../../utils/constructionListQuery')
 
-exports.getBundleLabels = asyncHandler(async (req, res) => {
-  const { status, page = 1, limit = 20 } = req.query
+const mapBundleLabelRow = (b) => ({
+  bundleId: b._id,
+  bundleNo: b.bundleNo,
+  bundleType: b.bundleType,
+  title: b.title,
+  parts: b.items?.map((i) => i.partNo || i.itemId).join(', ') || '',
+  totalWeight: b.totalWeight,
+  maxLengthFeet: b.maxLengthFeet,
+  status: b.status,
+  labelPrinted: b.labelPrinted || false,
+  packingListId: b.packingListId,
+  project: b.bundlePlanId?.leadId
+    ? {
+        leadId: b.bundlePlanId.leadId._id,
+        projectName: b.bundlePlanId.leadId.projectName,
+        jobId: b.bundlePlanId.leadId.jobId,
+      }
+    : null,
+})
 
+const mapBundleScanRow = (b) => ({
+  bundleId: b._id,
+  bundleNo: b.bundleNo,
+  parts: b.items?.map((i) => i.partNo || i.itemId).join(', ') || '',
+  totalWeight: b.totalWeight,
+  status: b.status,
+  scannedAt: b.updatedAt,
+  project: b.bundlePlanId?.leadId
+    ? {
+        leadId: b.bundlePlanId.leadId._id,
+        projectName: b.bundlePlanId.leadId.projectName,
+        jobId: b.bundlePlanId.leadId.jobId,
+      }
+    : null,
+})
+
+const mapPackingListRow = (pl) => ({
+  packingListId: pl._id,
+  packingListNo: pl.packingListNo,
+  truck: pl.truckLabel || pl.truckType,
+  totalBundles: pl.totalBundles,
+  totalWeight: pl.totalWeight,
+  destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
+  status: pl.status,
+  project: pl.packingListPlanId?.leadId
+    ? {
+        leadId: pl.packingListPlanId.leadId._id,
+        projectName: pl.packingListPlanId.leadId.projectName,
+        jobId: pl.packingListPlanId.leadId.jobId,
+      }
+    : null,
+})
+
+const mapDispatchRow = (pl) => ({
+  loadId: pl._id,
+  packingListNo: pl.packingListNo,
+  truck: pl.truckLabel || pl.truckType,
+  totalBundles: pl.totalBundles,
+  bundleIds: pl.bundleIds || [],
+  totalWeight: pl.totalWeight,
+  destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
+  status: pl.status,
+  weightVerified: pl.weightVerified || false,
+  loadingVerified: pl.loadingVerified || false,
+  project: pl.packingListPlanId?.leadId
+    ? {
+        leadId: pl.packingListPlanId.leadId._id,
+        projectName: pl.packingListPlanId.leadId.projectName,
+        jobId: pl.packingListPlanId.leadId.jobId,
+      }
+    : null,
+})
+
+const buildLabelFilter = async (query) => {
+  const { status, search, leadId } = query
+  const filter = {}
+  if (leadId) filter.leadId = leadId
+  if (status && LABEL_UI_STATUSES.includes(status)) {
+    Object.assign(filter, labelStatusToFilter(status))
+  } else if (status && BUNDLE_STATUSES.includes(status)) {
+    filter.status = status
+  }
+  await appendLeadProjectSearch(filter, search)
+  return filter
+}
+
+const buildBundleScanFilter = async (query) => {
+  const { status, search, leadId } = query
+  const filter = { status: { $in: bundleScanStatusToDb(status) } }
+  if (leadId) filter.leadId = leadId
+  await appendLeadProjectSearch(filter, search)
+  return filter
+}
+
+const buildPackingListFilter = async (query) => {
+  const { status, search, leadId } = query
   const filter = {}
   if (status) filter.status = status
+  if (leadId) filter.leadId = leadId
+  appendPackingListSearch(filter, search)
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    const leadIds = await Lead.find({ $or: [{ projectName: regex }, { jobId: regex }] }).distinct('_id')
+    const searchOr = filter.$or || []
+    if (leadIds.length) searchOr.push({ leadId: { $in: leadIds } })
+    if (searchOr.length) filter.$or = searchOr
+  }
+  return filter
+}
 
+const buildDispatchFilter = (query) => {
+  const { status, search } = query
+  const filter = {
+    status: { $in: ['confirmed', 'generated', 'ready', 'loading', 'dispatched'] },
+    ...dispatchVerificationStatusFilter(status),
+  }
+  appendPackingListSearch(filter, search)
+  return filter
+}
+
+const bundlePopulate = {
+  path: 'bundlePlanId',
+  select: 'leadId',
+  populate: { path: 'leadId', select: 'projectName jobId location' },
+}
+
+const packingListPopulate = {
+  path: 'packingListPlanId',
+  select: 'leadId',
+  populate: { path: 'leadId', select: 'projectName jobId location' },
+}
+
+exports.getBundleLabels = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, sortBy } = req.query
+  const filter = await buildLabelFilter(req.query)
+  const sort = parseSortBy(sortBy, bundleSortMap)
   const skip = (Number(page) - 1) * Number(limit)
+
   const [bundles, total] = await Promise.all([
     Bundle.find(filter)
-      .select('bundleNo bundleType title totalWeight maxLengthFeet status packingListId bundlePlanId items')
-      .populate({
-        path: 'bundlePlanId',
-        select: 'leadId',
-        populate: { path: 'leadId', select: 'projectName jobId location' },
-      })
-      .sort({ createdAt: -1 })
+      .select('bundleNo bundleType title totalWeight maxLengthFeet status packingListId bundlePlanId items labelPrinted')
+      .populate(bundlePopulate)
+      .sort(sort)
       .skip(skip)
       .limit(Number(limit))
       .lean(),
@@ -31,39 +182,38 @@ exports.getBundleLabels = asyncHandler(async (req, res) => {
   ])
 
   const now = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-
   const stats = {
     totalBundles: await Bundle.countDocuments({}),
     labelsPrinted: await Bundle.countDocuments({ labelPrinted: true }),
-    labelsPending: await Bundle.countDocuments({ labelPrinted: false }),
+    labelsPending: await Bundle.countDocuments({ labelPrinted: { $ne: true } }),
     labelsPrintedToday: await Bundle.countDocuments({
       labelPrinted: true,
       labelPrintedAt: { $gte: new Date(now.toDateString()) },
     }),
   }
 
-  const rows = bundles.map((b) => ({
-    bundleId: b._id,
-    bundleNo: b.bundleNo,
-    bundleType: b.bundleType,
-    title: b.title,
-    parts: b.items?.map((i) => i.partNo || i.itemId).join(', ') || '',
-    totalWeight: b.totalWeight,
-    maxLengthFeet: b.maxLengthFeet,
-    status: b.status,
-    labelPrinted: b.labelPrinted || false,
-    packingListId: b.packingListId,
-    project: b.bundlePlanId?.leadId
-      ? {
-          leadId: b.bundlePlanId.leadId._id,
-          projectName: b.bundlePlanId.leadId.projectName,
-          jobId: b.bundlePlanId.leadId.jobId,
-        }
-      : null,
-  }))
+  return success(res, {
+    bundles: bundles.map(mapBundleLabelRow),
+    total,
+    stats,
+    page: Number(page),
+    limit: Number(limit),
+    enums: { sortBy: CONSTRUCTION_SORT_BY, labelStatus: LABEL_UI_STATUSES, bundleStatus: BUNDLE_STATUSES },
+  })
+})
 
-  return success(res, { bundles: rows, total, stats })
+exports.exportBundleLabels = asyncHandler(async (req, res) => {
+  const filter = await buildLabelFilter(req.query)
+  const sort = parseSortBy(req.query.sortBy, bundleSortMap)
+  const bundles = await Bundle.find(filter)
+    .select('bundleNo bundleType title totalWeight status bundlePlanId labelPrinted')
+    .populate(bundlePopulate)
+    .sort(sort)
+    .lean()
+  const buffer = await generateBundleLabelsExcel(bundles.map(mapBundleLabelRow))
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="bundle-labels.xlsx"')
+  return res.send(buffer)
 })
 
 exports.printBundleLabels = asyncHandler(async (req, res) => {
@@ -82,68 +232,73 @@ exports.printBundleLabels = asyncHandler(async (req, res) => {
 })
 
 exports.getBundleScanHistory = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20 } = req.query
+  const { page = 1, limit = 20, sortBy } = req.query
+  const filter = await buildBundleScanFilter(req.query)
+  const sort =
+    sortBy === 'Weight'
+      ? { totalWeight: -1 }
+      : sortBy === 'Oldest'
+        ? { updatedAt: 1 }
+        : { updatedAt: -1 }
   const skip = (Number(page) - 1) * Number(limit)
 
   const [bundles, total] = await Promise.all([
-    Bundle.find({ status: { $in: ['assigned_to_truck', 'ready', 'staged', 'dispatched'] } })
+    Bundle.find(filter)
       .select('bundleNo status totalWeight maxLengthFeet updatedAt packingListId bundlePlanId items')
-      .populate({
-        path: 'bundlePlanId',
-        select: 'leadId',
-        populate: { path: 'leadId', select: 'projectName jobId location' },
-      })
-      .sort({ updatedAt: -1 })
+      .populate(bundlePopulate)
+      .sort(sort)
       .skip(skip)
       .limit(Number(limit))
       .lean(),
-    Bundle.countDocuments({ status: { $in: ['assigned_to_truck', 'ready', 'staged', 'dispatched'] } }),
+    Bundle.countDocuments(filter),
   ])
 
   const stats = {
     bundlesScanned: await Bundle.countDocuments({ status: { $in: ['assigned_to_truck', 'staged'] } }),
-    bundlesRemaining: await Bundle.countDocuments({ status: { $in: ['pending', 'ready'] } }),
-    bundlesLoaded: await Bundle.countDocuments({ status: 'dispatched' }),
+    bundlesRemaining: await Bundle.countDocuments({ status: { $in: ['draft', 'confirmed'] } }),
+    bundlesLoaded: await Bundle.countDocuments({ status: 'loaded' }),
   }
 
-  const rows = bundles.map((b) => ({
-    bundleId: b._id,
-    bundleNo: b.bundleNo,
-    parts: b.items?.map((i) => i.partNo || i.itemId).join(', ') || '',
-    totalWeight: b.totalWeight,
-    status: b.status,
-    scannedAt: b.updatedAt,
-    project: b.bundlePlanId?.leadId
-      ? {
-          leadId: b.bundlePlanId.leadId._id,
-          projectName: b.bundlePlanId.leadId.projectName,
-          jobId: b.bundlePlanId.leadId.jobId,
-        }
-      : null,
-  }))
+  return success(res, {
+    bundles: bundles.map(mapBundleScanRow),
+    total,
+    stats,
+    page: Number(page),
+    limit: Number(limit),
+    enums: { sortBy: ['Latest', 'Oldest', 'Weight'], status: BUNDLE_SCAN_UI_STATUSES },
+  })
+})
 
-  return success(res, { bundles: rows, total, stats })
+exports.exportBundleScan = asyncHandler(async (req, res) => {
+  const filter = await buildBundleScanFilter(req.query)
+  const sort =
+    req.query.sortBy === 'Weight'
+      ? { totalWeight: -1 }
+      : req.query.sortBy === 'Oldest'
+        ? { updatedAt: 1 }
+        : { updatedAt: -1 }
+  const bundles = await Bundle.find(filter)
+    .select('bundleNo status totalWeight updatedAt bundlePlanId')
+    .populate(bundlePopulate)
+    .sort(sort)
+    .lean()
+  const buffer = await generateBundleScanExcel(bundles.map(mapBundleScanRow))
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="bundle-scan.xlsx"')
+  return res.send(buffer)
 })
 
 exports.getPackingLists = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, status, search } = req.query
+  const { page = 1, limit = 20, sortBy } = req.query
+  const filter = await buildPackingListFilter(req.query)
+  const sort = parseSortBy(sortBy, packingListSortMap)
   const skip = (Number(page) - 1) * Number(limit)
-
-  // Mirrors exportPackingListsExcel's filter — the list and its export were previously out
-  // of sync (export supported status, list supported nothing at all).
-  const filter = {}
-  if (status) filter.status = status
-  if (search?.trim()) filter.packingListNo = { $regex: search.trim(), $options: 'i' }
 
   const [lists, total] = await Promise.all([
     PackingList.find(filter)
       .select('packingListNo truckType truckLabel totalBundles totalWeight maxLengthFeet status deliveryLocation packingListPlanId')
-      .populate({
-        path: 'packingListPlanId',
-        select: 'leadId bundlePlanId',
-        populate: { path: 'leadId', select: 'projectName jobId location' },
-      })
-      .sort({ createdAt: -1 })
+      .populate(packingListPopulate)
+      .sort(sort)
       .skip(skip)
       .limit(Number(limit))
       .lean(),
@@ -155,79 +310,70 @@ exports.getPackingLists = asyncHandler(async (req, res) => {
     loadsReadyForDispatch: await PackingList.countDocuments({ status: 'confirmed' }),
     bundlesAssigned: await Bundle.countDocuments({ packingListId: { $ne: null } }),
     loadsDispatchedToday: await PackingList.countDocuments({
-      status: 'confirmed',
+      status: 'dispatched',
       updatedAt: { $gte: new Date(new Date().toDateString()) },
     }),
   }
 
-  const rows = lists.map((pl) => ({
-    packingListId: pl._id,
-    packingListNo: pl.packingListNo,
-    truck: pl.truckLabel || pl.truckType,
-    totalBundles: pl.totalBundles,
-    totalWeight: pl.totalWeight,
-    destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
-    status: pl.status,
-    project: pl.packingListPlanId?.leadId
-      ? {
-          leadId: pl.packingListPlanId.leadId._id,
-          projectName: pl.packingListPlanId.leadId.projectName,
-          jobId: pl.packingListPlanId.leadId.jobId,
-        }
-      : null,
-  }))
-
-  return success(res, { packingLists: rows, total, stats })
+  return success(res, {
+    packingLists: lists.map(mapPackingListRow),
+    total,
+    stats,
+    page: Number(page),
+    limit: Number(limit),
+    enums: { sortBy: CONSTRUCTION_SORT_BY, status: PACKING_LIST_STATUSES },
+  })
 })
 
 exports.getDispatchVerification = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20 } = req.query
+  const { page = 1, limit = 20, sortBy } = req.query
+  const filter = buildDispatchFilter(req.query)
+  const sort = parseSortBy(sortBy, dispatchSortMap)
   const skip = (Number(page) - 1) * Number(limit)
 
   const [lists, total] = await Promise.all([
-    PackingList.find({ status: { $in: ['confirmed', 'generated'] } })
-      .select('packingListNo truckType truckLabel totalBundles totalWeight deliveryLocation status bundleIds packingListPlanId')
-      .populate({
-        path: 'packingListPlanId',
-        select: 'leadId',
-        populate: { path: 'leadId', select: 'projectName jobId location' },
-      })
-      .sort({ updatedAt: -1 })
+    PackingList.find(filter)
+      .select('packingListNo truckType truckLabel totalBundles totalWeight deliveryLocation status bundleIds packingListPlanId weightVerified loadingVerified')
+      .populate(packingListPopulate)
+      .sort(sort)
       .skip(skip)
       .limit(Number(limit))
       .lean(),
-    PackingList.countDocuments({ status: { $in: ['confirmed', 'generated'] } }),
+    PackingList.countDocuments(filter),
   ])
 
   const stats = {
     loadsReadyForDispatch: await PackingList.countDocuments({ status: 'confirmed' }),
-    bundlesVerified: await Bundle.countDocuments({ status: 'assigned_to_truck' }),
-    bundlesMissing: await Bundle.countDocuments({ packingListId: null, status: { $ne: 'pending' } }),
-    leadsDispatchedToday: await PackingList.countDocuments({
-      status: 'confirmed',
+    bundlesVerified: await Bundle.countDocuments({ verified: true }),
+    bundlesMissing: await Bundle.countDocuments({ packingListId: null, status: { $nin: ['draft', 'cancelled'] } }),
+    loadsDispatchedToday: await PackingList.countDocuments({
+      status: 'dispatched',
       updatedAt: { $gte: new Date(new Date().toDateString()) },
     }),
   }
 
-  const rows = lists.map((pl) => ({
-    loadId: pl._id,
-    packingListNo: pl.packingListNo,
-    truck: pl.truckLabel || pl.truckType,
-    totalBundles: pl.totalBundles,
-    bundleIds: pl.bundleIds || [],
-    totalWeight: pl.totalWeight,
-    destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
-    status: pl.status,
-    project: pl.packingListPlanId?.leadId
-      ? {
-          leadId: pl.packingListPlanId.leadId._id,
-          projectName: pl.packingListPlanId.leadId.projectName,
-          jobId: pl.packingListPlanId.leadId.jobId,
-        }
-      : null,
-  }))
+  return success(res, {
+    loads: lists.map(mapDispatchRow),
+    total,
+    stats,
+    page: Number(page),
+    limit: Number(limit),
+    enums: { sortBy: CONSTRUCTION_SORT_BY, status: DISPATCH_VERIFICATION_UI_STATUSES },
+  })
+})
 
-  return success(res, { loads: rows, total, stats })
+exports.exportDispatchVerification = asyncHandler(async (req, res) => {
+  const filter = buildDispatchFilter(req.query)
+  const sort = parseSortBy(req.query.sortBy, dispatchSortMap)
+  const lists = await PackingList.find(filter)
+    .select('packingListNo truckType truckLabel totalBundles totalWeight deliveryLocation status packingListPlanId')
+    .populate(packingListPopulate)
+    .sort(sort)
+    .lean()
+  const buffer = await generateDispatchVerificationExcel(lists.map(mapDispatchRow))
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="dispatch-verification.xlsx"')
+  return res.send(buffer)
 })
 
 exports.reprintBundleLabel = asyncHandler(async (req, res) => {
@@ -501,29 +647,16 @@ exports.downloadPackingListPdf = asyncHandler(async (req, res) => {
 })
 
 exports.exportPackingListsExcel = asyncHandler(async (req, res) => {
-  const { status } = req.query
-  const filter = {}
-  if (status) filter.status = status
+  const filter = await buildPackingListFilter(req.query)
+  const sort = parseSortBy(req.query.sortBy, packingListSortMap)
 
   const lists = await PackingList.find(filter)
     .select('packingListNo truckType truckLabel totalBundles totalWeight status deliveryLocation packingListPlanId')
-    .populate({
-      path: 'packingListPlanId',
-      select: 'leadId',
-      populate: { path: 'leadId', select: 'projectName jobId location' },
-    })
-    .sort({ createdAt: -1 })
+    .populate(packingListPopulate)
+    .sort(sort)
     .lean()
 
-  const rows = lists.map((pl) => ({
-    packingListNo: pl.packingListNo,
-    truck: pl.truckLabel || pl.truckType,
-    totalBundles: pl.totalBundles,
-    totalWeight: pl.totalWeight,
-    destination: pl.deliveryLocation || pl.packingListPlanId?.leadId?.location || '',
-    status: pl.status,
-    project: pl.packingListPlanId?.leadId ? { projectName: pl.packingListPlanId.leadId.projectName } : null,
-  }))
+  const rows = lists.map(mapPackingListRow)
 
   const buffer = await generatePackingListExcel(rows)
 

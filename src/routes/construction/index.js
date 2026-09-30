@@ -76,6 +76,8 @@ router.post('/material-requests/:requestId/items/:itemId/deliver', materialReque
 // Delivery Tracking (static routes before param routes)
 router.post('/deliveries/scan-bundle', deliveryCtrl.scanBundle)
 router.post('/deliveries', deliveryCtrl.createDelivery)
+router.get('/deliveries/filters', deliveryCtrl.getDeliveryFilters)
+router.get('/deliveries/export', deliveryCtrl.exportDeliveries)
 router.get('/deliveries', deliveryCtrl.getDeliveries)
 router.get('/deliveries/:deliveryId', deliveryCtrl.getDelivery)
 router.post('/deliveries/:deliveryId/mark-received', deliveryCtrl.markReceived)
@@ -86,10 +88,12 @@ router.get('/deliveries/:deliveryId/download/bill-of-lading', deliveryCtrl.downl
 
 // Label Printing
 router.get('/labels', bundleCtrl.getBundleLabels)
+router.get('/labels/export', bundleCtrl.exportBundleLabels)
 router.post('/labels/print', bundleCtrl.printBundleLabels)
 
 // Bundle Scan
 router.get('/bundle-scan', bundleCtrl.getBundleScanHistory)
+router.get('/bundle-scan/export', bundleCtrl.exportBundleScan)
 router.post('/bundle-scan/scan', deliveryCtrl.scanBundle)
 
 // Bundles (detail & actions)
@@ -111,6 +115,7 @@ router.post('/packing-lists/:packingListId/mark-dispatch', bundleCtrl.markPackin
 
 // Dispatch Verification
 router.get('/dispatch-verification', bundleCtrl.getDispatchVerification)
+router.get('/dispatch-verification/export', bundleCtrl.exportDispatchVerification)
 router.get('/dispatch-verification/:loadId', bundleCtrl.getDispatchVerificationDetail)
 router.post('/dispatch-verification/:loadId/verify-load', bundleCtrl.verifyLoad)
 router.post('/dispatch-verification/:loadId/confirm-dispatch', bundleCtrl.confirmDispatch)
