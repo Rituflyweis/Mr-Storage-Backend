@@ -7,6 +7,8 @@ router.get('/overview',              ctrl.getOverview)
 router.get('/projects-calendar',     ctrl.getProjectsCalendar)
 router.post('/projects-calendar/deliveries', [body('leadId').isMongoId(), body('deliveryDate').notEmpty()], validate, ctrl.createCalendarDelivery)
 
+router.use('/projects/:leadId/structural-drawing', require('../common/structuralDrawing.routes'))
+
 router.get('/drawings',              ctrl.getDrawings)
 router.get('/drawings/:docId',       [param('docId').isMongoId()], validate, ctrl.getDrawingDetail)
 router.post('/drawings/:leadId',     [param('leadId').isMongoId(), body('name').notEmpty()], validate, ctrl.uploadDrawing)

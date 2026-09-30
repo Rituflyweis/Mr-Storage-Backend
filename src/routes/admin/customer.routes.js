@@ -6,6 +6,8 @@ const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { projectFieldValidators, leadCreateFieldValidators } = require('../../utils/leadCreateValidators')
 const { businessUnitQueryValidator } = require('../../utils/businessUnit')
+const { CUSTOMER_DOCUMENT_CATEGORIES } = require('../../config/constants')
+const customerDocCtrl = require('../../controllers/common/customerDocument.controller')
 const invoiceCtrl = require('../../controllers/common/invoice.controller')
 const assertInvoiceMatchesProjectParams = require('../../middleware/assertInvoiceProjectParams')
 
@@ -84,6 +86,22 @@ router.put('/:customerId',
 router.patch('/:customerId/deactivate', ctrl.deactivateCustomer)
 
 router.get('/:customerId/invoices', ctrl.getCustomerInvoices)
+
+router.get('/:customerId/documents', customerDocCtrl.listCustomerDocuments)
+router.post(
+  '/:customerId/documents',
+  [
+    body('name').notEmpty().trim(),
+    body('fileUrl').notEmpty().trim(),
+    body('fileType').optional().isString().trim(),
+    body('fileSize').optional().isNumeric(),
+    body('category').optional().isIn(CUSTOMER_DOCUMENT_CATEGORIES),
+    body('notes').optional().isString().trim(),
+  ],
+  validate,
+  customerDocCtrl.addCustomerDocument
+)
+router.delete('/:customerId/documents/:docId', customerDocCtrl.deleteCustomerDocument)
 
 router.get('/:customerId', ctrl.getCustomerDetail)
 

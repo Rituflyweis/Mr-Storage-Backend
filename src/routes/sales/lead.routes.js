@@ -92,6 +92,14 @@ router.post('/:leadId/notes',
   validate,
   ctrl.createLeadNote
 )
+router.put('/:leadId/notes/:noteId',
+  [body('note').notEmpty().trim()],
+  validate,
+  ctrl.updateLeadNote
+)
+router.delete('/:leadId/notes/:noteId', ctrl.deleteLeadNote)
+router.get('/:leadId/documents', ctrl.getLeadDocuments)
+router.use('/:leadId/structural-drawing', require('../common/structuralDrawing.routes'))
 router.get('/:leadId/buildings', ctrl.getBuildings)
 
 router.put('/:leadId/lifecycle',

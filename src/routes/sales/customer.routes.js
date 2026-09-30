@@ -5,6 +5,8 @@ const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { projectFieldValidators } = require('../../utils/leadCreateValidators')
 const { businessUnitQueryValidator } = require('../../utils/businessUnit')
+const { CUSTOMER_DOCUMENT_CATEGORIES } = require('../../config/constants')
+const customerDocCtrl = require('../../controllers/common/customerDocument.controller')
 
 // ── Static routes BEFORE /:customerId ─────────────────────────────────────────
 router.get('/stats', ctrl.getCustomerStats)
@@ -21,6 +23,22 @@ router.put('/:customerId',
   validate,
   ctrl.updateCustomer
 )
+
+router.get('/:customerId/documents', customerDocCtrl.listCustomerDocuments)
+router.post(
+  '/:customerId/documents',
+  [
+    body('name').notEmpty().trim(),
+    body('fileUrl').notEmpty().trim(),
+    body('fileType').optional().isString().trim(),
+    body('fileSize').optional().isNumeric(),
+    body('category').optional().isIn(CUSTOMER_DOCUMENT_CATEGORIES),
+    body('notes').optional().isString().trim(),
+  ],
+  validate,
+  customerDocCtrl.addCustomerDocument
+)
+router.delete('/:customerId/documents/:docId', customerDocCtrl.deleteCustomerDocument)
 
 router.get('/:customerId', ctrl.getCustomerDetail)
 router.get('/:customerId/projects', [businessUnitQueryValidator()], validate, ctrl.getCustomerProjects)

@@ -13,7 +13,7 @@ const FollowUp = require('../../models/FollowUp')
 const auditService = require('../../services/audit.service')
 const { syncLeadBuildings } = require('../../services/leadBuilding.service')
 const generateCustomerId = require('../../utils/generateCustomerId')
-const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
+const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { setLeadLifecycleStage } = require('../../utils/leadLifecycle.util')
@@ -44,7 +44,7 @@ const {
   mapLeadByScoreRow,
 } = require('../../utils/leadQueryFilter')
 const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
-const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
+const { formatLeadNotes, appendLeadNote, updateLeadNote, deleteLeadNote } = require('../../services/leadNotes.service')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
 const {
@@ -656,6 +656,38 @@ exports.createLeadNote = asyncHandler(async (req, res) => {
     return success(res, { note: entry }, 'Note added')
   } catch (err) {
     if (err.code === 'NOTE_REQUIRED') return badRequest(res, err.message)
+    throw err
+  }
+})
+
+exports.updateLeadNote = asyncHandler(async (req, res) => {
+  const { leadId, noteId } = req.params
+  const { note } = req.body
+  const lead = await Lead.findById(leadId)
+  if (!lead) return notFound(res, 'Lead not found')
+
+  try {
+    const entry = await updateLeadNote(lead, noteId, note, req.user._id, { role: req.user.role })
+    return success(res, { note: entry }, 'Note updated')
+  } catch (err) {
+    if (err.code === 'NOTE_REQUIRED') return badRequest(res, err.message)
+    if (err.code === 'NOTE_NOT_FOUND') return notFound(res, err.message)
+    if (err.code === 'NOTE_FORBIDDEN') return forbidden(res, err.message)
+    throw err
+  }
+})
+
+exports.deleteLeadNote = asyncHandler(async (req, res) => {
+  const { leadId, noteId } = req.params
+  const lead = await Lead.findById(leadId)
+  if (!lead) return notFound(res, 'Lead not found')
+
+  try {
+    await deleteLeadNote(lead, noteId, req.user._id, { role: req.user.role })
+    return success(res, null, 'Note deleted')
+  } catch (err) {
+    if (err.code === 'NOTE_NOT_FOUND') return notFound(res, err.message)
+    if (err.code === 'NOTE_FORBIDDEN') return forbidden(res, err.message)
     throw err
   }
 })

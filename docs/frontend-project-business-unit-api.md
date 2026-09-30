@@ -13,7 +13,7 @@ Every project (lead) can now be tagged with the business it belongs to. Quotatio
 | Field | Type | Values |
 |-------|------|--------|
 | `businessUnit` | string \| `null` | `"storage_material"`, `"platform"`, `"steel"` |
-| `businessUnitLabel` | string (response only) | `"Storage Material"`, `"Platform"`, `"Steel"`, or `""` when not set |
+| `businessUnitLabel` | string (response only) | `"Storage Materials"`, `"Platform"`, `"Steel Building Depot"`, or `""` when not set |
 
 - Existing projects return `businessUnit: null`, `businessUnitLabel: ""` → show **"Not set"**.
 - Values are case-insensitive on input (`"Steel"` is stored as `"steel"`).
@@ -23,9 +23,9 @@ Every project (lead) can now be tagged with the business it belongs to. Quotatio
 
 ```json
 [
-  { "value": "storage_material", "label": "Storage Material" },
+  { "value": "storage_material", "label": "Storage Materials" },
   { "value": "platform", "label": "Platform" },
-  { "value": "steel", "label": "Steel" }
+  { "value": "steel", "label": "Steel Building Depot" }
 ]
 ```
 

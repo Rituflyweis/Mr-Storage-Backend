@@ -36,7 +36,8 @@ const {
   ESCALATION_LEAD_POPULATE,
 } = require('../../utils/escalationLeadRow')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
-const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
+const User = require('../../models/User')
+const { formatLeadNotes, appendLeadNote, updateLeadNote, deleteLeadNote } = require('../../services/leadNotes.service')
 const leadListSocket = require('../../services/leadListSocket.service')
 const { buildArchivedLeadListFilter } = require('../../utils/leadArchive')
 const { parse } = require('csv-parse/sync')
@@ -574,6 +575,73 @@ exports.createLeadNote = asyncHandler(async (req, res) => {
     if (err.code === 'NOTE_REQUIRED') return badRequest(res, err.message)
     throw err
   }
+})
+
+exports.updateLeadNote = asyncHandler(async (req, res) => {
+  const { leadId, noteId } = req.params
+  const { note } = req.body
+  const { lead, error, status } = await guardLead(leadId, req.user._id)
+  if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
+
+  try {
+    const entry = await updateLeadNote(lead, noteId, note, req.user._id, { role: req.user.role })
+    return success(res, { note: entry }, 'Note updated')
+  } catch (err) {
+    if (err.code === 'NOTE_REQUIRED') return badRequest(res, err.message)
+    if (err.code === 'NOTE_NOT_FOUND') return notFound(res, err.message)
+    if (err.code === 'NOTE_FORBIDDEN') return forbidden(res, err.message)
+    throw err
+  }
+})
+
+exports.deleteLeadNote = asyncHandler(async (req, res) => {
+  const { leadId, noteId } = req.params
+  const { lead, error, status } = await guardLead(leadId, req.user._id)
+  if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
+
+  try {
+    await deleteLeadNote(lead, noteId, req.user._id, { role: req.user.role })
+    return success(res, null, 'Note deleted')
+  } catch (err) {
+    if (err.code === 'NOTE_NOT_FOUND') return notFound(res, err.message)
+    if (err.code === 'NOTE_FORBIDDEN') return forbidden(res, err.message)
+    throw err
+  }
+})
+
+exports.getLeadDocuments = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const { type } = req.query
+  const { lead, error, status } = await guardLead(leadId, req.user._id)
+  if (error) return status === 404 ? notFound(res, error) : forbidden(res, error)
+
+  let documents = lead.documents || []
+  if (type) documents = documents.filter((d) => d.type === type)
+
+  const uploaderIds = [...new Set(documents.map((d) => d.uploadedBy).filter(Boolean).map(String))]
+  const uploaders = uploaderIds.length
+    ? await User.find({ _id: { $in: uploaderIds } }).select('_id name email role').lean()
+    : []
+  const uploaderMap = new Map(uploaders.map((u) => [String(u._id), u]))
+
+  const formattedDocuments = [...documents]
+    .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
+    .map((doc) => ({
+      _id: doc._id,
+      url: doc.url,
+      name: doc.name,
+      type: doc.type,
+      uploadedAt: doc.uploadedAt,
+      uploadedBy: doc.uploadedBy
+        ? uploaderMap.get(String(doc.uploadedBy)) || { _id: doc.uploadedBy }
+        : null,
+    }))
+
+  return success(res, {
+    project: { _id: lead._id, projectName: lead.projectName || '', jobId: lead.jobId },
+    documents: formattedDocuments,
+    total: formattedDocuments.length,
+  })
 })
 
 exports.editLead = asyncHandler(async (req, res) => {

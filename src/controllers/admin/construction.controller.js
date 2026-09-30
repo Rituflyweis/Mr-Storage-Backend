@@ -322,12 +322,30 @@ exports.uploadDrawing = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(leadId)
   if (!lead) return notFound(res, 'Project not found')
 
-  const doc = await DrawingDocument.create({
-    leadId, name, fileUrl: fileUrl || '', fileType, fileSize: fileSize || 0,
-    documentType: documentType || 'other', notes: notes || '', uploadedBy: req.user._id,
-    buildingLabel: buildingLabel || 'Building A',
-    category: category || 'drawing',
-  })
+  const resolvedType = documentType || 'other'
+  const resolvedCategory = category || 'drawing'
+
+  let doc
+  if (resolvedType === 'structural' && resolvedCategory === 'drawing') {
+    const { replaceProjectStructuralDrawing } = require('../../services/structuralDrawing.service')
+    doc = await replaceProjectStructuralDrawing({
+      leadId,
+      name,
+      fileUrl: fileUrl || '',
+      fileType,
+      fileSize,
+      notes,
+      buildingLabel,
+      uploadedBy: req.user._id,
+    })
+  } else {
+    doc = await DrawingDocument.create({
+      leadId, name, fileUrl: fileUrl || '', fileType, fileSize: fileSize || 0,
+      documentType: resolvedType, notes: notes || '', uploadedBy: req.user._id,
+      buildingLabel: buildingLabel || 'Building A',
+      category: resolvedCategory,
+    })
+  }
 
   if ((category || 'drawing') !== 'document') {
     await notifyCustomerDrawingUploadedForLabel({

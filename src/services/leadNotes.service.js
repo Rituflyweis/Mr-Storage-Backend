@@ -64,7 +64,72 @@ const appendLeadNote = async (lead, noteText, performedBy) => {
   return formatted
 }
 
+const findLeadNoteEntry = (lead, noteId) => {
+  if (!lead?.leadNotes?.length) return null
+  return lead.leadNotes.id(noteId) || lead.leadNotes.find((n) => String(n._id) === String(noteId)) || null
+}
+
+const assertNoteAuthor = (entry, performedBy, { role } = {}) => {
+  if (!entry) {
+    const err = new Error('Note not found')
+    err.code = 'NOTE_NOT_FOUND'
+    throw err
+  }
+  if (role === 'admin') return
+  if (String(entry.addedBy) !== String(performedBy)) {
+    const err = new Error('You can only modify notes you created')
+    err.code = 'NOTE_FORBIDDEN'
+    throw err
+  }
+}
+
+const updateLeadNote = async (lead, noteId, noteText, performedBy, options = {}) => {
+  const trimmed = String(noteText || '').trim()
+  if (!trimmed) {
+    const err = new Error('Note text is required')
+    err.code = 'NOTE_REQUIRED'
+    throw err
+  }
+
+  const entry = findLeadNoteEntry(lead, noteId)
+  assertNoteAuthor(entry, performedBy, options)
+
+  entry.note = trimmed
+  await lead.save()
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_NOTE_UPDATED,
+    leadId: lead._id,
+    customerId: lead.customerId,
+    performedBy,
+    metadata: { noteId: entry._id, notePreview: trimmed.length > 120 ? `${trimmed.slice(0, 120)}…` : trimmed },
+  })
+
+  const [formatted] = await populateAddedBy([entry.toObject ? entry.toObject() : entry])
+  return formatted
+}
+
+const deleteLeadNote = async (lead, noteId, performedBy, options = {}) => {
+  const entry = findLeadNoteEntry(lead, noteId)
+  assertNoteAuthor(entry, performedBy, options)
+
+  entry.deleteOne()
+  await lead.save()
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.LEAD_NOTE_DELETED,
+    leadId: lead._id,
+    customerId: lead.customerId,
+    performedBy,
+    metadata: { noteId },
+  })
+}
+
 module.exports = {
   formatLeadNotes,
   appendLeadNote,
+  updateLeadNote,
+  deleteLeadNote,
 }

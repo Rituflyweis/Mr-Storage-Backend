@@ -1,5 +1,19 @@
 const mongoose = require('mongoose')
-const { LEAD_SOURCES } = require('../config/constants')
+const { LEAD_SOURCES, CUSTOMER_DOCUMENT_CATEGORIES } = require('../config/constants')
+
+const CustomerDocumentSchema = new mongoose.Schema(
+  {
+    name:       { type: String, required: true, trim: true },
+    fileUrl:    { type: String, required: true, trim: true },
+    fileType:   { type: String, default: '', trim: true },
+    fileSize:   { type: Number, default: 0 },
+    category:   { type: String, enum: CUSTOMER_DOCUMENT_CATEGORIES, default: 'other' },
+    notes:      { type: String, default: '', trim: true },
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+)
 
 const CustomerSchema = new mongoose.Schema(
   {
@@ -25,6 +39,7 @@ const CustomerSchema = new mongoose.Schema(
     resetOtp:          { type: String,  default: null },
     resetOtpExpiry:    { type: Date,    default: null },
     resetOtpVerified:  { type: Boolean, default: false },
+    documents:         { type: [CustomerDocumentSchema], default: [] },
   },
   { timestamps: true }
 )

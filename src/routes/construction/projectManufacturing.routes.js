@@ -19,6 +19,8 @@ const withProjectId = (req, _res, next) => {
   next()
 }
 
+router.use('/:leadId/structural-drawing', require('../common/structuralDrawing.routes'))
+
 // —— View BOM ——
 router.get('/:leadId/bom-files', ...scope, leadIdParam, plantProjectCtrl.getProjectBomFiles)
 router.get('/:leadId/consolidated-bom', ...scope, leadIdParam, plantProjectCtrl.getConsolidatedBOM)

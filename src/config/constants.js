@@ -5,10 +5,19 @@ const LEAD_TEMPERATURES = ["hot", "warm", "cold"];
 /** Which of the client's businesses a project (lead) belongs to. */
 const BUSINESS_UNITS = ["storage_material", "platform", "steel"];
 const BUSINESS_UNIT_LABELS = {
-  storage_material: "Storage Material",
+  storage_material: "Storage Materials",
   platform: "Platform",
-  steel: "Steel",
+  steel: "Steel Building Depot",
 };
+
+/** Staff-uploaded files on the customer record (not project-scoped). */
+const CUSTOMER_DOCUMENT_CATEGORIES = [
+  "rendering",
+  "civil_drawing",
+  "site_plan",
+  "structural",
+  "other",
+];
 
 /** Score 0–100 → hot (≥70), warm (40–69), cold (<40). */
 const resolveLeadTemperatureFromScore = (score = 0) => {
@@ -142,6 +151,8 @@ const AUDIT_ACTIONS = {
   LEAD_UNARCHIVED: "lead.unarchived",
   LEAD_DELETED: "lead.deleted",
   LEAD_NOTE_ADDED: "lead.note_added",
+  LEAD_NOTE_UPDATED: "lead.note_updated",
+  LEAD_NOTE_DELETED: "lead.note_deleted",
   BUILDINGS_CREATED: "lead.buildings_created",
   BUILDINGS_SYNCED: "lead.buildings_synced",
   DRAWING_UPLOADED: "drawing.uploaded",
@@ -209,6 +220,8 @@ const AUDIT_ACTIONS = {
   BUDGET_SET: "lead.budget_set",
   CUSTOMER_CREATED: "customer.created",
   CUSTOMER_UPDATED: "customer.updated",
+  CUSTOMER_DOCUMENT_ADDED: "customer.document_added",
+  CUSTOMER_DOCUMENT_REMOVED: "customer.document_removed",
   CUSTOMER_DEACTIVATED: "customer.deactivated",
   CUSTOMER_ACTIVATED: "customer.activated",
   CUSTOMER_PROJECT_CREATED: "customer.project_created",
@@ -382,6 +395,7 @@ module.exports = {
   LEAD_TEMPERATURES,
   BUSINESS_UNITS,
   BUSINESS_UNIT_LABELS,
+  CUSTOMER_DOCUMENT_CATEGORIES,
   resolveLeadTemperatureFromScore,
   SALES_LIFECYCLE_STAGES,
   PLANT_LIFECYCLE_STAGES,

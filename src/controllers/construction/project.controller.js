@@ -6,6 +6,10 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
 const { businessUnitFields, applyBusinessUnitFilter } = require('../../utils/businessUnit')
 const { listUpcomingMaterialDeliveries } = require('../../utils/constructionProjectMaterialDeliveries')
+const {
+  buildConstructionDeliveryCalendar,
+  resolveConstructionCalendarLeadIds,
+} = require('../../utils/constructionProjectCalendar')
 const Building = require('../../models/Building')
 const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const BundlePlan = require('../../models/BundlePlan')
@@ -74,72 +78,24 @@ exports.getProjects = asyncHandler(async (req, res) => {
 })
 
 exports.getProjectCalendar = asyncHandler(async (req, res) => {
-  const { month, year, leadId } = req.query
   const now = new Date()
-  const m = Number(month) || now.getMonth() + 1
-  const y = Number(year) || now.getFullYear()
+  const m = Number(req.query.month) || now.getMonth() + 1
+  const y = Number(req.query.year) || now.getFullYear()
 
-  const startOfMonth = new Date(y, m - 1, 1)
-  const endOfMonth = new Date(y, m, 0, 23, 59, 59)
+  const leadIds = await resolveConstructionCalendarLeadIds({
+    stages: CONSTRUCTION_STAGES,
+    businessUnit: req.query.businessUnit,
+  })
 
-  const constructionLeadIds = await Lead.find(
-    applyBusinessUnitFilter(
-      { isTerminated: { $ne: true }, lifecycleStatus: { $in: CONSTRUCTION_STAGES } },
-      req.query.businessUnit
-    )
-  )
-    .select('_id')
-    .lean()
-    .then((rows) => rows.map((r) => r._id))
-
-  if (!constructionLeadIds.length) {
-    return success(res, { month: m, year: y, calendar: {}, totalDeliveries: 0 })
-  }
-
-  const deliveryFilter = {
-    leadId: { $in: constructionLeadIds },
-    deliveryDate: { $gte: startOfMonth, $lte: endOfMonth },
-    status: { $ne: 'draft' },
-  }
-  if (leadId) {
-    if (!constructionLeadIds.some((id) => String(id) === String(leadId))) {
-      return success(res, { month: m, year: y, calendar: {}, totalDeliveries: 0 })
-    }
-    deliveryFilter.leadId = leadId
-  }
-
-  const deliveries = await Delivery.find(deliveryFilter)
-    .select('deliveryDate deliveryNumber status description leadId')
-    .populate('leadId', 'projectName jobId businessUnit location lifecycleStatus')
-    .lean()
-
-  const calendarMap = {}
-  for (const d of deliveries) {
-    if (!d.deliveryDate) continue
-    const dateKey = new Date(d.deliveryDate).toISOString().split('T')[0]
-    if (!calendarMap[dateKey]) calendarMap[dateKey] = []
-    calendarMap[dateKey].push({
-      deliveryId: d._id,
-      deliveryNumber: d.deliveryNumber,
-      status: d.status,
-      description: d.description,
-      project: {
-        leadId: d.leadId?._id,
-        projectName: d.leadId?.projectName,
-        jobId: d.leadId?.jobId,
-        ...businessUnitFields(d.leadId),
-        location: d.leadId?.location,
-        lifecycleStatus: d.leadId?.lifecycleStatus,
-      },
-    })
-  }
-
-  return success(res, {
+  const payload = await buildConstructionDeliveryCalendar({
+    leadIds,
     month: m,
     year: y,
-    calendar: calendarMap,
-    totalDeliveries: deliveries.length,
+    filterLeadId: req.query.leadId,
+    businessUnit: req.query.businessUnit,
   })
+
+  return success(res, payload)
 })
 
 exports.getProjectDetail = asyncHandler(async (req, res) => {
@@ -192,6 +148,7 @@ exports.getProjectDetail = asyncHandler(async (req, res) => {
       materialDeliveriesPath: `/api/construction/projects/${lead._id}/material-deliveries`,
       bundlePlanPath: `/api/construction/projects/${lead._id}/bundle-plan`,
       truckPlanPath: `/api/construction/projects/${lead._id}/truck-plan`,
+      structuralDrawingPath: `/api/construction/projects/${lead._id}/structural-drawing`,
       hasConsolidatedBom: Boolean(hasConsolidatedBom),
       hasBundlePlan: Boolean(hasBundlePlan),
     },

@@ -38,6 +38,8 @@ router.get('/',
   ctrl.getProjects
 )
 
+router.use('/:leadId/structural-drawing', require('../common/structuralDrawing.routes'))
+
 router.get('/:leadId/detail', ctrl.getProjectDetail)
 
 router.put('/:leadId/lifecycle',
