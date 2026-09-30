@@ -114,7 +114,9 @@ POST /api/common/upload/leads/:leadId/documents
       "type": "photo",
       "uploadedBy": "…",
       "uploadedAt": "…",
-      "approvalStatus": "pending"
+      "requiresApproval": false,
+      "approvalStatus": null,
+      "reviewedAt": null
     }
   }
 }
@@ -200,7 +202,8 @@ Same handler / same response shape. Use the path for the logged-in panel.
         "name": "site-photo.jpg",
         "type": "photo",
         "uploadedAt": "…",
-        "approvalStatus": "pending",
+        "requiresApproval": false,
+        "approvalStatus": null,
         "reviewedAt": null,
         "uploadedBy": { "_id": "…", "name": "…", "email": "…", "role": "…" }
       }
