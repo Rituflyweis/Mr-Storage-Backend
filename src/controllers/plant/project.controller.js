@@ -18,6 +18,7 @@ const { businessUnitFields, applyBusinessUnitFilter } = require('../../utils/bus
 const { formatLog } = require('../../services/auditActivity.service')
 const { assertPlantProjectAccess } = require('../../utils/plantProjectAccess')
 const { getScopedLeadIds } = require('../../utils/plantAccessScope')
+const { escapeRegex } = require('../../utils/leadPayload')
 const { sortShipperRequestsByLowestBid } = require('../../utils/shipperRequestSort')
 const { computeShipperFilesStats } = require('../../utils/shipperFilesStats')
 const {
@@ -131,7 +132,10 @@ const buildPlantProjectFilter = (leadIds, query) => {
   const filter = { _id: { $in: scopedLeadIds } }
 
   if (customerId) filter.customerId = customerId
-  if (buildingType) filter.buildingType = buildingType.trim()
+  if (buildingType?.trim()) {
+    const bt = buildingType.trim()
+    filter.buildingType = { $regex: new RegExp(`^${escapeRegex(bt)}$`, 'i') }
+  }
   applyBusinessUnitFilter(filter, query.businessUnit)
   if (search?.trim()) {
     const regex = { $regex: search.trim(), $options: 'i' }

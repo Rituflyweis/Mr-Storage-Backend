@@ -18,7 +18,9 @@ const mapRow = (mr) => ({
     : null,
   siteLocation: mr.siteLocation,
   department: mr.department,
-  requestedBy: mr.requestedBy ? { userId: mr.requestedBy._id, name: mr.requestedBy.name } : null,
+  requestedBy: mr.requestedBy
+    ? { userId: mr.requestedBy._id, name: mr.requestedBy.name, email: mr.requestedBy.email }
+    : null,
   requestedItems: mr.requestedItems,
   itemCount: mr.requestedItems?.length || 0,
   requestDate: mr.requestDate,
@@ -26,6 +28,15 @@ const mapRow = (mr) => ({
   priority: mr.priority,
   status: mr.status,
   totalAmount: mr.totalAmount,
+})
+
+const mapDetail = (mr) => ({
+  ...mapRow(mr),
+  attachments: mr.attachments || [],
+  specialInstructions: mr.specialInstructions || '',
+  reviewNotes: mr.reviewNotes || '',
+  reviewedAt: mr.reviewedAt || null,
+  preferredDeliveryDate: mr.preferredDeliveryDate || null,
 })
 
 const buildMaterialRequestFilter = (query) => {
@@ -239,7 +250,7 @@ exports.getMaterialRequest = asyncHandler(async (req, res) => {
     .populate('requestedBy', 'name email')
     .lean()
   if (!mr) return notFound(res, 'Material request not found')
-  return success(res, { materialRequest: mapRow(mr) })
+  return success(res, { materialRequest: mapDetail(mr) })
 })
 
 exports.createMaterialRequest = asyncHandler(async (req, res) => {
@@ -265,12 +276,20 @@ exports.createMaterialRequest = asyncHandler(async (req, res) => {
 
 exports.updateMaterialRequestStatus = asyncHandler(async (req, res) => {
   const { status, reviewNotes } = req.body
-  if (!['pending', 'approved', 'rejected', 'fulfilled'].includes(status)) {
-    return badRequest(res, 'Invalid status')
+  if (!MR_STATUSES.includes(status)) {
+    return badRequest(res, `Invalid status. Use: ${MR_STATUSES.join(', ')}`)
   }
 
   const mr = await MaterialRequest.findById(req.params.requestId)
   if (!mr) return notFound(res, 'Material request not found')
+
+  if (status === 'cancelled') {
+    if (mr.status !== 'pending') {
+      return badRequest(res, 'Only pending material requests can be cancelled')
+    }
+  } else if (status !== 'pending' && mr.status === 'cancelled') {
+    return badRequest(res, 'Cancelled requests cannot be updated')
+  }
 
   mr.status = status
   mr.reviewedBy = req.user._id
