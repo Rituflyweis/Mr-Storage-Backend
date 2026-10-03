@@ -1,4 +1,6 @@
+const mongoose = require('mongoose')
 const Delivery = require('../../models/Delivery')
+const { RECEIPT_OUTCOMES } = require('../../models/Delivery')
 const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Bundle = require('../../models/Bundle')
@@ -6,9 +8,27 @@ const Lead = require('../../models/Lead')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
-const { generatePackingListPdf, generateBillOfLadingPdf } = require('../../utils/exportDelivery')
+const { generatePackingListPdf, generateBillOfLadingPdf, generateMaterialReceiptPdf } = require('../../utils/exportDelivery')
 const { DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
+const { escapeRegex } = require('../../utils/leadPayload')
+const notificationService = require('../../services/notification.service')
+const {
+  PRE_ARRIVAL_STATUSES,
+  ARRIVED_STATUSES,
+  DELIVERY_TABS,
+  TAB_FILTERS,
+  OUTCOME_LABELS,
+  canScanDelivery,
+  isCompleted,
+  buildTrackingCards,
+  buildTimeline,
+  getDeliveryBundles,
+  buildMaterialSummary,
+  buildWeightAndMaterial,
+  buildDocuments,
+  buildReceiptSummary,
+} = require('../../services/construction/deliveryTracking.service')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
 const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
 
@@ -62,25 +82,37 @@ const buildDeliveryCard = async (delivery) => {
   }
 }
 
-exports.getDeliveries = asyncHandler(async (req, res) => {
-  const { status, leadId, materialType, search, startDate, endDate, page = 1, limit = 20 } = req.query
+// Per-tab counts for the "Deliveries" screen chips, within the same project/search/date filters.
+const countDeliveryTabs = async (baseFilter) => {
+  const tabs = DELIVERY_TABS.filter((t) => t !== 'all')
+  const counts = await Promise.all([
+    Delivery.countDocuments(baseFilter),
+    ...tabs.map((t) => Delivery.countDocuments({ $and: [baseFilter, TAB_FILTERS[t]] })),
+  ])
+  return Object.fromEntries(['all', ...tabs].map((t, i) => [t, counts[i]]))
+}
 
-  const filter = { status: { $ne: 'draft' } }
-  if (status) filter.status = status
-  if (leadId) filter.leadId = leadId
-  if (materialType) filter.materialType = materialType
+exports.getDeliveries = asyncHandler(async (req, res) => {
+  const { status, leadId, materialType, search, startDate, endDate, tab = 'all', page = 1, limit = 20 } = req.query
+  if (!DELIVERY_TABS.includes(tab)) return badRequest(res, `Invalid tab. Use: ${DELIVERY_TABS.join(', ')}`)
+
+  const baseFilter = { status: { $ne: 'draft' } }
+  if (status) baseFilter.status = status
+  if (leadId) baseFilter.leadId = leadId
+  if (materialType) baseFilter.materialType = materialType
   if (search?.trim()) {
-    const regex = { $regex: search.trim(), $options: 'i' }
-    filter.$or = [{ deliveryNumber: regex }, { materialType: regex }, { description: regex }]
+    const regex = { $regex: escapeRegex(search.trim()), $options: 'i' }
+    baseFilter.$or = [{ deliveryNumber: regex }, { materialType: regex }, { description: regex }, { loadDescription: regex }]
   }
   if (startDate || endDate) {
-    filter.deliveryDate = {}
-    if (startDate) filter.deliveryDate.$gte = new Date(startDate)
-    if (endDate) filter.deliveryDate.$lte = new Date(endDate)
+    baseFilter.deliveryDate = {}
+    if (startDate) baseFilter.deliveryDate.$gte = new Date(startDate)
+    if (endDate) baseFilter.deliveryDate.$lte = new Date(endDate)
   }
+  const filter = tab === 'all' ? baseFilter : { $and: [baseFilter, TAB_FILTERS[tab]] }
 
   const skip = (Number(page) - 1) * Number(limit)
-  const [deliveries, total] = await Promise.all([
+  const [deliveries, total, tabCounts] = await Promise.all([
     Delivery.find(filter)
       .populate('leadId', 'projectName jobId location')
       .sort({ deliveryDate: 1 })
@@ -88,6 +120,7 @@ exports.getDeliveries = asyncHandler(async (req, res) => {
       .limit(Number(limit))
       .lean(),
     Delivery.countDocuments(filter),
+    countDeliveryTabs(baseFilter),
   ])
 
   const now = new Date()
@@ -104,18 +137,256 @@ exports.getDeliveries = asyncHandler(async (req, res) => {
     }),
   }
 
-  const cards = await Promise.all(deliveries.map(buildDeliveryCard))
-  return success(res, { deliveries: cards, total, stats })
+  const [cards, trackingCards] = await Promise.all([
+    Promise.all(deliveries.map(buildDeliveryCard)),
+    buildTrackingCards(deliveries),
+  ])
+  return success(res, {
+    deliveries: cards.map((card, i) => ({ ...card, ...trackingCards[i] })),
+    total,
+    tab,
+    tabCounts,
+    stats,
+  })
 })
 
+// Shared by the Delivery Details and Scan Result screens.
+const buildDeliveryView = async (delivery) => {
+  const [card, [tracking], { bundles, packingLists }] = await Promise.all([
+    buildDeliveryCard(delivery),
+    buildTrackingCards([delivery]),
+    getDeliveryBundles(delivery),
+  ])
+  return {
+    ...card,
+    ...tracking,
+    eta: tracking.arrivalAtSite,
+    carrierRoute: {
+      carrier: card.carrier?.name || '',
+      finalDestination: delivery.deliveryLocation || delivery.leadId?.location || '',
+      truck: delivery.vehicleNumber || packingLists[0]?.truckLabel || '',
+      driver: tracking.driver,
+    },
+    timeline: buildTimeline(delivery),
+    weightAndMaterial: buildWeightAndMaterial(delivery, bundles),
+    materialSummary: buildMaterialSummary(delivery, bundles),
+    bundles,
+    documents: buildDocuments(delivery),
+    specialInstructions: delivery.specialRequirements || '',
+    receipt: buildReceiptSummary(delivery),
+  }
+}
+
 exports.getDelivery = asyncHandler(async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.deliveryId)) return badRequest(res, 'Invalid deliveryId')
   const delivery = await Delivery.findById(req.params.deliveryId)
     .populate('leadId', 'projectName jobId location')
     .lean()
   if (!delivery) return notFound(res, 'Delivery not found')
 
-  const card = await buildDeliveryCard(delivery)
-  return success(res, { delivery: card })
+  return success(res, { delivery: await buildDeliveryView(delivery) })
+})
+
+// Resolves a scanned/typed code to a delivery. Accepts a delivery _id or number, or a bundle
+// _id or number (bundle numbers are only unique per project, so they resolve through the
+// project's open deliveries and must be unambiguous).
+const resolveScanTarget = async (code, deliveryId) => {
+  const isObjectId = mongoose.Types.ObjectId.isValid(code) && /^[a-f0-9]{24}$/i.test(code)
+  const populate = ['leadId', 'projectName jobId location']
+
+  if (deliveryId) {
+    const delivery = await Delivery.findById(deliveryId).populate(...populate).lean()
+    if (!delivery) return { error: 'Delivery not found', code: 404 }
+    if (!code || code === delivery.deliveryNumber || code === String(delivery._id)) return { delivery }
+
+    const bundle = await Bundle.findOne({
+      leadId: delivery.leadId._id,
+      ...(isObjectId ? { _id: code } : { bundleNo: code }),
+    }).select('_id').lean()
+    if (!bundle) return { error: `Code "${code}" does not belong to delivery ${delivery.deliveryNumber}`, code: 400 }
+    return { delivery, scannedBundleId: bundle._id }
+  }
+
+  const delivery = await Delivery.findOne(isObjectId ? { _id: code } : { deliveryNumber: code }).populate(...populate).lean()
+  if (delivery) return { delivery }
+
+  const bundles = await Bundle.find(isObjectId ? { _id: code } : { bundleNo: code }).select('_id leadId').lean()
+  if (!bundles.length) return { error: `No delivery or bundle found for "${code}"`, code: 404 }
+
+  const candidates = await Delivery.find({
+    leadId: { $in: bundles.map((b) => b.leadId) },
+    status: { $in: [...PRE_ARRIVAL_STATUSES, ...ARRIVED_STATUSES] },
+    'receipt.confirmedAt': null,
+  }).populate(...populate).lean()
+  if (!candidates.length) return { error: `Bundle "${code}" has no open delivery to verify`, code: 404 }
+
+  // Bundle numbers repeat across projects (every project has a BND-001), so when several open
+  // deliveries match, the one physically at the site — arrived or already scanned — is the truck
+  // being checked from the QR tab.
+  const atSite = candidates.filter((d) => ARRIVED_STATUSES.includes(d.status) || d.receipt?.scannedAt)
+  const matches = candidates.length === 1 ? candidates : atSite
+  if (matches.length !== 1) {
+    const listed = atSite.length ? atSite : candidates
+    return {
+      error: `Bundle "${code}" matches ${listed.length} open deliveries — scan from the delivery card or pass deliveryId`,
+      code: 409,
+      candidates: listed.map((d) => ({ deliveryId: d._id, deliveryNumber: d.deliveryNumber, projectName: d.leadId?.projectName })),
+    }
+  }
+  const scannedBundle = bundles.find((b) => String(b.leadId) === String(matches[0].leadId._id))
+  return { delivery: matches[0], scannedBundleId: scannedBundle._id }
+}
+
+// POST /deliveries/scan { code?, deliveryId? } — "Scan QR Code" / "Simulate QR Scan" → Scan Result
+exports.scanDelivery = asyncHandler(async (req, res) => {
+  const code = String(req.body.code || '').trim()
+  const { deliveryId } = req.body
+  if (!code && !deliveryId) return badRequest(res, 'code or deliveryId is required')
+  if (deliveryId && !mongoose.Types.ObjectId.isValid(deliveryId)) return badRequest(res, 'Invalid deliveryId')
+
+  const target = await resolveScanTarget(code, deliveryId)
+  if (target.error) {
+    return res.status(target.code).json({
+      success: false,
+      message: target.error,
+      ...(target.candidates && { data: { candidates: target.candidates } }),
+    })
+  }
+
+  let { delivery } = target
+  if (['draft', 'bidding_sent', 'cancelled'].includes(delivery.status)) {
+    return badRequest(res, `Delivery ${delivery.deliveryNumber} cannot be scanned while ${delivery.status}`)
+  }
+
+  // First scan moves the delivery into the "Verification" tab; re-scans keep the original time.
+  // Already-received deliveries are returned read-only (alreadyReceived: true).
+  if (canScanDelivery(delivery) && !delivery.receipt?.scannedAt) {
+    await Delivery.updateOne(
+      { _id: delivery._id, 'receipt.scannedAt': null },
+      { $set: { 'receipt.scannedAt': new Date(), 'receipt.scannedBy': req.user._id } }
+    )
+    delivery = await Delivery.findById(delivery._id).populate('leadId', 'projectName jobId location').lean()
+  }
+
+  return success(res, {
+    delivery: await buildDeliveryView(delivery),
+    scannedBundleId: target.scannedBundleId || null,
+    alreadyReceived: isCompleted(delivery),
+  }, 'Scan successful')
+})
+
+const OUTCOME_TO_DELIVERY_STATUS = {
+  fully_received: 'received',
+  partially_received: 'partial_received',
+  received_with_issues: 'received',
+  rejected: 'rejected',
+}
+
+const quantityStatusOf = (expected, received) => {
+  if (received === expected) return 'matched'
+  return received < expected ? 'short' : 'excess'
+}
+
+// POST /deliveries/:deliveryId/receipt — "Confirm Material Receipt"
+// Body: { outcome, items: [{ bundleId, receivedQty }], notes? }
+exports.confirmReceipt = asyncHandler(async (req, res) => {
+  const { deliveryId } = req.params
+  const { outcome, items, notes } = req.body
+  if (!mongoose.Types.ObjectId.isValid(deliveryId)) return badRequest(res, 'Invalid deliveryId')
+  if (!RECEIPT_OUTCOMES.includes(outcome)) return badRequest(res, `outcome must be one of: ${RECEIPT_OUTCOMES.join(', ')}`)
+  if (items !== undefined && !Array.isArray(items)) return badRequest(res, 'items must be an array')
+
+  const delivery = await Delivery.findById(deliveryId).populate('leadId', 'projectName jobId location')
+  if (!delivery) return notFound(res, 'Delivery not found')
+  if (delivery.receipt?.confirmedAt) return badRequest(res, 'Material receipt has already been confirmed for this delivery')
+  if (!canScanDelivery(delivery)) return badRequest(res, `Cannot confirm receipt for a delivery that is ${delivery.status}`)
+
+  const { bundles } = await getDeliveryBundles(delivery)
+  const bundleById = new Map(bundles.map((b) => [String(b.bundleId), b]))
+  const receivedById = new Map()
+  for (const item of items || []) {
+    const bundle = bundleById.get(String(item?.bundleId))
+    if (!bundle) return badRequest(res, `Bundle ${item?.bundleId} is not part of delivery ${delivery.deliveryNumber}`)
+    const qty = Number(item.receivedQty)
+    if (!Number.isFinite(qty) || qty < 0 || !Number.isInteger(qty)) {
+      return badRequest(res, `receivedQty for ${bundle.bundleNo} must be a whole number ≥ 0`)
+    }
+    receivedById.set(String(bundle.bundleId), qty)
+  }
+
+  // A rejected load may skip counting; everything else must account for every bundle.
+  const missing = bundles.filter((b) => !receivedById.has(String(b.bundleId)))
+  if (outcome !== 'rejected' && missing.length) {
+    return badRequest(res, `receivedQty is required for every bundle. Missing: ${missing.map((b) => b.bundleNo).join(', ')}`)
+  }
+
+  const receiptItems = bundles.map((b) => {
+    const receivedQty = receivedById.get(String(b.bundleId)) ?? 0
+    return {
+      bundleId: b.bundleId,
+      bundleNo: b.bundleNo,
+      material: b.material,
+      expectedQty: b.expectedUnits,
+      receivedQty,
+      quantityStatus: quantityStatusOf(b.expectedUnits, receivedQty),
+    }
+  })
+  const totalExpected = receiptItems.reduce((sum, i) => sum + i.expectedQty, 0)
+  const totalReceived = receiptItems.reduce((sum, i) => sum + i.receivedQty, 0)
+  const shortQty = receiptItems.reduce((sum, i) => sum + Math.max(i.expectedQty - i.receivedQty, 0), 0)
+  const excessQty = receiptItems.reduce((sum, i) => sum + Math.max(i.receivedQty - i.expectedQty, 0), 0)
+
+  if (outcome === 'fully_received' && shortQty > 0) {
+    return badRequest(res, `Cannot mark as fully received — ${shortQty} unit(s) are short. Use partially_received or received_with_issues.`)
+  }
+
+  const now = new Date()
+  const newStatus = OUTCOME_TO_DELIVERY_STATUS[outcome]
+  delivery.receipt = {
+    scannedAt: delivery.receipt?.scannedAt || now,
+    scannedBy: delivery.receipt?.scannedBy || req.user._id,
+    outcome,
+    notes: String(notes || '').trim(),
+    items: receiptItems,
+    totalExpected,
+    totalReceived,
+    shortQty,
+    excessQty,
+    confirmedAt: now,
+    confirmedBy: req.user._id,
+  }
+  delivery.status = newStatus
+  delivery.statusHistory.push({
+    status: newStatus,
+    changedAt: now,
+    changedBy: req.user._id,
+    description: `Site receipt: ${OUTCOME_LABELS[outcome]} (${totalReceived}/${totalExpected} units)`,
+  })
+  await delivery.save()
+
+  const isIssue = outcome !== 'fully_received'
+  await notificationService.notifyRole(['plant', 'admin'], {
+    leadId: delivery.leadId._id,
+    title: `Delivery ${delivery.deliveryNumber}: ${OUTCOME_LABELS[outcome]}`,
+    body: `${delivery.leadId.projectName || 'Project'} — ${totalReceived}/${totalExpected} units received`
+      + (shortQty ? `, ${shortQty} short` : '')
+      + (excessQty ? `, ${excessQty} excess` : '')
+      + (delivery.receipt.notes ? `. Notes: ${delivery.receipt.notes}` : ''),
+    type: 'delivery',
+    priority: isIssue ? 'high' : 'medium',
+    refId: delivery._id,
+    refModel: 'Delivery',
+  })
+
+  const saved = delivery.toObject()
+  return success(res, {
+    deliveryId: delivery._id,
+    deliveryNumber: delivery.deliveryNumber,
+    status: newStatus,
+    statusLabel: OUTCOME_LABELS[outcome],
+    receipt: buildReceiptSummary(saved),
+    receiptUrl: buildDocuments(saved).find((d) => d.type === 'receipt').url,
+  }, 'Material receipt recorded')
 })
 
 // POST /deliveries — "Add Delivery" screen on the construction mobile app
@@ -287,6 +558,28 @@ exports.downloadDeliveryBillOfLading = asyncHandler(async (req, res) => {
 
   res.setHeader('Content-Type', 'application/pdf')
   res.setHeader('Content-Disposition', `attachment; filename="delivery-${delivery.deliveryNumber || delivery._id}-bill-of-lading.pdf"`)
+  return res.send(buffer)
+})
+
+// GET /deliveries/:deliveryId/download/receipt — "Receipt" button after Confirm Material Receipt
+exports.downloadDeliveryReceipt = asyncHandler(async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.deliveryId)) return badRequest(res, 'Invalid deliveryId')
+  const delivery = await Delivery.findById(req.params.deliveryId)
+    .populate('leadId', 'projectName jobId location')
+    .populate('receipt.confirmedBy', 'name')
+    .lean()
+  if (!delivery) return notFound(res, 'Delivery not found')
+  const receipt = buildReceiptSummary(delivery)
+  if (!receipt) return badRequest(res, 'Material receipt has not been confirmed for this delivery yet')
+
+  const buffer = await generateMaterialReceiptPdf({
+    deliveryNumber: delivery.deliveryNumber,
+    project: { projectName: delivery.leadId?.projectName, projectId: delivery.leadId?.jobId },
+    confirmedByName: delivery.receipt.confirmedBy?.name,
+  }, receipt)
+
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="delivery-${delivery.deliveryNumber || delivery._id}-receipt.pdf"`)
   return res.send(buffer)
 })
 

@@ -171,6 +171,9 @@ const deliveryEditValidators = [
   body('pickupContactPhone').optional().isString().trim(),
   body('specialRequirements').optional().isString().trim(),
   body('additionalNotes').optional().isString().trim(),
+  body('driverName').optional().isString().trim(),
+  body('driverPhone').optional().isString().trim(),
+  body('vehicleNumber').optional().isString().trim(),
 ]
 
 router.put('/:deliveryId',

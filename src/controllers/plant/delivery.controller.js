@@ -105,6 +105,9 @@ const DELIVERY_EDIT_BODY_KEYS = [
   'pickupContactPhone',
   'specialRequirements',
   'additionalNotes',
+  'driverName',
+  'driverPhone',
+  'vehicleNumber',
 ]
 
 const formatDeliveryTimeWindow = (start = '', end = '') => {
@@ -244,6 +247,15 @@ const buildDeliveryFieldsFromBody = (body = {}) => {
   }
   if (body.additionalNotes !== undefined) {
     fields.additionalNotes = String(body.additionalNotes || '').trim()
+  }
+  if (body.driverName !== undefined) {
+    fields.driverName = String(body.driverName || '').trim()
+  }
+  if (body.driverPhone !== undefined) {
+    fields.driverPhone = String(body.driverPhone || '').trim()
+  }
+  if (body.vehicleNumber !== undefined) {
+    fields.vehicleNumber = String(body.vehicleNumber || '').trim()
   }
 
   if (

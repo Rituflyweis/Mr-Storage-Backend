@@ -1,5 +1,9 @@
+const mongoose = require('mongoose')
 const MaterialRequest = require('../../models/MaterialRequest')
 const { MR_STATUSES, MR_PRIORITIES } = require('../../models/MaterialRequest')
+const { escapeRegex } = require('../../utils/leadPayload')
+
+const MR_SOURCES = ['construction', 'customer']
 const OrderQuotation = require('../../models/OrderQuotation')
 const Delivery = require('../../models/Delivery')
 const Lead = require('../../models/Lead')
@@ -36,42 +40,71 @@ const mapRow = (mr) => ({
 })
 
 exports.getMaterialRequests = asyncHandler(async (req, res) => {
-  const { leadId, department, status, requestedBy, priority, siteLocation, search, dateFrom, dateTo, page = 1, limit = 20 } = req.query
+  const { leadId, department, status, requestedBy, priority, siteLocation, source, search, dateFrom, dateTo } = req.query
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1)
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100)
 
-  const filter = {}
-  if (leadId) filter.leadId = leadId
-  if (department) filter.department = department
-  if (status) filter.status = status
-  if (requestedBy) filter.requestedBy = requestedBy
-  if (priority) filter.priority = priority
-  if (siteLocation) filter.siteLocation = siteLocation
-  if (search?.trim()) filter.requestId = { $regex: search.trim(), $options: 'i' }
-  if (dateFrom || dateTo) {
-    filter.requestDate = {}
-    if (dateFrom) filter.requestDate.$gte = new Date(dateFrom)
-    if (dateTo) filter.requestDate.$lte = new Date(dateTo)
+  if (status && !MR_STATUSES.includes(status)) return badRequest(res, `Invalid status. Use: ${MR_STATUSES.join(', ')}`)
+  if (priority && !MR_PRIORITIES.includes(priority)) return badRequest(res, `Invalid priority. Use: ${MR_PRIORITIES.join(', ')}`)
+  if (source && !MR_SOURCES.includes(source)) return badRequest(res, `Invalid source. Use: ${MR_SOURCES.join(', ')}`)
+  for (const [key, value] of [['leadId', leadId], ['requestedBy', requestedBy]]) {
+    if (value && !mongoose.Types.ObjectId.isValid(value)) return badRequest(res, `Invalid ${key}`)
   }
 
-  const skip = (Number(page) - 1) * Number(limit)
-  const [rows, total] = await Promise.all([
+  // Everything except status — the stat cards show the status split of the filtered set.
+  const baseFilter = {}
+  if (leadId) baseFilter.leadId = new mongoose.Types.ObjectId(leadId)
+  if (department) baseFilter.department = department
+  if (requestedBy) baseFilter.requestedBy = new mongoose.Types.ObjectId(requestedBy)
+  if (priority) baseFilter.priority = priority
+  if (siteLocation) baseFilter.siteLocation = siteLocation
+  if (source) baseFilter.source = source
+  if (dateFrom || dateTo) {
+    baseFilter.requestDate = {}
+    if (dateFrom) baseFilter.requestDate.$gte = new Date(dateFrom)
+    if (dateTo) baseFilter.requestDate.$lte = new Date(dateTo)
+  }
+  if (search?.trim()) {
+    const regex = new RegExp(escapeRegex(search.trim()), 'i')
+    const matchingLeadIds = await Lead.find({ $or: [{ projectName: regex }, { jobId: regex }] }).distinct('_id')
+    baseFilter.$or = [
+      { requestId: regex },
+      { siteLocation: regex },
+      { 'requestedItems.name': regex },
+      { leadId: { $in: matchingLeadIds } },
+    ]
+  }
+  const filter = status ? { ...baseFilter, status } : baseFilter
+
+  const [rows, total, statusCounts] = await Promise.all([
     MaterialRequest.find(filter)
       .populate('leadId', 'projectName jobId location')
       .populate('requestedBy', 'name email')
       .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit))
+      .skip((page - 1) * limit)
+      .limit(limit)
       .lean(),
     MaterialRequest.countDocuments(filter),
+    MaterialRequest.aggregate([{ $match: baseFilter }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
   ])
 
+  const countOf = (s) => statusCounts.find((c) => c._id === s)?.count || 0
   const stats = {
-    totalRequests: await MaterialRequest.countDocuments({}),
-    pending: await MaterialRequest.countDocuments({ status: 'pending' }),
-    approved: await MaterialRequest.countDocuments({ status: 'approved' }),
-    rejected: await MaterialRequest.countDocuments({ status: 'rejected' }),
+    totalRequests: statusCounts.reduce((sum, c) => sum + c.count, 0),
+    pending: countOf('pending'),
+    approved: countOf('approved'),
+    rejected: countOf('rejected'),
+    fulfilled: countOf('fulfilled'),
   }
 
-  return success(res, { materialRequests: rows.map(mapRow), total, stats })
+  return success(res, {
+    materialRequests: rows.map(mapRow),
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+    stats,
+  })
 })
 
 // GET /material-requests/filters — populates the Apply Filters screen's dropdowns

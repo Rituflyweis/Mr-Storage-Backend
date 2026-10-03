@@ -170,7 +170,32 @@ const generatePackingListDetailPdf = (packingList, bundles = []) => renderPdf((d
   }
 })
 
+const generateMaterialReceiptPdf = (delivery, receipt) => renderPdf((doc, { section, row, heading }) => {
+  heading(delivery)
+
+  section('Material Receipt')
+  row('Final Status', receipt.outcomeLabel || '—')
+  row('Confirmed At', receipt.confirmedAt ? new Date(receipt.confirmedAt).toLocaleString() : '—')
+  row('Confirmed By', delivery.confirmedByName || '—')
+  row('Total Expected', receipt.totalExpected ?? '—')
+  row('Total Received', receipt.totalReceived ?? '—')
+  row('Short Quantity', receipt.shortQty ?? 0)
+  if (receipt.excessQty) row('Excess Quantity', receipt.excessQty)
+
+  section('Bundles')
+  if (!receipt.items?.length) {
+    doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text('No bundle counts recorded.')
+  }
+  for (const item of receipt.items || []) {
+    row(item.bundleNo || 'Bundle', `${item.material || '—'} — ${item.receivedQty}/${item.expectedQty} (${item.quantityStatus})`)
+  }
+
+  section('Notes')
+  doc.fontSize(10).font('Helvetica').fillColor('#111827').text(receipt.notes || '—')
+})
+
 module.exports = {
+  generateMaterialReceiptPdf,
   generateDeliveryInfoPdf,
   generatePackingListPdf,
   generateInstructionsPdf,

@@ -26,6 +26,42 @@ const DimensionsSchema = new mongoose.Schema(
   { _id: false }
 )
 
+const RECEIPT_OUTCOMES = ['fully_received', 'partially_received', 'received_with_issues', 'rejected']
+const RECEIPT_QUANTITY_STATUSES = ['matched', 'short', 'excess']
+
+// Site-side material receipt captured by the construction app (scan → verify → confirm).
+const ReceiptSchema = new mongoose.Schema(
+  {
+    scannedAt: { type: Date, default: null },
+    scannedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    outcome: { type: String, enum: [...RECEIPT_OUTCOMES, null], default: null },
+    notes: { type: String, default: '' },
+    items: {
+      type: [
+        new mongoose.Schema(
+          {
+            bundleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bundle', required: true },
+            bundleNo: { type: String, default: '' },
+            material: { type: String, default: '' },
+            expectedQty: { type: Number, default: 0 },
+            receivedQty: { type: Number, default: 0 },
+            quantityStatus: { type: String, enum: RECEIPT_QUANTITY_STATUSES, required: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+    totalExpected: { type: Number, default: 0 },
+    totalReceived: { type: Number, default: 0 },
+    shortQty: { type: Number, default: 0 },
+    excessQty: { type: Number, default: 0 },
+    confirmedAt: { type: Date, default: null },
+    confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  },
+  { _id: false }
+)
+
 const DeliverySchema = new mongoose.Schema(
   {
     statusHistory: {
@@ -71,6 +107,10 @@ const DeliverySchema = new mongoose.Schema(
     receivingPocEmail: { type: String, default: '' },
     specialRequirements: { type: String, default: '' },
     additionalNotes: { type: String, default: '' },
+    driverName: { type: String, default: '' },
+    driverPhone: { type: String, default: '' },
+    vehicleNumber: { type: String, default: '' },
+    receipt: { type: ReceiptSchema, default: () => ({}) },
     rescheduleHistory: {
       type: [
         new mongoose.Schema(
@@ -132,3 +172,4 @@ const DeliverySchema = new mongoose.Schema(
 )
 
 module.exports = mongoose.model('Delivery', DeliverySchema)
+module.exports.RECEIPT_OUTCOMES = RECEIPT_OUTCOMES

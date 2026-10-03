@@ -224,7 +224,7 @@ const DELIVERY_FULFILLMENT_STATUSES = [
 const DELIVERY_STATUSES = [
   'draft', 'bidding_sent', 'carrier_selected', 'scheduled', 'confirmed',
   ...DELIVERY_FULFILLMENT_STATUSES,
-  'partial_received', 'received', 'delayed', 'cancelled', 'rescheduled',
+  'partial_received', 'received', 'rejected', 'delayed', 'cancelled', 'rescheduled',
 ]
 
 const SMDT_COST_UNITS = ['FT', 'LB', 'EA']

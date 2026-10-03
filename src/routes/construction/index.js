@@ -18,6 +18,7 @@ router.use('/chat', require('../admin/chat.routes'))
 
 // Dashboard
 router.get('/dashboard', dashCtrl.getDashboard)
+router.get('/home', dashCtrl.getHome)
 
 // Projects & Calendar (static routes before param routes)
 router.get('/projects', projectCtrl.getProjects)
@@ -62,14 +63,17 @@ router.post('/material-requests/:requestId/items/:itemId/deliver', materialReque
 
 // Delivery Tracking (static routes before param routes)
 router.post('/deliveries/scan-bundle', deliveryCtrl.scanBundle)
+router.post('/deliveries/scan', deliveryCtrl.scanDelivery)
 router.post('/deliveries', deliveryCtrl.createDelivery)
 router.get('/deliveries', deliveryCtrl.getDeliveries)
 router.get('/deliveries/:deliveryId', deliveryCtrl.getDelivery)
 router.post('/deliveries/:deliveryId/mark-received', deliveryCtrl.markReceived)
 router.post('/deliveries/:deliveryId/mark-partial', deliveryCtrl.markPartialReceived)
+router.post('/deliveries/:deliveryId/receipt', deliveryCtrl.confirmReceipt)
 router.put('/deliveries/:deliveryId/site-contact', deliveryCtrl.updateSiteContact)
 router.get('/deliveries/:deliveryId/download/packing-list', deliveryCtrl.downloadDeliveryPackingList)
 router.get('/deliveries/:deliveryId/download/bill-of-lading', deliveryCtrl.downloadDeliveryBillOfLading)
+router.get('/deliveries/:deliveryId/download/receipt', deliveryCtrl.downloadDeliveryReceipt)
 
 // Label Printing
 router.get('/labels', bundleCtrl.getBundleLabels)

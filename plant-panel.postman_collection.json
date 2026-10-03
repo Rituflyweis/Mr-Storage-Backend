@@ -1529,10 +1529,19 @@
 							{
 								"key": "Authorization",
 								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
 							}
 						],
-						"url": "{{baseUrl}}/plant/deliveries/{{deliveryId}}"
-					}
+						"url": "{{baseUrl}}/plant/deliveries/{{deliveryId}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"driverName\": \"Rajesh Kumar\",\n  \"driverPhone\": \"0987654321\",\n  \"vehicleNumber\": \"MH 12 AB 1234\"\n}"
+						}
+					},
+					"_postman_note": "Send any editable delivery field (description, loadDescription, weight, packageCount, pickup/delivery dates & times, specialRequirements, \u2026). driverName / driverPhone / vehicleNumber feed the Construction app's delivery cards, Delivery Details and Scan Result (driver otherwise falls back to the selected carrier's contact)."
 				},
 				{
 					"name": "Deliveries \u2014 Send Bids",

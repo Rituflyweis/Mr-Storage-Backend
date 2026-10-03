@@ -129,6 +129,57 @@
 						}
 					},
 					"_postman_note": "Returns: projectStats (total/onTrack/delayed/completed/completionRate/upcomingDeadlines), deliveryOverview, taskOverview, upcomingDeadlines[], recentDeliveries[]"
+				},
+				{
+					"name": "Get Home",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/home?leadId={{leadId}}&date=",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"home"
+							],
+							"query": [
+								{
+									"key": "leadId",
+									"value": "{{leadId}}",
+									"description": "Optional. Project to show. Omitted \u2192 the construction project with the earliest delivery on that day, else the most recently updated active one.",
+									"disabled": true
+								},
+								{
+									"key": "date",
+									"value": "",
+									"description": "Optional. YYYY-MM-DD, defaults to today (server time).",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"_postman_note": "Construction mobile app Home screen (\"Deliveries \u2014 Construction Site Performance\"). Returns: user {name, role}; currentProject {leadId, projectName, jobId, location, lifecycleStatus} or null; stats {todaysDeliveries, receivedToday, arrived, issuesReported}; incomingDeliveries[] (today's deliveries not yet received: on the way, arrived or pending verification; same card shape as Get All Deliveries) {deliveryId, deliveryNumber, materialName, materialType, loadId, status, statusLabel (same labels as Get All Deliveries), quantity, departureFromPlant, arrivalAtSite, driver {name, phone} | null, carrierName}; alerts[] (Material Alerts & Issues: delivery_delayed | partial_delivery | partially_received | received_with_issues | rejected | bundle_mismatch, newest first). stats.arrived = at site and not yet received; stats.receivedToday = received/partial_received today. \"View All\" \u2192 GET /construction/deliveries?leadId=&startDate=&endDate=.",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"user\": {\n      \"name\": \"John Carter\",\n      \"role\": \"construction\"\n    },\n    \"currentProject\": {\n      \"leadId\": \"665f1c2e9b1e8a0012ab0001\",\n      \"projectName\": \"Warehouse Project - Pune\",\n      \"jobId\": \"JOB-0001\",\n      \"location\": \"Construction Site A\",\n      \"lifecycleStatus\": \"ready_for_delivery\"\n    },\n    \"stats\": {\n      \"todaysDeliveries\": 6,\n      \"receivedToday\": 3,\n      \"arrived\": 3,\n      \"issuesReported\": 1\n    },\n    \"incomingDeliveries\": [\n      {\n        \"deliveryId\": \"665f1c2e9b1e8a0012ab0101\",\n        \"deliveryNumber\": \"DEL-2001\",\n        \"materialName\": \"Primary Frame Steel\",\n        \"materialType\": \"Primary Steel\",\n        \"loadId\": \"TRX-001\",\n        \"status\": \"in_transit\",\n        \"statusLabel\": \"On the Way\",\n        \"quantity\": 30,\n        \"departureFromPlant\": \"2026-03-24T14:00:00.000Z\",\n        \"arrivalAtSite\": \"2026-03-25T10:00:00.000Z\",\n        \"driver\": {\n          \"name\": \"Rajesh Kumar\",\n          \"phone\": \"+91 90000 00000\"\n        },\n        \"carrierName\": \"FastHaul Logistics\"\n      }\n    ],\n    \"alerts\": [\n      {\n        \"type\": \"bundle_mismatch\",\n        \"title\": \"Material Mismatch\",\n        \"message\": \"Wrong gauge sheets\",\n        \"bundleId\": \"665f1c2e9b1e8a0012ab0201\",\n        \"bundleNo\": \"BND-007\",\n        \"affectedItems\": 1,\n        \"reportedAt\": \"2026-03-24T12:00:00.000Z\"\n      }\n    ]\n  }\n}"
+						}
+					]
 				}
 			]
 		},
@@ -845,6 +896,29 @@
 									"disabled": true
 								},
 								{
+									"key": "priority",
+									"value": "",
+									"disabled": true,
+									"description": "low | medium | high | critical"
+								},
+								{
+									"key": "siteLocation",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "source",
+									"value": "",
+									"disabled": true,
+									"description": "construction (raised by construction team) | customer (customer coil orders). Omit for both."
+								},
+								{
+									"key": "search",
+									"value": "",
+									"disabled": true,
+									"description": "\"Search Material Request\u2026\" \u2014 request ID, project name / job ID, site location or item name"
+								},
+								{
 									"key": "dateFrom",
 									"value": "",
 									"disabled": true
@@ -862,12 +936,13 @@
 								{
 									"key": "limit",
 									"value": "20",
-									"disabled": true
+									"disabled": true,
+									"description": "Max 100"
 								}
 							]
 						}
 					},
-					"_postman_note": "Returns: materialRequests[], total, stats{totalRequests/pending/approved/rejected}"
+					"_postman_note": "Material Request screen (bottom-nav grid tab). Returns: materialRequests[] (card: project {projectName, location}, siteLocation, requestId, itemCount, requestedItems[], requestDate, requiredBy, status, priority, requestedBy), total (\"Material Request (n)\"), page, limit, totalPages (pager), stats {totalRequests, pending, approved, rejected, fulfilled} for the stat cards. stats follow every filter except status, so the cards stay put while a status filter narrows the list. Invalid status/priority/source/leadId \u2192 400. \"View\" \u2192 Get Material Request Detail."
 				},
 				{
 					"name": "Get Material Request Detail",
@@ -1038,7 +1113,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseUrl}}/construction/deliveries",
+							"raw": "{{baseUrl}}/construction/deliveries?tab=all",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -1047,6 +1122,11 @@
 								"deliveries"
 							],
 							"query": [
+								{
+									"key": "tab",
+									"value": "all",
+									"description": "all | incoming | arrived | verification | completed | issues \u2014 the chips on the Deliveries screen"
+								},
 								{
 									"key": "status",
 									"value": "",
@@ -1067,11 +1147,29 @@
 									"key": "limit",
 									"value": "20",
 									"disabled": true
+								},
+								{
+									"key": "startDate",
+									"value": "",
+									"disabled": true,
+									"description": "Date Filter start (YYYY-MM-DD), on deliveryDate"
+								},
+								{
+									"key": "endDate",
+									"value": "",
+									"disabled": true,
+									"description": "Date Filter end (YYYY-MM-DD)"
+								},
+								{
+									"key": "search",
+									"value": "",
+									"disabled": true,
+									"description": "deliveryNumber / material / description"
 								}
 							]
 						}
 					},
-					"_postman_note": "Returns: deliveries[], total, stats{inTransit/staged/ready/totalToday}"
+					"_postman_note": "Deliveries screen (\"Manage and track all site deliveries\"). Returns: deliveries[], total, tab, tabCounts {all, incoming, arrived, verification, completed, issues} (respect leadId/search/date filters, ignore tab), stats{inTransit/staged/ready/totalToday}. Tabs: incoming = not yet at site; arrived = staged/dispatched_to_site/delivered and not scanned; verification = scanned, receipt not confirmed (\"Pending Verification\"); completed = received/partial_received/rejected; issues = delayed/partial_received/rejected or receipt with issues. Each card also has: materialName, loadId, statusLabel (Scheduled | At Plant | On the Way | Arriving Soon | Arrived | Pending Verification | Delayed | Rescheduled | Completed | Partially Received | Received with Issues | Rejected), quantity, departureFromPlant, arrivalAtSite, driver {name, phone} | null (Delivery.driverName/driverPhone, falls back to the carrier contact), vehicleNumber, carrierName, canScan (false once received \u2192 show only \"View Details\"), verification {scannedAt, outcome, confirmedAt}."
 				},
 				{
 					"name": "Get Delivery Detail",
@@ -1094,7 +1192,22 @@
 								"{{deliveryId}}"
 							]
 						}
-					}
+					},
+					"_postman_note": "Delivery Details screen (\"View Details\"). delivery = list card fields + eta, carrierRoute {carrier, finalDestination, truck, driver}, timeline[] {key, label, date, completed} (fulfillment steps + final \"received\"), weightAndMaterial {weightLbs, units, materialType, packaging}, materialSummary, bundles[] {bundleId, bundleNo, material, expectedUnits, receivedUnits, verification: pending|matched|short|excess}, documents[] {type, name, url}, specialInstructions, receipt (null until confirmed).",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"delivery\": {\n      \"deliveryId\": \"665f1c2e9b1e8a0012ab0101\",\n      \"deliveryNumber\": \"DEL-2001\",\n      \"status\": \"delivered\",\n      \"statusLabel\": \"Arrived\",\n      \"materialName\": \"Primary Frame Steel\",\n      \"loadId\": \"TRX-001\",\n      \"quantity\": 30,\n      \"departureFromPlant\": \"2026-10-03T02:00:00.000Z\",\n      \"eta\": \"2026-10-03T05:15:00.000Z\",\n      \"driver\": {\n        \"name\": \"Rajesh Kumar\",\n        \"phone\": \"0987654321\"\n      },\n      \"vehicleNumber\": \"MH 12 AB 1234\",\n      \"carrierRoute\": {\n        \"carrier\": \"FastFreight Logistics\",\n        \"finalDestination\": \"Construction Site A\",\n        \"truck\": \"MH 12 AB 1234\",\n        \"driver\": {\n          \"name\": \"Rajesh Kumar\",\n          \"phone\": \"0987654321\"\n        }\n      },\n      \"timeline\": [\n        {\n          \"key\": \"in_transit\",\n          \"label\": \"In Transit\",\n          \"date\": \"2026-10-03T02:15:00.000Z\",\n          \"completed\": true\n        },\n        {\n          \"key\": \"delivered\",\n          \"label\": \"Delivered\",\n          \"date\": \"2026-10-03T05:10:00.000Z\",\n          \"completed\": true\n        },\n        {\n          \"key\": \"received\",\n          \"label\": \"Received at Site\",\n          \"date\": null,\n          \"completed\": false\n        }\n      ],\n      \"weightAndMaterial\": {\n        \"weightLbs\": 45000,\n        \"units\": 30,\n        \"materialType\": \"Structural Steel\",\n        \"packaging\": \"Bundled Frame Components\"\n      },\n      \"materialSummary\": {\n        \"totalBundles\": 3,\n        \"totalItems\": 3,\n        \"totalUnits\": 30,\n        \"verificationStatus\": \"pending\"\n      },\n      \"bundles\": [\n        {\n          \"bundleId\": \"665f1c2e9b1e8a0012ab0301\",\n          \"bundleNo\": \"BDL-001\",\n          \"material\": \"Steel Panels\",\n          \"expectedUnits\": 10,\n          \"receivedUnits\": null,\n          \"verification\": \"pending\"\n        },\n        {\n          \"bundleId\": \"665f1c2e9b1e8a0012ab0302\",\n          \"bundleNo\": \"BDL-002\",\n          \"material\": \"Roofing Sheets\",\n          \"expectedUnits\": 10,\n          \"receivedUnits\": null,\n          \"verification\": \"pending\"\n        },\n        {\n          \"bundleId\": \"665f1c2e9b1e8a0012ab0303\",\n          \"bundleNo\": \"BDL-003\",\n          \"material\": \"Purlins\",\n          \"expectedUnits\": 10,\n          \"receivedUnits\": null,\n          \"verification\": \"pending\"\n        }\n      ],\n      \"documents\": [\n        {\n          \"type\": \"packing_list\",\n          \"name\": \"Packing List\",\n          \"url\": \"/api/construction/deliveries/665f1c2e9b1e8a0012ab0101/download/packing-list\"\n        },\n        {\n          \"type\": \"bill_of_lading\",\n          \"name\": \"Bill of Lading\",\n          \"url\": \"/api/construction/deliveries/665f1c2e9b1e8a0012ab0101/download/bill-of-lading\"\n        }\n      ],\n      \"specialInstructions\": \"Requires forklift for unloading\",\n      \"receipt\": null\n    }\n  }\n}"
+						}
+					]
 				},
 				{
 					"name": "Mark as Received",
@@ -1118,7 +1231,8 @@
 								"mark-received"
 							]
 						}
-					}
+					},
+					"_postman_note": "Legacy quick action. The new app flow records counts via Confirm Material Receipt instead."
 				},
 				{
 					"name": "Mark as Partial Received",
@@ -1150,7 +1264,8 @@
 							"mode": "raw",
 							"raw": "{\n  \"notes\": \"Only 3 out of 4 bundles received\"\n}"
 						}
-					}
+					},
+					"_postman_note": "Legacy quick action. The new app flow records counts via Confirm Material Receipt instead."
 				},
 				{
 					"name": "Scan Bundle QR",
@@ -1267,6 +1382,183 @@
 						}
 					},
 					"_postman_note": "Returns application/pdf binary"
+				},
+				{
+					"name": "Scan Delivery QR",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/deliveries/scan",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"deliveries",
+								"scan"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"BDL-001\",\n  \"deliveryId\": \"{{deliveryId}}\"\n}"
+						}
+					},
+					"_postman_note": "Scan QR Code / \"Simulate QR Scan\" \u2192 Scan Result screen. Send code (scanned or typed: delivery _id or number like DEL-2001, bundle _id or number like BDL-001) and/or deliveryId (from the delivery card / details screen). deliveryId alone = scan that delivery. With both, the code must belong to that delivery (400 otherwise). A bundle number without deliveryId (QR tab) resolves to its only open delivery; when several projects/trucks match, the one already at site (arrived or scanned) is used; still ambiguous \u2192 409 with data.candidates[] {deliveryId, deliveryNumber, projectName} so the app can let the user pick and re-send with deliveryId. The first scan stamps receipt.scannedAt, moving the delivery to the \"Verification\" tab. Returns: delivery (same shape as Get Delivery Detail), scannedBundleId, alreadyReceived (true \u2192 show read-only, no verification).",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Scan successful\",\n  \"data\": {\n    \"delivery\": {\n      \"deliveryId\": \"665f1c2e9b1e8a0012ab0101\",\n      \"deliveryNumber\": \"DEL-2001\",\n      \"status\": \"delivered\",\n      \"statusLabel\": \"Pending Verification\",\n      \"materialName\": \"Primary Frame Steel\",\n      \"loadId\": \"TRX-001\",\n      \"quantity\": 30,\n      \"departureFromPlant\": \"2026-10-03T02:00:00.000Z\",\n      \"eta\": \"2026-10-03T05:15:00.000Z\",\n      \"driver\": {\n        \"name\": \"Rajesh Kumar\",\n        \"phone\": \"0987654321\"\n      },\n      \"vehicleNumber\": \"MH 12 AB 1234\",\n      \"carrierRoute\": {\n        \"carrier\": \"FastFreight Logistics\",\n        \"finalDestination\": \"Construction Site A\",\n        \"truck\": \"MH 12 AB 1234\",\n        \"driver\": {\n          \"name\": \"Rajesh Kumar\",\n          \"phone\": \"0987654321\"\n        }\n      },\n      \"timeline\": [\n        {\n          \"key\": \"in_transit\",\n          \"label\": \"In Transit\",\n          \"date\": \"2026-10-03T02:15:00.000Z\",\n          \"completed\": true\n        },\n        {\n          \"key\": \"delivered\",\n          \"label\": \"Delivered\",\n          \"date\": \"2026-10-03T05:10:00.000Z\",\n          \"completed\": true\n        },\n        {\n          \"key\": \"received\",\n          \"label\": \"Received at Site\",\n          \"date\": null,\n          \"completed\": false\n        }\n      ],\n      \"weightAndMaterial\": {\n        \"weightLbs\": 45000,\n        \"units\": 30,\n        \"materialType\": \"Structural Steel\",\n        \"packaging\": \"Bundled Frame Components\"\n      },\n      \"materialSummary\": {\n        \"totalBundles\": 3,\n        \"totalItems\": 3,\n        \"totalUnits\": 30,\n        \"verificationStatus\": \"pending\"\n      },\n      \"bundles\": [\n        {\n          \"bundleId\": \"665f1c2e9b1e8a0012ab0301\",\n          \"bundleNo\": \"BDL-001\",\n          \"material\": \"Steel Panels\",\n          \"expectedUnits\": 10,\n          \"receivedUnits\": null,\n          \"verification\": \"pending\"\n        },\n        {\n          \"bundleId\": \"665f1c2e9b1e8a0012ab0302\",\n          \"bundleNo\": \"BDL-002\",\n          \"material\": \"Roofing Sheets\",\n          \"expectedUnits\": 10,\n          \"receivedUnits\": null,\n          \"verification\": \"pending\"\n        },\n        {\n          \"bundleId\": \"665f1c2e9b1e8a0012ab0303\",\n          \"bundleNo\": \"BDL-003\",\n          \"material\": \"Purlins\",\n          \"expectedUnits\": 10,\n          \"receivedUnits\": null,\n          \"verification\": \"pending\"\n        }\n      ],\n      \"documents\": [\n        {\n          \"type\": \"packing_list\",\n          \"name\": \"Packing List\",\n          \"url\": \"/api/construction/deliveries/665f1c2e9b1e8a0012ab0101/download/packing-list\"\n        },\n        {\n          \"type\": \"bill_of_lading\",\n          \"name\": \"Bill of Lading\",\n          \"url\": \"/api/construction/deliveries/665f1c2e9b1e8a0012ab0101/download/bill-of-lading\"\n        }\n      ],\n      \"specialInstructions\": \"Requires forklift for unloading\",\n      \"receipt\": null\n    },\n    \"scannedBundleId\": \"665f1c2e9b1e8a0012ab0301\",\n    \"alreadyReceived\": false\n  }\n}"
+						}
+					]
+				},
+				{
+					"name": "Scan QR (QR tab \u2014 code only)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/deliveries/scan",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"deliveries",
+								"scan"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"BND-001\"\n}"
+						}
+					},
+					"_postman_note": "Bottom-nav QR tab: \"Scan the delivery or material QR code\" / \"Enter Bundle ID\" \u2192 Simulate QR Scan. Same endpoint and response as Scan Delivery QR, just without deliveryId. Then Verify Materials \u2192 Confirm Material Receipt \u2192 Download Material Receipt PDF, exactly as from a delivery card.",
+					"response": [
+						{
+							"name": "Ambiguous bundle number",
+							"status": "Conflict",
+							"code": 409,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"Bundle \\\"BND-001\\\" matches 2 open deliveries \u2014 scan from the delivery card or pass deliveryId\",\n  \"data\": {\n    \"candidates\": [\n      {\n        \"deliveryId\": \"665f1c2e9b1e8a0012ab0101\",\n        \"deliveryNumber\": \"DEL-2001\",\n        \"projectName\": \"Warehouse Project - Pune\"\n      },\n      {\n        \"deliveryId\": \"665f1c2e9b1e8a0012ab0202\",\n        \"deliveryNumber\": \"DEL-2002\",\n        \"projectName\": \"Cold Storage - Nashik\"\n      }\n    ]\n  }\n}"
+						}
+					]
+				},
+				{
+					"name": "Confirm Material Receipt",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/deliveries/{{deliveryId}}/receipt",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"deliveries",
+								"{{deliveryId}}",
+								"receipt"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"outcome\": \"partially_received\",\n  \"items\": [\n    {\n      \"bundleId\": \"665f1c2e9b1e8a0012ab0301\",\n      \"receivedQty\": 10\n    },\n    {\n      \"bundleId\": \"665f1c2e9b1e8a0012ab0302\",\n      \"receivedQty\": 8\n    },\n    {\n      \"bundleId\": \"665f1c2e9b1e8a0012ab0303\",\n      \"receivedQty\": 10\n    }\n  ],\n  \"notes\": \"2 roofing sheets missing\"\n}"
+						}
+					},
+					"_postman_note": "Verify Materials \u2192 Update Delivery Status \u2192 \"Confirm Material Receipt\". outcome: fully_received | partially_received | received_with_issues | rejected. items[]: receivedQty (whole number \u2265 0) for every bundle on the delivery (bundleId from the scan/detail bundles[]); may be omitted only for rejected. fully_received is refused (400) if any bundle is short. Delivery status becomes received / partial_received / received / rejected; per-bundle quantityStatus = matched | short | excess. Plant and Admin users are notified automatically (high priority unless fully received). One confirmation per delivery (400 on repeat). Returns the \"Delivery Updated!\" screen data: status, statusLabel, receipt {outcome, outcomeLabel, totalExpected, totalReceived, shortQty, excessQty, items[]}, receiptUrl.",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Material receipt recorded\",\n  \"data\": {\n    \"deliveryId\": \"665f1c2e9b1e8a0012ab0101\",\n    \"deliveryNumber\": \"DEL-2001\",\n    \"status\": \"partial_received\",\n    \"statusLabel\": \"Partially Received\",\n    \"receipt\": {\n      \"outcome\": \"partially_received\",\n      \"outcomeLabel\": \"Partially Received\",\n      \"deliveryStatus\": \"partial_received\",\n      \"totalExpected\": 30,\n      \"totalReceived\": 28,\n      \"shortQty\": 2,\n      \"excessQty\": 0,\n      \"notes\": \"2 roofing sheets missing\",\n      \"items\": [\n        {\n          \"bundleId\": \"665f1c2e9b1e8a0012ab0301\",\n          \"bundleNo\": \"BDL-001\",\n          \"material\": \"Steel Panels\",\n          \"expectedQty\": 10,\n          \"receivedQty\": 10,\n          \"quantityStatus\": \"matched\"\n        },\n        {\n          \"bundleId\": \"665f1c2e9b1e8a0012ab0302\",\n          \"bundleNo\": \"BDL-002\",\n          \"material\": \"Roofing Sheets\",\n          \"expectedQty\": 10,\n          \"receivedQty\": 8,\n          \"quantityStatus\": \"short\"\n        },\n        {\n          \"bundleId\": \"665f1c2e9b1e8a0012ab0303\",\n          \"bundleNo\": \"BDL-003\",\n          \"material\": \"Purlins\",\n          \"expectedQty\": 10,\n          \"receivedQty\": 10,\n          \"quantityStatus\": \"matched\"\n        }\n      ],\n      \"confirmedAt\": \"2026-10-03T05:40:00.000Z\",\n      \"confirmedBy\": \"665f1c2e9b1e8a0012ab0009\"\n    },\n    \"receiptUrl\": \"/api/construction/deliveries/665f1c2e9b1e8a0012ab0101/download/receipt\"\n  }\n}"
+						},
+						{
+							"name": "Shortage marked as fully received",
+							"status": "Bad Request",
+							"code": 400,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"Cannot mark as fully received \u2014 2 unit(s) are short. Use partially_received or received_with_issues.\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Download Material Receipt PDF",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/deliveries/{{deliveryId}}/download/receipt",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"deliveries",
+								"{{deliveryId}}",
+								"download",
+								"receipt"
+							]
+						}
+					},
+					"_postman_note": "\"Receipt\" button on the Delivery Updated screen. Returns application/pdf binary. 400 until the receipt has been confirmed."
 				}
 			]
 		},
