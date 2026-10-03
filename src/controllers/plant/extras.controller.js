@@ -772,14 +772,60 @@ exports.getItemCostCategories = asyncHandler(async (req, res) => {
   return success(res, { categories: SMDT_CATEGORIES })
 })
 
+const buildItemCostFilter = async (query = {}) => {
+  const { search, category } = query
+  const activeVersion = await getActiveCostVersion()
+  if (!activeVersion) return { activeVersion: null, filter: null }
+
+  const filter = { costVersionId: activeVersion._id, isActive: true }
+  if (category) filter.category = category
+  if (search) {
+    filter.$or = [
+      { partName: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } },
+    ]
+  }
+  return { activeVersion, filter }
+}
+
+const computeItemCostStats = async (activeVersion, filter) => {
+  const [statsAgg, newAdded] = await Promise.all([
+    SMDTItem.aggregate([
+      { $match: filter },
+      { $group: { _id: null, totalCost: { $sum: '$mbsCost' }, count: { $sum: 1 } } },
+    ]),
+    SMDTItem.countDocuments({
+      costVersionId: activeVersion._id,
+      isActive: true,
+      createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+    }),
+  ])
+  const s = statsAgg[0] || {}
+  return {
+    totalItemCost: s.totalCost || 0,
+    totalItems: s.count || 0,
+    newAdded,
+  }
+}
+
+/** GET /costing/stats — top cards (same stats as GET /costing, optional search/category filters) */
+exports.getItemCostStats = asyncHandler(async (req, res) => {
+  const { activeVersion, filter } = await buildItemCostFilter(req.query)
+  if (!activeVersion) {
+    return success(res, { stats: { totalItemCost: 0, totalItems: 0, newAdded: 0 } })
+  }
+  const stats = await computeItemCostStats(activeVersion, filter)
+  return success(res, { stats })
+})
+
 exports.getItemCostList = asyncHandler(async (req, res) => {
   // `category` was previously not accepted at all — selecting a category on the frontend was
   // apparently being sent through `search` instead, which only matches partName/description,
   // so a "category" pick behaved like a name search rather than an exact category filter.
   // `sort=latest` is new — orders by createdAt desc instead of the default alphabetical sort.
-  const { search, category, sort, page = 1, limit = 20 } = req.query
+  const { sort, page = 1, limit = 20 } = req.query
 
-  const activeVersion = await getActiveCostVersion()
+  const { activeVersion, filter } = await buildItemCostFilter(req.query)
   if (!activeVersion) {
     return success(res, {
       stats: { totalItemCost: 0, totalItems: 0, newAdded: 0 },
@@ -787,36 +833,20 @@ exports.getItemCostList = asyncHandler(async (req, res) => {
     })
   }
 
-  const filter = { costVersionId: activeVersion._id, isActive: true }
-  if (category) filter.category = category
-  if (search) filter.$or = [
-    { partName: { $regex: search, $options: 'i' } },
-    { description: { $regex: search, $options: 'i' } },
-  ]
-
   const sortOrder = sort === 'latest' ? { createdAt: -1 } : { partName: 1 }
 
-  const [items, total, statsAgg] = await Promise.all([
+  const [items, total, stats] = await Promise.all([
     SMDTItem.find(filter)
       .sort(sortOrder)
       .skip((parseInt(page) - 1) * parseInt(limit))
       .limit(parseInt(limit))
       .lean(),
     SMDTItem.countDocuments(filter),
-    SMDTItem.aggregate([
-      { $match: filter },
-      { $group: { _id: null, totalCost: { $sum: '$mbsCost' }, count: { $sum: 1 } } },
-    ]),
+    computeItemCostStats(activeVersion, filter),
   ])
 
-  const s = statsAgg[0] || {}
-  const newAdded = await SMDTItem.countDocuments({
-    costVersionId: activeVersion._id,
-    createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-  })
-
   return success(res, {
-    stats: { totalItemCost: s.totalCost || 0, totalItems: s.count || 0, newAdded },
+    stats,
     items,
     total,
     page: parseInt(page),

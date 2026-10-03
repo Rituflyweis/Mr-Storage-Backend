@@ -71,6 +71,7 @@ router.get('/qr-labels', [query('search').optional().trim()], validate, ctrl.get
 router.get('/qr-labels/export', ctrl.exportQRLabelsExcel)
 
 // Item Cost List (Costing)
+router.get('/costing/stats',      ctrl.getItemCostStats)
 router.get('/costing',            ctrl.getItemCostList)
 router.get('/costing/categories', ctrl.getItemCostCategories)
 router.get('/costing/export',     ctrl.exportItemCostListExcel)
