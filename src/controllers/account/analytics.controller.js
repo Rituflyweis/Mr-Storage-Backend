@@ -159,19 +159,7 @@ exports.getProjectCostAnalysis = asyncHandler(async (req, res) => {
 })
 
 exports.getOrderValueVsPlantCosts = asyncHandler(async (req, res) => {
-  const leads = await Lead.find({
-    lifecycleStatus: { $nin: ['initial_contact', 'qualified', 'proposal_sent'] },
-  }).select('_id').lean()
-  const leadIds = leads.map((l) => l._id)
-
-  const [invoices, expenses] = await Promise.all([
-    Invoice.find({ leadId: { $in: leadIds } }).select('totalAmount status').lean(),
-    Expense.find({ leadId: { $in: leadIds }, isActive: true }).select('amount').lean(),
-  ])
-
-  const totalOrderValue = invoices.reduce((s, i) => s + i.totalAmount, 0)
-  const totalPlantCosts = expenses.reduce((s, e) => s + e.amount, 0)
-  const projectedProfit = totalOrderValue - totalPlantCosts
-
-  return success(res, { totalOrderValue, totalPlantCosts, projectedProfit })
+  const dashboardService = require('../../services/accountDashboard.service')
+  const data = await dashboardService.computeOrderVsPlantCosts(req.query)
+  return success(res, data)
 })

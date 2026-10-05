@@ -16,28 +16,9 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 // ── Delivery Finance (dashboard card) ────────────────────────────────────────
 
 exports.getDeliveryFinance = asyncHandler(async (req, res) => {
-  const dateFilter = buildDateFilter(req.query, 'createdAt')
-
-  const [selectedBids, pendingApprovals] = await Promise.all([
-    FreightBid.find({ ...dateFilter, status: 'selected' }).select('quotedAmount submissionHistory').lean(),
-    PaymentApproval.aggregate([
-      { $match: { payeeType: { $in: ['carrier', 'delivery_company'] }, status: { $in: ['pending', 'under_review'] } } },
-      { $group: { _id: null, total: { $sum: '$amount' } } },
-    ]),
-  ])
-
-  const freightSpend = selectedBids.reduce((s, b) => s + (b.quotedAmount || 0), 0)
-  const freightSavings = selectedBids.reduce((s, b) => {
-    const original = b.submissionHistory?.[0]?.quotedAmount
-    if (original == null || b.quotedAmount == null) return s
-    return s + Math.max(0, original - b.quotedAmount)
-  }, 0)
-
-  return success(res, {
-    freightSpend: round2(freightSpend),
-    pendingCarrierPayments: round2(pendingApprovals[0]?.total || 0),
-    freightSavings: round2(freightSavings),
-  })
+  const dashboardService = require('../../services/accountDashboard.service')
+  const data = await dashboardService.computeDeliveryFinance(req.query)
+  return success(res, data)
 })
 
 // ── Freight Costs Overview ───────────────────────────────────────────────────
