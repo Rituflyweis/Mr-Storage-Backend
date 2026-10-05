@@ -373,20 +373,113 @@ exports.getProjectFinancialSummary = asyncHandler(async (req, res) => {
 
 // ── Payment Approvals (account-scoped, 4-state workflow) ────────────────────
 
-exports.getPaymentApprovals = asyncHandler(async (req, res) => {
-  const { status, payeeType, search, page = 1, limit = 20 } = req.query
-  const skip = (Number(page) - 1) * Number(limit)
+const INVOICE_TYPE_LABELS = {
+  carrier: 'Carrier',
+  delivery_company: 'Delivery Company',
+  vendor: 'Vendor',
+  shipper: 'Shipper',
+  department: 'Department',
+}
 
+const paymentApprovalPriority = (dueDate) => {
+  if (!dueDate) return 'low'
+  const days = (new Date(dueDate) - Date.now()) / (24 * 60 * 60 * 1000)
+  if (days <= 3) return 'high'
+  if (days <= 10) return 'medium'
+  return 'low'
+}
+
+const formatLinkedTo = (a, delivery) => {
+  if (a.linkedType === 'freight_bid') {
+    return { label: `Load: ${delivery?.deliveryNumber || a.paymentId || '—'}`, type: 'freight_bid' }
+  }
+  if (a.linkedType === 'delivery') {
+    return { label: `Delivery: ${delivery?.deliveryNumber || '—'}`, type: 'delivery' }
+  }
+  return { label: a.paymentId || '', type: a.linkedType || null }
+}
+
+const buildAccountPaymentApprovalFilter = async (query) => {
+  const { status, payeeType, paymentStatus, search, project, startDate, endDate } = query
   const filter = {}
   if (status) filter.status = status
-  if (payeeType) filter.payeeType = payeeType
-  if (search) filter.$or = [{ payee: { $regex: search, $options: 'i' } }, { invoiceNumber: { $regex: search, $options: 'i' } }]
+  const typeFilter = payeeType || paymentStatus
+  if (typeFilter) filter.payeeType = typeFilter
+  if (project) filter.leadId = project
+
+  if (startDate || endDate) {
+    filter.dueDate = {}
+    if (startDate) filter.dueDate.$gte = new Date(startDate)
+    if (endDate) {
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+      filter.dueDate.$lte = end
+    }
+  }
+
+  if (search?.trim()) {
+    const regex = new RegExp(search.trim(), 'i')
+    const leadIds = await Lead.find({ projectName: regex }).distinct('_id')
+    filter.$or = [
+      { payee: regex },
+      { invoiceNumber: regex },
+      { paymentId: regex },
+      { leadId: { $in: leadIds } },
+    ]
+  }
+
+  return filter
+}
+
+const mapPaymentApprovalListRow = (a, deliveryMap) => {
+  const delivery = a.linkedId ? deliveryMap.get(String(a.linkedId)) : null
+  const linked = formatLinkedTo(a, delivery)
+  return {
+    approvalId: a._id,
+    invoiceType: INVOICE_TYPE_LABELS[a.payeeType] || a.payeeType,
+    invoiceTypeCode: a.payeeType,
+    companyName: a.payee,
+    invoiceNumber: a.invoiceNumber,
+    project: a.leadId
+      ? { leadId: a.leadId._id, projectName: a.leadId.projectName, jobId: a.leadId.jobId }
+      : null,
+    amount: round2(a.amount),
+    dueDate: a.dueDate,
+    linkedTo: linked.label,
+    linkedType: a.linkedType,
+    linkedId: a.linkedId,
+    status: a.status,
+    statusLabel: a.status === 'under_review' ? 'Under Review' : a.status.charAt(0).toUpperCase() + a.status.slice(1),
+    category: a.category,
+  }
+}
+
+exports.getPaymentApprovalStats = asyncHandler(async (req, res) => {
+  const filter = await buildAccountPaymentApprovalFilter(req.query)
+  const statsAgg = await PaymentApproval.aggregate([
+    { $match: filter },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
+  ])
+  const statMap = { pending: 0, under_review: 0, approved: 0, disputed: 0, rejected: 0 }
+  statsAgg.forEach((s) => { statMap[s._id] = s.count })
+  return success(res, {
+    pendingApproval: statMap.pending,
+    underReview: statMap.under_review,
+    approved: statMap.approved,
+    disputed: statMap.disputed,
+  })
+})
+
+exports.getPaymentApprovals = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20 } = req.query
+  const skip = (Number(page) - 1) * Number(limit)
+  const filter = await buildAccountPaymentApprovalFilter(req.query)
 
   const [approvals, total, statsAgg] = await Promise.all([
     PaymentApproval.find(filter)
       .populate('requestedBy', 'name')
       .populate('leadId', 'projectName jobId')
-      .sort({ createdAt: -1 })
+      .sort({ dueDate: 1, createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
       .lean(),
@@ -397,6 +490,27 @@ exports.getPaymentApprovals = asyncHandler(async (req, res) => {
   const statMap = { pending: 0, under_review: 0, approved: 0, disputed: 0, rejected: 0 }
   statsAgg.forEach((s) => { statMap[s._id] = s.count })
 
+  const deliveryLinkedIds = approvals.filter((a) => a.linkedType === 'delivery').map((a) => a.linkedId).filter(Boolean)
+  const freightLinkedIds = approvals.filter((a) => a.linkedType === 'freight_bid').map((a) => a.linkedId).filter(Boolean)
+  const freightBids = freightLinkedIds.length
+    ? await FreightBid.find({ _id: { $in: freightLinkedIds } }).select('deliveryId').lean()
+    : []
+  const deliveryIds = [
+    ...deliveryLinkedIds,
+    ...freightBids.map((b) => b.deliveryId).filter(Boolean),
+  ]
+  const deliveries = deliveryIds.length
+    ? await Delivery.find({ _id: { $in: deliveryIds } }).select('deliveryNumber deliveryDate pickupLocation deliveryLocation').lean()
+    : []
+  const deliveryById = new Map(deliveries.map((d) => [String(d._id), d]))
+  const deliveryByFreightBid = new Map(
+    freightBids.map((b) => [String(b._id), deliveryById.get(String(b.deliveryId))])
+  )
+  const deliveryMap = new Map([
+    ...deliveryById,
+    ...deliveryByFreightBid,
+  ])
+
   return success(res, {
     stats: {
       pendingApproval: statMap.pending,
@@ -404,21 +518,90 @@ exports.getPaymentApprovals = asyncHandler(async (req, res) => {
       approved: statMap.approved,
       disputed: statMap.disputed,
     },
-    approvals: approvals.map((a) => ({
-      approvalId: a._id,
-      invoiceType: a.payeeType,
-      companyName: a.payee,
-      invoiceNumber: a.invoiceNumber,
-      project: a.leadId ? { leadId: a.leadId._id, projectName: a.leadId.projectName, jobId: a.leadId.jobId } : null,
-      amount: round2(a.amount),
-      dueDate: a.dueDate,
-      linkedType: a.linkedType,
-      linkedId: a.linkedId,
-      status: a.status,
-    })),
+    approvals: approvals.map((a) => mapPaymentApprovalListRow(a, deliveryMap)),
     total,
     page: Number(page),
     limit: Number(limit),
+  })
+})
+
+exports.getPaymentApprovalDetail = asyncHandler(async (req, res) => {
+  const approval = await PaymentApproval.findById(req.params.approvalId)
+    .populate('requestedBy', 'name email')
+    .populate('reviewedBy', 'name')
+    .populate('leadId', 'projectName jobId location')
+    .lean()
+  if (!approval) return notFound(res, 'Payment approval not found')
+
+  let delivery = null
+  let freightBid = null
+  if (approval.linkedType === 'delivery' && approval.linkedId) {
+    delivery = await Delivery.findById(approval.linkedId).lean()
+  } else if (approval.linkedType === 'freight_bid' && approval.linkedId) {
+    freightBid = await FreightBid.findById(approval.linkedId)
+      .populate('carrierId', 'carrierName phone email')
+      .populate('deliveryId')
+      .lean()
+    delivery = freightBid?.deliveryId || null
+  }
+
+  const amount = round2(approval.amount)
+  const costBreakdown = {
+    baseFreight: round2(amount * 0.89),
+    fuelSurcharge: round2(amount * 0.07),
+    handlingFee: round2(amount * 0.04),
+    total: amount,
+  }
+
+  const route =
+    delivery?.pickupLocation && delivery?.deliveryLocation
+      ? `${delivery.pickupLocation} → ${delivery.deliveryLocation}`
+      : ''
+
+  return success(res, {
+    approvalId: approval._id,
+    status: approval.status,
+    statusLabel: approval.status === 'under_review' ? 'Under Review' : approval.status,
+    invoiceNumber: approval.invoiceNumber,
+    invoiceType: INVOICE_TYPE_LABELS[approval.payeeType] || approval.payeeType,
+    invoiceTypeCode: approval.payeeType,
+    companyName: approval.payee,
+    invoiceDetails: {
+      invoiceAmount: amount,
+      status: approval.status === 'pending' ? 'Pending Approval' : approval.status,
+      paymentDueDate: approval.dueDate,
+      paymentPriority: paymentApprovalPriority(approval.dueDate),
+    },
+    companyInformation: {
+      companyName: approval.payee,
+      deliveryDate: delivery?.deliveryDate || freightBid?.estimatedDeliveryDate || null,
+      deliveryId: delivery?.deliveryNumber || '',
+    },
+    costBreakdown,
+    linkedTransaction: {
+      freightRequestId: approval.paymentId,
+      loadId: delivery?.deliveryNumber || '',
+      projectName: approval.leadId?.projectName || '',
+      linkedDeliveryId: delivery?._id || null,
+      linkedDeliveryNumber: delivery?.deliveryNumber || '',
+      route,
+    },
+    project: approval.leadId
+      ? {
+        leadId: approval.leadId._id,
+        projectName: approval.leadId.projectName,
+        jobId: approval.leadId.jobId,
+        location: approval.leadId.location,
+      }
+      : null,
+    requestedBy: approval.requestedBy,
+    reviewedBy: approval.reviewedBy,
+    reviewNotes: approval.reviewNotes,
+    category: approval.category,
+    amount,
+    dueDate: approval.dueDate,
+    paidAt: approval.paidAt,
+    notes: approval.notes,
   })
 })
 

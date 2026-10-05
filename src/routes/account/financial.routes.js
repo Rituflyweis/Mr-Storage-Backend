@@ -22,7 +22,9 @@ router.get('/awarded-loads', ctrl.getAwardedFreightLoads)
 router.get('/project-summary', ctrl.getProjectFinancialSummary)
 
 // Payment Approvals
+router.get('/payment-approvals/stats', ctrl.getPaymentApprovalStats)
 router.get('/payment-approvals', ctrl.getPaymentApprovals)
+router.get('/payment-approvals/:approvalId', ctrl.getPaymentApprovalDetail)
 router.put('/payment-approvals/:approvalId/review',
   [body('action').isIn(['under_review', 'approved', 'disputed', 'rejected'])],
   validate,
