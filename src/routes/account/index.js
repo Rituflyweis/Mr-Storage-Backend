@@ -5,6 +5,7 @@ const roleGuard = require('../../middleware/roleGuard')
 const guard = [verifyToken, roleGuard(['admin', 'account'])]
 
 router.use('/dashboard', ...guard, require('./dashboard.routes'))
+router.use('/customers', ...guard, require('./customer.routes'))
 router.use('/projects',  ...guard, require('./project.routes'))
 router.use('/invoices',  ...guard, require('./invoice.routes'))
 router.use('/expenses',  ...guard, require('./expense.routes'))

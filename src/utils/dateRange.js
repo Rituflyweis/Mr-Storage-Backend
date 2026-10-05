@@ -30,4 +30,40 @@ const buildDateFilter = (query = {}, field = 'createdAt') => {
   return filter
 }
 
-module.exports = { buildDateFilter }
+/**
+ * Account dashboard quick filters: period=today|week|month (ignored when startDate/endDate set).
+ */
+const buildPeriodDateFilter = (query = {}, field = 'createdAt') => {
+  if (query.startDate || query.endDate) return buildDateFilter(query, field)
+  if (!query.period) return {}
+
+  const now = new Date()
+  let start
+  let end
+
+  if (query.period === 'today') {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+  } else if (query.period === 'week') {
+    start = new Date(now)
+    const day = start.getDay()
+    const mondayOffset = day === 0 ? 6 : day - 1
+    start.setDate(start.getDate() - mondayOffset)
+    start.setHours(0, 0, 0, 0)
+    end = new Date(start)
+    end.setDate(start.getDate() + 6)
+    end.setHours(23, 59, 59, 999)
+  } else if (query.period === 'month') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1)
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+  } else {
+    return {}
+  }
+
+  return buildDateFilter(
+    { startDate: start.toISOString(), endDate: end.toISOString() },
+    field
+  )
+}
+
+module.exports = { buildDateFilter, buildPeriodDateFilter }
