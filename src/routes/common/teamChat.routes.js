@@ -4,6 +4,7 @@ const ctrl = require('../../controllers/common/teamChat.controller')
 router.get('/users', ctrl.getUsers)
 router.get('/conversations', ctrl.getConversations)
 router.get('/unread-count', ctrl.getUnreadCount)
+router.get('/search', ctrl.searchMessages)
 
 router.get('/direct/:userId/messages', ctrl.getDirectMessages)
 router.post('/direct/:userId/messages', ctrl.sendDirectMessage)

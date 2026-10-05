@@ -5,6 +5,7 @@ const env = require('../config/env')
 const { success, unauthorized, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
 const { sendOtp } = require('../services/email/mailer')
+const { validatePassword } = require('../utils/passwordPolicy')
 
 const OTP_EXPIRY_MINUTES = 10
 
@@ -114,6 +115,8 @@ exports.verifyOtp = asyncHandler(async (req, res) => {
 
 exports.resetPassword = asyncHandler(async (req, res) => {
   const { resetToken, newPassword } = req.body
+  const passwordError = validatePassword(newPassword)
+  if (passwordError) return badRequest(res, passwordError)
 
   let decoded
   try {
@@ -140,6 +143,8 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 
 exports.changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body
+  const passwordError = validatePassword(newPassword)
+  if (passwordError) return badRequest(res, passwordError)
 
   const user = await User.findById(req.user._id).select('+password')
   if (!user) return unauthorized(res)

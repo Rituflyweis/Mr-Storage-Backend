@@ -5,6 +5,7 @@ const { buildDirectKey } = require('../../models/TeamMessage')
 const TeamGroup = require('../../models/TeamGroup')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const { searchTeamChat } = require('../../services/chat/teamChatSearch.service')
 
 // Emits over the /admin socket namespace if the socket server is up — safe no-op otherwise
 // (e.g. in tests or if a request happens before sockets finish initializing).
@@ -320,4 +321,14 @@ exports.sendGroupMessage = asyncHandler(async (req, res) => {
   }
 
   return created(res, { message }, 'Message sent')
+})
+
+// ── Search ───────────────────────────────────────────────────────────────────
+
+// GET /team-chat/search?q=&type=all|photos|documents|links|videos|gifs|audio|polls|events&userId=|groupId=
+// WhatsApp-style search over the caller's direct chats and groups (Construction app Home → 🔍).
+exports.searchMessages = asyncHandler(async (req, res) => {
+  const { error, code, result } = await searchTeamChat(req.user._id, req.query)
+  if (error) return code === 403 ? forbidden(res, error) : badRequest(res, error)
+  return success(res, result)
 })

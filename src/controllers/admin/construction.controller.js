@@ -734,6 +734,7 @@ exports.createMaterialRequest = asyncHandler(async (req, res) => {
 exports.reviewMaterialRequest = asyncHandler(async (req, res) => {
   const request = await MaterialRequest.findById(req.params.requestId)
   if (!request) return notFound(res, 'Request not found')
+  if (request.status === 'cancelled') return badRequest(res, 'This request was cancelled by the requester')
 
   const { action, reviewNotes } = req.body
   if (!['approved', 'rejected'].includes(action)) return badRequest(res, 'action must be approved or rejected')

@@ -439,23 +439,44 @@ exports.markPartialReceived = asyncHandler(async (req, res) => {
   return success(res, { deliveryId: delivery._id, status: 'partial_received' }, 'Marked as partial received')
 })
 
+// Max length per "Update Site Contact" field; fields left out of the body keep their saved value.
+const SITE_CONTACT_FIELDS = { contactName: 100, contactTitle: 100, phone: 20, email: 254, availableHours: 100, notes: 1000 }
+const SITE_CONTACT_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const SITE_CONTACT_PHONE = /^\+?[0-9\s\-().]{7,20}$/
+
+// PUT /deliveries/:deliveryId/site-contact — More → "Update Site Contact" → "Save Contact"
 exports.updateSiteContact = asyncHandler(async (req, res) => {
-  const { contactName, contactTitle, phone, email, availableHours, notes } = req.body
+  if (!mongoose.Types.ObjectId.isValid(req.params.deliveryId)) return badRequest(res, 'Invalid deliveryId')
+
+  const updates = {}
+  for (const [field, maxLength] of Object.entries(SITE_CONTACT_FIELDS)) {
+    const value = req.body?.[field]
+    if (value === undefined) continue
+    if (value !== null && typeof value !== 'string') return badRequest(res, `${field} must be text`)
+    const trimmed = (value || '').trim()
+    if (trimmed.length > maxLength) return badRequest(res, `${field} must be at most ${maxLength} characters`)
+    updates[field] = trimmed
+  }
+  if (!Object.keys(updates).length) {
+    return badRequest(res, `Send at least one of: ${Object.keys(SITE_CONTACT_FIELDS).join(', ')}`)
+  }
+  if (updates.email) updates.email = updates.email.toLowerCase()
+  if (updates.email && !SITE_CONTACT_EMAIL.test(updates.email)) return badRequest(res, 'Enter a valid email address')
+  if (updates.phone && !SITE_CONTACT_PHONE.test(updates.phone)) return badRequest(res, 'Enter a valid phone number')
 
   const delivery = await Delivery.findById(req.params.deliveryId)
   if (!delivery) return notFound(res, 'Delivery not found')
 
-  delivery.siteContact = {
-    contactName: contactName ?? delivery.siteContact?.contactName ?? '',
-    contactTitle: contactTitle ?? delivery.siteContact?.contactTitle ?? '',
-    phone: phone ?? delivery.siteContact?.phone ?? '',
-    email: email ?? delivery.siteContact?.email ?? '',
-    availableHours: availableHours ?? delivery.siteContact?.availableHours ?? '',
-    notes: notes ?? delivery.siteContact?.notes ?? '',
-  }
+  const current = delivery.siteContact?.toObject?.() || delivery.siteContact || {}
+  const siteContact = Object.fromEntries(
+    Object.keys(SITE_CONTACT_FIELDS).map((field) => [field, updates[field] ?? current[field] ?? ''])
+  )
+  if (!siteContact.contactName) return badRequest(res, 'contactName is required')
+
+  delivery.siteContact = siteContact
   await delivery.save()
 
-  return success(res, { deliveryId: delivery._id, siteContact: delivery.siteContact }, 'Site contact updated')
+  return success(res, { deliveryId: delivery._id, deliveryNumber: delivery.deliveryNumber, siteContact }, 'Site contact updated')
 })
 
 exports.scanBundle = asyncHandler(async (req, res) => {

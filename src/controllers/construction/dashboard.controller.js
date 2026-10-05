@@ -7,7 +7,7 @@ const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-const { DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
+const { DELIVERY_FULFILLMENT_STATUSES, CONSTRUCTION_ACTIVE_STAGES } = require('../../config/constants')
 const {
   ARRIVED_STATUSES,
   ISSUE_STATUSES,
@@ -28,11 +28,6 @@ const CONSTRUCTION_STAGES = [
   'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
   'material_check', 'production_planning', 'fabrication_started', 'quality_inspection',
   'packing_bundling', 'shipper_prepared', 'ready_for_delivery', 'dispatched', 'delivered',
-]
-const CONSTRUCTION_ACTIVE_STAGES = [
-  'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
-  'material_check', 'production_planning', 'fabrication_started', 'quality_inspection',
-  'packing_bundling', 'shipper_prepared', 'ready_for_delivery',
 ]
 
 const getConstructionLeadIds = async () => {

@@ -6,6 +6,7 @@ const MR_PRIORITIES = ['low', 'medium', 'high', 'critical']
 const RequestedItemSchema = new mongoose.Schema(
   {
     name:     { type: String, required: true, trim: true },
+    materialType: { type: String, default: '', trim: true },
     quantity: { type: Number, required: true, min: 0 },
     unit:     { type: String, default: '', trim: true },
     notes:    { type: String, default: '', trim: true },
@@ -49,6 +50,9 @@ const MaterialRequestSchema = new mongoose.Schema(
     reviewedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     reviewedAt:   { type: Date, default: null },
     reviewNotes:  { type: String, default: '', trim: true },
+    cancelledBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    cancelledAt:  { type: Date, default: null },
+    cancelReason: { type: String, default: '', trim: true },
   },
   { timestamps: true }
 )

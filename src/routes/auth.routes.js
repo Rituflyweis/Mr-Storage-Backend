@@ -18,7 +18,7 @@ router.post('/logout', ctrl.logout)
 
 router.put('/change-password',
   verifyToken,
-  [body('currentPassword').notEmpty(), body('newPassword').isLength({ min: 6 })],
+  [body('currentPassword').notEmpty(), body('newPassword').notEmpty()],
   validate, ctrl.changePassword
 )
 
@@ -33,7 +33,7 @@ router.post('/verify-otp',
 )
 
 router.post('/reset-password',
-  [body('resetToken').notEmpty(), body('newPassword').isLength({ min: 6 })],
+  [body('resetToken').notEmpty(), body('newPassword').notEmpty()],
   validate, ctrl.resetPassword
 )
 

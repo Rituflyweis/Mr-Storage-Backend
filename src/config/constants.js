@@ -194,6 +194,18 @@ const VENDOR_TYPES = ['steel', 'insulation', 'panels', 'trim', 'hardware', 'othe
 // are inconsistent comma-joined strings. This is a starter dropdown list for the "Material
 // Category" filter, not an enforced schema constraint; existing free-text data isn't migrated.
 const DELIVERY_MATERIAL_CATEGORIES = ['Primary Steel', 'Secondary Steel', 'Doors', 'Trim', 'Hardware']
+// "Select Material Type" dropdown on the construction app's Create Material Request form.
+// 'Other' lets the requester type their own material name.
+const MATERIAL_REQUEST_MATERIAL_TYPES = [
+  'Steel Frame', 'Primary Steel', 'Secondary Steel', 'Roofing Sheets', 'Wall Panels', 'Purlins',
+  'Girts', 'Trim', 'Doors', 'Insulation', 'Fasteners / Hardware', 'Other',
+]
+// Lead lifecycle stages where a project is actively in the construction pipeline (not yet delivered).
+const CONSTRUCTION_ACTIVE_STAGES = [
+  'released_to_plant', 'drawings_received', 'bom_received', 'bom_review',
+  'material_check', 'production_planning', 'fabrication_started', 'quality_inspection',
+  'packing_bundling', 'shipper_prepared', 'ready_for_delivery',
+]
 // Delivery.loadingEquipment has no enum either (free-text array) — real DB data today only
 // has "Crane". Starter dropdown list for the "Equipment Required" filter, same caveat as above.
 const DELIVERY_EQUIPMENT_OPTIONS = ['Crane', 'Forklift', 'Flatbed Truck', 'Hydraulic Lift', 'Pallet Jack']
@@ -284,6 +296,8 @@ module.exports = {
   VENDOR_STATUSES,
   VENDOR_TYPES,
   DELIVERY_MATERIAL_CATEGORIES,
+  MATERIAL_REQUEST_MATERIAL_TYPES,
+  CONSTRUCTION_ACTIVE_STAGES,
   DELIVERY_EQUIPMENT_OPTIONS,
   SHIPPER_REQUEST_STATUSES,
   ACTIVE_SHIPPER_REQUEST_STATUSES,

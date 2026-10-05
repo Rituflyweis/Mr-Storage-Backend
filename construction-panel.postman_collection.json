@@ -101,6 +101,398 @@
 							}
 						}
 					]
+				},
+				{
+					"name": "Refresh Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/refresh",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"refresh"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+						}
+					},
+					"_postman_note": "Returns a new accessToken when the old one expires (refreshToken comes from Login)."
+				},
+				{
+					"name": "Forgot Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/forgot-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"forgot-password"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"construction@steelpro.com\"\n}"
+						}
+					},
+					"_postman_note": "Login screen \u2192 \"Forgot password?\". Sends a 6-digit OTP by email. Always answers success (does not reveal whether the email exists)."
+				},
+				{
+					"name": "Verify OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/verify-otp",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"verify-otp"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"construction@steelpro.com\",\n  \"otp\": \"123456\"\n}"
+						}
+					},
+					"_postman_note": "Returns resetToken for Reset Password."
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/reset-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"reset-password"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"New@Pass2\"\n}"
+						}
+					},
+					"_postman_note": "Sets a new password after Verify OTP. Password rules: at least 8 characters, uppercase and lowercase letters, a number and a special character (400 lists every rule that failed)."
+				},
+				{
+					"name": "Change Password",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"change-password"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"currentPassword\": \"Old@Pass1\",\n  \"newPassword\": \"New@Pass2\"\n}"
+						}
+					},
+					"_postman_note": "Same as Profile \u2192 Update Password (prefer that one in the app). Password rules: at least 8 characters, uppercase and lowercase letters, a number and a special character (400 lists every rule that failed)."
+				}
+			]
+		},
+		{
+			"name": "Profile (My Profile, Security, Settings)",
+			"item": [
+				{
+					"name": "Get My Profile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/profile",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"profile"
+							]
+						}
+					},
+					"_postman_note": "Profile tab \u2192 My Profile. user {name, email, phone, avatar, role, roleLabel (e.g. \"Construction Manager\" for the read-only Role field), department, notificationSettings}. Password hash and reset-OTP fields are never returned.",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"user\": {\n      \"_id\": \"665f1c2e9b1e8a0012ab0009\",\n      \"name\": \"John Anderson\",\n      \"email\": \"john@gmail.com\",\n      \"phone\": \"+1234567890\",\n      \"avatar\": \"https://your-bucket.s3.amazonaws.com/avatars/john.png\",\n      \"role\": \"construction\",\n      \"roleLabel\": \"Construction Manager\",\n      \"department\": \"\",\n      \"isActive\": true,\n      \"notificationSettings\": {\n        \"twoFactorAuth\": true,\n        \"emailNotification\": true,\n        \"smsNotification\": true,\n        \"dashboardNotifications\": true,\n        \"weeklyEmailReports\": false,\n        \"systemAlerts\": true,\n        \"loginAlertsViaMail\": true\n      }\n    }\n  }\n}"
+						}
+					]
+				},
+				{
+					"name": "Upload Profile Photo (Get Presigned URL)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/upload/presigned-url",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"upload",
+								"presigned-url"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fileName\": \"john.png\",\n  \"fileType\": \"image/png\",\n  \"folder\": \"avatars\"\n}"
+						}
+					},
+					"_postman_note": "Step 1 for the camera icon: get uploadUrl, PUT the image file to it, then send fileUrl as avatar in Update My Profile. JPG, PNG or GIF only (checked on save). The 2 MB limit must be checked in the app before uploading \u2014 a presigned PUT cannot enforce size on the server."
+				},
+				{
+					"name": "Update My Profile",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/profile",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"profile"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Anderson\",\n  \"email\": \"john@gmail.com\",\n  \"phone\": \"+1234567890\",\n  \"avatar\": \"https://your-bucket.s3.amazonaws.com/avatars/john.png\"\n}"
+						}
+					},
+					"_postman_note": "\"Save Changes\" on Basic Information. Send only fields that changed. name: required, max 100. email: valid format, not used by another account (case-insensitive) \u2014 becomes the new login email. phone: digits, spaces, + - ( ), 7-20 chars, or \"\" to clear. avatar: http(s) link ending .jpg/.jpeg/.png/.gif, or \"\" to remove. Role cannot be changed here (ignored). Returns the updated user (same shape as Get My Profile).",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Profile updated\",\n  \"data\": {\n    \"user\": {\n      \"_id\": \"665f1c2e9b1e8a0012ab0009\",\n      \"name\": \"John Anderson\",\n      \"email\": \"john@gmail.com\",\n      \"phone\": \"+1234567890\",\n      \"avatar\": \"https://your-bucket.s3.amazonaws.com/avatars/john.png\",\n      \"role\": \"construction\",\n      \"roleLabel\": \"Construction Manager\",\n      \"department\": \"\",\n      \"isActive\": true,\n      \"notificationSettings\": {\n        \"twoFactorAuth\": true,\n        \"emailNotification\": true,\n        \"smsNotification\": true,\n        \"dashboardNotifications\": true,\n        \"weeklyEmailReports\": false,\n        \"systemAlerts\": true,\n        \"loginAlertsViaMail\": true\n      }\n    }\n  }\n}"
+						},
+						{
+							"name": "Email taken",
+							"status": "Bad Request",
+							"code": 400,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"This email is already used by another account\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Update Password",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/profile/password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"profile",
+								"password"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"currentPassword\": \"Old@Pass1\",\n  \"newPassword\": \"New@Pass2\",\n  \"confirmNewPassword\": \"New@Pass2\"\n}"
+						}
+					},
+					"_postman_note": "\"Update Password\" on Security Settings. Rules (same as Password Requirements on screen, also enforced by /auth/change-password and /auth/reset-password): at least 8 characters, uppercase and lowercase letters, a number and a special character. confirmNewPassword is optional but must match when sent; the new password must differ from the current one. The error message lists every rule that failed.",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Password updated\",\n  \"data\": {}\n}"
+						},
+						{
+							"name": "Weak password",
+							"status": "Bad Request",
+							"code": 400,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"Password must be at least 8 characters long, include at least one number, include at least one special character\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Update Account Settings (toggles)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/profile/notification-settings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"profile",
+								"notification-settings"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"twoFactorAuth\": true,\n  \"emailNotification\": true,\n  \"smsNotification\": true,\n  \"dashboardNotifications\": true,\n  \"loginAlertsViaMail\": true\n}"
+						}
+					},
+					"_postman_note": "Settings screen \u2192 \"Save Changes\". Keys: twoFactorAuth, emailNotification, smsNotification, dashboardNotifications, loginAlertsViaMail (also weeklyEmailReports, systemAlerts). Values must be JSON true/false (400 otherwise). Send the switches to save; others stay as they are. These are stored preferences.",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Settings updated\",\n  \"data\": {\n    \"notificationSettings\": {\n      \"twoFactorAuth\": true,\n      \"emailNotification\": true,\n      \"smsNotification\": true,\n      \"dashboardNotifications\": true,\n      \"weeklyEmailReports\": false,\n      \"systemAlerts\": true,\n      \"loginAlertsViaMail\": true\n    }\n  }\n}"
+						}
+					]
+				},
+				{
+					"name": "Log out",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"logout"
+							]
+						}
+					},
+					"_postman_note": "\"Log out\" button. No body needed. The server does not revoke tokens \u2014 the app must delete its stored access and refresh tokens. Until they expire (access ~15 min, refresh ~7 days) a copied token would still work."
 				}
 			]
 		},
@@ -422,6 +814,41 @@
 							"raw": "{\n  \"url\": \"https://s3.example.com/drawings/arch-plan.pdf\",\n  \"name\": \"Architectural Plans.pdf\",\n  \"type\": \"drawing\"\n}"
 						}
 					}
+				},
+				{
+					"name": "Review Drawing",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/drawings/{{leadId}}/documents/{{docId}}/review",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"drawings",
+								"{{leadId}}",
+								"documents",
+								"{{docId}}",
+								"review"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"approvalStatus\": \"approved\"\n}"
+						}
+					},
+					"_postman_note": "Approve or reject a drawing document. approvalStatus: approved | rejected."
 				}
 			]
 		},
@@ -945,6 +1372,30 @@
 					"_postman_note": "Material Request screen (bottom-nav grid tab). Returns: materialRequests[] (card: project {projectName, location}, siteLocation, requestId, itemCount, requestedItems[], requestDate, requiredBy, status, priority, requestedBy), total (\"Material Request (n)\"), page, limit, totalPages (pager), stats {totalRequests, pending, approved, rejected, fulfilled} for the stat cards. stats follow every filter except status, so the cards stay put while a status filter narrows the list. Invalid status/priority/source/leadId \u2192 400. \"View\" \u2192 Get Material Request Detail."
 				},
 				{
+					"name": "Get Material Request Filters",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/material-requests/filters",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"material-requests",
+								"filters"
+							]
+						}
+					},
+					"_postman_note": "Filter icon on the Material Request screen. Returns dropdown values: statuses, priorities, departments, siteLocations, projects[] {leadId, projectName, jobId} (projects that have requests). Apply the chosen values as query params on Get Material Requests."
+				},
+				{
 					"name": "Get Material Request Detail",
 					"request": {
 						"method": "GET",
@@ -965,7 +1416,202 @@
 								"{{requestId}}"
 							]
 						}
-					}
+					},
+					"_postman_note": "\"View\" \u2192 Material Request Details. materialRequest = list card fields (project {projectName, location}, siteLocation, status, requestId, requestedBy {name, role, department}, requestDate, requiredBy, priority, requestedItems[] {name = Item Description, unit, quantity = Requested Qty, notes = Remarks, materialType}, itemCount, remarks = Request Notes, attachments[] {name, url (direct download link), fileSize in bytes}) + review {reviewedBy, reviewedAt, notes} | null, cancellation {cancelledBy, cancelledAt, reason} | null, canCancel (show \"Cancel Request\" only when true: pending and raised by you, or you are admin), canAddAttachments (same rule \u2014 show an \"add file\" action only when true). 400 invalid id, 404 not found.",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"materialRequest\": {\n      \"requestId\": \"MR-2026-0031\",\n      \"_id\": \"665f1c2e9b1e8a0012ab0501\",\n      \"project\": {\n        \"leadId\": \"665f1c2e9b1e8a0012ab0001\",\n        \"projectName\": \"Downtown Office Complex\",\n        \"jobId\": \"JOB-0001\",\n        \"location\": \"ABC Logistics Warehouse\"\n      },\n      \"siteLocation\": \"Construction Site A\",\n      \"department\": \"\",\n      \"requestedBy\": {\n        \"userId\": \"665f1c2e9b1e8a0012ab0009\",\n        \"name\": \"John Smith\",\n        \"role\": \"construction\",\n        \"department\": \"Site Engineer\"\n      },\n      \"requestedItems\": [\n        {\n          \"_id\": \"665f1c2e9b1e8a0012ab0511\",\n          \"name\": \"Steel Beams\",\n          \"materialType\": \"\",\n          \"unit\": \"KG\",\n          \"quantity\": 5000,\n          \"notes\": \"For Ground Floor\",\n          \"deliveryStatus\": \"pending\"\n        },\n        {\n          \"_id\": \"665f1c2e9b1e8a0012ab0512\",\n          \"name\": \"Cement 50 kg\",\n          \"materialType\": \"\",\n          \"unit\": \"Bags\",\n          \"quantity\": 300,\n          \"notes\": \"Ordinary Portland\",\n          \"deliveryStatus\": \"pending\"\n        }\n      ],\n      \"itemCount\": 2,\n      \"requestDate\": \"2026-03-24T10:00:00.000Z\",\n      \"requiredBy\": \"2026-03-24T00:00:00.000Z\",\n      \"priority\": \"medium\",\n      \"status\": \"pending\",\n      \"remarks\": \"Additional materials required for columns and slab casting on ground floor\",\n      \"attachments\": [\n        {\n          \"name\": \"Material_List.xlsx\",\n          \"url\": \"https://bucket.s3.amazonaws.com/mr/Material_List.xlsx\",\n          \"fileSize\": 12288\n        },\n        {\n          \"name\": \"Site_Drawing.pdf\",\n          \"url\": \"https://bucket.s3.amazonaws.com/mr/Site_Drawing.pdf\",\n          \"fileSize\": 2516582\n        }\n      ],\n      \"totalAmount\": 0,\n      \"review\": null,\n      \"cancellation\": null,\n      \"canCancel\": true,\n      \"canAddAttachments\": true\n    }\n  }\n}"
+						}
+					]
+				},
+				{
+					"name": "Cancel Material Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/material-requests/{{requestId}}/cancel",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"material-requests",
+								"{{requestId}}",
+								"cancel"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Ordered locally\"\n}"
+						}
+					},
+					"_postman_note": "\"Cancel Request\" on Material Request Details. reason is optional. Only pending requests (400 otherwise), only by the user who raised it or an admin (403 otherwise). Sets status = cancelled; a cancelled request can no longer be approved/rejected.",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Material request cancelled\",\n  \"data\": {\n    \"_id\": \"665f1c2e9b1e8a0012ab0501\",\n    \"requestId\": \"MR-2026-0031\",\n    \"status\": \"cancelled\",\n    \"cancelledAt\": \"2026-10-05T10:15:00.000Z\"\n  }\n}"
+						},
+						{
+							"name": "Not pending",
+							"status": "Bad Request",
+							"code": 400,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"Only pending requests can be cancelled (this one is approved)\"\n}"
+						},
+						{
+							"name": "Not the requester",
+							"status": "Forbidden",
+							"code": 403,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"Only the person who raised this request can cancel it\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Add Material Request Attachments",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/material-requests/{{requestId}}/attachments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"material-requests",
+								"{{requestId}}",
+								"attachments"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"attachments\": [\n    {\n      \"name\": \"Site_Drawing.pdf\",\n      \"url\": \"https://your-bucket.s3.amazonaws.com/uploads/Site_Drawing.pdf\",\n      \"fileSize\": 2516582\n    }\n  ]\n}"
+						}
+					},
+					"_postman_note": "Adds files to an existing request (backend ready; the app screen for it is up to the frontend). Same rules as Cancel: pending only (400), raised by you or admin (403). Max 20 files per request in total. Upload each file to S3 first: POST {{baseUrl}}/upload/presigned-url { fileName, fileType } \u2192 PUT the file to the returned URL \u2192 send the file's public url here. Returns the full attachments list.",
+					"response": [
+						{
+							"name": "Added",
+							"status": "Created",
+							"code": 201,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Attachments added\",\n  \"data\": {\n    \"_id\": \"665f1c2e9b1e8a0012ab0501\",\n    \"requestId\": \"MR-2026-0031\",\n    \"attachments\": [\n      {\n        \"name\": \"Material_List.xlsx\",\n        \"url\": \"https://your-bucket.s3.amazonaws.com/uploads/Material_List.xlsx\",\n        \"fileSize\": 12288\n      },\n      {\n        \"name\": \"Site_Drawing.pdf\",\n        \"url\": \"https://your-bucket.s3.amazonaws.com/uploads/Site_Drawing.pdf\",\n        \"fileSize\": 2516582\n      }\n    ]\n  }\n}"
+						},
+						{
+							"name": "Invalid link",
+							"status": "Bad Request",
+							"code": 400,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"Attachment 1: url must be a valid http(s) link\"\n}"
+						},
+						{
+							"name": "Not the requester",
+							"status": "Forbidden",
+							"code": 403,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"Only the person who raised this request can add attachments\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Material Request Form Options",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/material-requests/form-options",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"material-requests",
+								"form-options"
+							]
+						}
+					},
+					"_postman_note": "Opens \"+ Request Material\". Returns requestedDate (today, for the auto-filled field), projects[] {leadId, projectName, jobId, location} (active construction projects only), priorities[], defaultPriority, materialTypes[] (the \"Select Material Type\" dropdown; \"Other\" needs a typed name).",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"requestedDate\": \"2026-10-05T09:30:00.000Z\",\n    \"priorities\": [\n      \"low\",\n      \"medium\",\n      \"high\",\n      \"critical\"\n    ],\n    \"defaultPriority\": \"medium\",\n    \"materialTypes\": [\n      \"Steel Frame\",\n      \"Primary Steel\",\n      \"Secondary Steel\",\n      \"Roofing Sheets\",\n      \"Wall Panels\",\n      \"Purlins\",\n      \"Girts\",\n      \"Trim\",\n      \"Doors\",\n      \"Insulation\",\n      \"Fasteners / Hardware\",\n      \"Other\"\n    ],\n    \"projects\": [\n      {\n        \"leadId\": \"665f1c2e9b1e8a0012ab0001\",\n        \"projectName\": \"ABC Warehouse\",\n        \"jobId\": \"JOB-0001\",\n        \"location\": \"Construction Site A\"\n      }\n    ]\n  }\n}"
+						}
+					]
 				},
 				{
 					"name": "Create Material Request",
@@ -993,9 +1639,36 @@
 						},
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"siteLocation\": \"Construction Site A\",\n  \"department\": \"Framing\",\n  \"requestedItems\": [\n    {\n      \"name\": \"Steel Studs\",\n      \"quantity\": 100,\n      \"unit\": \"pcs\",\n      \"notes\": \"\"\n    },\n    {\n      \"name\": \"Cement Bags\",\n      \"quantity\": 50,\n      \"unit\": \"bags\",\n      \"notes\": \"\"\n    }\n  ],\n  \"requiredBy\": \"2026-08-05\",\n  \"priority\": \"high\"\n}"
+							"raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"requiredBy\": \"2026-10-20\",\n  \"priority\": \"high\",\n  \"requestedItems\": [\n    {\n      \"materialType\": \"Steel Frame\",\n      \"quantity\": 12\n    },\n    {\n      \"materialType\": \"Roofing Sheets\",\n      \"quantity\": 40\n    },\n    {\n      \"materialType\": \"Other\",\n      \"name\": \"Anchor bolts M20\",\n      \"quantity\": 100\n    }\n  ],\n  \"remarks\": \"For Ground Floor\",\n  \"attachments\": [\n    {\n      \"name\": \"Material_List.xlsx\",\n      \"url\": \"https://your-bucket.s3.amazonaws.com/uploads/Material_List.xlsx\",\n      \"fileSize\": 12288\n    }\n  ]\n}"
 						}
-					}
+					},
+					"_postman_note": "\"Create\" on the Create New Material Request form. Body: leadId (from form-options projects), requiredBy (YYYY-MM-DD, today or later, optional), priority (low | medium | high | critical, default medium), requestedItems[] \u2014 one row per \"Add Material\": { materialType (from form-options materialTypes), quantity > 0, name (required only when materialType is Other) }, remarks (optional), attachments[] (optional, max 20): { name (defaults to the file name in the url), url (http/https), fileSize in bytes }. Upload each file to S3 first: POST {{baseUrl}}/upload/presigned-url { fileName, fileType } \u2192 PUT the file to the returned URL \u2192 send the file's public url here. requestDate is set by the server; siteLocation defaults to the project location; source = construction; status starts pending. Older { name, quantity } rows are still accepted. Returns 201 materialRequest (same card shape as the list, incl. remarks). 400 on any invalid field (message names the row, e.g. \"Material 1: quantity must be greater than 0\"); 404 unknown project. On success every active admin is notified (type material_request, refModel MaterialRequest, refId = request _id; high priority for high/critical requests) \u2014 visible in GET {{baseUrl}}/notifications.",
+					"response": [
+						{
+							"name": "Created",
+							"status": "Created",
+							"code": 201,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Material request created\",\n  \"data\": {\n    \"materialRequest\": {\n      \"requestId\": \"MR-2026-0042\",\n      \"_id\": \"665f1c2e9b1e8a0012ab0501\",\n      \"project\": {\n        \"leadId\": \"665f1c2e9b1e8a0012ab0001\",\n        \"projectName\": \"ABC Warehouse\",\n        \"jobId\": \"JOB-0001\",\n        \"location\": \"Construction Site A\"\n      },\n      \"siteLocation\": \"Construction Site A\",\n      \"department\": \"\",\n      \"requestedBy\": {\n        \"userId\": \"665f1c2e9b1e8a0012ab0009\",\n        \"name\": \"John\"\n      },\n      \"requestedItems\": [\n        {\n          \"_id\": \"665f1c2e9b1e8a0012ab0511\",\n          \"name\": \"Steel Frame\",\n          \"materialType\": \"Steel Frame\",\n          \"quantity\": 12,\n          \"unit\": \"\",\n          \"notes\": \"\",\n          \"deliveryStatus\": \"pending\"\n        },\n        {\n          \"_id\": \"665f1c2e9b1e8a0012ab0512\",\n          \"name\": \"Roofing Sheets\",\n          \"materialType\": \"Roofing Sheets\",\n          \"quantity\": 40,\n          \"unit\": \"\",\n          \"notes\": \"\",\n          \"deliveryStatus\": \"pending\"\n        },\n        {\n          \"_id\": \"665f1c2e9b1e8a0012ab0513\",\n          \"name\": \"Anchor bolts M20\",\n          \"materialType\": \"Other\",\n          \"quantity\": 100,\n          \"unit\": \"\",\n          \"notes\": \"\",\n          \"deliveryStatus\": \"pending\"\n        }\n      ],\n      \"itemCount\": 3,\n      \"requestDate\": \"2026-10-05T09:30:00.000Z\",\n      \"requiredBy\": \"2026-10-20T00:00:00.000Z\",\n      \"priority\": \"high\",\n      \"status\": \"pending\",\n      \"remarks\": \"For Ground Floor\",\n      \"totalAmount\": 0\n    }\n  }\n}"
+						},
+						{
+							"name": "Quantity left at 0",
+							"status": "Bad Request",
+							"code": 400,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"Material 1: quantity must be greater than 0\"\n}"
+						}
+					]
 				},
 				{
 					"name": "Update Material Request Status",
@@ -1210,6 +1883,37 @@
 					]
 				},
 				{
+					"name": "Add Delivery",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/deliveries",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"deliveries"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"leadId\": \"{{leadId}}\",\n  \"title\": \"Primary Frame Steel\",\n  \"sectionLocation\": \"Construction Site A\",\n  \"deliveryDate\": \"2026-10-20\",\n  \"description\": \"Second load of frames\",\n  \"notes\": \"Use gate 2\",\n  \"attachments\": []\n}"
+						}
+					},
+					"_postman_note": "\"Add Delivery\" (older construction screen). leadId and deliveryDate required; creates a scheduled delivery with an auto DEL-<year>-NNNN number."
+				},
+				{
 					"name": "Mark as Received",
 					"request": {
 						"method": "POST",
@@ -1329,7 +2033,34 @@
 							"mode": "raw",
 							"raw": "{\n  \"contactName\": \"John Miller\",\n  \"contactTitle\": \"Site Supervisor\",\n  \"phone\": \"(555) 123-4567\",\n  \"email\": \"contact@company.com\",\n  \"availableHours\": \"7:00 AM - 5:00 PM, Mon-Fri\",\n  \"notes\": \"Standard handling\"\n}"
 						}
-					}
+					},
+					"_postman_note": "Delivery Details \u2192 More \u2192 \"Update Site Contact\" \u2192 \"Save Contact\" (screen title \"DEL-2001 - ABC Building\" comes from Get Delivery Detail: deliveryNumber + project.projectName; prefill from delivery.siteContact). Fields: contactName (required once saved, max 100), contactTitle (100), phone (digits, spaces, + - ( ) ., 7-20), email (valid, saved lowercase), availableHours (100), notes (1000). Send only what changed; omitted fields keep their value, \"\" clears an optional field. Text values only (400 otherwise).",
+					"response": [
+						{
+							"name": "Success",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Site contact updated\",\n  \"data\": {\n    \"deliveryId\": \"665f1c2e9b1e8a0012ab0101\",\n    \"deliveryNumber\": \"DEL-2001\",\n    \"siteContact\": {\n      \"contactName\": \"John Miller\",\n      \"contactTitle\": \"Site Supervisor\",\n      \"phone\": \"(555) 123-4567\",\n      \"email\": \"contact@company.com\",\n      \"availableHours\": \"7:00 AM - 5:00 PM, Mon-Fri\",\n      \"notes\": \"Standard handling\"\n    }\n  }\n}"
+						},
+						{
+							"name": "Invalid email",
+							"status": "Bad Request",
+							"code": 400,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": false,\n  \"message\": \"Enter a valid email address\"\n}"
+						}
+					]
 				},
 				{
 					"name": "Download Packing List PDF",
@@ -1413,7 +2144,7 @@
 							"raw": "{\n  \"code\": \"BDL-001\",\n  \"deliveryId\": \"{{deliveryId}}\"\n}"
 						}
 					},
-					"_postman_note": "Scan QR Code / \"Simulate QR Scan\" \u2192 Scan Result screen. Send code (scanned or typed: delivery _id or number like DEL-2001, bundle _id or number like BDL-001) and/or deliveryId (from the delivery card / details screen). deliveryId alone = scan that delivery. With both, the code must belong to that delivery (400 otherwise). A bundle number without deliveryId (QR tab) resolves to its only open delivery; when several projects/trucks match, the one already at site (arrived or scanned) is used; still ambiguous \u2192 409 with data.candidates[] {deliveryId, deliveryNumber, projectName} so the app can let the user pick and re-send with deliveryId. The first scan stamps receipt.scannedAt, moving the delivery to the \"Verification\" tab. Returns: delivery (same shape as Get Delivery Detail), scannedBundleId, alreadyReceived (true \u2192 show read-only, no verification).",
+					"_postman_note": "Used by: Home card \"Track Delivery\" (opens the scanner \u2014 send the scanned code + that card's deliveryId), Delivery Details \"Simulate QR Scan\" and More \u2192 \"Start Verification\" (deliveryId only). Scan QR Code / \"Simulate QR Scan\" \u2192 Scan Result screen. Send code (scanned or typed: delivery _id or number like DEL-2001, bundle _id or number like BDL-001) and/or deliveryId (from the delivery card / details screen). deliveryId alone = scan that delivery. With both, the code must belong to that delivery (400 otherwise). A bundle number without deliveryId (QR tab) resolves to its only open delivery; when several projects/trucks match, the one already at site (arrived or scanned) is used; still ambiguous \u2192 409 with data.candidates[] {deliveryId, deliveryNumber, projectName} so the app can let the user pick and re-send with deliveryId. The first scan stamps receipt.scannedAt, moving the delivery to the \"Verification\" tab. Returns: delivery (same shape as Get Delivery Detail), scannedBundleId, alreadyReceived (true \u2192 show read-only, no verification).",
 					"response": [
 						{
 							"name": "Success",
@@ -2285,6 +3016,102 @@
 					}
 				},
 				{
+					"name": "Search Chat (WhatsApp-style)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/team-chat/search?q=packing&type=all",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"team-chat",
+								"search"
+							],
+							"query": [
+								{
+									"key": "q",
+									"value": "packing",
+									"description": "Search text (message text or file name). Required when type=all; optional with a chip. Max 100 chars."
+								},
+								{
+									"key": "type",
+									"value": "all",
+									"description": "all | photos | documents | links | videos | gifs | audio | polls | events \u2014 the chips under the search box"
+								},
+								{
+									"key": "userId",
+									"value": "{{userId}}",
+									"disabled": true,
+									"description": "Optional: search inside one direct chat"
+								},
+								{
+									"key": "groupId",
+									"value": "{{groupId}}",
+									"disabled": true,
+									"description": "Optional: search inside one group (403 if not a member)"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "20",
+									"disabled": true,
+									"description": "Max 50"
+								}
+							]
+						}
+					},
+					"_postman_note": "Construction app Home \u2192 \ud83d\udd0d Search screen (works like WhatsApp search). Searches only chats you can open: your direct chats and groups you are a member of. type=all \u2192 messages whose text or file name matches q (kind \"message\", with attachments[]). Media chips (photos/documents/videos/gifs/audio) \u2192 one item per file (kind photo|document|video|gif|audio, file {url, name, mimeType}); q optional, matches file name or message text. Files are classified by MIME type, else by extension; anything not photo/gif/video/audio is a document. links \u2192 messages containing http(s) links (kind \"link\", links[]). polls / events \u2192 200 with empty items and supported:false (team chat has no polls or events yet). Every item has messageId, sender {userId, name, isMe}, conversation {type direct|group, userId|groupId, name, avatar}, sentAt. Newest first; total/page/limit/totalPages for paging.",
+					"response": [
+						{
+							"name": "Text search (type=all)",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"type\": \"all\",\n    \"q\": \"packing\",\n    \"total\": 1,\n    \"page\": 1,\n    \"limit\": 20,\n    \"totalPages\": 1,\n    \"supported\": true,\n    \"items\": [\n      {\n        \"messageId\": \"665f1c2e9b1e8a0012ab0901\",\n        \"sender\": {\n          \"userId\": \"665f1c2e9b1e8a0012ab0007\",\n          \"name\": \"Ravi Plant\",\n          \"isMe\": false\n        },\n        \"conversation\": {\n          \"type\": \"direct\",\n          \"userId\": \"665f1c2e9b1e8a0012ab0007\",\n          \"name\": \"Ravi Plant\",\n          \"avatar\": \"\"\n        },\n        \"sentAt\": \"2026-10-01T08:04:00.000Z\",\n        \"kind\": \"message\",\n        \"content\": \"Packing list attached\",\n        \"attachments\": [\n          {\n            \"url\": \"https://bucket.s3.amazonaws.com/chat/Packing_List.pdf\",\n            \"name\": \"Packing_List.pdf\",\n            \"mimeType\": \"application/pdf\"\n          }\n        ]\n      }\n    ]\n  }\n}"
+						},
+						{
+							"name": "Photos chip (type=photos)",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"type\": \"photos\",\n    \"q\": \"\",\n    \"total\": 1,\n    \"page\": 1,\n    \"limit\": 20,\n    \"totalPages\": 1,\n    \"supported\": true,\n    \"items\": [\n      {\n        \"messageId\": \"665f1c2e9b1e8a0012ab0902\",\n        \"sender\": {\n          \"userId\": \"665f1c2e9b1e8a0012ab0007\",\n          \"name\": \"Ravi Plant\",\n          \"isMe\": false\n        },\n        \"conversation\": {\n          \"type\": \"direct\",\n          \"userId\": \"665f1c2e9b1e8a0012ab0007\",\n          \"name\": \"Ravi Plant\",\n          \"avatar\": \"\"\n        },\n        \"sentAt\": \"2026-10-01T08:01:00.000Z\",\n        \"kind\": \"photo\",\n        \"file\": {\n          \"url\": \"https://bucket.s3.amazonaws.com/chat/truck.jpg\",\n          \"name\": \"truck.jpg\",\n          \"mimeType\": \"image/jpeg\"\n        },\n        \"content\": \"Truck loaded, see photo\"\n      }\n    ]\n  }\n}"
+						},
+						{
+							"name": "Polls chip (not supported yet)",
+							"status": "OK",
+							"code": 200,
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"type\": \"polls\",\n    \"q\": \"\",\n    \"items\": [],\n    \"total\": 0,\n    \"page\": 1,\n    \"limit\": 20,\n    \"totalPages\": 0,\n    \"supported\": false\n  }\n}"
+						}
+					]
+				},
+				{
 					"name": "Direct \u2014 Get Messages",
 					"request": {
 						"method": "GET",
@@ -2425,6 +3252,197 @@
 						"body": {
 							"mode": "raw",
 							"raw": "{\n\t\"content\": \"Team, please review the latest drawings\",\n\t\"attachments\": [\n\t\t{\n\t\t\t\"url\": \"{{baseUrl}}/.../chat-attachments/example.jpg\",\n\t\t\t\"name\": \"site-photo.jpg\",\n\t\t\t\"type\": \"image/jpeg\"\n\t\t}\n\t]\n}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Legacy Chat (/construction/chat)",
+			"item": [
+				{
+					"name": "Get Users for DM",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/chat/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"chat",
+								"users"
+							]
+						}
+					},
+					"_postman_note": "Older text-only chat (same controller as the admin chat panel; no attachments). The app's chat and WhatsApp-style search use Internal Communication (/team-chat) instead."
+				},
+				{
+					"name": "Get Department Channels",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/chat/departments",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"chat",
+								"departments"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Channel Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/chat/departments/{{channelKey}}/messages",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"chat",
+								"departments",
+								"{{channelKey}}",
+								"messages"
+							]
+						}
+					}
+				},
+				{
+					"name": "Send Channel Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/chat/departments/{{channelKey}}/messages",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"chat",
+								"departments",
+								"{{channelKey}}",
+								"messages"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"content\": \"Material reached site\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Get Direct Conversations",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/chat/direct",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"chat",
+								"direct"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Direct Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/chat/direct/{{userId}}/messages",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"chat",
+								"direct",
+								"{{userId}}",
+								"messages"
+							]
+						}
+					}
+				},
+				{
+					"name": "Send Direct Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/chat/direct/{{userId}}/messages",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"chat",
+								"direct",
+								"{{userId}}",
+								"messages"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"content\": \"Please confirm delivery time\"\n}"
 						}
 					}
 				}

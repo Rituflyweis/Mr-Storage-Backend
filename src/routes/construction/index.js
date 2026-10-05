@@ -55,9 +55,12 @@ router.post('/work-logs', taskCtrl.createWorkLog)
 // Material Requests
 router.get('/material-requests', materialRequestCtrl.getMaterialRequests)
 router.get('/material-requests/filters', materialRequestCtrl.getMaterialRequestFilters)
+router.get('/material-requests/form-options', materialRequestCtrl.getMaterialRequestFormOptions)
 router.post('/material-requests', materialRequestCtrl.createMaterialRequest)
 router.get('/material-requests/:requestId', materialRequestCtrl.getMaterialRequest)
 router.put('/material-requests/:requestId/status', materialRequestCtrl.updateMaterialRequestStatus)
+router.post('/material-requests/:requestId/cancel', materialRequestCtrl.cancelMaterialRequest)
+router.post('/material-requests/:requestId/attachments', materialRequestCtrl.addMaterialRequestAttachments)
 router.post('/material-requests/:requestId/quotations', materialRequestCtrl.createOrderQuotation)
 router.post('/material-requests/:requestId/items/:itemId/deliver', materialRequestCtrl.markOrderItemDelivered)
 
