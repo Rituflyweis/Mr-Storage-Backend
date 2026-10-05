@@ -1,8 +1,9 @@
 const Lead = require('../../models/Lead')
 const { buildDateFilter } = require('../../utils/dateRange')
-const { success } = require('../../utils/apiResponse')
+const { success, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
+const accountProjectService = require('../../services/accountProject.service')
 
 exports.getProjects = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
@@ -26,4 +27,10 @@ exports.getProjects = asyncHandler(async (req, res) => {
     .lean()
 
   return success(res, { projects: projects.map(enrichLeadDocument) })
+})
+
+exports.getProjectDetail = asyncHandler(async (req, res) => {
+  const detail = await accountProjectService.getProjectDetail(req.params.projectId)
+  if (!detail) return notFound(res, 'Project not found')
+  return success(res, detail)
 })
