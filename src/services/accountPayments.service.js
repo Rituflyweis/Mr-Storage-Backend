@@ -231,6 +231,103 @@ exports.resolveWip = async (idOrLeadId) => {
     .lean()
 }
 
+/** Leads eligible for the Add Order Payment quote/order dropdown */
+const ORDER_OPTION_LIFECYCLE = [
+  'deal_closed',
+  'payment_done',
+  'converted_to_po',
+  'sent_to_admin',
+  'released_to_plant',
+  'drawings_received',
+  'bom_received',
+  'bom_review',
+  'material_check',
+  'production_planning',
+  'fabrication_started',
+  'quality_inspection',
+  'packing_bundling',
+  'shipper_prepared',
+  'ready_for_delivery',
+  'dispatched',
+  'delivered',
+]
+
+exports.listOrderOptions = async (query = {}) => {
+  const { search, limit = 50, excludeWithWip } = query
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200)
+
+  const filter = {
+    lifecycleStatus: { $in: ORDER_OPTION_LIFECYCLE },
+    jobId: { $exists: true, $nin: [null, ''] },
+  }
+
+  if (search?.trim()) {
+    const regex = new RegExp(search.trim(), 'i')
+    const customers = await Customer.find({
+      $or: [{ firstName: regex }, { lastName: regex }, { email: regex }],
+    })
+      .select('_id')
+      .lean()
+    const customerIds = customers.map((c) => c._id)
+    filter.$or = [
+      { projectName: regex },
+      { jobId: regex },
+      { location: regex },
+      ...(customerIds.length ? [{ customerId: { $in: customerIds } }] : []),
+    ]
+  }
+
+  let leadIdsWithWip = null
+  if (excludeWithWip === true || excludeWithWip === 'true' || excludeWithWip === '1') {
+    const wips = await WIPProfit.find().select('leadId').lean()
+    leadIdsWithWip = new Set(wips.map((w) => String(w.leadId)))
+  }
+
+  const leads = await Lead.find(filter)
+    .populate('customerId', 'firstName lastName email')
+    .select('projectName jobId location quoteValue lifecycleStatus customerId')
+    .sort({ updatedAt: -1 })
+    .limit(parsedLimit * 3)
+    .lean()
+
+  const leadIds = leads.map((l) => l._id)
+  const wipByLead = Object.fromEntries(
+    (
+      await WIPProfit.find({ leadId: { $in: leadIds } })
+        .select('leadId')
+        .lean()
+    ).map((w) => [String(w.leadId), w._id])
+  )
+
+  let options = leads.map((lead) => {
+    const customerName = customerNameFromLead(lead)
+    const quoteOrderId = lead.jobId || ''
+    const projectName = lead.projectName || customerName || 'Project'
+    const label = [quoteOrderId, customerName, projectName].filter(Boolean).join(' — ')
+    const wipId = wipByLead[String(lead._id)] || null
+    return {
+      leadId: lead._id,
+      quoteOrderId,
+      label,
+      projectName: lead.projectName || '',
+      customerName,
+      location: lead.location || '',
+      quoteValue: round2(lead.quoteValue),
+      lifecycleStatus: lead.lifecycleStatus,
+      hasWipRecord: Boolean(wipId),
+      wipId,
+    }
+  })
+
+  if (leadIdsWithWip) {
+    options = options.filter((o) => !leadIdsWithWip.has(String(o.leadId)))
+  }
+
+  options = options.slice(0, parsedLimit)
+
+  return { options, total: options.length }
+}
+
 exports.resolveLeadForOrder = async (quoteOrderId, leadId) => {
   if (leadId) {
     const lead = await Lead.findById(leadId).lean()

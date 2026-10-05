@@ -25,6 +25,17 @@ router.get(
   ctrl.getOrdersAndPayments
 )
 
+router.get(
+  '/orders/options',
+  [
+    query('search').optional().trim(),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+    query('excludeWithWip').optional().isIn(['true', 'false', '1', '0']),
+  ],
+  validate,
+  ctrl.getOrderOptions
+)
+
 router.get('/orders/:orderId', [param('orderId').notEmpty()], validate, ctrl.getOrderDetail)
 
 router.post(

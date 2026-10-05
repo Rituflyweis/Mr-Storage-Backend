@@ -97,6 +97,49 @@ Create WIP via list API: `POST /api/account/payments/orders` (see A4).
 
 ---
 
+### A2b. Order / quote options (dropdown for Add Order Payment)
+
+Use this to populate the **Select order** control before `POST /api/account/payments/orders` with `quoteOrderId` (e.g. `Q-2025-1047`) or `leadId`.
+
+```http
+GET /api/account/payments/orders/options?search=warehouse&limit=50&excludeWithWip=true HTTP/1.1
+Authorization: Bearer <token>
+```
+
+| Query | Description |
+|--------|-------------|
+| `search` | Job/quote id, project name, location, customer name or email |
+| `limit` | Max options (default `50`, max `200`) |
+| `excludeWithWip` | `true` — hide projects that already have a WIP row (new payment only) |
+
+```json
+{
+  "success": true,
+  "message": "Success",
+  "data": {
+    "options": [
+      {
+        "leadId": "67a1b2c3d4e5f6789012345b",
+        "quoteOrderId": "Q-2025-1047",
+        "label": "Q-2025-1047 — John Doe — ABC Warehouse",
+        "projectName": "ABC Warehouse",
+        "customerName": "John Doe",
+        "location": "Workshop, Texas",
+        "quoteValue": 450000,
+        "lifecycleStatus": "payment_done",
+        "hasWipRecord": false,
+        "wipId": null
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+**Frontend:** bind `value` to `quoteOrderId` (or `leadId`); on submit send the same field in the POST body.
+
+---
+
 ### A3. Order detail / view modal
 
 ```http

@@ -21,6 +21,12 @@ exports.getPaymentOverview = asyncHandler(async (req, res) => {
   })
 })
 
+/** Quote / order dropdown for Add Order Payment (POST body quoteOrderId or leadId) */
+exports.getOrderOptions = asyncHandler(async (req, res) => {
+  const data = await accountPaymentsService.listOrderOptions(req.query)
+  return success(res, data)
+})
+
 /** Orders & payment summary table */
 exports.getOrdersAndPayments = asyncHandler(async (req, res) => {
   const data = await accountPaymentsService.listOrders(req.query)
