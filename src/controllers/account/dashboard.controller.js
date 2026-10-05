@@ -4,43 +4,50 @@ const Lead = require('../../models/Lead')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-
-const computeDueDate = (inv) => {
-  if (!inv.daysToPay || !inv.date) return null
-  return new Date(new Date(inv.date).getTime() + inv.daysToPay * 24 * 60 * 60 * 1000)
-}
+const dashboardService = require('../../services/accountDashboard.service')
+exports.getOverview = asyncHandler(async (req, res) => {
+  const data = await dashboardService.computeDashboardOverview(req.query)
+  return success(res, data)
+})
 
 exports.getStats = asyncHandler(async (req, res) => {
-  const dateFilter = buildDateFilter(req.query, 'createdAt')
-
-  const [invoices, expenses] = await Promise.all([
-    Invoice.find(dateFilter).select('status totalAmount').lean(),
-    Expense.find({ isActive: true, ...buildDateFilter(req.query, 'date') }).select('amount').lean(),
-  ])
-
-  const totalRevenue  = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.totalAmount, 0)
-  const outstanding   = invoices.filter(i => ['sent', 'draft'].includes(i.status)).reduce((s, i) => s + i.totalAmount, 0)
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0)
-  const netProfit     = totalRevenue - totalExpenses
-
-  return success(res, { totalRevenue, totalExpenses, netProfit, outstanding })
+  const data = await dashboardService.computeFinancialOverview(req.query)
+  return success(res, data)
 })
 
 exports.getInvoiceStats = asyncHandler(async (req, res) => {
-  const dateFilter = buildDateFilter(req.query, 'createdAt')
-  const invoices = await Invoice.find(dateFilter).select('status totalAmount').lean()
+  const data = await dashboardService.computeInvoiceReport(req.query)
+  return success(res, data)
+})
 
-  const paid    = invoices.filter(i => i.status === 'paid')
-  const overdue = invoices.filter(i => i.status === 'overdue')
-  const unpaid  = invoices.filter(i => ['draft', 'sent'].includes(i.status))
+exports.getDeliveryFinance = asyncHandler(async (req, res) => {
+  const data = await dashboardService.computeDeliveryFinance(req.query)
+  return success(res, data)
+})
 
-  return success(res, {
-    total:      invoices.length,
-    paid:       paid.length,
-    unpaid:     unpaid.length,
-    overdue:    overdue.length,
-    totalSales: paid.reduce((s, i) => s + i.totalAmount, 0),
-  })
+exports.getOrderVsPlantCosts = asyncHandler(async (req, res) => {
+  const data = await dashboardService.computeOrderVsPlantCosts(req.query)
+  return success(res, data)
+})
+
+exports.getFinancialAlerts = asyncHandler(async (req, res) => {
+  const data = await dashboardService.computeFinancialAlerts(req.query)
+  return success(res, data)
+})
+
+exports.getTopCarriers = asyncHandler(async (req, res) => {
+  const data = await dashboardService.computeTopCarriers(req.query, req.query.limit)
+  return success(res, data)
+})
+
+exports.getTopVendors = asyncHandler(async (req, res) => {
+  const data = await dashboardService.computeTopVendors(req.query, req.query.limit)
+  return success(res, data)
+})
+
+exports.getProjectBudgetVsActual = asyncHandler(async (req, res) => {
+  const data = await dashboardService.computeProjectBudgetVsActual(req.query, req.query.limit)
+  return success(res, data)
 })
 
 exports.getIncomeVsExpense = asyncHandler(async (req, res) => {
@@ -81,7 +88,6 @@ exports.getIncomeVsExpense = asyncHandler(async (req, res) => {
       })
     }
   } else {
-    // monthly — last 12 months
     for (let m = 11; m >= 0; m--) {
       const start = new Date(now.getFullYear(), now.getMonth() - m, 1)
       const end   = new Date(now.getFullYear(), now.getMonth() - m + 1, 0, 23, 59, 59, 999)
@@ -103,42 +109,21 @@ exports.getIncomeVsExpense = asyncHandler(async (req, res) => {
 })
 
 exports.getRecentTransactions = asyncHandler(async (req, res) => {
-  const limit = Math.min(Number(req.query.limit) || 10, 50)
-
-  const [invoices, expenses] = await Promise.all([
-    Invoice.find({ status: 'paid' }).sort({ paidAt: -1 }).limit(limit).lean(),
-    Expense.find({ isActive: true }).sort({ date: -1 }).limit(limit).lean(),
-  ])
-
-  const transactions = [
-    ...invoices.map(i => ({ type: 'invoice', date: i.paidAt,  amount: i.totalAmount, ...i })),
-    ...expenses.map(e => ({ type: 'expense', date: e.date,    amount: e.amount,      ...e })),
-  ]
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, limit)
-
-  return success(res, { transactions })
+  const data = await dashboardService.computeRecentTransactions(req.query, req.query.limit)
+  return success(res, data)
 })
 
 exports.getUpcomingPayments = asyncHandler(async (req, res) => {
-  const now     = new Date()
-  const inTen   = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000)
-
-  const invoices = await Invoice.find({ status: { $in: ['sent', 'draft'] } })
-    .populate('leadId', 'buildingType location lifecycleStatus')
-    .lean()
-
-  const upcoming = invoices
-    .map(i => ({ ...i, dueDate: computeDueDate(i) }))
-    .filter(i => i.dueDate && i.dueDate >= now && i.dueDate <= inTen)
-    .sort((a, b) => a.dueDate - b.dueDate)
-
-  return success(res, { upcoming })
+  const data = await dashboardService.computeUpcomingPayments(req.query)
+  return success(res, data)
 })
 
 exports.getPaymentDistribution = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query, 'createdAt')
-  const invoices = await Invoice.find(dateFilter).select('status totalAmount').lean()
+  const invoices = await Invoice.find({
+    invoiceType: { $nin: ['vendor', 'freight_carrier'] },
+    ...dateFilter,
+  }).select('status totalAmount').lean()
 
   const totalAmount = invoices.reduce((s, i) => s + i.totalAmount, 0)
   const totalCount  = invoices.length
