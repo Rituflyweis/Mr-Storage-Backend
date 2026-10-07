@@ -23,6 +23,7 @@ const generateBundleLabelsExcel = async (rows) =>
     })),
     [
       { header: 'Bundle #', key: 'bundleNo', width: 14 },
+      { header: 'Load ID', key: 'loadId', width: 16 },
       { header: 'Project', key: 'projectName', width: 24 },
       { header: 'Job ID', key: 'jobId', width: 12 },
       { header: 'Type', key: 'bundleType', width: 12 },
