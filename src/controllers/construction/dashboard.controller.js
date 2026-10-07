@@ -93,6 +93,26 @@ const resolveDeliveryStatusLabel = (statuses) => {
   return 'On Track'
 }
 
+const progressPctForLead = (lead, stepPctByLead, progressByLead) => {
+  if (lead.lifecycleStatus === 'delivered') return 100
+  const key = String(lead._id)
+  const stepPct = stepPctByLead.get(key)?.pct
+  if (stepPct != null) return stepPct
+  const taskProg = progressByLead.get(key)
+  if (taskProg?.total) return Math.round((taskProg.done / taskProg.total) * 100)
+  return 0
+}
+
+/** Aligns with activeSites: delivered | past endDate | delayed delivery → delayed bucket. */
+const projectHealthBucket = (lead, deliveriesByLead, now) => {
+  if (lead.lifecycleStatus === 'delivered') return 'completed'
+  const key = String(lead._id)
+  const deliveryStatus = resolveDeliveryStatusLabel(deliveriesByLead.get(key) || [])
+  const pastDeadline = lead.endDate && new Date(lead.endDate) < now
+  if (deliveryStatus === 'Delayed' || pastDeadline) return 'delayed'
+  return 'onTrack'
+}
+
 const parseDashboardFilters = (query) => {
   const {
     projectId,
@@ -294,10 +314,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
 
   const [
     leads,
-    totalProjects,
-    completedProjects,
-    delayedProjects,
-    totalProjectsAsOfYesterday,
+    projectsAddedToScopeToday,
     deliveriesInRange,
     allScopedDeliveries,
     tasks,
@@ -311,22 +328,15 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     Lead.find(leadFilter)
       .select('projectName jobId businessUnit location lifecycleStatus endDate plannedStartDate lifecycleHistory numberOfBuildings buildingType')
       .lean(),
-    Lead.countDocuments(leadFilter),
-    Lead.countDocuments({ ...leadFilter, lifecycleStatus: 'delivered' }),
-    Lead.countDocuments({
-      ...leadFilter,
-      endDate: { $lt: now },
-      lifecycleStatus: { $nin: ['delivered'] },
-    }),
     Lead.countDocuments({
       ...leadFilter,
       $or: [
-        { createdAt: { $lt: todayStart } },
+        { createdAt: { $gte: todayStart, $lte: todayEnd } },
         {
           lifecycleHistory: {
             $elemMatch: {
-              stage: { $in: CONSTRUCTION_STAGES },
-              changedAt: { $lt: todayStart },
+              stage: 'released_to_plant',
+              changedAt: { $gte: todayStart, $lte: todayEnd },
             },
           },
         },
@@ -378,23 +388,6 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       .lean(),
     DailyProductionLog.findOne({ date: todayStart }).lean(),
   ])
-
-  const onTrack = Math.max(0, totalProjects - delayedProjects - completedProjects)
-  const totalChangePctVsYesterday = pctChange(totalProjects, totalProjectsAsOfYesterday)
-
-  const projectStats = {
-    total: totalProjects,
-    onTrack,
-    delayed: delayedProjects,
-    completed: completedProjects,
-    onTrackPct: pct(onTrack, totalProjects),
-    delayedPct: pct(delayedProjects, totalProjects),
-    completedPct: pct(completedProjects, totalProjects),
-    completionRate: totalProjects ? Math.round((completedProjects / totalProjects) * 100) : 0,
-    upcomingDeadlines: upcomingDeadlineLeads.length,
-    totalChangePctVsYesterday,
-    completionRateLabel: 'Average Completion',
-  }
 
   const deliveryOverview = {
     scope: parsed.fromDate || parsed.toDate ? 'range' : 'today',
@@ -463,18 +456,40 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     deliveriesByLead.get(key).push(d.status)
   }
 
+  const totalProjects = leads.length
+  let completedProjects = 0
+  let delayedProjects = 0
+  let onTrackProjects = 0
+  const progressPcts = []
+  for (const lead of leads) {
+    progressPcts.push(progressPctForLead(lead, stepPctByLead, progressByLead))
+    const bucket = projectHealthBucket(lead, deliveriesByLead, now)
+    if (bucket === 'completed') completedProjects += 1
+    else if (bucket === 'delayed') delayedProjects += 1
+    else onTrackProjects += 1
+  }
+  const totalProjectsYesterday = Math.max(0, totalProjects - projectsAddedToScopeToday)
+  const projectStats = {
+    total: totalProjects,
+    onTrack: onTrackProjects,
+    delayed: delayedProjects,
+    completed: completedProjects,
+    onTrackPct: pct(onTrackProjects, totalProjects),
+    delayedPct: pct(delayedProjects, totalProjects),
+    completedPct: pct(completedProjects, totalProjects),
+    completionRate: progressPcts.length
+      ? Math.round(progressPcts.reduce((sum, n) => sum + n, 0) / progressPcts.length)
+      : 0,
+    upcomingDeadlines: upcomingDeadlineLeads.length,
+    totalChangePctVsYesterday: pctChange(totalProjects, totalProjectsYesterday),
+    completionRateLabel: 'Average Completion',
+  }
+
   const activeSites = leads
     .filter((l) => CONSTRUCTION_ACTIVE_STAGES.includes(l.lifecycleStatus) || l.lifecycleStatus === 'dispatched')
     .map((l) => {
       const key = String(l._id)
-      const taskProg = progressByLead.get(key)
-      const stepPct = stepPctByLead.get(key)?.pct
-      const progressPct =
-        stepPct != null
-          ? stepPct
-          : taskProg?.total
-            ? Math.round((taskProg.done / taskProg.total) * 100)
-            : 0
+      const progressPct = progressPctForLead(l, stepPctByLead, progressByLead)
       const deliveryStatus = resolveDeliveryStatusLabel(deliveriesByLead.get(key) || [])
       const deadline = l.endDate || null
       const isDelayed =

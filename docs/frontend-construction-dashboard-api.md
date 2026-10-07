@@ -91,6 +91,10 @@ GET /api/construction/dashboard?projectId=66f1…&fromDate=2026-03-24&toDate=202
 }
 ```
 
+- **`onTrack` / `delayed` / `completed`** — Mutually exclusive buckets per construction project. `completed` = `lifecycleStatus === delivered`. `delayed` = past `endDate` and not delivered, **or** any scoped delivery in `delayed` status. `onTrack` = everything else.
+- **`completionRate`** — **Average progress %** across all scoped projects (latest `ProjectStepDetail.completionPct`, else task done/total, else `100` if delivered). **Not** the same as `completedPct` (share of projects delivered).
+- **`totalChangePctVsYesterday`** — Compares current project count to count minus projects **created today** or **released to plant today**.
+
 ### `deliveryOverview`
 
 ```json
