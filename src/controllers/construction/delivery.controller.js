@@ -107,11 +107,11 @@ exports.getDeliveries = asyncHandler(async (req, res) => {
 
   const now = new Date()
   const stats = {
-    inTransit: await Delivery.countDocuments({ status: { $in: IN_TRANSIT_ROLLUP_STATUSES } }),
-    staged: await Delivery.countDocuments({ status: 'confirmed' }),
-    ready: await Delivery.countDocuments({ status: 'scheduled' }),
+    inTransit: await Delivery.countDocuments({ ...filter, status: { $in: IN_TRANSIT_ROLLUP_STATUSES } }),
+    staged: await Delivery.countDocuments({ ...filter, status: 'confirmed' }),
+    ready: await Delivery.countDocuments({ ...filter, status: 'scheduled' }),
     totalToday: await Delivery.countDocuments({
-      status: { $ne: 'draft' },
+      ...filter,
       deliveryDate: {
         $gte: new Date(now.toDateString()),
         $lt: new Date(new Date(now.toDateString()).getTime() + 86400000),

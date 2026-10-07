@@ -2,6 +2,7 @@ const Delivery = require('../models/Delivery')
 const FreightBid = require('../models/FreightBid')
 const FreightCarrier = require('../models/FreightCarrier')
 const { buildDateFilter } = require('./dateRange')
+const { findLeadIdsByConstructionSearch } = require('./constructionListQuery')
 const { DELIVERY_STATUSES } = require('../config/constants')
 
 const resolveCarrierBidIds = async ({ transporter, driver }) => {
@@ -50,13 +51,17 @@ const buildConstructionDeliveryFilter = async (query = {}) => {
 
   if (search?.trim()) {
     const regex = { $regex: search.trim(), $options: 'i' }
-    filter.$or = [
+    const orClause = [
       { deliveryNumber: regex },
       { materialType: regex },
       { description: regex },
       { loadDescription: regex },
       { deliveryLocation: regex },
+      { receivingPoc: regex },
     ]
+    const leadIds = await findLeadIdsByConstructionSearch(search)
+    if (leadIds.length) orClause.push({ leadId: { $in: leadIds } })
+    filter.$or = orClause
   }
 
   return filter

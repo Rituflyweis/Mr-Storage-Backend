@@ -1,4 +1,21 @@
 const Lead = require('../models/Lead')
+const Customer = require('../models/Customer')
+
+/** Project / customer text search for construction logistics lists */
+const findLeadIdsByConstructionSearch = async (search) => {
+  const term = search?.trim()
+  if (!term) return []
+  const regex = { $regex: term, $options: 'i' }
+  const customers = await Customer.find({
+    $or: [{ firstName: regex }, { lastName: regex }, { email: regex }],
+  })
+    .select('_id')
+    .lean()
+  const customerIds = customers.map((c) => c._id)
+  const leadOr = [{ projectName: regex }, { jobId: regex }, { location: regex }]
+  if (customerIds.length) leadOr.push({ customerId: { $in: customerIds } })
+  return Lead.find({ $or: leadOr }).distinct('_id')
+}
 
 /** UI sort keys shared across construction logistics lists */
 const CONSTRUCTION_SORT_BY = ['Latest', 'Oldest', 'Weight', 'BundleNo', 'PackingListNo', 'DeliveryDate']
@@ -93,8 +110,7 @@ const appendLeadProjectSearch = async (filter, search, leadIdField = 'leadId') =
   const term = search?.trim()
   if (!term) return
   const regex = { $regex: term, $options: 'i' }
-  const leadIds = await Lead.find({ $or: [{ projectName: regex }, { jobId: regex }] })
-    .distinct('_id')
+  const leadIds = await findLeadIdsByConstructionSearch(term)
   const orClause = [{ bundleNo: regex }, { title: regex }]
   if (leadIds.length) orClause.push({ [leadIdField]: { $in: leadIds } })
   if (filter.$or) {
@@ -118,6 +134,7 @@ const appendPackingListSearch = (filter, search) => {
 }
 
 module.exports = {
+  findLeadIdsByConstructionSearch,
   CONSTRUCTION_SORT_BY,
   BUNDLE_SCAN_UI_STATUSES,
   LABEL_UI_STATUSES,

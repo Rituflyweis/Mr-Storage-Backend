@@ -32,7 +32,23 @@ const {
   DISPATCH_VERIFICATION_UI_STATUSES,
 } = require('../../utils/constructionListQuery')
 
-const mapBundleLabelRow = (b) => ({
+const resolvePackingListRef = (packingListId) => {
+  if (!packingListId) return { packingListId: null, loadId: null, loadLabel: null }
+  if (typeof packingListId === 'object' && packingListId._id) {
+    const no = packingListId.packingListNo || null
+    const truck = packingListId.truckLabel || packingListId.truckNo || null
+    return {
+      packingListId: packingListId._id,
+      loadId: no,
+      loadLabel: no && truck ? `${no} (${truck})` : no || truck,
+    }
+  }
+  return { packingListId, loadId: null, loadLabel: null }
+}
+
+const mapBundleLabelRow = (b) => {
+  const load = resolvePackingListRef(b.packingListId)
+  return {
   bundleId: b._id,
   bundleNo: b.bundleNo,
   bundleType: b.bundleType,
@@ -42,7 +58,9 @@ const mapBundleLabelRow = (b) => ({
   maxLengthFeet: b.maxLengthFeet,
   status: b.status,
   labelPrinted: b.labelPrinted || false,
-  packingListId: b.packingListId,
+  packingListId: load.packingListId,
+  loadId: load.loadId,
+  loadLabel: load.loadLabel,
   project: b.bundlePlanId?.leadId
     ? {
         leadId: b.bundlePlanId.leadId._id,
@@ -50,7 +68,8 @@ const mapBundleLabelRow = (b) => ({
         jobId: b.bundlePlanId.leadId.jobId,
       }
     : null,
-})
+}
+}
 
 const mapBundleScanRow = (b) => ({
   bundleId: b._id,
@@ -174,6 +193,7 @@ exports.getBundleLabels = asyncHandler(async (req, res) => {
     Bundle.find(filter)
       .select('bundleNo bundleType title totalWeight maxLengthFeet status packingListId bundlePlanId items labelPrinted')
       .populate(bundlePopulate)
+      .populate('packingListId', 'packingListNo truckLabel truckNo')
       .sort(sort)
       .skip(skip)
       .limit(Number(limit))
@@ -206,8 +226,9 @@ exports.exportBundleLabels = asyncHandler(async (req, res) => {
   const filter = await buildLabelFilter(req.query)
   const sort = parseSortBy(req.query.sortBy, bundleSortMap)
   const bundles = await Bundle.find(filter)
-    .select('bundleNo bundleType title totalWeight status bundlePlanId labelPrinted')
+    .select('bundleNo bundleType title totalWeight status bundlePlanId labelPrinted packingListId')
     .populate(bundlePopulate)
+    .populate('packingListId', 'packingListNo truckLabel truckNo')
     .sort(sort)
     .lean()
   const buffer = await generateBundleLabelsExcel(bundles.map(mapBundleLabelRow))

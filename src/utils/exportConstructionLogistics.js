@@ -13,6 +13,7 @@ const generateBundleLabelsExcel = async (rows) =>
   addSheet(
     rows.map((r) => ({
       bundleNo: r.bundleNo || '—',
+      loadId: r.loadId || '—',
       projectName: r.project?.projectName || '—',
       jobId: r.project?.jobId || '—',
       bundleType: r.bundleType || '—',
