@@ -2,6 +2,7 @@ const router = require('express').Router()
 const { body } = require('express-validator')
 const verifyCustomerToken = require('../middleware/customerAuth')
 const ctrl = require('../controllers/customerPortal.controller')
+const directChatCtrl = require('../controllers/common/customerDirectChat.controller')
 const validate = require('../middleware/validate')
 
 router.use(verifyCustomerToken)
@@ -140,6 +141,10 @@ router.get('/bundles/:bundleId/download/packing-list', ctrl.downloadBundlePackin
 // Communication / Chat
 router.get('/chat/presence',                 ctrl.getChatPresence)
 router.get('/chat/channels',                 ctrl.getChatChannels)
+// Direct customer ↔ admin/sales (no leadId)
+router.get('/chat/direct',                   directChatCtrl.getCustomerDirectSummary)
+router.get('/chat/direct/messages',          directChatCtrl.getCustomerDirectMessages)
+router.post('/chat/direct/messages',         [body('content').notEmpty().trim()], validate, directChatCtrl.sendCustomerDirectMessage)
 router.get('/chat/:channel/messages',        ctrl.getChatMessages)
 router.post('/chat/:channel/messages',       ctrl.sendChatMessage)
 

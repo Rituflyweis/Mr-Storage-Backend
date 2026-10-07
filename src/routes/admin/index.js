@@ -8,6 +8,7 @@ router.use(verifyToken, roleGuard(["admin"]));
 router.use("/dashboard", require("./dashboard.routes"));
 router.use("/plant", require("./plant/index"));
 router.use("/customers", require("./customer.routes"));
+router.use("/customer-direct-chat", require("./customerDirectChat.routes"));
 router.use("/leads", require("./lead.routes"));
 router.use("/employees", require("./employee.routes"));
 router.use("/admins", require("./adminManagement.routes"));

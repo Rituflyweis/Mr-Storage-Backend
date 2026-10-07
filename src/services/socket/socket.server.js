@@ -5,6 +5,7 @@ const chatHandler = require('./chat.handler')
 const adminHandler = require('./admin.handler')
 const aiScriptHandler = require('./aiScript.handler')
 const teamChatHandler = require('./teamChat.handler')
+const customerDirectChatHandler = require('./customerDirectChat.handler')
 const customerPresence = require('./customerPresence.service')
 const staffPresence = require('./staffPresence.service')
 
@@ -13,10 +14,25 @@ const initSocket = (io) => {
 
   const chatNS = io.of('/chat')
 
+  chatNS.use(async (socket, next) => {
+    const token = socket.handshake.auth?.token
+    if (!token) return next()
+    try {
+      const decoded = jwt.verify(token, JWT_ACCESS_SECRET)
+      if (decoded.type === 'customer') {
+        socket.customer = { _id: decoded._id, email: decoded.email }
+      }
+    } catch {
+      // Public lead chat may connect without a valid customer token
+    }
+    next()
+  })
+
   chatNS.on('connection', (socket) => {
     console.log('[Socket /chat] Connected:', socket.id)
 
     chatHandler(socket, chatNS)
+    customerDirectChatHandler(socket, chatNS)
 
     socket.on('disconnect', () => {
       customerPresence.unregisterSocket(socket.id).catch((err) => {
@@ -60,6 +76,7 @@ const initSocket = (io) => {
     adminHandler(socket, adminNS)
     aiScriptHandler(socket)
     teamChatHandler(socket, adminNS)
+    customerDirectChatHandler(socket, adminNS)
 
     socket.on('disconnect', () => {
       staffPresence.unregisterSocket(socket.id)
