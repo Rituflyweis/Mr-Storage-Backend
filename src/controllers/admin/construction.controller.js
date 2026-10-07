@@ -12,6 +12,10 @@ const FreightCarrier = require('../../models/FreightCarrier')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
+const {
+  buildConstructionDeliveryFilter,
+  hasDeliveryListFilters,
+} = require('../../utils/constructionDeliveryQuery')
 const { generateDeliveriesExcel, generateReportExcel, generateMaterialRequestsExcel } = require('../../utils/exportConstructionAdmin')
 const { DELIVERY_STATUSES, DELIVERY_FULFILLMENT_STATUSES } = require('../../config/constants')
 const { businessUnitFields } = require('../../utils/businessUnit')
@@ -432,28 +436,15 @@ exports.getConstructionDeliveryFilters = asyncHandler(async (req, res) => {
 })
 
 exports.getConstructionDeliveries = asyncHandler(async (req, res) => {
-  const { projectId, siteDestination, deliveryStatus, transporter, driver, startDate, endDate, search, page = 1, limit = 20 } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'deliveryDate')
+  const { page = 1, limit = 20 } = req.query
+  const filter = await buildConstructionDeliveryFilter({
+    ...req.query,
+    includeDrafts: true,
+  })
 
-  const filter = { ...dateFilter }
-  if (projectId) filter.leadId = projectId
-  if (deliveryStatus) filter.status = deliveryStatus
-  if (siteDestination) filter.deliveryLocation = { $regex: siteDestination, $options: 'i' }
-
-  const bidIds = await resolveCarrierBidIds({ transporter, driver })
-  if (bidIds) filter.selectedCarrierBidId = { $in: bidIds }
-
-  if (search) {
-    filter.$or = [
-      { deliveryNumber: { $regex: search, $options: 'i' } },
-      { materialType: { $regex: search, $options: 'i' } },
-      { loadDescription: { $regex: search, $options: 'i' } },
-    ]
-  }
-
-  const statusGroups = await Delivery.aggregate([
-    { $group: { _id: '$status', count: { $sum: 1 } } },
-  ])
+  const statusPipeline = [{ $group: { _id: '$status', count: { $sum: 1 } } }]
+  if (hasDeliveryListFilters(req.query)) statusPipeline.unshift({ $match: filter })
+  const statusGroups = await Delivery.aggregate(statusPipeline)
   const statusMap = Object.fromEntries(statusGroups.map(s => [s._id, s.count]))
 
   const [deliveries, total] = await Promise.all([

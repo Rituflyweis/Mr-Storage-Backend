@@ -7,7 +7,12 @@ const findLeadIdsByConstructionSearch = async (search) => {
   if (!term) return []
   const regex = { $regex: term, $options: 'i' }
   const customers = await Customer.find({
-    $or: [{ firstName: regex }, { lastName: regex }, { email: regex }],
+    $or: [
+      { firstName: regex },
+      { lastName: regex },
+      { email: regex },
+      { company: regex },
+    ],
   })
     .select('_id')
     .lean()

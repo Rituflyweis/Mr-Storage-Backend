@@ -7,11 +7,13 @@ const { success, created, notFound, badRequest } = require('../../utils/apiRespo
 const asyncHandler = require('../../utils/asyncHandler')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
 const { generatePackingListPdf, generateBillOfLadingPdf } = require('../../utils/exportDelivery')
-const { DELIVERY_FULFILLMENT_STATUSES, PACKING_LIST_STATUSES } = require('../../config/constants')
+const { PACKING_LIST_STATUSES } = require('../../config/constants')
 const { resolveLeadByProjectRef } = require('../../utils/projectRef')
 const {
   buildConstructionDeliveryFilter,
   getDeliveryFilterOptions,
+  hasDeliveryListFilters,
+  computeConstructionDeliveryStats,
 } = require('../../utils/constructionDeliveryQuery')
 const { generateDeliveriesExcel } = require('../../utils/exportConstructionAdmin')
 const {
@@ -22,8 +24,6 @@ const {
   LABEL_UI_STATUSES,
   DISPATCH_VERIFICATION_UI_STATUSES,
 } = require('../../utils/constructionListQuery')
-// Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
-const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
 
 const buildDeliveryCard = async (delivery) => {
   let carrier = null
@@ -105,22 +105,18 @@ exports.getDeliveries = asyncHandler(async (req, res) => {
     Delivery.countDocuments(filter),
   ])
 
-  const now = new Date()
-  const stats = {
-    inTransit: await Delivery.countDocuments({ ...filter, status: { $in: IN_TRANSIT_ROLLUP_STATUSES } }),
-    staged: await Delivery.countDocuments({ ...filter, status: 'confirmed' }),
-    ready: await Delivery.countDocuments({ ...filter, status: 'scheduled' }),
-    totalToday: await Delivery.countDocuments({
-      ...filter,
-      deliveryDate: {
-        $gte: new Date(now.toDateString()),
-        $lt: new Date(new Date(now.toDateString()).getTime() + 86400000),
-      },
-    }),
-  }
+  const stats = await computeConstructionDeliveryStats(filter)
+  const listFiltersActive = hasDeliveryListFilters(req.query)
 
   const cards = await Promise.all(deliveries.map(buildDeliveryCard))
-  return success(res, { deliveries: cards, total, stats, page: Number(page), limit: Number(limit) })
+  return success(res, {
+    deliveries: cards,
+    total,
+    stats,
+    statsScope: listFiltersActive ? 'filtered' : 'all',
+    page: Number(page),
+    limit: Number(limit),
+  })
 })
 
 exports.exportDeliveries = asyncHandler(async (req, res) => {

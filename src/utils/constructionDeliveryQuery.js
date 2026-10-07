@@ -3,7 +3,39 @@ const FreightBid = require('../models/FreightBid')
 const FreightCarrier = require('../models/FreightCarrier')
 const { buildDateFilter } = require('./dateRange')
 const { findLeadIdsByConstructionSearch } = require('./constructionListQuery')
-const { DELIVERY_STATUSES } = require('../config/constants')
+const { DELIVERY_STATUSES, DELIVERY_FULFILLMENT_STATUSES } = require('../config/constants')
+
+const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
+
+const hasDeliveryListFilters = (query = {}) =>
+  Boolean(
+    query.search?.trim()
+    || query.startDate
+    || query.endDate
+    || query.projectId
+    || query.leadId
+    || query.materialType
+    || query.siteDestination
+    || query.transporter
+    || query.driver
+    || query.status
+    || query.deliveryStatus
+  )
+
+const computeConstructionDeliveryStats = async (filter, now = new Date()) => {
+  const dayStart = new Date(now.toDateString())
+  const dayEnd = new Date(dayStart.getTime() + 86400000)
+  const [inTransit, staged, ready, totalToday] = await Promise.all([
+    Delivery.countDocuments({ ...filter, status: { $in: IN_TRANSIT_ROLLUP_STATUSES } }),
+    Delivery.countDocuments({ ...filter, status: 'confirmed' }),
+    Delivery.countDocuments({ ...filter, status: 'scheduled' }),
+    Delivery.countDocuments({
+      ...filter,
+      deliveryDate: { $gte: dayStart, $lt: dayEnd },
+    }),
+  ])
+  return { inTransit, staged, ready, totalToday }
+}
 
 const resolveCarrierBidIds = async ({ transporter, driver }) => {
   if (!transporter && !driver) return null
@@ -32,10 +64,14 @@ const buildConstructionDeliveryFilter = async (query = {}) => {
     search,
     startDate,
     endDate,
+    includeDrafts,
   } = query
 
   const dateFilter = buildDateFilter({ startDate, endDate }, 'deliveryDate')
-  const filter = { status: { $ne: 'draft' }, ...dateFilter }
+  const filter = { ...dateFilter }
+  if (!includeDrafts && includeDrafts !== 'true') {
+    filter.status = { $ne: 'draft' }
+  }
 
   const statusVal = deliveryStatus || status
   if (statusVal) filter.status = statusVal
@@ -46,8 +82,11 @@ const buildConstructionDeliveryFilter = async (query = {}) => {
   if (materialType) filter.materialType = materialType
   if (siteDestination) filter.deliveryLocation = { $regex: siteDestination, $options: 'i' }
 
-  const bidIds = await resolveCarrierBidIds({ transporter, driver })
-  if (bidIds) filter.selectedCarrierBidId = { $in: bidIds }
+  if (transporter || driver) {
+    const bidIds = await resolveCarrierBidIds({ transporter, driver })
+    if (!bidIds.length) filter._id = { $in: [] }
+    else filter.selectedCarrierBidId = { $in: bidIds }
+  }
 
   if (search?.trim()) {
     const regex = { $regex: search.trim(), $options: 'i' }
@@ -85,4 +124,7 @@ module.exports = {
   buildConstructionDeliveryFilter,
   getDeliveryFilterOptions,
   resolveCarrierBidIds,
+  hasDeliveryListFilters,
+  computeConstructionDeliveryStats,
+  IN_TRANSIT_ROLLUP_STATUSES,
 }
