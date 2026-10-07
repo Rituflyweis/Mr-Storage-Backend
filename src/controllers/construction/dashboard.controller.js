@@ -262,6 +262,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       },
       projectStats: {
         total: 0,
+        totalIncludingCompleted: 0,
         onTrack: 0,
         delayed: 0,
         completed: 0,
@@ -456,32 +457,38 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     deliveriesByLead.get(key).push(d.status)
   }
 
-  const totalProjects = leads.length
-  let completedProjects = 0
+  const totalIncludingCompleted = leads.length
+  const activeLeads = leads.filter((l) => l.lifecycleStatus !== 'delivered')
+  const completedProjects = totalIncludingCompleted - activeLeads.length
   let delayedProjects = 0
   let onTrackProjects = 0
   const progressPcts = []
   for (const lead of leads) {
     progressPcts.push(progressPctForLead(lead, stepPctByLead, progressByLead))
+  }
+  for (const lead of activeLeads) {
     const bucket = projectHealthBucket(lead, deliveriesByLead, now)
-    if (bucket === 'completed') completedProjects += 1
-    else if (bucket === 'delayed') delayedProjects += 1
+    if (bucket === 'delayed') delayedProjects += 1
     else onTrackProjects += 1
   }
-  const totalProjectsYesterday = Math.max(0, totalProjects - projectsAddedToScopeToday)
+  const totalActive = activeLeads.length
+  const totalActiveYesterday = Math.max(0, totalActive - projectsAddedToScopeToday)
   const projectStats = {
-    total: totalProjects,
+    /** Active construction projects (excludes `delivered`) — matches “Total Projects” KPI. */
+    total: totalActive,
+    /** All plant-lifecycle projects including delivered (audit / donut denominator). */
+    totalIncludingCompleted,
     onTrack: onTrackProjects,
     delayed: delayedProjects,
     completed: completedProjects,
-    onTrackPct: pct(onTrackProjects, totalProjects),
-    delayedPct: pct(delayedProjects, totalProjects),
-    completedPct: pct(completedProjects, totalProjects),
+    onTrackPct: pct(onTrackProjects, totalActive),
+    delayedPct: pct(delayedProjects, totalActive),
+    completedPct: pct(completedProjects, totalIncludingCompleted),
     completionRate: progressPcts.length
       ? Math.round(progressPcts.reduce((sum, n) => sum + n, 0) / progressPcts.length)
       : 0,
     upcomingDeadlines: upcomingDeadlineLeads.length,
-    totalChangePctVsYesterday: pctChange(totalProjects, totalProjectsYesterday),
+    totalChangePctVsYesterday: pctChange(totalActive, totalActiveYesterday),
     completionRateLabel: 'Average Completion',
   }
 
