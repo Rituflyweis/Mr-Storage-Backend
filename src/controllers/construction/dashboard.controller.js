@@ -17,6 +17,14 @@ const {
   buildBusinessUnitFilter,
   businessUnitFields,
 } = require('../../utils/businessUnit')
+const { getConstructionLeadIds } = require('../../utils/constructionProjectScope')
+const {
+  loadStatsContextForLeadIds,
+  computeProjectStats,
+  buildActiveSites,
+  buildAllProjectsExportRows,
+} = require('../../utils/constructionProjectStats')
+const { generateConstructionDashboardExcel } = require('../../utils/exportConstructionAdmin')
 
 const IN_TRANSIT_ROLLUP_STATUSES = new Set(
   DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
@@ -24,9 +32,6 @@ const IN_TRANSIT_ROLLUP_STATUSES = new Set(
 const OUT_FOR_DELIVERY_STATUSES = new Set(['scheduled', 'confirmed', 'dispatched_to_site'])
 
 const CONSTRUCTION_STAGES = [...PLANT_LIFECYCLE_STAGES]
-const CONSTRUCTION_ACTIVE_STAGES = PLANT_LIFECYCLE_STAGES.filter(
-  (s) => !['dispatched', 'delivered'].includes(s)
-)
 
 /** Figma overall timeline buckets mapped from plant lifecycle stages. */
 const OVERALL_TIMELINE_PHASES = [
@@ -71,11 +76,6 @@ const endOfDay = (d = new Date()) => {
 
 const pct = (part, total) => (total ? Math.round((part / total) * 1000) / 10 : 0)
 
-const pctChange = (current, previous) => {
-  if (previous === 0) return current > 0 ? 100 : 0
-  return Math.round(((current - previous) / previous) * 1000) / 10
-}
-
 const historyDateForStage = (history, stage) => {
   const entries = (history || [])
     .filter((h) => h.stage === stage)
@@ -91,26 +91,6 @@ const resolveDeliveryStatusLabel = (statuses) => {
     return 'Delivered'
   }
   return 'On Track'
-}
-
-const progressPctForLead = (lead, stepPctByLead, progressByLead) => {
-  if (lead.lifecycleStatus === 'delivered') return 100
-  const key = String(lead._id)
-  const stepPct = stepPctByLead.get(key)?.pct
-  if (stepPct != null) return stepPct
-  const taskProg = progressByLead.get(key)
-  if (taskProg?.total) return Math.round((taskProg.done / taskProg.total) * 100)
-  return 0
-}
-
-/** Aligns with activeSites: delivered | past endDate | delayed delivery → delayed bucket. */
-const projectHealthBucket = (lead, deliveriesByLead, now) => {
-  if (lead.lifecycleStatus === 'delivered') return 'completed'
-  const key = String(lead._id)
-  const deliveryStatus = resolveDeliveryStatusLabel(deliveriesByLead.get(key) || [])
-  const pastDeadline = lead.endDate && new Date(lead.endDate) < now
-  if (deliveryStatus === 'Delayed' || pastDeadline) return 'delayed'
-  return 'onTrack'
 }
 
 const parseDashboardFilters = (query) => {
@@ -154,27 +134,6 @@ const parseDashboardFilters = (query) => {
     fromDate: rangeStart ? new Date(rangeStart) : null,
     toDate: rangeEnd ? new Date(rangeEnd) : null,
   }
-}
-
-const getConstructionLeadIds = async (filters) => {
-  const filter = {
-    lifecycleStatus: { $in: CONSTRUCTION_STAGES },
-    isTerminated: { $ne: true },
-  }
-  if (filters.projectId) filter._id = filters.projectId
-  if (filters.status) filter.lifecycleStatus = filters.status
-  if (filters.businessUnit !== undefined) filter.businessUnit = filters.businessUnit
-
-  if (filters.buildingId) {
-    const building = await Building.findById(filters.buildingId).select('leadId').lean()
-    if (!building?.leadId) return []
-    const buildingLeadId = String(building.leadId)
-    if (filters.projectId && String(filters.projectId) !== buildingLeadId) return []
-    filter._id = building.leadId
-  }
-
-  const leads = await Lead.find(filter).select('_id').lean()
-  return leads.map((l) => l._id)
 }
 
 const buildOverallTimeline = (leads) => {
@@ -431,94 +390,16 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     overdue: tasks.filter((t) => t.dueDate && new Date(t.dueDate) < now && t.status !== 'done').length,
   }
 
-  // Progress %: prefer ProjectStepDetail.completionPct (latest), else task completion.
-  const progressByLead = new Map()
-  for (const t of tasks) {
-    const key = String(t.leadId)
-    if (!progressByLead.has(key)) progressByLead.set(key, { done: 0, total: 0 })
-    const row = progressByLead.get(key)
-    row.total += 1
-    if (t.status === 'done') row.done += 1
+  const statsContext = {
+    leads,
+    tasks,
+    allScopedDeliveries,
+    stepDetails,
+    projectsAddedToScopeToday,
+    upcomingDeadlineLeads,
   }
-  const stepPctByLead = new Map()
-  for (const s of stepDetails) {
-    if (s.completionPct == null) continue
-    const key = String(s.leadId)
-    const prev = stepPctByLead.get(key)
-    if (!prev || new Date(s.updatedAt) > new Date(prev.updatedAt)) {
-      stepPctByLead.set(key, { pct: s.completionPct, updatedAt: s.updatedAt })
-    }
-  }
-
-  const deliveriesByLead = new Map()
-  for (const d of allScopedDeliveries) {
-    const key = String(d.leadId?._id || d.leadId)
-    if (!deliveriesByLead.has(key)) deliveriesByLead.set(key, [])
-    deliveriesByLead.get(key).push(d.status)
-  }
-
-  const totalIncludingCompleted = leads.length
-  const activeLeads = leads.filter((l) => l.lifecycleStatus !== 'delivered')
-  const completedProjects = totalIncludingCompleted - activeLeads.length
-  let delayedProjects = 0
-  let onTrackProjects = 0
-  const progressPcts = []
-  for (const lead of leads) {
-    progressPcts.push(progressPctForLead(lead, stepPctByLead, progressByLead))
-  }
-  for (const lead of activeLeads) {
-    const bucket = projectHealthBucket(lead, deliveriesByLead, now)
-    if (bucket === 'delayed') delayedProjects += 1
-    else onTrackProjects += 1
-  }
-  const totalActive = activeLeads.length
-  const totalActiveYesterday = Math.max(0, totalActive - projectsAddedToScopeToday)
-  const projectStats = {
-    /** Active construction projects (excludes `delivered`) — matches “Total Projects” KPI. */
-    total: totalActive,
-    /** All plant-lifecycle projects including delivered (audit / donut denominator). */
-    totalIncludingCompleted,
-    onTrack: onTrackProjects,
-    delayed: delayedProjects,
-    completed: completedProjects,
-    onTrackPct: pct(onTrackProjects, totalActive),
-    delayedPct: pct(delayedProjects, totalActive),
-    completedPct: pct(completedProjects, totalIncludingCompleted),
-    completionRate: progressPcts.length
-      ? Math.round(progressPcts.reduce((sum, n) => sum + n, 0) / progressPcts.length)
-      : 0,
-    upcomingDeadlines: upcomingDeadlineLeads.length,
-    totalChangePctVsYesterday: pctChange(totalActive, totalActiveYesterday),
-    completionRateLabel: 'Average Completion',
-  }
-
-  const activeSites = leads
-    .filter((l) => CONSTRUCTION_ACTIVE_STAGES.includes(l.lifecycleStatus) || l.lifecycleStatus === 'dispatched')
-    .map((l) => {
-      const key = String(l._id)
-      const progressPct = progressPctForLead(l, stepPctByLead, progressByLead)
-      const deliveryStatus = resolveDeliveryStatusLabel(deliveriesByLead.get(key) || [])
-      const deadline = l.endDate || null
-      const isDelayed =
-        deliveryStatus === 'Delayed' ||
-        (deadline && new Date(deadline) < now && l.lifecycleStatus !== 'delivered')
-
-      return {
-        leadId: l._id,
-        projectName: l.projectName || '',
-        jobId: l.jobId || '',
-        ...businessUnitFields(l),
-        site: l.location || '',
-        buildingType: l.buildingType || '',
-        numberOfBuildings: l.numberOfBuildings ?? 1,
-        progressPct,
-        deadline,
-        deliveryStatus: isDelayed && deliveryStatus !== 'Delayed' ? 'Delayed' : deliveryStatus,
-        lifecycleStatus: l.lifecycleStatus,
-      }
-    })
-    .sort((a, b) => String(a.projectName).localeCompare(String(b.projectName)))
-    .slice(0, 20)
+  const projectStats = computeProjectStats(statsContext, now)
+  const activeSites = buildActiveSites(statsContext, { now, limit: 20 })
 
   const upcomingDeadlines = upcomingDeadlineLeads.map((l) => ({
     leadId: l._id,
@@ -656,6 +537,50 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     recentActivity: recentActivity.slice(0, 15),
     recentDeliveries,
   })
+})
+
+/** GET /dashboard/export — Excel: KPI summary + all scoped projects (same filters as dashboard). */
+exports.exportDashboard = asyncHandler(async (req, res) => {
+  const parsed = parseDashboardFilters(req.query)
+  if (parsed.error) return badRequest(res, parsed.error)
+
+  const leadIds = await getConstructionLeadIds(parsed)
+  const now = new Date()
+  const todayStart = startOfDay(now)
+  const todayEnd = endOfDay(now)
+
+  const emptyStats = {
+    total: 0,
+    totalIncludingCompleted: 0,
+    onTrack: 0,
+    delayed: 0,
+    completed: 0,
+    onTrackPct: 0,
+    delayedPct: 0,
+    completedPct: 0,
+    completionRate: 0,
+    upcomingDeadlines: 0,
+    totalChangePctVsYesterday: 0,
+    completionRateLabel: 'Average Completion',
+  }
+
+  let projectStats = emptyStats
+  let projects = []
+  if (leadIds.length) {
+    const context = await loadStatsContextForLeadIds(leadIds, { todayStart, todayEnd, now })
+    projectStats = computeProjectStats(context, now)
+    projects = buildAllProjectsExportRows(context, now)
+  }
+
+  const buffer = await generateConstructionDashboardExcel({
+    projectStats,
+    projects,
+    exportedAt: now,
+  })
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="construction-dashboard-projects.xlsx"')
+  return res.send(buffer)
 })
 
 /** Filter dropdown helpers for the dashboard controls. */

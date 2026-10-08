@@ -21,6 +21,7 @@ const { businessUnitQueryValidator } = require('../../utils/businessUnit')
 const businessUnitQuery = [businessUnitQueryValidator(), validate]
 // Dashboard
 router.get('/dashboard', businessUnitQuery, dashCtrl.getDashboard)
+router.get('/dashboard/export', businessUnitQuery, dashCtrl.exportDashboard)
 router.get('/dashboard/filters', dashCtrl.getDashboardFilters)
 
 // Projects & Calendar (static routes before param routes)

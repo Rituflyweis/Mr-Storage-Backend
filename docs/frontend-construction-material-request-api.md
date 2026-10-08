@@ -64,6 +64,8 @@ GET /api/construction/material-requests/:requestId
 }
 ```
 
+**Customer orders:** When `source` is `"customer"`, use `requestedByCustomer` / `requestedByLabel` instead of `requestedBy`. Admin and sales use the same fields via `/api/admin/construction/material-requests` and `/api/sales/material-requests` (see `docs/frontend-admin-sales-material-requests-api.md`).
+
 **Line items:** `requestedItems[].name` = description, `unit`, `quantity`, `notes` = remarks.
 
 **Attachments:** download via `url` (upload files with `POST /api/upload/presigned-url` when creating the request).

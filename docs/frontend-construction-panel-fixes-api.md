@@ -491,6 +491,28 @@ Authorization: Bearer <accessToken>
     "page": 1,
     "limit": 20,
     "scope": "construction",
+    "projectStats": {
+      "total": 9,
+      "totalIncludingCompleted": 10,
+      "onTrack": 8,
+      "delayed": 1,
+      "completed": 1,
+      "onTrackPct": 88.9,
+      "delayedPct": 11.1,
+      "completedPct": 10,
+      "completionRate": 42,
+      "upcomingDeadlines": 2,
+      "totalChangePctVsYesterday": 0,
+      "completionRateLabel": "Average Completion"
+    },
+    "listFiltersApplied": {
+      "status": null,
+      "businessUnit": null,
+      "priority": null,
+      "search": null,
+      "hasDelivery": false
+    },
+    "listOnlyFilters": [],
     "stages": [
       "released_to_plant",
       "drawings_received",

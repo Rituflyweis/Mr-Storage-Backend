@@ -9,6 +9,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const notificationService = require('../../services/notification.service')
 const generateMaterialRequestId = require('../../utils/generateMaterialRequestId')
 const generateOrderQuotationNumber = require('../../utils/generateOrderQuotationNumber')
+const materialRequestList = require('../../services/materialRequestList.service')
 
 const mapRow = (mr) => ({
   requestId: mr.requestId,
@@ -90,10 +91,9 @@ const formatItemsSummary = (items = []) => {
 }
 
 const loadMaterialRequestsForExport = async (query) => {
-  const filter = buildMaterialRequestFilter(query)
+  const filter = await materialRequestList.buildMaterialRequestListFilter(query)
   return MaterialRequest.find(filter)
-    .populate('leadId', 'projectName jobId location')
-    .populate('requestedBy', 'name email')
+    .populate(materialRequestList.MR_LIST_POPULATE)
     .sort({ createdAt: -1 })
     .lean()
 }
@@ -113,35 +113,24 @@ const toExportRow = (mr) => {
     requiredBy: mr.requiredBy ? new Date(mr.requiredBy).toISOString().slice(0, 10) : '',
     status: mr.status || '',
     priority: mr.priority || '',
-    requestedBy: mr.requestedBy?.name || '',
+    requestedBy: materialRequestList.mapMaterialRequestRow(mr).requestedByLabel || '',
     totalAmount: mr.totalAmount ?? 0,
   }
 }
 
 exports.getMaterialRequests = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20 } = req.query
-  const filter = buildMaterialRequestFilter(req.query)
-
-  const skip = (Number(page) - 1) * Number(limit)
-  const [rows, total, pending, approved, rejected, totalRequests] = await Promise.all([
-    MaterialRequest.find(filter)
-      .populate('leadId', 'projectName jobId location')
-      .populate('requestedBy', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .lean(),
-    MaterialRequest.countDocuments(filter),
-    MaterialRequest.countDocuments({ status: 'pending' }),
-    MaterialRequest.countDocuments({ status: 'approved' }),
-    MaterialRequest.countDocuments({ status: 'rejected' }),
-    MaterialRequest.countDocuments({}),
-  ])
-
+  const data = await materialRequestList.listMaterialRequests(req.query, req.query)
   return success(res, {
-    materialRequests: rows.map(mapRow),
-    total,
-    stats: { totalRequests, pending, approved, rejected },
+    materialRequests: data.materialRequests,
+    total: data.total,
+    page: data.page,
+    limit: data.limit,
+    stats: {
+      totalRequests: data.stats.total,
+      pending: data.stats.pending.count,
+      approved: data.stats.approved.count,
+      rejected: data.stats.rejected.count,
+    },
   })
 })
 
@@ -245,12 +234,9 @@ exports.getMaterialRequestFilters = asyncHandler(async (req, res) => {
 })
 
 exports.getMaterialRequest = asyncHandler(async (req, res) => {
-  const mr = await MaterialRequest.findById(req.params.requestId)
-    .populate('leadId', 'projectName jobId location')
-    .populate('requestedBy', 'name email')
-    .lean()
-  if (!mr) return notFound(res, 'Material request not found')
-  return success(res, { materialRequest: mapDetail(mr) })
+  const result = await materialRequestList.getMaterialRequestById(req.params.requestId)
+  if (!result) return notFound(res, 'Material request not found')
+  return success(res, { materialRequest: result.request })
 })
 
 exports.createMaterialRequest = asyncHandler(async (req, res) => {

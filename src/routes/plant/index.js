@@ -34,6 +34,7 @@ router.get('/packing-lists/:packingListId',
 router.use(verifyToken, roleGuard(['plant']))
 
 router.use('/dashboard',         require('./dashboard.routes'))
+router.use('/customer-direct-chat', require('../admin/customerDirectChat.routes'))
 router.use('/projects',          require('./project.routes'))
 router.use('/bom',               require('./bom.routes'))
 router.use('/shipper-files',     require('./shipper.routes'))

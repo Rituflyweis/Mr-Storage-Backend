@@ -88,4 +88,65 @@ const generateMaterialRequestsExcel = async (rows) => {
   return workbook.xlsx.writeBuffer()
 }
 
-module.exports = { generateDeliveriesExcel, generateReportExcel, generateMaterialRequestsExcel }
+const generateConstructionDashboardExcel = async ({ projectStats = {}, projects = [], exportedAt = new Date() }) => {
+  const workbook = new ExcelJS.Workbook()
+
+  const summary = workbook.addWorksheet('Summary')
+  summary.columns = [
+    { header: 'Metric', key: 'metric', width: 32 },
+    { header: 'Value', key: 'value', width: 20 },
+  ]
+  const summaryRows = [
+    { metric: 'Exported at', value: new Date(exportedAt).toISOString() },
+    { metric: 'Total projects (active)', value: projectStats.total ?? 0 },
+    { metric: 'Total including completed', value: projectStats.totalIncludingCompleted ?? 0 },
+    { metric: 'On track', value: projectStats.onTrack ?? 0 },
+    { metric: 'Delayed', value: projectStats.delayed ?? 0 },
+    { metric: 'Completed (delivered)', value: projectStats.completed ?? 0 },
+    { metric: 'On track %', value: projectStats.onTrackPct ?? 0 },
+    { metric: 'Delayed %', value: projectStats.delayedPct ?? 0 },
+    { metric: 'Completed %', value: projectStats.completedPct ?? 0 },
+    { metric: projectStats.completionRateLabel || 'Average completion %', value: projectStats.completionRate ?? 0 },
+    { metric: 'Upcoming deadlines (30d)', value: projectStats.upcomingDeadlines ?? 0 },
+    { metric: 'Total change vs yesterday %', value: projectStats.totalChangePctVsYesterday ?? 0 },
+  ]
+  for (const row of summaryRows) summary.addRow(row)
+  summary.getRow(1).font = { bold: true }
+
+  const sheet = workbook.addWorksheet('Projects')
+  sheet.columns = [
+    { header: 'Job ID', key: 'jobId', width: 14 },
+    { header: 'Project', key: 'projectName', width: 28 },
+    { header: 'Site', key: 'site', width: 22 },
+    { header: 'Business unit', key: 'businessUnitLabel', width: 18 },
+    { header: 'Lifecycle status', key: 'lifecycleStatus', width: 22 },
+    { header: 'Progress %', key: 'progressPct', width: 12 },
+    { header: 'Health', key: 'health', width: 12 },
+    { header: 'Delivery status', key: 'deliveryStatus', width: 16 },
+    { header: 'Deadline', key: 'deadline', width: 14 },
+  ]
+
+  for (const row of projects) {
+    sheet.addRow({
+      jobId: row.jobId || '—',
+      projectName: row.projectName || '—',
+      site: row.site || '—',
+      businessUnitLabel: row.businessUnitLabel || '—',
+      lifecycleStatus: row.lifecycleStatus || '—',
+      progressPct: row.progressPct ?? 0,
+      health: row.health || '—',
+      deliveryStatus: row.deliveryStatus || '—',
+      deadline: row.deadline ? new Date(row.deadline).toLocaleDateString() : '—',
+    })
+  }
+  sheet.getRow(1).font = { bold: true }
+
+  return workbook.xlsx.writeBuffer()
+}
+
+module.exports = {
+  generateDeliveriesExcel,
+  generateReportExcel,
+  generateMaterialRequestsExcel,
+  generateConstructionDashboardExcel,
+}

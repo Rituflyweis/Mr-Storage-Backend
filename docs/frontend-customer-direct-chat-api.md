@@ -5,6 +5,8 @@ One thread per **customer** — not tied to `leadId`. Separate from lead/AI sale
 Base URLs:
 - Customer: **`/api/customer/chat/direct`**
 - Admin: **`/api/admin/customer-direct-chat`**
+- Sales: **`/api/sales/customer-direct-chat`**
+- Plant: **`/api/plant/customer-direct-chat`**
 - Sales (same API): **`/api/sales/customer-direct-chat`**
 
 Auth: customer JWT (`type: customer`) or staff JWT (`admin` / `sales`).

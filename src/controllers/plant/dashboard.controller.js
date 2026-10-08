@@ -8,11 +8,113 @@ const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
 const Bundle = require('../../models/Bundle')
 const DailyProductionLog = require('../../models/DailyProductionLog')
-const { success } = require('../../utils/apiResponse')
+const { success, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { getScopedLeadIds } = require('../../utils/plantAccessScope')
+const {
+  PRODUCTION_OVERVIEW_FILTERS,
+  normalizeFilter,
+  resolveProductionOverviewRange,
+} = require('../../utils/plantProductionOverviewFilter')
 
 const IN_PRODUCTION_STAGES = ['material_check', 'production_planning', 'fabrication_started', 'quality_inspection', 'packing_bundling']
+
+const aggregateProductionLogs = (logs) => {
+  if (!logs.length) {
+    return { plannedTonnage: null, producedTonnage: null, utilizationPct: null, daysLogged: 0 }
+  }
+
+  let plannedTonnage = 0
+  let producedTonnage = 0
+  let utilizationSum = 0
+  let utilizationCount = 0
+
+  for (const log of logs) {
+    if (log.plannedTonnage != null) plannedTonnage += log.plannedTonnage
+    if (log.producedTonnage != null) producedTonnage += log.producedTonnage
+    if (log.utilizationPct != null) {
+      utilizationSum += log.utilizationPct
+      utilizationCount += 1
+    }
+  }
+
+  return {
+    plannedTonnage,
+    producedTonnage,
+    utilizationPct: utilizationCount
+      ? Math.round((utilizationSum / utilizationCount) * 10) / 10
+      : null,
+    daysLogged: logs.length,
+  }
+}
+
+const computeOnTimeAndRework = async (leadIds, rangeStart, rangeEndExclusive) => {
+  const [deliveredDeliveries, bundlesVerified] = await Promise.all([
+    Delivery.find({
+      leadId: { $in: leadIds },
+      status: 'delivered',
+      statusHistory: {
+        $elemMatch: {
+          status: 'delivered',
+          changedAt: { $gte: rangeStart, $lt: rangeEndExclusive },
+        },
+      },
+    })
+      .select('deliveryDate statusHistory')
+      .lean(),
+    Bundle.find({
+      leadId: { $in: leadIds },
+      verifiedAt: { $gte: rangeStart, $lt: rangeEndExclusive },
+    })
+      .select('mismatchItems')
+      .lean(),
+  ])
+
+  let onTimeDeliveryPct = null
+  if (deliveredDeliveries.length) {
+    const onTime = deliveredDeliveries.filter((d) => {
+      const deliveredEntry = (d.statusHistory || []).slice().reverse().find((h) => h.status === 'delivered')
+      if (!deliveredEntry || !d.deliveryDate) return true
+      return new Date(deliveredEntry.changedAt) <= new Date(d.deliveryDate)
+    }).length
+    onTimeDeliveryPct = Math.round((onTime / deliveredDeliveries.length) * 100 * 10) / 10
+  }
+
+  let reworkRejectionPct = null
+  if (bundlesVerified.length) {
+    const withMismatch = bundlesVerified.filter((b) => (b.mismatchItems || []).length > 0).length
+    reworkRejectionPct = Math.round((withMismatch / bundlesVerified.length) * 100 * 10) / 10
+  }
+
+  return { onTimeDeliveryPct, reworkRejectionPct }
+}
+
+const buildProductionOverview = async (leadIds, filterKey, now) => {
+  const { filter, start, endExclusive } = resolveProductionOverviewRange(filterKey, now)
+
+  const logs = await DailyProductionLog.find({
+    date: { $gte: start, $lt: endExclusive },
+  })
+    .sort({ date: 1 })
+    .lean()
+
+  const tonnage = aggregateProductionLogs(logs)
+  const { onTimeDeliveryPct, reworkRejectionPct } = leadIds.length
+    ? await computeOnTimeAndRework(leadIds, start, endExclusive)
+    : { onTimeDeliveryPct: null, reworkRejectionPct: null }
+
+  return {
+    filter,
+    rangeStart: start.toISOString(),
+    rangeEndExclusive: endExclusive.toISOString(),
+    plannedTonnage: tonnage.plannedTonnage,
+    producedTonnage: tonnage.producedTonnage,
+    utilizationPct: tonnage.utilizationPct,
+    daysLogged: tonnage.daysLogged,
+    onTimeDeliveryPct,
+    reworkRejectionPct,
+  }
+}
 
 // GET /dashboard — Plant Panel home screen
 exports.getDashboard = asyncHandler(async (req, res) => {
@@ -20,20 +122,30 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-  // Plant-wide (not per-project), so this is looked up regardless of the caller's assigned
-  // leads — the fabrication floor runs independent of which projects a given plant user owns.
-  const todaysLog = await DailyProductionLog.findOne({ date: startOfToday }).lean()
+  const filterKey = normalizeFilter(req.query.filter)
+  if (req.query.filter != null && String(req.query.filter).trim() !== '' && !filterKey) {
+    return badRequest(
+      res,
+      `Invalid filter. Use one of: ${PRODUCTION_OVERVIEW_FILTERS.join(', ')} (aliases: this_week, this_month)`
+    )
+  }
+  const productionFilter = filterKey || 'today'
+  const productionOverview = await buildProductionOverview(leadIds, productionFilter, now)
 
   if (!leadIds.length) {
     return success(res, {
       stats: { totalProjects: 0, inProduction: 0, readyToDispatch: 0, dispatchedToday: 0, pendingApproval: 0 },
-      productionOverviewToday: {
-        plannedTonnage: todaysLog?.plannedTonnage ?? null,
-        producedTonnage: todaysLog?.producedTonnage ?? null,
-        utilizationPct: todaysLog?.utilizationPct ?? null,
-        onTimeDeliveryPct: null,
-        reworkRejectionPct: null,
-      },
+      productionOverview,
+      productionOverviewToday:
+        productionFilter === 'today'
+          ? {
+              plannedTonnage: productionOverview.plannedTonnage,
+              producedTonnage: productionOverview.producedTonnage,
+              utilizationPct: productionOverview.utilizationPct,
+              onTimeDeliveryPct: productionOverview.onTimeDeliveryPct,
+              reworkRejectionPct: productionOverview.reworkRejectionPct,
+            }
+          : undefined,
       recentShipperFiles: [],
       plantAlerts: [],
       freightCarriers: [],
@@ -142,34 +254,6 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   }
   drawingRows.sort((a, b) => new Date(b.sentDate || 0) - new Date(a.sentDate || 0))
 
-  // "Production Overview (Today)" — plannedTonnage/producedTonnage/utilizationPct now come
-  // from DailyProductionLog (entered by plant staff via POST /dashboard/production-log);
-  // null until someone logs today's numbers, rather than a permanent gap.
-  const [deliveredTodayDeliveries, bundlesVerifiedToday] = await Promise.all([
-    Delivery.find({
-      leadId: { $in: leadIds },
-      status: 'delivered',
-      'statusHistory': { $elemMatch: { status: 'delivered', changedAt: { $gte: startOfToday } } },
-    }).select('deliveryDate statusHistory').lean(),
-    Bundle.find({ leadId: { $in: leadIds }, verifiedAt: { $gte: startOfToday } }).select('mismatchItems').lean(),
-  ])
-
-  let onTimeDeliveryPct = null
-  if (deliveredTodayDeliveries.length) {
-    const onTime = deliveredTodayDeliveries.filter((d) => {
-      const deliveredEntry = (d.statusHistory || []).slice().reverse().find((h) => h.status === 'delivered')
-      if (!deliveredEntry || !d.deliveryDate) return true // no planned date on record — don't penalize
-      return new Date(deliveredEntry.changedAt) <= new Date(d.deliveryDate)
-    }).length
-    onTimeDeliveryPct = Math.round((onTime / deliveredTodayDeliveries.length) * 100 * 10) / 10
-  }
-
-  let reworkRejectionPct = null
-  if (bundlesVerifiedToday.length) {
-    const withMismatch = bundlesVerifiedToday.filter((b) => (b.mismatchItems || []).length > 0).length
-    reworkRejectionPct = Math.round((withMismatch / bundlesVerifiedToday.length) * 100 * 10) / 10
-  }
-
   return success(res, {
     stats: {
       totalProjects,
@@ -178,13 +262,17 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       dispatchedToday,
       pendingApproval: pendingApprovalLeadIds.length,
     },
-    productionOverviewToday: {
-      plannedTonnage: todaysLog?.plannedTonnage ?? null,
-      producedTonnage: todaysLog?.producedTonnage ?? null,
-      utilizationPct: todaysLog?.utilizationPct ?? null,
-      onTimeDeliveryPct,
-      reworkRejectionPct,
-    },
+    productionOverview,
+    productionOverviewToday:
+      productionFilter === 'today'
+        ? {
+            plannedTonnage: productionOverview.plannedTonnage,
+            producedTonnage: productionOverview.producedTonnage,
+            utilizationPct: productionOverview.utilizationPct,
+            onTimeDeliveryPct: productionOverview.onTimeDeliveryPct,
+            reworkRejectionPct: productionOverview.reworkRejectionPct,
+          }
+        : undefined,
     recentShipperFiles,
     plantAlerts: alerts.slice(0, 10),
     freightCarriers,

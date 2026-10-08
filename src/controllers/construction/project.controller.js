@@ -3,19 +3,21 @@ const Delivery = require('../../models/Delivery')
 const Task = require('../../models/Task')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-const { PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
-const { businessUnitFields, applyBusinessUnitFilter } = require('../../utils/businessUnit')
+const { businessUnitFields } = require('../../utils/businessUnit')
 const { listUpcomingMaterialDeliveries } = require('../../utils/constructionProjectMaterialDeliveries')
 const {
   buildConstructionDeliveryCalendar,
   resolveConstructionCalendarLeadIds,
 } = require('../../utils/constructionProjectCalendar')
+const {
+  CONSTRUCTION_STAGES,
+  buildConstructionProjectsFilter,
+  listOnlyFilterKeys,
+} = require('../../utils/constructionProjectScope')
+const { loadProjectStatsForMongoFilter } = require('../../utils/constructionProjectStats')
 const Building = require('../../models/Building')
 const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const BundlePlan = require('../../models/BundlePlan')
-
-/** Construction panel only lists projects handed into plant/construction (not sales pipeline). */
-const CONSTRUCTION_STAGES = [...PLANT_LIFECYCLE_STAGES]
 
 const PROJECT_SELECT = 'projectName jobId businessUnit buildingType location lifecycleStatus priority endDate plannedStartDate customerId createdAt'
 
@@ -25,55 +27,68 @@ const PROJECT_POPULATE = { path: 'customerId', select: 'firstName lastName email
 const isConstructionProject = (lead) =>
   lead && CONSTRUCTION_STAGES.includes(lead.lifecycleStatus)
 
+const startOfDay = (d = new Date()) => {
+  const x = new Date(d)
+  x.setHours(0, 0, 0, 0)
+  return x
+}
+
+const endOfDay = (d = new Date()) => {
+  const x = new Date(d)
+  x.setHours(23, 59, 59, 999)
+  return x
+}
+
 exports.getProjects = asyncHandler(async (req, res) => {
-  const { status, priority, search, page = 1, limit = 20, hasDelivery } = req.query
-
-  const filter = {
-    isTerminated: { $ne: true },
-    lifecycleStatus: { $in: CONSTRUCTION_STAGES },
+  const { status, page = 1, limit = 20 } = req.query
+  if (status && !CONSTRUCTION_STAGES.includes(status)) {
+    return badRequest(res, `status must be a construction stage: ${CONSTRUCTION_STAGES.join(', ')}`)
   }
 
-  // Optional status must still be a construction/plant stage
-  if (status) {
-    if (!CONSTRUCTION_STAGES.includes(status)) {
-      return badRequest(res, `status must be a construction stage: ${CONSTRUCTION_STAGES.join(', ')}`)
-    }
-    filter.lifecycleStatus = status
-  }
-  if (priority) filter.priority = priority
-  applyBusinessUnitFilter(filter, req.query.businessUnit)
-  if (search?.trim()) {
-    const regex = { $regex: search.trim(), $options: 'i' }
-    filter.$or = [{ projectName: regex }, { jobId: regex }]
-  }
+  const now = new Date()
+  const todayStart = startOfDay(now)
+  const todayEnd = endOfDay(now)
 
-  // Optional: only projects that already have at least one non-draft delivery
-  if (String(hasDelivery).toLowerCase() === 'true' || hasDelivery === '1') {
-    const leadIdsWithDelivery = await Delivery.distinct('leadId', {
-      status: { $nin: ['draft', 'cancelled'] },
-    })
-    filter._id = { $in: leadIdsWithDelivery }
-  }
+  const [listFilter, scopeFilter] = await Promise.all([
+    buildConstructionProjectsFilter(req.query, { scopeOnly: false }),
+    buildConstructionProjectsFilter(req.query, { scopeOnly: true }),
+  ])
 
   const skip = (Number(page) - 1) * Number(limit)
-  const [leads, total] = await Promise.all([
-    Lead.find(filter)
+  const [leads, total, scopeStatsResult] = await Promise.all([
+    Lead.find(listFilter)
       .select(PROJECT_SELECT)
       .populate(PROJECT_POPULATE)
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(Number(limit))
       .lean(),
-    Lead.countDocuments(filter),
+    Lead.countDocuments(listFilter),
+    loadProjectStatsForMongoFilter(scopeFilter, { todayStart, todayEnd, now }),
   ])
+
+  const listOnlyFilters = listOnlyFilterKeys(req.query)
 
   return success(res, {
     projects: leads.map(withBusinessUnit),
+    /** Paginated row count after all list query filters (`search`, `hasDelivery`, `priority`, etc.). */
     total,
     page: Number(page),
     limit: Number(limit),
     scope: 'construction',
     stages: CONSTRUCTION_STAGES,
+    /** Same KPI object as `GET /api/construction/dashboard` → `projectStats` (scope = status + businessUnit only). */
+    projectStats: scopeStatsResult.projectStats,
+    listFiltersApplied: {
+      status: req.query.status || null,
+      businessUnit: req.query.businessUnit || null,
+      priority: req.query.priority || null,
+      search: req.query.search?.trim() || null,
+      hasDelivery:
+        String(req.query.hasDelivery).toLowerCase() === 'true' || req.query.hasDelivery === '1' || false,
+    },
+    /** When `total` differs from `projectStats.total`, these list-only filters are usually the cause. */
+    listOnlyFilters,
   })
 })
 

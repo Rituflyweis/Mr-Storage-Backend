@@ -24,13 +24,13 @@ Authorization: Bearer <accessToken>
 
 ---
 
-## Important: no single dashboard endpoint yet
+## Plant home dashboard endpoint
 
-`GET /api/plant/dashboard/*` is **not implemented** (empty route stub).
+`GET /api/plant/dashboard` returns home-screen KPIs, **Production Overview** (with `?filter=today|week|month`), recent shipper files, alerts, freight carriers, and drawing approval rows.
 
-Build the dashboard by calling the **module stats endpoints in parallel** (see [Recommended integration](#recommended-integration)) and optionally wiring **Socket.io alerts** for live notifications.
+See **`docs/frontend-plant-dashboard-chat-api.md`** for Production Overview and customer chat wiring.
 
-**Data scope:** All plant stats are limited to projects where the logged-in user has an **approved PO order** assigned (`POOrder.assignedTo = plantUserId`, `status = 'approved'`).
+**Data scope:** Project-scoped sections use leads where the logged-in user has an **approved PO order** assigned (`POOrder.assignedTo = plantUserId`, `status = 'approved'`). Daily production logs are plant-wide (floor metrics).
 
 ---
 

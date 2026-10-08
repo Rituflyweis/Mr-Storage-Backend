@@ -442,7 +442,9 @@ Authorization: Bearer <access_token>
         "jobId": "PRO-001",
         "location": "Texas, USA",
         "clientName": "John Smith",
+        "customerId": "665a00000000000000000001",
         "customer": {
+          "_id": "665a00000000000000000001",
           "firstName": "John",
           "lastName": "Smith"
         },
@@ -472,7 +474,8 @@ Authorization: Bearer <access_token>
 | `jobId` | string | Job / project reference ID |
 | `location` | string | Location column |
 | `clientName` | string | Pre-formatted `"First Last"` for client column |
-| `customer` | object | `{ firstName, lastName }` if you need separate fields |
+| `customerId` | string \| null | Customer MongoDB id — use for **customer direct chat** |
+| `customer` | object | `{ _id, firstName, lastName }` |
 | `buildingType` | string | Building type filter/display |
 | `numberOfBuildings` | number | Buildings count column |
 | `quoteValue` | number | Project value / quote amount |

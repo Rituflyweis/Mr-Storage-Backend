@@ -432,7 +432,7 @@ const buildAccountPaymentApprovalFilter = async (query) => {
 }
 
 const mapPaymentApprovalListRow = (a, deliveryMap) => {
-  const delivery = a.linkedId ? deliveryMap.get(String(a.linkedId)) : null
+  const delivery = a.linkedId ? deliveryMap.get(String(a.linkedId)) : null // keyed by approval linkedId (delivery or freight_bid id)
   const linked = formatLinkedTo(a, delivery)
   return {
     approvalId: a._id,

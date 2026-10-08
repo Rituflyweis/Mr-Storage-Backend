@@ -53,6 +53,18 @@ Authorization: Bearer <token>
 GET /api/construction/dashboard?projectId=66f1…&fromDate=2026-03-24&toDate=2026-03-31
 ```
 
+### Export (Excel)
+
+Same query params as dashboard (`projectId`, `buildingId`, `status`, `businessUnit`, date range does **not** change project rows — only delivery widgets on the JSON dashboard).
+
+```http
+GET /api/construction/dashboard/export
+Authorization: Bearer <token>
+```
+
+**File:** `construction-dashboard-projects.xlsx`  
+**Sheets:** `Summary` (KPIs from `projectStats`), `Projects` (all scoped projects with progress / health — not limited to 20 like `activeSites`).
+
 ---
 
 ## 3. Response map → UI widgets
@@ -96,6 +108,8 @@ GET /api/construction/dashboard?projectId=66f1…&fromDate=2026-03-24&toDate=202
 - **`onTrack` / `delayed` / `completed`** — `completed` = delivered count. `onTrack` / `delayed` apply only to **active** projects. `onTrackPct` / `delayedPct` use active count as denominator; `completedPct` uses `totalIncludingCompleted`.
 - **`completionRate`** — **Average progress %** across all scoped projects (latest `ProjectStepDetail.completionPct`, else task done/total, else `100` if delivered). **Not** the same as `completedPct` (share of projects delivered).
 - **`totalChangePctVsYesterday`** — Compares current project count to count minus projects **created today** or **released to plant today**.
+
+**Dashboard vs projects list:** `GET /api/construction/projects` returns paginated `total` (after `search`, `hasDelivery`, `priority`, etc.). The list also returns **`projectStats`** — same KPI object as this dashboard when only `status` / `businessUnit` are applied. If `total` is **18** but `projectStats.total` is **30**, check `listFiltersApplied.hasDelivery` or `listOnlyFilters` on the projects response (common cause: `?hasDelivery=true`).
 
 ### `deliveryOverview`
 

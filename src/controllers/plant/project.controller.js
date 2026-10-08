@@ -149,6 +149,8 @@ const mapProjectRow = (lead, buildings = []) => {
   const customer = lead.customerId
   const clientName = formatClientName(customer)
 
+  const customerId = customer?._id ?? lead.customerId ?? null
+
   return {
     _id: lead._id,
     projectName: lead.projectName || '',
@@ -157,9 +159,14 @@ const mapProjectRow = (lead, buildings = []) => {
     projectId: lead.jobId || '',
     location: lead.location || '',
     clientName,
+    customerId,
     customer: customer
-      ? { firstName: customer.firstName || '', lastName: customer.lastName || '' }
-      : { firstName: '', lastName: '' },
+      ? {
+          _id: customerId,
+          firstName: customer.firstName || '',
+          lastName: customer.lastName || '',
+        }
+      : { _id: null, firstName: '', lastName: '' },
     buildingType: lead.buildingType || '',
     numberOfBuildings: lead.numberOfBuildings ?? buildings.length,
     quoteValue: lead.quoteValue ?? 0,

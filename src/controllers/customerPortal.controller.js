@@ -50,6 +50,7 @@ const CUSTOMER_IN_TRANSIT_STATUSES = new Set([
   'material_prepared', 'loaded', 'picked_up', 'in_transit', 'dispatched_to_site',
 ])
 const { enrichLeadDocument } = require('../utils/leadProjectId')
+const customerQuotationService = require('../services/customerQuotation.service')
 
 const s3 = new S3Client({
   region: env.AWS_REGION,
@@ -561,8 +562,8 @@ exports.getProject = asyncHandler(async (req, res) => {
     return forbidden(res, 'This project does not belong to your account')
   }
 
-  const [quotation, invoices, paymentScheduleDoc, recentOrders, orderCounts, stepDetails, buildingsCount] = await Promise.all([
-    Quotation.findOne({ leadId }).sort({ createdAt: -1 }).lean(),
+  const [quotationRaw, invoices, paymentScheduleDoc, recentOrders, orderCounts, stepDetails, buildingsCount] = await Promise.all([
+    customerQuotationService.findCustomerVisibleQuotation(leadId, req.customer._id),
     Invoice.find({ leadId }).select('-paidBy -createdBy -__v').sort({ createdAt: -1 }).lean(),
     PaymentSchedule.findOne({ leadId }).lean(),
     MaterialRequest.find({ leadId }).sort({ createdAt: -1 }).limit(5).lean(),
@@ -571,14 +572,11 @@ exports.getProject = asyncHandler(async (req, res) => {
     Building.countDocuments({ leadId }),
   ])
 
-  let quoteSummary = null
-  if (quotation) {
-    quoteSummary = await QuoteSummary.findOne({ quotationId: quotation._id })
-      .select('summary generatedAt').lean()
-  }
-
-  // Strip internalNotes from quotation
-  if (quotation) delete quotation.internalNotes
+  const quotationView = quotationRaw
+    ? await customerQuotationService.buildCustomerQuotationView(leadId, quotationRaw)
+    : { availability: 'none', quotation: null, quoteSummary: null }
+  const quotation = quotationView.quotation
+  const quoteSummary = quotationView.quoteSummary
 
   const formattedPaymentSchedule = formatCustomerPaymentSchedule(paymentScheduleDoc)
 
@@ -603,6 +601,8 @@ exports.getProject = asyncHandler(async (req, res) => {
     projectSteps: computeProjectSteps(lead, stepDetails),
     orders: { recent: recentOrders, counts: orderCounts },
     quotation,
+    quotationPreview: quotationView.preview || null,
+    quotationDocumentMeta: quotationView.documentMeta || null,
     quoteSummary,
     invoices: invoicesWithSchedule,
     paymentSchedule: formattedPaymentSchedule,
@@ -2228,18 +2228,61 @@ exports.updateProjectRFQ = asyncHandler(async (req, res) => {
 
 // ── Quotation (project detail -> quotation tab) ──────────────────────────────
 
-// GET /projects/:leadId/quotation
+// GET /projects/:leadId/quotation — sales-generator quote preview (EstimateQuote-linked when present)
 exports.getProjectQuotation = asyncHandler(async (req, res) => {
   const lead = await assertProjectOwner(req)
   if (!lead) return notFound(res, 'Project not found')
 
-  const quotation = await Quotation.findOne({ leadId: req.params.leadId })
-    .sort({ createdAt: -1 })
-    .populate('assignedSalesperson', 'name email')
-    .lean()
-  if (!quotation) return notFound(res, 'No quotation found for this project')
+  const latestAny = await customerQuotationService.findLatestQuotationAnyStatus(
+    lead._id,
+    req.customer._id
+  )
+  if (!latestAny) return notFound(res, 'No quotation found for this project')
 
-  return success(res, { quotation })
+  const view = await customerQuotationService.buildCustomerQuotationView(lead._id, latestAny)
+  if (view.availability === 'none') return notFound(res, view.message)
+
+  return success(res, view)
+})
+
+// GET /projects/:leadId/quotation/preview — HTML (default) assembled quote document
+exports.previewProjectQuotation = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const result = await customerQuotationService.renderCustomerQuotationDocument({
+    leadId: lead._id,
+    customerId: req.customer._id,
+    format: req.query.format || 'html',
+    sectionsRaw: req.query.sections,
+  })
+  if (result.error === 'not_found') return notFound(res, result.message)
+
+  if (result.contentType.includes('html')) {
+    res.setHeader('Content-Type', result.contentType)
+    return res.send(result.body)
+  }
+  res.setHeader('Content-Type', result.contentType)
+  if (result.disposition) res.setHeader('Content-Disposition', result.disposition)
+  return res.send(result.body)
+})
+
+// GET /projects/:leadId/quotation/pdf
+exports.downloadProjectQuotationPdf = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+
+  const result = await customerQuotationService.renderCustomerQuotationDocument({
+    leadId: lead._id,
+    customerId: req.customer._id,
+    format: 'pdf',
+    sectionsRaw: req.query.sections,
+  })
+  if (result.error === 'not_found') return notFound(res, result.message)
+
+  res.setHeader('Content-Type', result.contentType)
+  if (result.disposition) res.setHeader('Content-Disposition', result.disposition)
+  return res.send(result.body)
 })
 
 // POST /projects/:leadId/quotation/approve
@@ -2247,12 +2290,16 @@ exports.approveProjectQuotation = asyncHandler(async (req, res) => {
   const lead = await assertProjectOwner(req)
   if (!lead) return notFound(res, 'Project not found')
 
-  const quotation = await Quotation.findOne({ leadId: req.params.leadId }).sort({ createdAt: -1 })
-  if (!quotation) return notFound(res, 'No quotation found for this project')
+  const quotation = await customerQuotationService.findCustomerVisibleQuotation(
+    req.params.leadId,
+    req.customer._id
+  )
+  if (!quotation) return notFound(res, 'No quotation available to approve')
   if (quotation.status === 'accepted') return badRequest(res, 'Quotation is already accepted')
 
-  quotation.status = 'accepted'
-  await quotation.save()
+  const quotationDoc = await Quotation.findById(quotation._id)
+  quotationDoc.status = 'accepted'
+  await quotationDoc.save()
 
   await auditService.log({
     type: 'quotation',
@@ -2260,10 +2307,13 @@ exports.approveProjectQuotation = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: req.customer._id,
     performedBy: req.customer._id,
-    metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber },
+    metadata: { quotationId: quotationDoc._id, quoteNumber: quotationDoc.quoteNumber },
   })
 
-  return success(res, { message: 'Quotation accepted', quotation: { _id: quotation._id, status: quotation.status } })
+  return success(res, {
+    message: 'Quotation accepted',
+    quotation: { _id: quotationDoc._id, status: quotationDoc.status },
+  })
 })
 
 // POST /projects/:leadId/quotation/reject
@@ -2271,14 +2321,18 @@ exports.rejectProjectQuotation = asyncHandler(async (req, res) => {
   const lead = await assertProjectOwner(req)
   if (!lead) return notFound(res, 'Project not found')
 
-  const quotation = await Quotation.findOne({ leadId: req.params.leadId }).sort({ createdAt: -1 })
-  if (!quotation) return notFound(res, 'No quotation found for this project')
+  const quotation = await customerQuotationService.findCustomerVisibleQuotation(
+    req.params.leadId,
+    req.customer._id
+  )
+  if (!quotation) return notFound(res, 'No quotation available to reject')
   if (quotation.status === 'rejected') return badRequest(res, 'Quotation is already rejected')
 
   const { reason } = req.body
-  quotation.status = 'rejected'
-  quotation.clientNotes = reason || quotation.clientNotes
-  await quotation.save()
+  const quotationDoc = await Quotation.findById(quotation._id)
+  quotationDoc.status = 'rejected'
+  quotationDoc.clientNotes = reason || quotationDoc.clientNotes
+  await quotationDoc.save()
 
   await auditService.log({
     type: 'quotation',
@@ -2286,10 +2340,13 @@ exports.rejectProjectQuotation = asyncHandler(async (req, res) => {
     leadId: lead._id,
     customerId: req.customer._id,
     performedBy: req.customer._id,
-    metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, reason: reason || '' },
+    metadata: { quotationId: quotationDoc._id, quoteNumber: quotationDoc.quoteNumber, reason: reason || '' },
   })
 
-  return success(res, { message: 'Quotation rejected', quotation: { _id: quotation._id, status: quotation.status } })
+  return success(res, {
+    message: 'Quotation rejected',
+    quotation: { _id: quotationDoc._id, status: quotationDoc.status },
+  })
 })
 
 // ── Drawing Approve / Request Revision ───────────────────────────────────────

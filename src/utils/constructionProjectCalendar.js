@@ -66,6 +66,7 @@ const buildConstructionDeliveryCalendar = async ({
 const resolveConstructionCalendarLeadIds = async ({ stages, businessUnit, assignedSalesId }) => {
   const filter = {
     isTerminated: { $ne: true },
+    isArchived: { $ne: true },
     lifecycleStatus: { $in: stages },
   }
   if (assignedSalesId) filter.assignedSales = assignedSalesId

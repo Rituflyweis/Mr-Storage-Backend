@@ -9,7 +9,8 @@ const MaterialRequest = require('../../models/MaterialRequest')
 const WorkLog = require('../../models/WorkLog')
 const FreightBid = require('../../models/FreightBid')
 const FreightCarrier = require('../../models/FreightCarrier')
-const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
+const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
+const materialRequestPanel = require('../common/materialRequestPanel.controller')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const {
@@ -639,76 +640,12 @@ exports.deleteTask = asyncHandler(async (req, res) => {
   return success(res, {}, 'Task deleted')
 })
 
-// GET /material-requests/filters — dropdown options for the All Materials filter bar
-exports.getMaterialRequestFilters = asyncHandler(async (req, res) => {
-  const [departments, requesterIds] = await Promise.all([
-    MaterialRequest.distinct('department', { department: { $ne: '' } }),
-    MaterialRequest.distinct('requestedBy', { requestedBy: { $ne: null } }),
-  ])
+exports.getMaterialRequestFilters = materialRequestPanel.getMaterialRequestFilters
 
-  const requesters = await User.find({ _id: { $in: requesterIds } }).select('name role').lean()
-
-  return success(res, {
-    statuses: MaterialRequest.MR_STATUSES,
-    priorities: MaterialRequest.MR_PRIORITIES,
-    departments,
-    requestedBy: requesters.map(u => ({ _id: u._id, name: u.name, role: u.role })),
-  })
-})
-
-exports.getMaterialRequests = asyncHandler(async (req, res) => {
-  const { projectId, department, status, requestedBy, startDate, endDate, priority, buildingLabel, page = 1, limit = 20 } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'requestDate')
-
-  const filter = { ...dateFilter }
-  if (projectId) filter.leadId = projectId
-  if (department) filter.department = department
-  if (status && status !== 'All Status') filter.status = status
-  if (requestedBy) filter.requestedBy = requestedBy
-  if (priority) filter.priority = priority
-  if (buildingLabel) filter.buildingLabel = buildingLabel
-
-  const [requests, total, statsAgg] = await Promise.all([
-    MaterialRequest.find(filter)
-      .populate({ path: 'leadId', select: 'projectName jobId location' })
-      .populate({ path: 'requestedBy', select: 'name role' })
-      .sort({ requestDate: -1 })
-      .skip((parseInt(page) - 1) * parseInt(limit))
-      .limit(parseInt(limit))
-      .lean(),
-    MaterialRequest.countDocuments(filter),
-    MaterialRequest.aggregate([
-      { $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } },
-    ]),
-  ])
-
-  const statMap = Object.fromEntries(statsAgg.map(s => [s._id, { count: s.count, amount: s.amount }]))
-
-  return success(res, {
-    stats: {
-      total,
-      pending:  { count: statMap['pending']?.count || 0,  amount: statMap['pending']?.amount || 0 },
-      approved: { count: statMap['approved']?.count || 0, amount: statMap['approved']?.amount || 0 },
-      rejected: { count: statMap['rejected']?.count || 0, amount: statMap['rejected']?.amount || 0 },
-    },
-    requests,
-    total,
-    page: parseInt(page),
-    limit: parseInt(limit),
-  })
-})
+exports.getMaterialRequests = materialRequestPanel.listMaterialRequests
 
 // GET /material-requests/:requestId — material request detail
-exports.getMaterialRequestDetail = asyncHandler(async (req, res) => {
-  const request = await MaterialRequest.findById(req.params.requestId)
-    .populate({ path: 'leadId', select: 'projectName jobId location' })
-    .populate({ path: 'requestedBy', select: 'name role' })
-    .populate({ path: 'reviewedBy', select: 'name role' })
-    .lean()
-  if (!request) return notFound(res, 'Request not found')
-
-  return success(res, { request })
-})
+exports.getMaterialRequestDetail = materialRequestPanel.getMaterialRequestDetail
 
 // POST /material-requests/:requestId/attachments — "Send Photo" / "Upload Photo" modal
 // Client uploads the file to S3 via the presigned-URL flow (POST /upload/presigned-url) first,
@@ -755,8 +692,15 @@ exports.createMaterialRequest = asyncHandler(async (req, res) => {
 })
 
 exports.reviewMaterialRequest = asyncHandler(async (req, res) => {
-  const request = await MaterialRequest.findById(req.params.requestId)
+  const request = await MaterialRequest.findById(req.params.requestId).populate('leadId', 'assignedSales')
   if (!request) return notFound(res, 'Request not found')
+
+  if (req.user.role === 'sales') {
+    const assigned = request.leadId?.assignedSales
+    if (!assigned || String(assigned) !== String(req.user._id)) {
+      return forbidden(res, 'This request is not on your assigned project')
+    }
+  }
 
   const { action, reviewNotes } = req.body
   if (!['approved', 'rejected'].includes(action)) return badRequest(res, 'action must be approved or rejected')
@@ -772,32 +716,29 @@ exports.reviewMaterialRequest = asyncHandler(async (req, res) => {
 
 // GET /material-requests/export
 exports.exportMaterialRequests = asyncHandler(async (req, res) => {
-  const { projectId, department, status, buildingLabel, startDate, endDate } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'requestDate')
-
-  const filter = { ...dateFilter }
-  if (projectId) filter.leadId = projectId
-  if (department) filter.department = department
-  if (status && status !== 'All Status') filter.status = status
-  if (buildingLabel) filter.buildingLabel = buildingLabel
+  const materialRequestList = require('../../services/materialRequestList.service')
+  const filter = await materialRequestList.buildMaterialRequestListFilter(req.query)
 
   const requests = await MaterialRequest.find(filter)
-    .populate('leadId', 'projectName jobId')
-    .populate('requestedBy', 'name')
+    .populate(materialRequestList.MR_LIST_POPULATE)
     .sort({ requestDate: -1 })
     .lean()
 
-  const rows = requests.map((r) => ({
-    requestId: r.requestId,
-    projectName: r.leadId?.projectName || '',
-    department: r.department,
-    itemCount: r.requestedItems?.length || 0,
-    requestedBy: r.requestedBy?.name || '',
-    requestDate: r.requestDate,
-    requiredBy: r.requiredBy,
-    priority: r.priority,
-    status: r.status,
-  }))
+  const rows = requests.map((r) => {
+    const mapped = materialRequestList.mapMaterialRequestRow(r)
+    return {
+      requestId: mapped.requestId,
+      projectName: mapped.projectName,
+      department: mapped.department,
+      itemCount: mapped.itemCount,
+      requestedBy: mapped.requestedByLabel,
+      source: mapped.source,
+      requestDate: mapped.requestDate,
+      requiredBy: mapped.requiredBy,
+      priority: mapped.priority,
+      status: mapped.status,
+    }
+  })
 
   const buffer = await generateMaterialRequestsExcel(rows)
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
