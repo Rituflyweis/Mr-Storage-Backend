@@ -127,6 +127,18 @@ const dashboardFolder = folder('Dashboard', [
       }),
     ]
   ),
+  item(
+    'Export Dashboard (Excel)',
+    req('GET', ['construction', 'dashboard', 'export'], {
+      query: [
+        q('businessUnit', '', 'Optional — same as dashboard', true),
+        q('fromDate', '', 'Optional delivery/freight window start (ISO date)', true),
+        q('toDate', '', 'Optional delivery/freight window end (ISO date)', true),
+      ],
+      description:
+        'Downloads construction-dashboard-export.xlsx — same filters as GET /construction/dashboard.',
+    })
+  ),
 ])
 
 const projectsFolder = folder('Projects & Calendar', [

@@ -183,6 +183,7 @@ Same handler / same response shape. Use the path for the logged-in panel.
 | Sales | `GET /api/sales/leads/:leadId/media` |
 | Plant | `GET /api/plant/projects/:leadId/media` |
 | Admin plant | `GET /api/admin/plant/projects/:leadId/media` |
+| **Customer app** (view only) | `GET /api/customer/projects/:leadId/media` |
 
 **Query:** `?type=photo` or `?type=video` (optional). Omit → both.
 

@@ -799,6 +799,8 @@ Returns customer-visible documents across projects (quotations, invoices, drawin
 
 ## 2.11 Chat
 
+> **Staff panels:** Per-project channels here are **not** the same as internal `/api/construction/chat` or `/team-chat`. For customer ↔ employee wiring on active projects, see **[frontend-customer-project-communication-integration.md](./frontend-customer-project-communication-integration.md)** (direct chat vs project channels vs lead chat).
+
 Channels: **`project`** · **`finance`** · **`construction`**
 
 | Method | Path | Purpose |

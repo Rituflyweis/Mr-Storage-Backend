@@ -539,7 +539,105 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   })
 })
 
-/** GET /dashboard/export — Excel: KPI summary + all scoped projects (same filters as dashboard). */
+const emptyConstructionProjectStats = () => ({
+  total: 0,
+  totalIncludingCompleted: 0,
+  onTrack: 0,
+  delayed: 0,
+  completed: 0,
+  onTrackPct: 0,
+  delayedPct: 0,
+  completedPct: 0,
+  completionRate: 0,
+  upcomingDeadlines: 0,
+  totalChangePctVsYesterday: 0,
+  completionRateLabel: 'Average Completion',
+})
+
+const buildDeliveryOverviewForExport = (deliveriesInRange, parsed, deliveryRangeStart, deliveryRangeEnd) => {
+  const deliveryOverview = {
+    scope: parsed.fromDate || parsed.toDate ? 'range' : 'today',
+    fromDate: deliveryRangeStart,
+    toDate: deliveryRangeEnd,
+    delivered: deliveriesInRange.filter((d) => d.status === 'delivered' || d.status === 'received').length,
+    inTransit: deliveriesInRange.filter((d) => IN_TRANSIT_ROLLUP_STATUSES.has(d.status)).length,
+    outForDelivery: deliveriesInRange.filter((d) => OUT_FOR_DELIVERY_STATUSES.has(d.status)).length,
+    delayed: deliveriesInRange.filter((d) => d.status === 'delayed').length,
+    total: deliveriesInRange.length,
+  }
+  deliveryOverview.deliveredPct = pct(deliveryOverview.delivered, deliveryOverview.total)
+  deliveryOverview.inTransitPct = pct(deliveryOverview.inTransit, deliveryOverview.total)
+  deliveryOverview.outForDeliveryPct = pct(deliveryOverview.outForDelivery, deliveryOverview.total)
+  deliveryOverview.delayedPct = pct(deliveryOverview.delayed, deliveryOverview.total)
+  return deliveryOverview
+}
+
+const buildMaterialRequestOverviewForExport = (materialRequests) => {
+  const mrPending = materialRequests.filter((m) => m.status === 'pending').length
+  const mrApproved = materialRequests.filter((m) => m.status === 'approved').length
+  const mrRejected = materialRequests.filter((m) => m.status === 'rejected').length
+  const mrUrgent = materialRequests.filter(
+    (m) => m.priority === 'critical' || m.priority === 'high'
+  ).length
+  const mrTotal = materialRequests.length
+  return {
+    pendingApproval: mrPending,
+    approved: mrApproved,
+    rejected: mrRejected,
+    urgent: mrUrgent,
+    total: mrTotal,
+    approvedPct: pct(mrApproved, mrTotal),
+    pendingApprovalPct: pct(mrPending, mrTotal),
+    rejectedPct: pct(mrRejected, mrTotal),
+  }
+}
+
+const buildFreightCarriersForExport = async (deliveriesInRange) => {
+  const bidIds = deliveriesInRange.map((d) => d.selectedCarrierBidId).filter(Boolean)
+  const bids = bidIds.length
+    ? await FreightBid.find({ _id: { $in: bidIds } })
+        .select('carrierId')
+        .populate('carrierId', 'carrierName')
+        .lean()
+    : []
+  const bidCarrierMap = new Map(bids.map((b) => [String(b._id), b.carrierId]))
+  const carrierLoadMap = new Map()
+  for (const d of deliveriesInRange) {
+    const carrier = d.selectedCarrierBidId
+      ? bidCarrierMap.get(String(d.selectedCarrierBidId))
+      : null
+    if (!carrier) continue
+    const key = String(carrier._id)
+    if (!carrierLoadMap.has(key)) {
+      carrierLoadMap.set(key, {
+        carrierName: carrier.carrierName || '',
+        loadsToday: 0,
+        onTime: 0,
+        delayed: 0,
+      })
+    }
+    const entry = carrierLoadMap.get(key)
+    entry.loadsToday += 1
+    if (d.status === 'delayed') entry.delayed += 1
+    else entry.onTime += 1
+  }
+  const freightRows = [...carrierLoadMap.values()]
+  const totalLoadsToday = freightRows.reduce((s, r) => s + r.loadsToday, 0)
+  const freightOnTime = freightRows.reduce((s, r) => s + r.onTime, 0)
+  const freightDelayed = freightRows.reduce((s, r) => s + r.delayed, 0)
+  return {
+    rows: freightRows,
+    totals: {
+      totalLoadsToday,
+      onTime: freightOnTime,
+      onTimePct: pct(freightOnTime, totalLoadsToday),
+      delayed: freightDelayed,
+      delayedPct: pct(freightDelayed, totalLoadsToday),
+    },
+  }
+}
+
+/** GET /dashboard/export — Excel aligned with GET /dashboard (same filters + KPIs + widgets). */
 exports.exportDashboard = asyncHandler(async (req, res) => {
   const parsed = parseDashboardFilters(req.query)
   if (parsed.error) return badRequest(res, parsed.error)
@@ -548,38 +646,77 @@ exports.exportDashboard = asyncHandler(async (req, res) => {
   const now = new Date()
   const todayStart = startOfDay(now)
   const todayEnd = endOfDay(now)
+  const deliveryRangeStart = parsed.fromDate ? startOfDay(parsed.fromDate) : todayStart
+  const deliveryRangeEnd = parsed.toDate ? endOfDay(parsed.toDate) : todayEnd
 
-  const emptyStats = {
-    total: 0,
-    totalIncludingCompleted: 0,
-    onTrack: 0,
-    delayed: 0,
-    completed: 0,
-    onTrackPct: 0,
-    delayedPct: 0,
-    completedPct: 0,
-    completionRate: 0,
-    upcomingDeadlines: 0,
-    totalChangePctVsYesterday: 0,
-    completionRateLabel: 'Average Completion',
+  let projectStats = emptyConstructionProjectStats()
+  let projects = []
+  let deliveryOverview = buildDeliveryOverviewForExport([], parsed, deliveryRangeStart, deliveryRangeEnd)
+  let materialRequestOverview = buildMaterialRequestOverviewForExport([])
+  let activeSites = []
+  let upcomingDeadlines = []
+  let freightCarriers = {
+    rows: [],
+    totals: { totalLoadsToday: 0, onTime: 0, onTimePct: 0, delayed: 0, delayedPct: 0 },
   }
 
-  let projectStats = emptyStats
-  let projects = []
   if (leadIds.length) {
     const context = await loadStatsContextForLeadIds(leadIds, { todayStart, todayEnd, now })
     projectStats = computeProjectStats(context, now)
     projects = buildAllProjectsExportRows(context, now)
+    activeSites = buildActiveSites(context, { now, limit: null })
+    upcomingDeadlines = context.upcomingDeadlineLeads.map((l) => ({
+      projectName: l.projectName,
+      jobId: l.jobId,
+      location: l.location,
+      endDate: l.endDate,
+      daysLeft: Math.ceil((new Date(l.endDate) - now) / (1000 * 60 * 60 * 24)),
+    }))
+
+    const [deliveriesInRange, materialRequests] = await Promise.all([
+      Delivery.find({
+        leadId: { $in: leadIds },
+        status: { $nin: ['draft', 'cancelled'] },
+        deliveryDate: { $gte: deliveryRangeStart, $lte: deliveryRangeEnd },
+      })
+        .select('status deliveryDate selectedCarrierBidId')
+        .lean(),
+      MaterialRequest.find({ leadId: { $in: leadIds } }).select('status priority').lean(),
+    ])
+
+    deliveryOverview = buildDeliveryOverviewForExport(
+      deliveriesInRange,
+      parsed,
+      deliveryRangeStart,
+      deliveryRangeEnd
+    )
+    materialRequestOverview = buildMaterialRequestOverviewForExport(materialRequests)
+    freightCarriers = await buildFreightCarriersForExport(deliveriesInRange)
+  }
+
+  const filtersApplied = {
+    projectId: parsed.projectId,
+    buildingId: parsed.buildingId,
+    status: parsed.status,
+    businessUnit: parsed.businessUnit ?? null,
+    fromDate: parsed.fromDate,
+    toDate: parsed.toDate,
   }
 
   const buffer = await generateConstructionDashboardExcel({
     projectStats,
     projects,
     exportedAt: now,
+    filtersApplied,
+    deliveryOverview,
+    materialRequestOverview,
+    activeSites,
+    upcomingDeadlines,
+    freightCarriers,
   })
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-  res.setHeader('Content-Disposition', 'attachment; filename="construction-dashboard-projects.xlsx"')
+  res.setHeader('Content-Disposition', 'attachment; filename="construction-dashboard-export.xlsx"')
   return res.send(buffer)
 })
 

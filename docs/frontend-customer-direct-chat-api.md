@@ -2,6 +2,8 @@
 
 One thread per **customer** — not tied to `leadId`. Separate from lead/AI sales chat and from customer app **project/finance/construction** channels.
 
+**Panel integration map (which API to use where):** [frontend-customer-project-communication-integration.md](./frontend-customer-project-communication-integration.md)
+
 Base URLs:
 - Customer: **`/api/customer/chat/direct`**
 - Admin: **`/api/admin/customer-direct-chat`**

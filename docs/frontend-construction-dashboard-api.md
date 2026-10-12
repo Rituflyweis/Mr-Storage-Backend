@@ -55,15 +55,53 @@ GET /api/construction/dashboard?projectId=66f1…&fromDate=2026-03-24&toDate=202
 
 ### Export (Excel)
 
-Same query params as dashboard (`projectId`, `buildingId`, `status`, `businessUnit`, date range does **not** change project rows — only delivery widgets on the JSON dashboard).
+**Same filters and KPI scope as** `GET /api/construction/dashboard`. Pass the **same query string** on the Export button as the dashboard uses (project, building, status, business unit, date range).
 
 ```http
 GET /api/construction/dashboard/export
 Authorization: Bearer <token>
 ```
 
-**File:** `construction-dashboard-projects.xlsx`  
-**Sheets:** `Summary` (KPIs from `projectStats`), `Projects` (all scoped projects with progress / health — not limited to 20 like `activeSites`).
+| Param | Aliases | Same as dashboard |
+|--------|---------|-------------------|
+| `projectId` | `leadId` | Yes |
+| `buildingId` | — | Yes |
+| `status` | `lifecycleStatus` | Yes |
+| `businessUnit` | — | Yes |
+| `fromDate` | `dateFrom` | Yes — delivery + freight sheets |
+| `toDate` | `dateTo` | Yes — delivery + freight sheets |
+
+**Example (prod):**
+
+```bash
+curl -s "https://mr-storage-backend-025k.onrender.com/api/construction/dashboard/export" \
+  -H "Authorization: Bearer <token>" \
+  -o construction-dashboard-export.xlsx
+```
+
+With filters:
+
+```bash
+curl -s "https://mr-storage-backend-025k.onrender.com/api/construction/dashboard/export?businessUnit=SM&fromDate=2026-03-24&toDate=2026-03-31" \
+  -H "Authorization: Bearer <token>" \
+  -o construction-dashboard-export.xlsx
+```
+
+**Response:** `200`, `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, file download.
+
+**Filename:** `construction-dashboard-export.xlsx`
+
+**Sheets (aligned with dashboard widgets):**
+
+| Sheet | Dashboard source |
+|--------|-------------------|
+| `Summary` | `projectStats` + applied filters |
+| `Delivery Overview` | `deliveryOverview` (today or date range) |
+| `Material Requests` | `materialRequestOverview` |
+| `Projects` | All scoped projects (progress / health) — not paginated |
+| `Active Sites` | All `activeSites` rows (JSON dashboard caps at 20) |
+| `Upcoming Deadlines` | `upcomingDeadlines` |
+| `Freight Carriers` | `freightCarriers.rows` + totals |
 
 ---
 

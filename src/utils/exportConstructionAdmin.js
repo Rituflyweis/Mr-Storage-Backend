@@ -88,8 +88,43 @@ const generateMaterialRequestsExcel = async (rows) => {
   return workbook.xlsx.writeBuffer()
 }
 
-const generateConstructionDashboardExcel = async ({ projectStats = {}, projects = [], exportedAt = new Date() }) => {
+const addKeyValueSheet = (workbook, name, rows) => {
+  const sheet = workbook.addWorksheet(name)
+  sheet.columns = [
+    { header: 'Metric', key: 'metric', width: 36 },
+    { header: 'Value', key: 'value', width: 24 },
+  ]
+  for (const row of rows) sheet.addRow(row)
+  sheet.getRow(1).font = { bold: true }
+}
+
+const generateConstructionDashboardExcel = async ({
+  projectStats = {},
+  projects = [],
+  exportedAt = new Date(),
+  filtersApplied = {},
+  deliveryOverview = {},
+  materialRequestOverview = {},
+  activeSites = [],
+  upcomingDeadlines = [],
+  freightCarriers = {},
+}) => {
   const workbook = new ExcelJS.Workbook()
+
+  const filterRows = [
+    { metric: 'projectId', value: filtersApplied.projectId || '—' },
+    { metric: 'buildingId', value: filtersApplied.buildingId || '—' },
+    { metric: 'status', value: filtersApplied.status || '—' },
+    { metric: 'businessUnit', value: filtersApplied.businessUnit ?? '—' },
+    {
+      metric: 'fromDate',
+      value: filtersApplied.fromDate ? new Date(filtersApplied.fromDate).toISOString() : '—',
+    },
+    {
+      metric: 'toDate',
+      value: filtersApplied.toDate ? new Date(filtersApplied.toDate).toISOString() : '—',
+    },
+  ]
 
   const summary = workbook.addWorksheet('Summary')
   summary.columns = [
@@ -98,6 +133,7 @@ const generateConstructionDashboardExcel = async ({ projectStats = {}, projects 
   ]
   const summaryRows = [
     { metric: 'Exported at', value: new Date(exportedAt).toISOString() },
+    ...filterRows,
     { metric: 'Total projects (active)', value: projectStats.total ?? 0 },
     { metric: 'Total including completed', value: projectStats.totalIncludingCompleted ?? 0 },
     { metric: 'On track', value: projectStats.onTrack ?? 0 },
@@ -112,6 +148,38 @@ const generateConstructionDashboardExcel = async ({ projectStats = {}, projects 
   ]
   for (const row of summaryRows) summary.addRow(row)
   summary.getRow(1).font = { bold: true }
+
+  addKeyValueSheet(workbook, 'Delivery Overview', [
+    { metric: 'Scope', value: deliveryOverview.scope || '—' },
+    {
+      metric: 'From',
+      value: deliveryOverview.fromDate ? new Date(deliveryOverview.fromDate).toISOString() : '—',
+    },
+    {
+      metric: 'To',
+      value: deliveryOverview.toDate ? new Date(deliveryOverview.toDate).toISOString() : '—',
+    },
+    { metric: 'Total deliveries', value: deliveryOverview.total ?? 0 },
+    { metric: 'Delivered', value: deliveryOverview.delivered ?? 0 },
+    { metric: 'In transit', value: deliveryOverview.inTransit ?? 0 },
+    { metric: 'Out for delivery', value: deliveryOverview.outForDelivery ?? 0 },
+    { metric: 'Delayed', value: deliveryOverview.delayed ?? 0 },
+    { metric: 'Delivered %', value: deliveryOverview.deliveredPct ?? 0 },
+    { metric: 'In transit %', value: deliveryOverview.inTransitPct ?? 0 },
+    { metric: 'Out for delivery %', value: deliveryOverview.outForDeliveryPct ?? 0 },
+    { metric: 'Delayed %', value: deliveryOverview.delayedPct ?? 0 },
+  ])
+
+  addKeyValueSheet(workbook, 'Material Requests', [
+    { metric: 'Total', value: materialRequestOverview.total ?? 0 },
+    { metric: 'Pending approval', value: materialRequestOverview.pendingApproval ?? 0 },
+    { metric: 'Approved', value: materialRequestOverview.approved ?? 0 },
+    { metric: 'Rejected', value: materialRequestOverview.rejected ?? 0 },
+    { metric: 'Urgent', value: materialRequestOverview.urgent ?? 0 },
+    { metric: 'Approved %', value: materialRequestOverview.approvedPct ?? 0 },
+    { metric: 'Pending %', value: materialRequestOverview.pendingApprovalPct ?? 0 },
+    { metric: 'Rejected %', value: materialRequestOverview.rejectedPct ?? 0 },
+  ])
 
   const sheet = workbook.addWorksheet('Projects')
   sheet.columns = [
@@ -140,6 +208,72 @@ const generateConstructionDashboardExcel = async ({ projectStats = {}, projects 
     })
   }
   sheet.getRow(1).font = { bold: true }
+
+  const activeSheet = workbook.addWorksheet('Active Sites')
+  activeSheet.columns = [
+    { header: 'Job ID', key: 'jobId', width: 14 },
+    { header: 'Project', key: 'projectName', width: 28 },
+    { header: 'Site', key: 'site', width: 22 },
+    { header: 'Progress %', key: 'progressPct', width: 12 },
+    { header: 'Delivery status', key: 'deliveryStatus', width: 16 },
+    { header: 'Deadline', key: 'deadline', width: 14 },
+    { header: 'Lifecycle', key: 'lifecycleStatus', width: 18 },
+  ]
+  for (const row of activeSites) {
+    activeSheet.addRow({
+      jobId: row.jobId || '—',
+      projectName: row.projectName || '—',
+      site: row.site || '—',
+      progressPct: row.progressPct ?? 0,
+      deliveryStatus: row.deliveryStatus || '—',
+      deadline: row.deadline ? new Date(row.deadline).toLocaleDateString() : '—',
+      lifecycleStatus: row.lifecycleStatus || '—',
+    })
+  }
+  activeSheet.getRow(1).font = { bold: true }
+
+  const deadlinesSheet = workbook.addWorksheet('Upcoming Deadlines')
+  deadlinesSheet.columns = [
+    { header: 'Job ID', key: 'jobId', width: 14 },
+    { header: 'Project', key: 'projectName', width: 28 },
+    { header: 'Location', key: 'location', width: 22 },
+    { header: 'End date', key: 'endDate', width: 14 },
+    { header: 'Days left', key: 'daysLeft', width: 12 },
+  ]
+  for (const row of upcomingDeadlines) {
+    deadlinesSheet.addRow({
+      jobId: row.jobId || '—',
+      projectName: row.projectName || '—',
+      location: row.location || '—',
+      endDate: row.endDate ? new Date(row.endDate).toLocaleDateString() : '—',
+      daysLeft: row.daysLeft ?? '—',
+    })
+  }
+  deadlinesSheet.getRow(1).font = { bold: true }
+
+  const freightSheet = workbook.addWorksheet('Freight Carriers')
+  freightSheet.columns = [
+    { header: 'Carrier', key: 'carrierName', width: 28 },
+    { header: 'Loads', key: 'loadsToday', width: 10 },
+    { header: 'On time', key: 'onTime', width: 10 },
+    { header: 'Delayed', key: 'delayed', width: 10 },
+  ]
+  for (const row of freightCarriers.rows || []) {
+    freightSheet.addRow({
+      carrierName: row.carrierName || '—',
+      loadsToday: row.loadsToday ?? 0,
+      onTime: row.onTime ?? 0,
+      delayed: row.delayed ?? 0,
+    })
+  }
+  freightSheet.addRow({})
+  freightSheet.addRow({
+    carrierName: 'Totals',
+    loadsToday: freightCarriers.totals?.totalLoadsToday ?? 0,
+    onTime: freightCarriers.totals?.onTime ?? 0,
+    delayed: freightCarriers.totals?.delayed ?? 0,
+  })
+  freightSheet.getRow(1).font = { bold: true }
 
   return workbook.xlsx.writeBuffer()
 }

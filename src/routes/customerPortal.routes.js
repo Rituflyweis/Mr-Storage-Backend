@@ -47,6 +47,7 @@ router.post('/projects/:leadId/quotation/approve',                 ctrl.approveP
 router.post('/projects/:leadId/quotation/reject',                  ctrl.rejectProjectQuotation)
 router.get('/projects/:leadId/payments/summary',                   ctrl.getProjectPaymentsSummary)
 router.post('/projects/:leadId/cancel',                            ctrl.cancelProject)
+router.get('/projects/:leadId/media',                              ctrl.getProjectMedia)
 router.get('/projects/:leadId/drawings',                           ctrl.getProjectDrawings)
 router.get('/projects/:leadId/buildings',                          ctrl.getProjectBuildings)
 router.get('/projects/:leadId/buildings/:buildingLabel',           ctrl.getBuildingDrawings)

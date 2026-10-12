@@ -51,6 +51,11 @@ const CUSTOMER_IN_TRANSIT_STATUSES = new Set([
 ])
 const { enrichLeadDocument } = require('../utils/leadProjectId')
 const customerQuotationService = require('../services/customerQuotation.service')
+const {
+  MEDIA_DOCUMENT_TYPES,
+  isMediaType,
+  buildLeadMediaPayload,
+} = require('../services/leadMedia.service')
 
 const s3 = new S3Client({
   region: env.AWS_REGION,
@@ -1863,6 +1868,25 @@ const buildingLabelsForLead = (lead) => {
   const count = lead.numberOfBuildings || 1
   return Array.from({ length: count }, (_, i) => `Building ${BUILDING_LETTERS[i] || i + 1}`)
 }
+
+// GET /projects/:leadId/media — photos & videos (same payload as staff panel /media routes)
+exports.getProjectMedia = asyncHandler(async (req, res) => {
+  const { type } = req.query
+  if (type && !isMediaType(type)) {
+    return badRequest(res, `type must be one of: ${MEDIA_DOCUMENT_TYPES.join(', ')}`)
+  }
+
+  const lead = await Lead.findById(req.params.leadId)
+    .select('customerId jobId projectName documents')
+    .lean()
+  if (!lead) return notFound(res, 'Project not found')
+  if (String(lead.customerId) !== String(req.customer._id)) {
+    return forbidden(res, 'This project does not belong to your account')
+  }
+
+  const payload = await buildLeadMediaPayload(lead, type)
+  return success(res, payload)
+})
 
 // GET /projects/:leadId/drawings
 exports.getProjectDrawings = asyncHandler(async (req, res) => {

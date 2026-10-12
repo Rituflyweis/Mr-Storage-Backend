@@ -129,6 +129,30 @@
 						}
 					},
 					"_postman_note": "Returns: projectStats (total/onTrack/delayed/completed/completionRate/upcomingDeadlines), deliveryOverview, taskOverview, upcomingDeadlines[], recentDeliveries[]"
+				},
+				{
+					"name": "Export Dashboard (Excel)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/construction/dashboard/export",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"construction",
+								"dashboard",
+								"export"
+							]
+						}
+					},
+					"_postman_note": "Same query params as Get Dashboard. File: construction-dashboard-export.xlsx"
 				}
 			]
 		},
