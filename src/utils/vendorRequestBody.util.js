@@ -33,7 +33,13 @@ const normalizeVendorRequestBody = (body = {}) => {
       b.vendor_name
   }
   if (!b.vendorCode) {
-    b.vendorCode = b.shipperId || b.shippersId || b.shippersID || b.vendor_code
+    b.vendorCode =
+      b.shipperCode ||
+      b.shipperVendorCode ||
+      b.shipperId ||
+      b.shippersId ||
+      b.shippersID ||
+      b.vendor_code
   }
   if (!b.contactName && b.contact_name) b.contactName = b.contact_name
   if (!b.serviceCategory && b.service_category) b.serviceCategory = b.service_category

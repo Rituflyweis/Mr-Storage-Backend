@@ -8,6 +8,8 @@ const {
   updateVendorValidators,
 } = require('../../../validators/vendor.validators')
 
+router.get('/next-code', ctrl.getNextVendorCode)
+
 router.get('/', vendorListQueryValidators, validate, ctrl.getVendors)
 
 router.post('/', createVendorValidators, validate, ctrl.createVendor)

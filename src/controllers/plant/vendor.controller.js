@@ -109,6 +109,16 @@ const normalizeDocuments = (documents = []) =>
     .filter(doc => doc?.name?.trim() && doc?.url?.trim())
     .map(doc => ({ name: doc.name.trim(), url: doc.url.trim() }))
 
+/** Next suggested vendor/shipper code for create form (not reserved until POST). */
+exports.getNextVendorCode = asyncHandler(async (_req, res) => {
+  const vendorCode = await generateVendorCode()
+  return success(res, {
+    vendorCode,
+    /** Shippers are Vendor master records; UI may label this field Shipper ID. */
+    shipperVendorCode: vendorCode,
+  })
+})
+
 exports.getVendors = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20 } = req.query
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)

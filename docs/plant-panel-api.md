@@ -318,11 +318,13 @@ Bundle: `draft` | `confirmed` | `assigned_to_truck` | `loaded`
 | 21ZI | GET | `/api/public/freight-bids/:token` | Public freight bid link details |
 | 21ZJ | POST | `/api/public/freight-bids/:token/submit` | Public carrier bid submit (deadline enforced) |
 | 22 | GET | `/api/plant/vendors` | List vendors / shippers |
+| 22A | GET | `/api/plant/vendors/next-code` | Next suggested `vendorCode` / shipper ID (preview) |
 | 23 | POST | `/api/plant/vendors` | Add vendor / shipper |
 | 24 | GET | `/api/plant/vendors/:vendorId` | Vendor detail + stats + order history |
 | 25 | PUT | `/api/plant/vendors/:vendorId` | Update vendor |
 | 26 | PATCH | `/api/plant/vendors/:vendorId/toggle-status` | Toggle active / inactive |
 | 27 | GET | `/api/plant/carriers` | List freight carriers |
+| 27A | GET | `/api/plant/carriers/next-code` | Next suggested `carrierCode` (preview) |
 | 28 | POST | `/api/plant/carriers` | Add freight carrier |
 | 29 | GET | `/api/plant/carriers/:carrierId` | Carrier detail + stats + freight history |
 | 30 | PUT | `/api/plant/carriers/:carrierId` | Update carrier |

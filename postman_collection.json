@@ -4521,6 +4521,34 @@
           "response": []
         },
         {
+          "name": "Next Vendor / Shipper Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/plant/vendors/next-code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "plant",
+                "vendors",
+                "next-code"
+              ]
+            },
+            "description": "Preview next VND-####. POST create accepts vendorCode, shipperCode, or shipperVendorCode."
+          },
+          "response": []
+        },
+        {
           "name": "Create Vendor",
           "request": {
             "method": "POST",
@@ -4533,7 +4561,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"vendorName\": \"ABC Steel\",\n  \"email\": \"quotes@abcsteel.com\",\n  \"phone\": \"+1-555-0100\",\n  \"contactName\": \"Jane Doe\",\n  \"vendorType\": \"steel\",\n  \"materialTypes\": [\n    \"steel\",\n    \"panels\"\n  ]\n}",
+              "raw": "{\n  \"vendorName\": \"ABC Steel\",\n  \"email\": \"quotes@abcsteel.com\",\n  \"phone\": \"+1-555-0100\",\n  \"contactName\": \"Jane Doe\",\n  \"vendorCode\": \"VND-0099\",\n  \"vendorType\": \"steel\",\n  \"materialTypes\": [\n    \"steel\",\n    \"panels\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4695,6 +4723,34 @@
           "response": []
         },
         {
+          "name": "Next Carrier Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/plant/carriers/next-code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "plant",
+                "carriers",
+                "next-code"
+              ]
+            },
+            "description": "Preview next CAR-####. POST create accepts optional carrierCode."
+          },
+          "response": []
+        },
+        {
           "name": "Create Carrier",
           "request": {
             "method": "POST",
@@ -4707,7 +4763,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"carrierName\": \"FastFreight Logistics\",\n  \"email\": \"dispatch@fastfreight.com\",\n  \"phone\": \"+1-555-0200\",\n  \"contactName\": \"Mike Carrier\",\n  \"serviceType\": \"Flatbed\",\n  \"serviceArea\": \"Southwest US\"\n}",
+              "raw": "{\n  \"carrierName\": \"FastFreight Logistics\",\n  \"email\": \"dispatch@fastfreight.com\",\n  \"phone\": \"+1-555-0200\",\n  \"contactName\": \"Mike Carrier\",\n  \"carrierCode\": \"CAR-0099\",\n  \"serviceType\": \"Flatbed\",\n  \"serviceArea\": \"Southwest US\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

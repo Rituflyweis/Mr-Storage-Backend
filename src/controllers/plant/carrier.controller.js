@@ -166,6 +166,12 @@ const calcAvgResponseHours = (bids = []) => {
   return Math.round(avg * 10) / 10
 }
 
+/** Next suggested code for create form (not reserved until POST). */
+exports.getNextCarrierCode = asyncHandler(async (_req, res) => {
+  const carrierCode = await generateCarrierCode()
+  return success(res, { carrierCode })
+})
+
 exports.getCarriers = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20 } = req.query
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
@@ -209,7 +215,11 @@ exports.createCarrier = asyncHandler(async (req, res) => {
   const exists = await FreightCarrier.findOne({ email: normalizedEmail })
   if (exists) return badRequest(res, 'Email already in use')
 
-  let code = carrierCode?.trim()
+  const codeInput =
+    carrierCode?.trim() ||
+    req.body.carrierID?.trim?.() ||
+    req.body.carrier_id?.trim?.()
+  let code = codeInput
   if (code) {
     const codeExists = await FreightCarrier.findOne({ carrierCode: code })
     if (codeExists) return badRequest(res, 'Carrier code already in use')

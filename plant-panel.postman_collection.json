@@ -7348,6 +7348,45 @@
           ]
         },
         {
+          "name": "Next Vendor / Shipper Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/plant/vendors/next-code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "plant",
+                "vendors",
+                "next-code"
+              ]
+            },
+            "description": "Preview next VND-#### for Add Vendor/Shipper form. Not reserved until POST. POST accepts vendorCode, shipperCode, or shipperVendorCode to save a user-edited ID."
+          },
+          "response": [
+            {
+              "name": "200 Success",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"vendorCode\": \"VND-0001\",\n    \"shipperVendorCode\": \"VND-0001\"\n  }\n}"
+            }
+          ]
+        },
+        {
           "name": "Create Vendor",
           "request": {
             "method": "POST",
@@ -7373,8 +7412,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"vendorName\": \"Steel Supply Co\",\n  \"email\": \"quotes@steelsupply.com\",\n  \"phone\": \"+15551234567\",\n  \"contactName\": \"Mike Johnson\",\n  \"vendorType\": \"steel\",\n  \"materialTypes\": [\n    \"panels\",\n    \"trim\"\n  ],\n  \"address\": {\n    \"city\": \"Dallas\",\n    \"state\": \"TX\",\n    \"postalCode\": \"75201\"\n  }\n}"
-            }
+              "raw": "{\n  \"vendorName\": \"Steel Supply Co\",\n  \"email\": \"quotes@steelsupply.com\",\n  \"phone\": \"+15551234567\",\n  \"contactName\": \"Mike Johnson\",\n  \"vendorCode\": \"VND-0099\",\n  \"vendorType\": \"steel\",\n  \"materialTypes\": [\n    \"panels\",\n    \"trim\"\n  ],\n  \"address\": {\n    \"city\": \"Dallas\",\n    \"state\": \"TX\",\n    \"postalCode\": \"75201\"\n  }\n}"
+            },
+            "description": "Omit vendorCode to auto-generate, or send vendorCode / shipperCode / shipperVendorCode to persist an edited ID."
           },
           "response": [
             {
@@ -7706,6 +7746,45 @@
           ]
         },
         {
+          "name": "Next Carrier Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/plant/carriers/next-code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "plant",
+                "carriers",
+                "next-code"
+              ]
+            },
+            "description": "Preview next CAR-#### for Add Carrier form. Not reserved until POST. POST accepts optional carrierCode to save a user-edited ID."
+          },
+          "response": [
+            {
+              "name": "200 Success",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Success\",\n  \"data\": {\n    \"carrierCode\": \"CAR-0001\"\n  }\n}"
+            }
+          ]
+        },
+        {
           "name": "Create Carrier",
           "request": {
             "method": "POST",
@@ -7731,8 +7810,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"carrierName\": \"FastFreight Logistics\",\n  \"email\": \"dispatch@fastfreight.com\",\n  \"phone\": \"+15557654321\",\n  \"contactName\": \"Sarah Lee\",\n  \"serviceType\": \"flatbed\",\n  \"serviceArea\": \"TX, OK, LA\",\n  \"fleetCapacity\": {\n    \"totalVehicleCount\": 25,\n    \"maximumLoadCapacity\": 48000\n  }\n}"
-            }
+              "raw": "{\n  \"carrierName\": \"FastFreight Logistics\",\n  \"email\": \"dispatch@fastfreight.com\",\n  \"phone\": \"+15557654321\",\n  \"contactName\": \"Sarah Lee\",\n  \"carrierCode\": \"CAR-0099\",\n  \"serviceType\": \"flatbed\",\n  \"serviceArea\": \"TX, OK, LA\",\n  \"fleetCapacity\": {\n    \"totalVehicleCount\": 25,\n    \"maximumLoadCapacity\": 48000\n  }\n}"
+            },
+            "description": "Omit carrierCode to auto-generate, or send carrierCode to persist an edited ID."
           },
           "response": [
             {

@@ -30,6 +30,8 @@ const fleetValidator = [
   body('fleetCapacity.averageFleetAge').optional().isFloat({ min: 0 }),
 ]
 
+router.get('/next-code', ctrl.getNextCarrierCode)
+
 router.get('/',
   [
     query('search').optional().trim(),
