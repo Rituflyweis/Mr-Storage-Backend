@@ -53,7 +53,7 @@ exports.mapMaterialRequestRow = (mr) => {
   }
 }
 
-exports.buildMaterialRequestListFilter = async (query = {}, { salesUserId } = {}) => {
+exports.buildMaterialRequestListFilter = async (query = {}, { salesUserId, scopedLeadIds } = {}) => {
   const {
     projectId,
     leadId,
@@ -78,7 +78,14 @@ exports.buildMaterialRequestListFilter = async (query = {}, { salesUserId } = {}
   const project = projectId || leadId
   if (project) filter.leadId = project
 
-  if (salesUserId) {
+  if (scopedLeadIds) {
+    const leadIds = scopedLeadIds
+    if (project) {
+      filter.leadId = leadIds.some((id) => String(id) === String(project)) ? project : { $in: [] }
+    } else {
+      filter.leadId = { $in: leadIds }
+    }
+  } else if (salesUserId) {
     const leadIds = await Lead.find({ assignedSales: salesUserId }).distinct('_id')
     if (project) {
       filter.leadId = leadIds.some((id) => String(id) === String(project)) ? project : { $in: [] }
@@ -107,8 +114,8 @@ const listPopulate = [
 ]
 
 exports.listMaterialRequests = async (query = {}, options = {}) => {
-  const { page = 1, limit = 20, salesUserId } = options
-  const filter = await exports.buildMaterialRequestListFilter(query, { salesUserId })
+  const { page = 1, limit = 20, salesUserId, scopedLeadIds } = options
+  const filter = await exports.buildMaterialRequestListFilter(query, { salesUserId, scopedLeadIds })
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100)
   const skip = (parsedPage - 1) * parsedLimit
@@ -149,10 +156,13 @@ exports.listMaterialRequests = async (query = {}, options = {}) => {
   }
 }
 
-exports.getMaterialRequestById = async (requestId, { salesUserId } = {}) => {
+exports.getMaterialRequestById = async (requestId, { salesUserId, scopedLeadIds } = {}) => {
   const doc = await MaterialRequest.findById(requestId).populate(listPopulate).lean()
   if (!doc) return null
-  if (salesUserId) {
+  if (scopedLeadIds) {
+    const leadId = doc.leadId?._id || doc.leadId
+    if (!scopedLeadIds.some((id) => String(id) === String(leadId))) return { forbidden: true }
+  } else if (salesUserId) {
     const lead = doc.leadId
     const assigned = lead?.assignedSales ? String(lead.assignedSales) : null
     if (!assigned || assigned !== String(salesUserId)) return { forbidden: true }

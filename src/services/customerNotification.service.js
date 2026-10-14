@@ -76,9 +76,24 @@ const notifyCustomerDrawingUploadedForLabel = async ({
   refModel,
 })
 
+const notifyCustomerQuotationSent = async ({ customerId, leadId, quoteNumber, refId }) =>
+  notifyCustomer({
+    customerId,
+    leadId,
+    title: 'Quotation ready',
+    body: quoteNumber
+      ? `Your quotation ${quoteNumber} is ready to review in the customer portal.`
+      : 'A new quotation is ready to review in the customer portal.',
+    type: 'quotation',
+    priority: 'high',
+    refId,
+    refModel: 'Quotation',
+  })
+
 module.exports = {
   buildingLabelFromNumber,
   notifyCustomer,
   notifyCustomerDrawingUploaded,
   notifyCustomerDrawingUploadedForLabel,
+  notifyCustomerQuotationSent,
 }

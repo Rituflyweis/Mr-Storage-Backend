@@ -257,6 +257,18 @@ exports.createMaterialRequest = asyncHandler(async (req, res) => {
     priority,
   })
 
+  const lead = await Lead.findById(leadId).select('projectName jobId').lean()
+  const projectLabel = lead?.jobId || lead?.projectName || 'a project'
+  await notificationService.notifyRole('plant', {
+    leadId,
+    title: 'New material request',
+    body: `${mr.requestId} submitted for ${projectLabel} (${requestedItems.length} item(s)).`,
+    type: 'material_request',
+    priority: priority === 'critical' || priority === 'high' ? 'high' : 'medium',
+    refId: mr._id,
+    refModel: 'MaterialRequest',
+  })
+
   return created(res, { materialRequest: mr }, 'Material request created')
 })
 

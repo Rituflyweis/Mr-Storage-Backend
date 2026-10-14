@@ -7,6 +7,7 @@ const Customer = require('../../models/Customer')
 const PaymentSchedule = require('../../models/PaymentSchedule')
 const mailer = require('./mailer')
 const auditService = require('../audit.service')
+const customerNotification = require('../customerNotification.service')
 const quoteSummaryService = require('../ai/quoteSummary.service')
 const {
   generateAssembledHtml,
@@ -126,6 +127,13 @@ const processQuotationEmailJob = async (job) => {
       deliveredAsync: true,
     },
   })
+
+  await customerNotification.notifyCustomerQuotationSent({
+    customerId: quotation.customerId,
+    leadId: quotation.leadId,
+    quoteNumber: quotation.quoteNumber,
+    refId: quotation._id,
+  }).catch((err) => console.error('[CustomerNotification] quotation sent:', err.message))
 
   quoteSummaryService
     .generateAndSave(quotation, quotation.leadId, quotation.customerId)

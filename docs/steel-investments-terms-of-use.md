@@ -243,9 +243,34 @@ You agree that we may contact you using the email and phone number you provide, 
 - scheduled and automated **follow-up email and SMS** about your project or quote (for example if chat or a lead becomes inactive);
 - operational notices about deliveries or document requests.
 
-Message and data rates may apply. Reply STOP to marketing SMS if that option is offered, or email [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) to opt out of marketing. We may still send transactional messages needed to provide quotes, invoices, OTPs, and project performance.
-
 You represent that the number you give us is yours and that you are authorized to receive SMS at that number.
+
+### 11.1 SMS Terms (Text Messaging Program)
+
+These **SMS Terms** apply to text messages sent by **Steel Investments LLC**, doing business as **Steel Building Depot** (“Steel Building Depot”), to mobile numbers in the United States.
+
+**Program description.** Steel Building Depot may send:
+
+1. **Transactional / service messages** — including one-time passcodes, quotation and invoice notices, payment reminders, project and delivery updates, and follow-ups about an enquiry or quote you started; and  
+2. **Marketing / promotional messages** — including sales announcements, limited-time offers, and promotional updates about steel building products and services — **only if you have opted in** as described below.
+
+**Opt-in (marketing).** To receive **marketing SMS**, you must affirmatively opt in, for example by checking a separate, optional, **unchecked** box on our website quote or inquiry form at [https://www.steelbuildingdepot.com](https://www.steelbuildingdepot.com) before submitting, or by enabling promotional SMS in customer portal settings where that option is offered. Checking the box or enabling the setting constitutes your consent to receive recurring automated promotional text messages from Steel Building Depot at the mobile number you provide.
+
+**Opt-in (transactional).** By providing your mobile number in chat, a form, or your account for project-related contact, you agree that Steel Building Depot may send non-marketing messages described in (1) above that are necessary or reasonably related to your enquiry, quote, order, or project.
+
+**Frequency.** Message frequency varies depending on your activity and preferences.
+
+**Cost.** **Message and data rates may apply.** Check with your wireless carrier.
+
+**Opt-out (marketing).** Reply **STOP** to any marketing text to cancel marketing messages. You may also email [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) with the subject “SMS Opt-Out” and your mobile number. After a valid opt-out, we will not send further **marketing** SMS unless you opt in again.
+
+**Help.** Reply **HELP** for help, or contact us at [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) or **712-466-3825**.
+
+**Carriers.** Wireless carriers are not liable for delayed or undelivered messages.
+
+**Privacy.** Our [Privacy Policy](./steel-investments-privacy-policy.md) describes how we handle phone numbers and SMS opt-in data, including: **We do not sell or share your SMS opt-in data or personal information with third parties for marketing purposes.**
+
+**No purchase required.** Consent to receive marketing SMS is not required to purchase goods or services from Steel Building Depot.
 
 ---
 

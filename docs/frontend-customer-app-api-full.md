@@ -799,13 +799,28 @@ Returns customer-visible documents across projects (quotations, invoices, drawin
 
 ## 2.11 Chat
 
-> **Staff panels:** Per-project channels here are **not** the same as internal `/api/construction/chat` or `/team-chat`. For customer ↔ employee wiring on active projects, see **[frontend-customer-project-communication-integration.md](./frontend-customer-project-communication-integration.md)** (direct chat vs project channels vs lead chat).
+> **Staff panels:** Per-project channels here are **not** the same as internal `/api/construction/chat` or `/team-chat`. For customer ↔ employee wiring on active projects, see **[frontend-customer-project-communication-integration.md](./frontend-customer-project-communication-integration.md)** (direct chat vs project channels vs lead chat).  
+> **UI map (Global Communication + customer Messages screen):** **[frontend-global-chat-ui-staff-and-customer.md](./frontend-global-chat-ui-staff-and-customer.md)**
+
+### 2.11a Direct messages (recommended primary inbox)
+
+One thread per customer account — pairs with staff **`customer-direct-chat`**.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/chat/direct` | Unread + last message preview |
+| GET | `/chat/direct/messages?page=&limit=` | Thread history |
+| POST | `/chat/direct/messages` | Send `{ "content": "…" }` |
+
+See **[frontend-customer-direct-chat-api.md](./frontend-customer-direct-chat-api.md)** for sockets.
+
+### 2.11b Per-project channels (optional tabs inside a project)
 
 Channels: **`project`** · **`finance`** · **`construction`**
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/chat/presence` | Online presence |
+| GET | `/chat/presence?leadId=` | Online presence |
 | GET | `/chat/channels?leadId=` | Available channels for project |
 | GET | `/chat/:channel/messages?leadId=&page=&limit=` | Message history |
 | POST | `/chat/:channel/messages` | Send message |

@@ -2334,6 +2334,15 @@ exports.approveProjectQuotation = asyncHandler(async (req, res) => {
     metadata: { quotationId: quotationDoc._id, quoteNumber: quotationDoc.quoteNumber },
   })
 
+  await notificationService.notifyLeadOwner(lead._id, {
+    title: 'Quotation accepted',
+    body: `Customer accepted quote ${quotationDoc.quoteNumber || quotationDoc._id}.`,
+    type: 'quotation',
+    priority: 'high',
+    refId: quotationDoc._id,
+    refModel: 'Quotation',
+  })
+
   return success(res, {
     message: 'Quotation accepted',
     quotation: { _id: quotationDoc._id, status: quotationDoc.status },
@@ -2365,6 +2374,17 @@ exports.rejectProjectQuotation = asyncHandler(async (req, res) => {
     customerId: req.customer._id,
     performedBy: req.customer._id,
     metadata: { quotationId: quotationDoc._id, quoteNumber: quotationDoc.quoteNumber, reason: reason || '' },
+  })
+
+  await notificationService.notifyLeadOwner(lead._id, {
+    title: 'Quotation rejected',
+    body: reason?.trim()
+      ? `Customer rejected quote ${quotationDoc.quoteNumber || quotationDoc._id}: ${reason.trim()}`
+      : `Customer rejected quote ${quotationDoc.quoteNumber || quotationDoc._id}.`,
+    type: 'quotation',
+    priority: 'high',
+    refId: quotationDoc._id,
+    refModel: 'Quotation',
   })
 
   return success(res, {
@@ -2950,6 +2970,15 @@ exports.sendChatMessage = asyncHandler(async (req, res) => {
     senderType: 'customer',
     senderName: req.customer.firstName || 'Customer',
     content: content.trim(),
+  })
+
+  await notificationService.notifyLeadOwner(leadId, {
+    title: 'New customer message',
+    body: content.trim().slice(0, 200),
+    type: 'chat',
+    priority: 'medium',
+    refId: message._id,
+    refModel: 'Message',
   })
 
   return created(res, { message }, 'Message sent')

@@ -8,6 +8,7 @@ Integration guide for the **project building quotation** tab: sales estimate →
 
 - Full customer portal reference: [`frontend-customer-app-api-full.md`](./frontend-customer-app-api-full.md) (§ Building quotation tab)
 - Sales send / approval (backend-only for sales/admin): [`frontend-api-delta-2026-09-10-quotation-approval-versions.md`](./frontend-api-delta-2026-09-10-quotation-approval-versions.md)
+- Customer **reject** → sales revision loop: [`frontend-customer-quotation-reject-flow-api.md`](./frontend-customer-quotation-reject-flow-api.md)
 - Preview CSS if rendering HTML fragments: [`quotation-preview-stylesheet-for-frontend.md`](./quotation-preview-stylesheet-for-frontend.md)
 - Staff photos/videos (same payload shape): [`frontend-lead-photos-videos-api.md`](./frontend-lead-photos-videos-api.md)
 - Postman: `customer-app.postman_collection.json` → **Projects → Quotation**
@@ -16,12 +17,12 @@ Integration guide for the **project building quotation** tab: sales estimate →
 
 ## Base URL & auth
 
-| Item | Value |
-|------|--------|
-| Base | `{BASE_URL}/api/customer` |
-| Example prod | `https://mr-storage-backend-025k.onrender.com/api/customer` |
-| Login | `POST /api/customer/auth/login` → `data.accessToken` |
-| Protected routes | `Authorization: Bearer <accessToken>` |
+| Item             | Value                                                       |
+| ---------------- | ----------------------------------------------------------- |
+| Base             | `{BASE_URL}/api/customer`                                   |
+| Example prod     | `https://mr-storage-backend-025k.onrender.com/api/customer` |
+| Login            | `POST /api/customer/auth/login` → `data.accessToken`        |
+| Protected routes | `Authorization: Bearer <accessToken>`                       |
 
 JWT must be a **customer** token (`type: "customer"`). The project `leadId` must belong to the logged-in customer.
 
@@ -35,7 +36,7 @@ Success:
 {
   "success": true,
   "message": "Success",
-  "data": { }
+  "data": {}
 }
 ```
 
@@ -48,12 +49,12 @@ Error:
 }
 ```
 
-| HTTP | Typical meaning |
-|------|------------------|
-| 401 | Missing or invalid token |
-| 403 | Project does not belong to this customer |
-| 404 | Project or quotation not found (see messages below) |
-| 400 | Invalid action (e.g. already accepted) |
+| HTTP | Typical meaning                                     |
+| ---- | --------------------------------------------------- |
+| 401  | Missing or invalid token                            |
+| 403  | Project does not belong to this customer            |
+| 404  | Project or quotation not found (see messages below) |
+| 400  | Invalid action (e.g. already accepted)              |
 
 **Preview and PDF routes return raw HTML or PDF bytes**, not the JSON envelope.
 
@@ -73,13 +74,13 @@ Draft / pending admin approval are **not** exposed as a full quote document.
 
 ## Endpoints overview
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/projects/:leadId/quotation` | Quotation tab metadata + preview URLs |
-| GET | `/projects/:leadId/quotation/preview` | Full HTML document (WebView) |
-| GET | `/projects/:leadId/quotation/pdf` | PDF download / in-app viewer |
-| POST | `/projects/:leadId/quotation/approve` | Customer accepts quotation |
-| POST | `/projects/:leadId/quotation/reject` | Customer rejects quotation |
+| Method | Path                                  | Purpose                               |
+| ------ | ------------------------------------- | ------------------------------------- |
+| GET    | `/projects/:leadId/quotation`         | Quotation tab metadata + preview URLs |
+| GET    | `/projects/:leadId/quotation/preview` | Full HTML document (WebView)          |
+| GET    | `/projects/:leadId/quotation/pdf`     | PDF download / in-app viewer          |
+| POST   | `/projects/:leadId/quotation/approve` | Customer accepts quotation            |
+| POST   | `/projects/:leadId/quotation/reject`  | Customer rejects quotation            |
 
 Path param **`leadId`** = project Mongo `_id` (e.g. `6ac4e5e6570533c2c601ed40`).
 
@@ -213,9 +214,9 @@ Quotation row exists but sales has not sent it yet. Show waiting copy; do not ca
 
 ### Response `404`
 
-| `message` | Meaning |
-|-----------|---------|
-| `Project not found` | Bad `leadId` or not owned by customer |
+| `message`                             | Meaning                                         |
+| ------------------------------------- | ----------------------------------------------- |
+| `Project not found`                   | Bad `leadId` or not owned by customer           |
 | `No quotation found for this project` | No quotation document for this project/customer |
 
 ---
@@ -231,9 +232,9 @@ Authorization: Bearer {accessToken}
 
 Optional query:
 
-| Query | Description |
-|-------|-------------|
-| `format` | Use `html` (default when loading preview route as HTML) |
+| Query      | Description                                                                          |
+| ---------- | ------------------------------------------------------------------------------------ |
+| `format`   | Use `html` (default when loading preview route as HTML)                              |
 | `sections` | Comma-separated subset of `quote`, `sow`, `contract`, `drawings`. Default: all four. |
 
 Example with sections:
@@ -371,9 +372,9 @@ Content-Type: application/json
 }
 ```
 
-| Field | Required | Notes |
-|-------|----------|--------|
-| `reason` | No | Stored on quotation `clientNotes` |
+| Field    | Required | Notes                             |
+| -------- | -------- | --------------------------------- |
+| `reason` | No       | Stored on quotation `clientNotes` |
 
 ### cURL
 
@@ -415,12 +416,12 @@ curl -s -X POST "{BASE_URL}/api/customer/projects/6ac4e5e6570533c2c601ed40/quota
 
 `GET /api/customer/projects/:leadId` includes a **subset** of the same view when a **sent+** quotation exists:
 
-| Field | Content |
-|-------|---------|
-| `data.quotation` | Sanitized quotation (null if not sent yet) |
-| `data.quotationPreview` | Same shape as `data.preview` on `GET …/quotation` |
-| `data.quotationDocumentMeta` | Same as `documentMeta` |
-| `data.quoteSummary` | AI summary when generated |
+| Field                        | Content                                           |
+| ---------------------------- | ------------------------------------------------- |
+| `data.quotation`             | Sanitized quotation (null if not sent yet)        |
+| `data.quotationPreview`      | Same shape as `data.preview` on `GET …/quotation` |
+| `data.quotationDocumentMeta` | Same as `documentMeta`                            |
+| `data.quoteSummary`          | AI summary when generated                         |
 
 For **“being prepared”** (`pending`), use **`GET …/quotation`** — project detail does **not** surface pending quotes (only customer-visible rows).
 
@@ -428,14 +429,14 @@ For **“being prepared”** (`pending`), use **`GET …/quotation`** — projec
 
 ## UI checklist
 
-| Step | Action |
-|------|--------|
-| 1 | On quotation tab mount, `GET /projects/{leadId}/quotation` |
-| 2 | Switch on `data.availability`: `ready` → preview; `pending` → `data.message`; handle 404 |
-| 3 | Preview: authenticated GET to `data.preview.htmlUrl` or PDF URL |
-| 4 | Show Approve/Reject only if `data.quotation.status === "sent"` |
-| 5 | After approve/reject, refresh `GET …/quotation` and update badges |
-| 6 | Do not use sales/admin routes (`/api/quotations/*`) from the customer app |
+| Step | Action                                                                                   |
+| ---- | ---------------------------------------------------------------------------------------- |
+| 1    | On quotation tab mount, `GET /projects/{leadId}/quotation`                               |
+| 2    | Switch on `data.availability`: `ready` → preview; `pending` → `data.message`; handle 404 |
+| 3    | Preview: authenticated GET to `data.preview.htmlUrl` or PDF URL                          |
+| 4    | Show Approve/Reject only if `data.quotation.status === "sent"`                           |
+| 5    | After approve/reject, refresh `GET …/quotation` and update badges                        |
+| 6    | Do not use sales/admin routes (`/api/quotations/*`) from the customer app                |
 
 ---
 
@@ -496,23 +497,23 @@ curl -s "{BASE_URL}/api/customer/projects/6ac4e5e6570533c2c601ed40/media" \
 }
 ```
 
-| Field | Notes |
-|-------|--------|
-| `documents` | All media (or filtered by `type`) |
-| `photos` / `videos` | Convenience splits of `documents` |
-| `requiresApproval` | Always `false` for media — show tiles immediately |
-| `uploadedBy` | Staff user who uploaded (read-only for customer) |
+| Field               | Notes                                             |
+| ------------------- | ------------------------------------------------- |
+| `documents`         | All media (or filtered by `type`)                 |
+| `photos` / `videos` | Convenience splits of `documents`                 |
+| `requiresApproval`  | Always `false` for media — show tiles immediately |
+| `uploadedBy`        | Staff user who uploaded (read-only for customer)  |
 
 Empty project (no uploads yet): `200` with `"documents": []`, `"total": 0`.
 
 ### Errors
 
-| HTTP | `message` |
-|------|-----------|
-| 401 | Unauthorized |
-| 403 | This project does not belong to your account |
-| 404 | Project not found |
-| 400 | `type must be one of: photo, video` |
+| HTTP | `message`                                    |
+| ---- | -------------------------------------------- |
+| 401  | Unauthorized                                 |
+| 403  | This project does not belong to your account |
+| 404  | Project not found                            |
+| 400  | `type must be one of: photo, video`          |
 
 ### Customer cannot upload
 

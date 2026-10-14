@@ -196,9 +196,18 @@ If you give us a phone number or email in chat, a form, or an account:
 
 - we may send **transactional** messages (OTP, quotes, invoices, project status, security);
 - we may send **follow-up** messages about an enquiry or quote you started, including automated reminders if a chat or lead goes quiet;
-- marketing messages (if we send them) can be opted out by emailing [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) or using STOP where offered.
+- **marketing / promotional SMS** only if you separately opt in (for example by checking an optional, unchecked box on our website quote or inquiry form, or by enabling promotional SMS in account settings where offered);
+- marketing messages can be opted out by replying **STOP**, emailing [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com), or disabling promotional SMS in settings where available.
 
-**Message and data rates may apply.** Frequency varies. Consent to SMS is not a condition of purchase. You represent you are the subscriber or customary user of the number you provide.
+**Message and data rates may apply.** Frequency varies. Consent to marketing SMS is not a condition of purchase. You represent you are the subscriber or customary user of the number you provide.
+
+### 9.1 SMS opt-in data (Steel Building Depot / A2P 10DLC)
+
+When you opt in to promotional text messages from **Steel Building Depot** (Steel Investments LLC), we collect and store your mobile number, opt-in timestamp, and related contact information needed to send and honor your preferences.
+
+**We do not sell or share your SMS opt-in data or personal information with third parties for marketing purposes.**
+
+We share mobile numbers and message content only with our **SMS delivery provider** (for example Twilio) solely to transmit messages you agreed to receive, and as otherwise described in Section 7 for operating the Services (not for third-party marketing).
 
 ---
 
