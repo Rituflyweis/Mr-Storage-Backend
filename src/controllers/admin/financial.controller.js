@@ -16,6 +16,7 @@ const { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpense
 const { parse: parseCsv } = require('csv-parse/sync')
 const generateExpenseId = require('../../utils/generateExpenseId')
 const generatePaymentApprovalId = require('../../utils/generatePaymentApprovalId')
+const { computePaymentsDashboard } = require('../../services/adminPaymentsDashboard.service')
 
 exports.getOverview = asyncHandler(async (req, res) => {
   const base = buildDateFilter(req.query)
@@ -124,126 +125,6 @@ exports.getInvoiceAging = asyncHandler(async (req, res) => {
   const totalOverdueAmount = overdue.reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0)
   return success(res, { overdue, totalOverdueAmount })
 })
-
-// ── Payments Dashboard ─────────────────────────────────────────────────────────
-const computePaymentsDashboard = async (query) => {
-  const base = buildDateFilter(query)
-  const now = new Date()
-
-  const [totalAgg, receivedAgg, outstandingAgg, overdueAgg, ytdAgg, recentInvoices] = await Promise.all([
-    Invoice.aggregate([{ $match: base }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.aggregate([{ $match: { ...base, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.aggregate([{ $match: { ...base, status: { $in: ['sent', 'overdue'] } } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    // Was previously matching status:'overdue' with no date filter at all — "Total Overdue"
-    // ignored the "Select date range" picker entirely and always showed the all-time total.
-    Invoice.aggregate([{ $match: { ...base, status: 'overdue' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.aggregate([
-      { $match: { status: 'overdue', createdAt: { $gte: new Date(now.getFullYear(), 0, 1) } } },
-      { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-    ]),
-    Invoice.find({}).sort({ createdAt: -1 }).limit(10)
-      .populate('leadId', 'projectName')
-      .populate('customerId', 'firstName lastName')
-      .lean(),
-  ])
-
-  const totalPayments     = totalAgg[0]?.total || 0
-  const totalReceived     = receivedAgg[0]?.total || 0
-  const totalOutstanding  = outstandingAgg[0]?.total || 0
-  const totalOverdue      = overdueAgg[0]?.total || 0
-  const totalOverdueYTD   = ytdAgg[0]?.total || 0
-  const totalOverdueYTDPct = totalPayments > 0 ? Math.round((totalOverdueYTD / totalPayments) * 100 * 10) / 10 : 0
-
-  // "Payment status Distribution" — was previously ignoring the date-range filter entirely
-  // (always all-time), and `count` was counting invoices rather than distinct clients even
-  // though the widget's labels read "X clients".
-  const statusDistribution = await Invoice.aggregate([
-    { $match: base },
-    { $group: { _id: '$status', clientIds: { $addToSet: '$customerId' }, amount: { $sum: '$totalAmount' } } },
-    { $project: { _id: 1, count: { $size: '$clientIds' }, amount: 1 } },
-  ])
-
-  // Revenue trend last 6 months
-  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-  const revenueTrend = await Invoice.aggregate([
-    { $match: { createdAt: { $gte: sixMonthsAgo } } },
-    { $group: {
-      _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' }, status: '$status' },
-      amount: { $sum: '$totalAmount' }
-    }},
-    { $sort: { '_id.year': 1, '_id.month': 1 } }
-  ])
-
-  // Expected payments by days bucket
-  const expectedPayments = await Invoice.aggregate([
-    { $match: { status: { $in: ['sent', 'overdue'] } } },
-    { $addFields: { dueDate: { $add: ['$date', { $multiply: ['$daysToPay', 86400000] }] } } },
-    { $addFields: { daysLeft: { $floor: { $divide: [{ $subtract: ['$dueDate', now] }, 86400000] } } } },
-    { $group: {
-      _id: {
-        $switch: {
-          branches: [
-            { case: { $lte: ['$daysLeft', 30] }, then: '0-30' },
-            { case: { $lte: ['$daysLeft', 60] }, then: '31-60' },
-            { case: { $lte: ['$daysLeft', 90] }, then: '61-90' },
-          ],
-          default: '90+'
-        }
-      },
-      amount: { $sum: '$totalAmount' }
-    }}
-  ])
-
-  // "Stage wise payment progress" — this was a straight copy of statusDistribution's query
-  // (identical $group by status), so the widget showed the same breakdown twice instead of
-  // real payment-schedule progress. Stage names are free text and vary per project (Deposit,
-  // First Instalment, Final, ...), so "Initial" / "Final" means the first vs. last stage of
-  // each schedule, not a name match. Pulled from PaymentSchedule directly (not via Invoice —
-  // invoices aren't reliably linked back to a specific schedule stage in practice).
-  const scheduleStageAgg = await PaymentSchedule.aggregate([
-    { $project: {
-      customerId: 1,
-      totalAmount: 1,
-      initialStage: { $arrayElemAt: ['$stages', 0] },
-      finalStage: { $arrayElemAt: ['$stages', -1] },
-    }},
-    { $group: {
-      _id: null,
-      totalSchedules: { $sum: 1 },
-      initialPaidCount: { $sum: { $cond: [{ $eq: ['$initialStage.status', 'paid'] }, 1, 0] } },
-      initialClientIds: { $addToSet: { $cond: [{ $eq: ['$initialStage.status', 'paid'] }, '$customerId', '$$REMOVE'] } },
-      initialAmount: { $sum: { $cond: [{ $eq: ['$initialStage.status', 'paid'] }, '$initialStage.amount', 0] } },
-      finalPaidCount: { $sum: { $cond: [{ $eq: ['$finalStage.status', 'paid'] }, 1, 0] } },
-      finalClientIds: { $addToSet: { $cond: [{ $eq: ['$finalStage.status', 'paid'] }, '$customerId', '$$REMOVE'] } },
-      finalAmount: { $sum: { $cond: [{ $eq: ['$finalStage.status', 'paid'] }, '$finalStage.amount', 0] } },
-    }},
-  ])
-
-  const sw = scheduleStageAgg[0] || { totalSchedules: 0, initialPaidCount: 0, initialClientIds: [], initialAmount: 0, finalPaidCount: 0, finalClientIds: [], finalAmount: 0 }
-  const stageWise = [
-    {
-      _id: 'Initial Payment',
-      progressPct: sw.totalSchedules > 0 ? Math.round((sw.initialPaidCount / sw.totalSchedules) * 100) : 0,
-      clientCount: sw.initialClientIds.length,
-      amount: sw.initialAmount,
-    },
-    {
-      _id: 'Final Payment',
-      progressPct: sw.totalSchedules > 0 ? Math.round((sw.finalPaidCount / sw.totalSchedules) * 100) : 0,
-      clientCount: sw.finalClientIds.length,
-      amount: sw.finalAmount,
-    },
-  ]
-
-  return {
-    stats: { totalPayments, totalReceived, totalOutstanding, totalOverdue, totalOverdueYTD, totalOverdueYTDPct },
-    statusDistribution,
-    revenueTrend,
-    expectedPayments,
-    stageWise,
-    recentPayments: recentInvoices,
-  }
-}
 
 exports.getPaymentsDashboard = asyncHandler(async (req, res) => {
   const data = await computePaymentsDashboard(req.query)

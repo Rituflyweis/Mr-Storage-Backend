@@ -110,8 +110,11 @@ const generatePaymentsDashboardExcel = async (stats, recentPayments) => {
   const summarySheet = workbook.addWorksheet('Summary')
   summarySheet.columns = [{ header: 'Metric', key: 'metric', width: 24 }, { header: 'Value', key: 'value', width: 20 }]
   summarySheet.addRow({ metric: 'Total Payments', value: stats.totalPayments })
+  summarySheet.addRow({ metric: 'Total Invoiced (Clients)', value: stats.totalInvoicedToClients ?? stats.totalPayments })
   summarySheet.addRow({ metric: 'Total Received', value: stats.totalReceived })
   summarySheet.addRow({ metric: 'Total Outstanding', value: stats.totalOutstanding })
+  summarySheet.addRow({ metric: 'To Receive (Clients)', value: stats.totalToReceiveFromClients ?? stats.totalOutstanding })
+  summarySheet.addRow({ metric: 'Scheduled To Receive', value: stats.totalScheduledToReceiveFromClients ?? 0 })
   summarySheet.addRow({ metric: 'Total Overdue', value: stats.totalOverdue })
   summarySheet.addRow({ metric: 'Total Overdue YTD', value: stats.totalOverdueYTD })
   summarySheet.addRow({ metric: 'Total Overdue YTD %', value: stats.totalOverdueYTDPct })
@@ -123,17 +126,24 @@ const generatePaymentsDashboardExcel = async (stats, recentPayments) => {
     { header: 'Project',    key: 'projectName',    width: 25 },
     { header: 'Customer',   key: 'customerName',    width: 22 },
     { header: 'Amount',     key: 'amount',           width: 14 },
+    { header: 'Received',   key: 'received',         width: 14 },
+    { header: 'Payment Mode', key: 'paymentMode',    width: 16 },
     { header: 'Status',     key: 'status',            width: 14 },
     { header: 'Date',       key: 'date',               width: 16 },
   ]
   for (const inv of recentPayments) {
+    const isMapped = inv.clientName != null || inv.projectName != null
     sheet.addRow({
       invoiceNumber: inv.invoiceNumber || '—',
-      projectName: inv.leadId?.projectName || '—',
-      customerName: `${inv.customerId?.firstName || ''} ${inv.customerId?.lastName || ''}`.trim() || '—',
-      amount: inv.totalAmount || 0,
-      status: inv.status || '—',
-      date: inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : '—',
+      projectName: isMapped ? (inv.projectName || '—') : (inv.leadId?.projectName || '—'),
+      customerName: isMapped
+        ? (inv.clientName || '—')
+        : `${inv.customerId?.firstName || ''} ${inv.customerId?.lastName || ''}`.trim() || '—',
+      amount: inv.amount ?? inv.totalAmount ?? 0,
+      received: inv.received ?? (inv.status === 'paid' ? inv.totalAmount : 0) ?? 0,
+      paymentMode: inv.paymentMode || inv.paymentMethod || 'N/A',
+      status: inv.statusLabel || inv.status || '—',
+      date: inv.date || inv.createdAt ? new Date(inv.date || inv.createdAt).toLocaleDateString() : '—',
     })
   }
   sheet.getRow(1).font = { bold: true }

@@ -427,7 +427,7 @@ Admin financial routes live under **`/api/admin/financials/*`** (not customer, n
 
 | Area | Examples |
 |------|-----------|
-| Payments dashboard | `GET /payments-dashboard`, `GET /payments-dashboard/export` |
+| Payments dashboard (Figma page) | **`docs/frontend-admin-payments-dashboard-api.md`** — `GET /payments-dashboard`, export |
 | Payment approvals | `GET /payment-approvals`, `PUT /payment-approvals/:id/review` |
 | Payment status | `GET /payment-status`, export |
 | Financial overview | `GET /financial-overview`, export |
