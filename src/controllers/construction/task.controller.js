@@ -4,6 +4,10 @@ const Lead = require('../../models/Lead')
 const User = require('../../models/User')
 const Milestone = require('../../models/Milestone')
 const ProjectStepDetail = require('../../models/ProjectStepDetail')
+const {
+  computeProjectSteps,
+  buildPhasesFromSteps,
+} = require('../../utils/computeProjectSteps')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const notificationService = require('../../services/notification.service')
@@ -235,10 +239,46 @@ exports.getTaskStats = asyncHandler(async (req, res) => {
   return success(res, { stats })
 })
 
+const loadProjectPhasesPayload = async (leadId) => {
+  const lead = await Lead.findById(leadId)
+    .select('projectName jobId endDate plannedStartDate lifecycleStatus lifecycleHistory')
+    .lean()
+  if (!lead) return null
+
+  const stepDetails = await ProjectStepDetail.find({ leadId: lead._id }).lean()
+  const progress = computeProjectSteps(lead, stepDetails)
+  const phases = buildPhasesFromSteps(lead, progress.steps)
+
+  return { lead, progress, phases, stepDetails }
+}
+
+// GET /projects/:leadId/phases — lifecycle phases + granular steps with completion %
+exports.getProjectPhases = asyncHandler(async (req, res) => {
+  const payload = await loadProjectPhasesPayload(req.params.leadId)
+  if (!payload) return notFound(res, 'Project not found')
+
+  const { lead, progress, phases } = payload
+  return success(res, {
+    project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId },
+    phases,
+    steps: progress.steps,
+    overallProgressPct: progress.overallProgressPct,
+    currentStepNumber: progress.currentStepNumber,
+    totalSteps: progress.totalSteps,
+    currentStepLabel: progress.currentStepLabel,
+  })
+})
+
 // GET /projects/:leadId/progress — Progress Tracker tab for a single project
 exports.getProjectProgress = asyncHandler(async (req, res) => {
-  const lead = await Lead.findById(req.params.leadId).select('projectName jobId endDate plannedStartDate').lean()
+  const lead = await Lead.findById(req.params.leadId)
+    .select('projectName jobId endDate plannedStartDate lifecycleStatus lifecycleHistory')
+    .lean()
   if (!lead) return notFound(res, 'Project not found')
+
+  const stepDetails = await ProjectStepDetail.find({ leadId: lead._id }).lean()
+  const stepProgress = computeProjectSteps(lead, stepDetails)
+  const phases = buildPhasesFromSteps(lead, stepProgress.steps)
 
   const [tasks, milestones] = await Promise.all([
     Task.find({ leadId: lead._id }).select('status').lean(),
@@ -257,6 +297,10 @@ exports.getProjectProgress = asyncHandler(async (req, res) => {
 
   return success(res, {
     project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId },
+    phases,
+    steps: stepProgress.steps,
+    overallProgressPct: stepProgress.overallProgressPct,
+    currentStepLabel: stepProgress.currentStepLabel,
     taskProgress: {
       completed, inProgress, pending, total,
       completedFraction: `${completed}/${total}`,
@@ -342,23 +386,54 @@ exports.updateProjectStep = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(leadId).select('_id').lean()
   if (!lead) return notFound(res, 'Project not found')
 
-  const { startedBy, startedAt, completedBy, completedAt, currentStage, completionPct, expectedCompletion, notes } = req.body
+  const {
+    startedBy,
+    startedAt,
+    completedBy,
+    completedAt,
+    currentStage,
+    completionPct,
+    percentComplete,
+    expectedCompletion,
+    notes,
+    status,
+    startDate,
+    endDate,
+    attachments,
+  } = req.body
 
   const update = { updatedBy: req.user._id }
   if (startedBy !== undefined) update.startedBy = startedBy
   if (startedAt !== undefined) update.startedAt = startedAt
+  if (startDate !== undefined) update.startedAt = startDate || null
   if (completedBy !== undefined) update.completedBy = completedBy
   if (completedAt !== undefined) update.completedAt = completedAt
+  if (endDate !== undefined) update.completedAt = endDate || null
   if (currentStage !== undefined) update.currentStage = currentStage
-  if (completionPct !== undefined) update.completionPct = completionPct
+  if (status !== undefined) update.currentStage = status
+  const pct = percentComplete ?? completionPct
+  if (pct !== undefined) update.completionPct = pct
   if (expectedCompletion !== undefined) update.expectedCompletion = expectedCompletion
   if (notes !== undefined) update.notes = notes
 
-  const detail = await ProjectStepDetail.findOneAndUpdate(
-    { leadId, stepKey },
-    { $set: update },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  )
+  let detail
+  if (Array.isArray(attachments) && attachments.length) {
+    const valid = attachments.filter((a) => a?.url?.trim()).map((a) => ({ name: a.name?.trim() || '', url: a.url.trim() }))
+    detail = await ProjectStepDetail.findOneAndUpdate(
+      { leadId, stepKey },
+      {
+        $set: update,
+        ...(valid.length ? { $push: { attachments: { $each: valid } } } : {}),
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    )
+  } else {
+    detail = await ProjectStepDetail.findOneAndUpdate(
+      { leadId, stepKey },
+      { $set: update },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    )
+  }
 
   await auditService.logFromRequest(req, {
     type: 'construction',

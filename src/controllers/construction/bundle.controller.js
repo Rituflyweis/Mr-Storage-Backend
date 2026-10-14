@@ -31,6 +31,11 @@ const {
   LABEL_UI_STATUSES,
   DISPATCH_VERIFICATION_UI_STATUSES,
 } = require('../../utils/constructionListQuery')
+const { resolveProjectLeadId } = require('../../utils/resolveProjectLeadId')
+const BundleMismatchOrder = require('../../models/BundleMismatchOrder')
+const generateMismatchOrderId = require('../../utils/generateMismatchOrderId')
+const auditService = require('../../services/audit.service')
+const { AUDIT_ACTIONS } = require('../../config/constants')
 
 const resolvePackingListRef = (packingListId) => {
   if (!packingListId) return { packingListId: null, loadId: null, loadLabel: null }
@@ -125,7 +130,8 @@ const mapDispatchRow = (pl) => ({
 })
 
 const buildLabelFilter = async (query) => {
-  const { status, search, leadId } = query
+  const { status, search } = query
+  const leadId = resolveProjectLeadId(query)
   const filter = {}
   if (leadId) filter.leadId = leadId
   if (status && LABEL_UI_STATUSES.includes(status)) {
@@ -138,7 +144,8 @@ const buildLabelFilter = async (query) => {
 }
 
 const buildBundleScanFilter = async (query) => {
-  const { status, search, leadId } = query
+  const { status, search } = query
+  const leadId = resolveProjectLeadId(query)
   const filter = { status: { $in: bundleScanStatusToDb(status) } }
   if (leadId) filter.leadId = leadId
   await appendLeadProjectSearch(filter, search)
@@ -146,7 +153,8 @@ const buildBundleScanFilter = async (query) => {
 }
 
 const buildPackingListFilter = async (query) => {
-  const { status, search, leadId } = query
+  const { status, search } = query
+  const leadId = resolveProjectLeadId(query)
   const filter = {}
   if (status) filter.status = status
   if (leadId) filter.leadId = leadId
@@ -478,15 +486,44 @@ exports.markBundleLoaded = asyncHandler(async (req, res) => {
 })
 
 exports.reportBundleMismatch = asyncHandler(async (req, res) => {
-  const { notes, items } = req.body
-  if (!notes) return badRequest(res, 'notes is required')
+  const { leadId: bodyLeadId, reason, notes, items, photos } = req.body
+  const detailNotes = notes || reason
+  if (!detailNotes?.trim()) return badRequest(res, 'notes or reason is required')
   if (items !== undefined && !Array.isArray(items)) return badRequest(res, 'items must be an array')
+  if (photos !== undefined && !Array.isArray(photos)) return badRequest(res, 'photos must be an array')
 
   const bundle = await Bundle.findById(req.params.bundleId)
   if (!bundle) return notFound(res, 'Bundle not found')
 
-  if (items?.length) {
-    for (const item of items) {
+  if (bodyLeadId && String(bodyLeadId) !== String(bundle.leadId)) {
+    return badRequest(res, 'leadId does not match this bundle')
+  }
+  if (req.body.bundleId && String(req.body.bundleId) !== String(bundle._id)) {
+    return badRequest(res, 'bundleId in body does not match URL')
+  }
+
+  const normalizedItems = (items || []).map((item) => {
+    const expectedQty = item.expectedQty ?? item.qty ?? 0
+    const receivedQty = item.receivedQty ?? 0
+    let status = item.status
+    if (!status) {
+      if (receivedQty <= 0) status = 'Not Received'
+      else if (receivedQty < expectedQty) status = 'Partially Received'
+      else status = 'Received'
+    }
+    return {
+      itemId: item.itemId,
+      partCode: item.partCode || '',
+      description: item.description || '',
+      qty: expectedQty,
+      receivedQty,
+      status,
+      expectedQty,
+    }
+  })
+
+  if (normalizedItems.length) {
+    for (const item of normalizedItems) {
       if (!item.itemId || !mongoose.Types.ObjectId.isValid(item.itemId)) {
         return badRequest(res, 'Each item requires a valid itemId')
       }
@@ -496,23 +533,66 @@ exports.reportBundleMismatch = asyncHandler(async (req, res) => {
     }
   }
 
-  bundle.mismatchNotes = notes
+  const normalizedPhotos = (photos || [])
+    .filter((p) => p?.url?.trim())
+    .map((p) => ({ name: p.name?.trim() || '', url: p.url.trim() }))
+
+  bundle.mismatchNotes = detailNotes.trim()
   bundle.mismatchReportedAt = new Date()
-  bundle.mismatchItems = (items || []).map((item) => ({
-    itemId: item.itemId,
-    partCode: item.partCode || '',
-    description: item.description || '',
-    qty: item.qty ?? 0,
-    receivedQty: item.receivedQty ?? 0,
-    status: item.status || 'Not Received',
+  bundle.mismatchItems = normalizedItems.map(({ itemId, partCode, description, qty, receivedQty, status }) => ({
+    itemId,
+    partCode,
+    description,
+    qty,
+    receivedQty,
+    status,
   }))
   await bundle.save()
+
+  const mismatchOrder = await BundleMismatchOrder.create({
+    mismatchOrderId: await generateMismatchOrderId(),
+    leadId: bundle.leadId,
+    bundleId: bundle._id,
+    bundleNo: bundle.bundleNo,
+    reason: reason?.trim() || '',
+    notes: detailNotes.trim(),
+    items: normalizedItems.map(({ itemId, partCode, description, expectedQty, receivedQty, status }) => ({
+      itemId,
+      partCode,
+      description,
+      expectedQty,
+      receivedQty,
+      status,
+    })),
+    photos: normalizedPhotos,
+    status: 'open',
+    reportedBy: req.user._id,
+  })
+
+  await auditService.logFromRequest(req, {
+    type: 'construction',
+    action: AUDIT_ACTIONS.CONSTRUCTION_BUNDLE_MISMATCH_REPORTED,
+    leadId: bundle.leadId,
+    entityType: 'bundle_mismatch_order',
+    entityId: mismatchOrder._id,
+    metadata: {
+      bundleId: bundle._id,
+      mismatchOrderId: mismatchOrder.mismatchOrderId,
+    },
+  })
 
   return success(res, {
     bundleId: bundle._id,
     mismatchNotes: bundle.mismatchNotes,
     mismatchReportedAt: bundle.mismatchReportedAt,
     mismatchItems: bundle.mismatchItems,
+    mismatchOrder: {
+      mismatchId: mismatchOrder._id,
+      mismatchOrderId: mismatchOrder.mismatchOrderId,
+      status: mismatchOrder.status,
+      leadId: mismatchOrder.leadId,
+      bundleId: mismatchOrder.bundleId,
+    },
   }, 'Mismatch reported')
 })
 

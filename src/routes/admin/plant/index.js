@@ -16,6 +16,7 @@ router.use('/packing-list-plans', require('./packingListPlan.routes'))
 // stats, detail, and lifecycle updates were previously only reachable from the plant role,
 // even though getScopedLeadIds already returns every project (unscoped) for admin.
 router.use('/projects', require('../../plant/project.routes'))
+router.use('/mismatch-orders', require('../../plant/mismatchOrder.routes'))
 router.use('/vendors', require('./vendor.routes'))
 router.use('/carriers', require('./carrier.routes'))
 router.use('/freight-bids', require('./freightBid.routes'))

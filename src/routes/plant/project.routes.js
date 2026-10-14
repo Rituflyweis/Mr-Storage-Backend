@@ -160,6 +160,10 @@ router.get('/:leadId/shipper-files',
 )
 router.get('/:leadId/bundle-plan', bundleCtrl.getProjectBundlePlan)
 
+const mismatchCtrl = require('../../controllers/plant/mismatchOrder.controller')
+router.get('/:leadId/additional-material-requests', mismatchCtrl.listProjectAdditionalMaterialRequests)
+router.get('/:leadId/mismatch-orders', mismatchCtrl.listProjectMismatchOrders)
+
 // Unified project-id based load/truck planning + freight endpoints (projectId = Mongo _id or jobId like 2026019 / legacy PRO-019)
 router.get('/:projectId/load-planning', bundlePlanCtrl.getProjectLoadPlanning)
 router.put('/:projectId/load-planning',

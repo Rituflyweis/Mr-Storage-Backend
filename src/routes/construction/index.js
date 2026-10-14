@@ -11,6 +11,7 @@ const taskCtrl = require('../../controllers/construction/task.controller')
 const deliveryCtrl = require('../../controllers/construction/delivery.controller')
 const bundleCtrl = require('../../controllers/construction/bundle.controller')
 const materialRequestCtrl = require('../../controllers/construction/materialRequest.controller')
+const logisticsNavCtrl = require('../../controllers/construction/logisticsNav.controller')
 
 // Chat — same controller as the admin chat panel (no admin-specific logic in it), just exposed
 // under the construction-role-accessible router so the mobile app's chat screens work.
@@ -28,6 +29,7 @@ router.get('/dashboard/filters', dashCtrl.getDashboardFilters)
 router.get('/projects', businessUnitQuery, projectCtrl.getProjects)
 router.get('/projects/calendar', businessUnitQuery, projectCtrl.getProjectCalendar)
 router.use('/projects', require('./projectManufacturing.routes'))
+router.get('/projects/:leadId/phases', taskCtrl.getProjectPhases)
 router.get('/projects/:leadId/progress', taskCtrl.getProjectProgress)
 router.post('/projects/:leadId/milestones', taskCtrl.createMilestone)
 router.get('/projects/:leadId', projectCtrl.getProjectDetail)
@@ -86,6 +88,20 @@ router.post('/deliveries/:deliveryId/mark-partial', deliveryCtrl.markPartialRece
 router.put('/deliveries/:deliveryId/site-contact', deliveryCtrl.updateSiteContact)
 router.get('/deliveries/:deliveryId/download/packing-list', deliveryCtrl.downloadDeliveryPackingList)
 router.get('/deliveries/:deliveryId/download/bill-of-lading', deliveryCtrl.downloadDeliveryBillOfLading)
+
+// Logistics navigation — shared 3-step flow (projects → loads → bundles) for packing lists, labels, bundle scan
+router.get('/logistics/projects', logisticsNavCtrl.getLogisticsProjects)
+router.get('/logistics/projects/:leadId/loads', logisticsNavCtrl.getLogisticsProjectLoads)
+router.get('/logistics/loads/:packingListId/bundles', logisticsNavCtrl.getLogisticsLoadBundles)
+router.get('/packing-lists/projects', logisticsNavCtrl.getLogisticsProjects)
+router.get('/packing-lists/projects/:leadId/loads', logisticsNavCtrl.getLogisticsProjectLoads)
+router.get('/packing-lists/loads/:packingListId/bundles', logisticsNavCtrl.getLogisticsLoadBundles)
+router.get('/labels/projects', logisticsNavCtrl.getLogisticsProjects)
+router.get('/labels/projects/:leadId/loads', logisticsNavCtrl.getLogisticsProjectLoads)
+router.get('/labels/loads/:packingListId/bundles', logisticsNavCtrl.getLogisticsLoadBundles)
+router.get('/bundle-scan/projects', logisticsNavCtrl.getLogisticsProjects)
+router.get('/bundle-scan/projects/:leadId/loads', logisticsNavCtrl.getLogisticsProjectLoads)
+router.get('/bundle-scan/loads/:packingListId/bundles', logisticsNavCtrl.getLogisticsLoadBundles)
 
 // Label Printing
 router.get('/labels', bundleCtrl.getBundleLabels)

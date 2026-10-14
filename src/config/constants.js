@@ -274,6 +274,8 @@ const AUDIT_ACTIONS = {
   CONSTRUCTION_PROJECT_STEP_UPDATED: "construction.project_step.updated",
   CONSTRUCTION_DELIVERY_CREATED: "construction.delivery.created",
   CONSTRUCTION_MATERIAL_REQUEST_CREATED: "construction.material_request.created",
+  CONSTRUCTION_BUNDLE_MISMATCH_REPORTED: "construction.bundle_mismatch.reported",
+  PLANT_MISMATCH_ORDER_STATUS_UPDATED: "plant.mismatch_order.status_updated",
 
   ENTITY_CREATED: "entity.created",
   ENTITY_UPDATED: "entity.updated",
