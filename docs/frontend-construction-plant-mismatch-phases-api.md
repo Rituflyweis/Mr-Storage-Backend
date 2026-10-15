@@ -279,9 +279,14 @@ For project-first drill-down (Projects → Loads → Bundles):
 
 ---
 
-## 5. Plant — additional material requests (project tab)
+## 5. Plant — material requests (project tab)
 
-Customer **Add New Order** requests (`MaterialRequest` with `source: "customer"`) for one project.
+All **material requests** for one project that plant can fulfill:
+
+- **`source: "construction"`** — created from the construction panel (`POST /api/construction/material-requests`)
+- **`source: "customer"`** — customer portal “Add New Order”
+
+Default list includes **both**. Filter with `?source=customer` or `?source=construction` if the tab is split.
 
 ```http
 GET /api/plant/projects/{leadId}/additional-material-requests?page=1&limit=20

@@ -86,14 +86,18 @@ exports.listProjectAdditionalMaterialRequests = asyncHandler(async (req, res) =>
   }
 
   const scopedLeadIds = (await getScopedLeadIds(req)).map(String)
-  const data = await materialRequestList.listMaterialRequests(
-    { ...req.query, leadId, source: 'customer' },
-    {
-      page: req.query.page,
-      limit: req.query.limit,
-      scopedLeadIds,
-    }
-  )
+  const listQuery = { ...req.query, leadId }
+  // Project tab shows all inbound MRs for plant (construction site + customer portal).
+  // Optional ?source=customer|construction to match legacy "additional orders" filter.
+  if (req.query.source && ['customer', 'construction'].includes(req.query.source)) {
+    listQuery.source = req.query.source
+  }
+
+  const data = await materialRequestList.listMaterialRequests(listQuery, {
+    page: req.query.page,
+    limit: req.query.limit,
+    scopedLeadIds,
+  })
 
   return success(res, {
     leadId,

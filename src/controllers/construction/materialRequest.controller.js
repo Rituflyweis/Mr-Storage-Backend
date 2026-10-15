@@ -251,6 +251,7 @@ exports.createMaterialRequest = asyncHandler(async (req, res) => {
     leadId,
     siteLocation,
     department,
+    source: 'construction',
     requestedBy: req.user._id,
     requestedItems,
     requiredBy,
