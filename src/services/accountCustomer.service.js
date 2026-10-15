@@ -308,7 +308,7 @@ const aggregateCustomerFinancials = async (customerMongoId) => {
   const totalQuotedValue = leads.reduce((s, l) => s + (l.quoteValue || 0), 0)
   const totalProjectCost = actual.totalCost
   const totalFreightCost = actual.freightCost
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0)
+  const totalExpenses = expenseRollup.totalExpense || 0
 
   const expectedMarginPct = expected.marginPct
   const actualMarginPct = actual.marginPct
