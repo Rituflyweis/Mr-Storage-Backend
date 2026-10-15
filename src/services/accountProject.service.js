@@ -293,14 +293,10 @@ exports.getProjectDetail = async (projectIdOrJobId) => {
     financialSummary,
     progressStep,
     profitabilityOverview: profitabilityOverview.rows,
-    actionLinks: {
-      invoices: `/api/account/invoices?leadId=${lead._id}`,
-      projectInvoicesBreakdown: `/api/account/invoices/project/${lead._id}/breakdown`,
-      payments: `/api/account/payments/orders/${lead._id}`,
-      agreement: `/api/admin/customers/${customer?._id || customer}/projects/${lead._id}/agreement`,
-      quotation: `/api/sales/leads/${lead._id}`,
-      bom: `/api/plant/bom/projects/${lead._id}`,
-    },
+    actionLinks: (() => {
+      const { buildActionLinks } = require('./accountProjectSubpages.service')
+      return buildActionLinks(lead)
+    })(),
     lead: withProjectIdFields(lead, lead.jobId),
   }
 }

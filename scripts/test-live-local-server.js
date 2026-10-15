@@ -92,6 +92,23 @@ async function main() {
     '/api/account/invoice-management/quotation-profit/records?limit=3',
   ]
 
+  const projectPick = await request('GET', '/api/account/projects?limit=1', { token })
+  const projectId =
+    projectPick.json.data?.projects?.[0]?.leadId ||
+    projectPick.json.data?.projects?.[0]?._id
+  if (projectId) {
+    endpoints.push(
+      `/api/account/projects/${projectId}/invoices/summary`,
+      `/api/account/projects/${projectId}/invoices/records?limit=3`,
+      `/api/account/projects/${projectId}/payments/summary`,
+      `/api/account/projects/${projectId}/payments/records?limit=3`,
+      `/api/account/projects/${projectId}/deliveries?limit=3`,
+      `/api/account/projects/${projectId}/quotations`,
+      `/api/account/projects/${projectId}/bom`,
+      `/api/account/projects/${projectId}/agreement`
+    )
+  }
+
   for (const path of endpoints) {
     const res = await request('GET', path, { token })
     assert(res.status === 200, `${path} HTTP ${res.status}`)

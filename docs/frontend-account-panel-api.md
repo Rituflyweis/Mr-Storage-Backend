@@ -36,6 +36,7 @@ Errors: `{ "success": false, "message": "…" }` with HTTP 4xx/5xx.
 | **Customers** — detail (KPIs, profitability, revenue, projects, invoices) | **Done** | `GET /api/account/customers/:id` |
 | **Customers** — mark invoice paid | **Done** | `PUT /api/account/invoices/:id/mark-paid` |
 | **Customer → Project detail** | **Done** | `GET /api/account/projects/:projectId` |
+| **Project sub-pages** — Invoices, Payments, Deliveries, Quotation, BOM, Agreement | **Done** | `GET /api/account/projects/:projectId/{invoices,payments,deliveries,quotations,bom,agreement}/*` — see [`frontend-account-project-detail-api.md`](./frontend-account-project-detail-api.md) |
 | **Payments → All Payments** | **Done** | `/api/account/payments/*` |
 | **Payments → Update / Add payment** | **Done** | POST/PUT `payments/orders`, GET detail modal |
 | **Payments → Payment Approvals** | **Done** | `/api/account/financial/payment-approvals/*` |
@@ -1220,24 +1221,29 @@ Use Mongo **`leadId`** or **`jobId`** / quote id.
     { "label": "Margin", "expected": 38.4, "actual": 26.7, "variance": -11.7, "unit": "percent" }
   ],
   "actionLinks": {
-    "invoices": "/api/account/invoices?leadId=67a1...",
-    "payments": "/api/account/payments/orders/67a1...",
-    "projectInvoicesBreakdown": "/api/account/invoices/project/67a1.../breakdown",
-    "quotation": "/api/sales/leads/{leadId}",
-    "bom": "/api/plant/bom/projects/{leadId}",
-    "agreement": "/api/admin/customers/{customerId}/projects/{leadId}/agreement"
+    "invoices": "/api/account/projects/67a1.../invoices/summary",
+    "invoiceRecords": "/api/account/projects/67a1.../invoices/records",
+    "payments": "/api/account/projects/67a1.../payments/summary",
+    "paymentRecords": "/api/account/projects/67a1.../payments/records",
+    "deliveries": "/api/account/projects/67a1.../deliveries",
+    "quotations": "/api/account/projects/67a1.../quotations",
+    "bom": "/api/account/projects/67a1.../bom",
+    "agreement": "/api/account/projects/67a1.../agreement",
+    "projectInvoicesBreakdown": "/api/account/invoices/project/67a1.../breakdown"
   }
 }
 ```
 
-| Figma action button | Use |
-|---------------------|-----|
-| View Invoices | `actionLinks.invoices` or customer `invoices[]` |
-| View Payments | `actionLinks.payments` |
-| View BOM | `actionLinks.bom` (plant scope) |
-| View Quotation | `actionLinks.quotation` |
-| View Agreement | `actionLinks.agreement` |
-| Material Delivery | plant/construction delivery routes by `leadId` |
+**Sub-pages (full request/response):** [`frontend-account-project-detail-api.md`](./frontend-account-project-detail-api.md)
+
+| Figma action button | Primary routes |
+|---------------------|----------------|
+| View Invoices | `.../invoices/summary` + `.../invoices/records` |
+| View Payments | `.../payments/summary` + `.../payments/records` |
+| Material Delivery | `.../deliveries` + `.../deliveries/:deliveryId` |
+| View Quotation | `.../quotations` + `.../quotations/:quotationId` |
+| View BOM | `.../bom` |
+| View Agreement | `.../agreement` |
 
 **Project list (account):**
 
@@ -1511,6 +1517,7 @@ Still available for tax filing, expense CRUD, etc. Prefer **`/api/account/financ
 | GET/POST | `/api/account/costs/salary/*`, `/manpower/*`, `/miscellaneous/*`, `/rent/*`, `/future/*` |
 | GET | `/api/account/costs/freight/*`, `/logistics/*`, `/variance/*`, `/item-list/*` |
 | GET/POST | `/api/account/invoice-management/project/*`, `/vendor/*`, `/carrier/*`, `/miscellaneous/*`, `/quotation-profit/*` |
+| GET | `/api/account/projects/:projectId/invoices/*`, `/payments/*`, `/deliveries/*`, `/quotations/*`, `/bom`, `/agreement` |
 
 ---
 

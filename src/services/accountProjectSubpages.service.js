@@ -1,0 +1,427 @@
+const Invoice = require('../models/Invoice')
+const Quotation = require('../models/Quotation')
+const Delivery = require('../models/Delivery')
+const PaymentApproval = require('../models/PaymentApproval')
+const ConsolidatedBOM = require('../models/ConsolidatedBOM')
+const User = require('../models/User')
+const { resolveProject } = require('./accountProject.service')
+const invoiceMgmt = require('./accountInvoiceManagement.service')
+const { getLatestBomJobsByBuilding } = require('../utils/plantBomAccess')
+const {
+  findLatestContractDocument,
+  buildAgreementPayload,
+} = require('../utils/leadAgreement')
+const { isInvoiceOverdue } = require('../utils/invoiceScope')
+const { buildPayableListRow } = require('../utils/payableInvoice.util')
+
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+
+const paginate = (query) => {
+  const page = Math.max(1, Number(query.page) || 1)
+  const limit = Math.min(100, Math.max(1, Number(query.limit) || 20))
+  return { page, limit, skip: (page - 1) * limit }
+}
+
+const resolveLeadOrError = async (projectId) => {
+  const lead = await resolveProject(projectId)
+  if (!lead || lead.isDeleted) return { error: 'Project not found', code: 404 }
+  return { lead }
+}
+
+const mapInvoiceStatusLabel = (inv, now = new Date()) => {
+  if (inv.status === 'paid') return 'Paid'
+  if (isInvoiceOverdue(inv, now)) return 'Overdue'
+  return 'Pending'
+}
+
+exports.getProjectInvoicesSummary = async (projectId, query = {}) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+  return invoiceMgmt.getProjectSummary({ ...query, leadId: lead._id })
+}
+
+exports.listProjectInvoices = async (projectId, query = {}) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const data = await invoiceMgmt.listProjectRecords({ ...query, leadId: lead._id })
+  const ids = data.records.map((r) => r.invoiceId)
+  const lineCounts = ids.length
+    ? Object.fromEntries(
+        (
+          await Invoice.find({ _id: { $in: ids } })
+            .select('_id lineItems')
+            .lean()
+        ).map((inv) => [String(inv._id), inv.lineItems?.length || 0])
+      )
+    : {}
+
+  const now = new Date()
+  const records = data.records.map((row) => ({
+    ...row,
+    status: mapInvoiceStatusLabel(
+      { status: row.invoiceStatus, dueDate: row.dueDate, date: row.invoiceDate },
+      now
+    ),
+    sentDate: row.invoiceDate,
+    items: lineCounts[String(row.invoiceId)] || 0,
+  }))
+
+  return { ...data, records, leadId: lead._id, projectName: lead.projectName }
+}
+
+exports.getProjectPaymentsSummary = async (projectId) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const leadId = lead._id
+  const [customerInvoices, payables, approvals] = await Promise.all([
+    Invoice.find({
+      leadId,
+      invoiceType: { $nin: ['vendor', 'freight_carrier'] },
+      status: { $ne: 'cancelled' },
+    }).lean(),
+    Invoice.find({
+      leadId,
+      invoiceType: { $in: ['vendor', 'freight_carrier'] },
+      'payableWorkflow.status': 'paid',
+    }).lean(),
+    PaymentApproval.find({ leadId, status: 'approved' }).lean(),
+  ])
+
+  let totalReceived = 0
+  let pendingAmount = 0
+  let overdueAmount = 0
+  const now = new Date()
+
+  for (const inv of customerInvoices) {
+    const amt = inv.totalAmount || 0
+    if (inv.status === 'paid') totalReceived += amt
+    else if (isInvoiceOverdue(inv, now)) overdueAmount += amt
+    else pendingAmount += amt
+  }
+
+  for (const inv of payables) totalReceived += inv.totalAmount || 0
+  for (const row of approvals) totalReceived += row.amount || 0
+
+  const totalInvoiced = customerInvoices.reduce((s, i) => s + (i.totalAmount || 0), 0)
+  const paymentCompletionPct =
+    totalInvoiced > 0 ? round2((totalReceived / totalInvoiced) * 100) : 0
+
+  return {
+    totalPaymentsReceived: round2(totalReceived),
+    paymentCompletionPct,
+    pendingAmount: round2(pendingAmount),
+    overdueAmount: round2(overdueAmount),
+    totalInvoiced: round2(totalInvoiced),
+  }
+}
+
+exports.listProjectPayments = async (projectId, query = {}) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const { page, limit, skip } = paginate(query)
+  const leadId = lead._id
+
+  const [approvals, paidPayables, paidCustomer] = await Promise.all([
+    PaymentApproval.find({ leadId, status: 'approved' }).sort({ paidAt: -1, updatedAt: -1 }).lean(),
+    Invoice.find({ leadId, 'payableWorkflow.status': 'paid' })
+      .populate('vendorId', 'vendorName')
+      .populate('carrierId', 'carrierName')
+      .sort({ paidAt: -1 })
+      .lean(),
+    Invoice.find({
+      leadId,
+      invoiceType: { $nin: ['vendor', 'freight_carrier'] },
+      status: 'paid',
+    })
+      .sort({ paidAt: -1 })
+      .lean(),
+  ])
+
+  const rows = []
+
+  for (const a of approvals) {
+    rows.push({
+      paymentId: a._id,
+      date: a.paidAt || a.reviewedAt || a.updatedAt,
+      amount: round2(a.amount),
+      relatedTo: a.payeeType === 'carrier' ? 'Carrier' : a.payeeType === 'vendor' ? 'Vendor' : a.payee || 'Vendor',
+      status: 'Received',
+      invoiceNumber: a.invoiceNumber || a.paymentId,
+      invoiceId: null,
+      source: 'payment_approval',
+    })
+  }
+
+  for (const inv of paidPayables) {
+    const row = buildPayableListRow(inv)
+    rows.push({
+      paymentId: inv._id,
+      date: inv.paidAt || inv.updatedAt,
+      amount: round2(row.amount),
+      relatedTo: inv.invoiceType === 'freight_carrier' ? 'Carrier' : 'Vendor',
+      status: 'Received',
+      invoiceNumber: row.invoiceNumber,
+      invoiceId: inv._id,
+      source: 'payable_invoice',
+      documentUrl: row.documentUrl,
+    })
+  }
+
+  for (const inv of paidCustomer) {
+    rows.push({
+      paymentId: inv._id,
+      date: inv.paidAt || inv.updatedAt,
+      amount: round2(inv.totalAmount),
+      relatedTo: 'Customer',
+      status: 'Received',
+      invoiceNumber: inv.invoiceNumber,
+      invoiceId: inv._id,
+      source: 'customer_invoice',
+    })
+  }
+
+  rows.sort((a, b) => new Date(b.date) - new Date(a.date))
+
+  let filtered = rows
+  if (query.status?.trim()) {
+    const want = query.status.trim().toLowerCase()
+    filtered = rows.filter((r) => r.status.toLowerCase() === want)
+  }
+  if (query.search?.trim()) {
+    const re = new RegExp(query.search.trim(), 'i')
+    filtered = filtered.filter((r) => re.test(r.invoiceNumber || '') || re.test(r.relatedTo))
+  }
+
+  const total = filtered.length
+  const records = filtered.slice(skip, skip + limit)
+
+  return { records, total, page, limit, leadId }
+}
+
+exports.listProjectDeliveries = async (projectId, query = {}) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const { page, limit, skip } = paginate(query)
+  const filter = { leadId: lead._id }
+  if (query.status) filter.status = query.status
+
+  const [deliveries, total] = await Promise.all([
+    Delivery.find(filter).sort({ deliveryDate: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Delivery.countDocuments(filter),
+  ])
+
+  const records = deliveries.map((d) => ({
+    deliveryId: d._id,
+    deliveryNumber: d.deliveryNumber,
+    title: d.description || d.materialType || d.deliveryNumber,
+    status: d.status,
+    deliveryDate: d.deliveryDate,
+    pickupDate: d.pickupDate,
+    timeWindow: d.timings || d.deliveryTime || '',
+    siteAddress: d.deliveryLocation || d.deliveryLocationData?.address || '',
+    materialCategory: d.materialType || d.metalType || '',
+    priority: d.priority || 'normal',
+  }))
+
+  return {
+    records,
+    total,
+    page,
+    limit,
+    leadId: lead._id,
+    projectName: lead.projectName,
+  }
+}
+
+exports.getProjectDeliveryDetail = async (projectId, deliveryId) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const delivery = await Delivery.findOne({ _id: deliveryId, leadId: lead._id })
+    .populate('leadId', 'projectName jobId location customerId')
+    .populate({
+      path: 'selectedCarrierBidId',
+      populate: { path: 'carrierId', select: 'carrierName contactName phone email' },
+    })
+    .lean()
+
+  if (!delivery) return { error: 'Delivery not found', code: 404 }
+
+  const ShipperRequest = require('../models/ShipperRequest')
+  const Vendor = require('../models/Vendor')
+  const latestShipper = await ShipperRequest.findOne({ leadId: lead._id, status: 'approved' })
+    .sort({ updatedAt: -1 })
+    .populate('vendorId', 'vendorName contactName phone email')
+    .lean()
+
+  const carrier = delivery.selectedCarrierBidId?.carrierId
+  const vendor = latestShipper?.vendorId
+
+  return {
+    delivery: {
+      deliveryId: delivery._id,
+      deliveryNumber: delivery.deliveryNumber,
+      status: delivery.status,
+      statusHistory: delivery.statusHistory || [],
+      project: {
+        leadId: lead._id,
+        projectName: lead.projectName,
+        jobId: lead.jobId,
+      },
+      overview: {
+        description: delivery.description || delivery.loadDescription || '',
+        materialCategory: delivery.materialType || delivery.metalType || '',
+        deliveryDate: delivery.deliveryDate,
+        timeWindow: delivery.timings || delivery.deliveryTime || '',
+        siteAddress: delivery.deliveryLocation || delivery.deliveryLocationData?.address || '',
+        pickupDate: delivery.pickupDate,
+      },
+      vendor: vendor
+        ? {
+            name: vendor.vendorName,
+            contactName: vendor.contactName || '',
+            phone: vendor.phone || '',
+            email: vendor.email || '',
+          }
+        : null,
+      deliveryCompany: carrier
+        ? {
+            name: carrier.carrierName,
+            contactName: carrier.contactName || '',
+            phone: carrier.phone || '',
+            email: carrier.email || '',
+          }
+        : null,
+      siteCoordination: {
+        siteInstructions: delivery.additionalNotes || delivery.specialRequirements || '',
+        requiredEquipment: delivery.loadingEquipment || '',
+        equipmentConfirmationStatus: delivery.equipmentConfirmed ? 'Confirmed' : 'Pending',
+        specialNotes: delivery.specialRequirements || '',
+      },
+      receivingPoc: delivery.receivingPoc || delivery.siteContact || '',
+      freightLoadId: delivery.freightLoadId || delivery.freightReference || null,
+    },
+  }
+}
+
+exports.listProjectQuotations = async (projectId, query = {}) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const quotations = await Quotation.find({ leadId: lead._id })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  let rows = quotations.map((q) => ({
+    quotationId: q._id,
+    quotationNumber: q.quoteNumber || `QT-${String(q._id).slice(-5).toUpperCase()}`,
+    status: q.status,
+    approvalStatus: q.approval?.status || 'not_submitted',
+    finalPrice: round2(q.finalPrice || q.basePrice || 0),
+    proposalDate: q.proposalDate,
+    versionNumber: q.versionNumber || 1,
+    currency: q.currency || 'USD',
+  }))
+
+  if (query.status) rows = rows.filter((r) => r.status === query.status)
+
+  return { quotations: rows, leadId: lead._id, total: rows.length }
+}
+
+exports.getProjectQuotationDetail = async (projectId, quotationId) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const quotation = await Quotation.findOne({ _id: quotationId, leadId: lead._id })
+    .populate('customerId', 'firstName lastName email company')
+    .populate('createdBy', 'name email')
+    .lean()
+
+  if (!quotation) return { error: 'Quotation not found', code: 404 }
+
+  return {
+    quotation,
+    leadId: lead._id,
+    projectName: lead.projectName,
+    downloadPath: `/api/account/projects/${lead._id}/quotations/${quotation._id}/pdf`,
+  }
+}
+
+exports.getProjectBom = async (projectId) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const leadId = lead._id
+  const [bomJobMap, consolidated] = await Promise.all([
+    getLatestBomJobsByBuilding(leadId),
+    ConsolidatedBOM.findOne({ leadId }).lean(),
+  ])
+
+  const bomFiles = [...bomJobMap.values()]
+    .map((j) => ({
+      buildingId: j.buildingId,
+      buildingNumber: j.buildingNumber,
+      bomJobId: j._id,
+      fileName: j.fileName || '',
+      fileUrl: j.fileUrl || '',
+      fileFormat: j.fileFormat,
+      status: j.status,
+      uploadedAt: j.createdAt,
+      totalItems: j.totalItems ?? 0,
+      isConfirmed: j.isConfirmed === true,
+    }))
+    .sort((a, b) => a.buildingNumber - b.buildingNumber)
+
+  return {
+    leadId,
+    projectName: lead.projectName,
+    jobId: lead.jobId,
+    bomFiles,
+    consolidatedBOM: consolidated
+      ? {
+          _id: consolidated._id,
+          status: consolidated.status,
+          fileUrl: consolidated.fileUrl || '',
+          fileName: consolidated.fileName || '',
+          generatedAt: consolidated.createdAt,
+          itemCount: consolidated.itemCount ?? consolidated.items?.length ?? 0,
+          totalCost: consolidated.totalCost ?? null,
+        }
+      : null,
+    consolidatedUrlPath: `/api/plant/bom/projects/${leadId}/consolidated-url`,
+  }
+}
+
+exports.getProjectAgreement = async (projectId) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const contract = findLatestContractDocument(lead)
+  let uploadedBy = null
+  if (contract?.uploadedBy) {
+    uploadedBy = await User.findById(contract.uploadedBy).select('_id name email role').lean()
+  }
+
+  return buildAgreementPayload(lead, contract, uploadedBy)
+}
+
+exports.buildActionLinks = (lead) => ({
+  overview: `/api/account/projects/${lead._id}`,
+  invoices: `/api/account/projects/${lead._id}/invoices/summary`,
+  invoiceRecords: `/api/account/projects/${lead._id}/invoices/records`,
+  payments: `/api/account/projects/${lead._id}/payments/summary`,
+  paymentRecords: `/api/account/projects/${lead._id}/payments/records`,
+  deliveries: `/api/account/projects/${lead._id}/deliveries`,
+  quotations: `/api/account/projects/${lead._id}/quotations`,
+  bom: `/api/account/projects/${lead._id}/bom`,
+  agreement: `/api/account/projects/${lead._id}/agreement`,
+  projectInvoicesBreakdown: `/api/account/invoices/project/${lead._id}/breakdown`,
+  legacy: {
+    invoicesQuery: `/api/account/invoices?leadId=${lead._id}`,
+    paymentsOrder: `/api/account/payments/orders/${lead._id}`,
+  },
+})
