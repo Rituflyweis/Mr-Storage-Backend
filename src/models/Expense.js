@@ -12,9 +12,14 @@ const EXPENSE_STATUSES = ['pending', 'approved', 'paid', 'rejected']
 const EXPENSE_PAYMENT_METHODS = ['cash', 'bank_transfer', 'credit_card', 'upi', 'cheque', 'other']
 const EXPENSE_DEPARTMENTS = ['Sales', 'Plant', 'Construction', 'Support']
 
+/** Account panel → Expenses submenu (Salary, Manpower, Misc, Rent, Future). */
+const COST_PANEL_TYPES = ['salary', 'manpower', 'miscellaneous', 'rent', 'future']
+
 const ExpenseSchema = new mongoose.Schema(
   {
     expenseId:     { type: String, required: true, unique: true, trim: true },
+    costPanelType: { type: String, enum: COST_PANEL_TYPES, default: undefined },
+    metadata:      { type: mongoose.Schema.Types.Mixed, default: null },
     category:      { type: String, required: true, trim: true },
     subcategory:   { type: String, default: '', trim: true },
     date:          { type: Date, required: true },
@@ -40,8 +45,10 @@ ExpenseSchema.index({ status: 1 })
 ExpenseSchema.index({ buildingLabel: 1 })
 
 ExpenseSchema.index({ department: 1 })
+ExpenseSchema.index({ costPanelType: 1 })
 
 module.exports = mongoose.model('Expense', ExpenseSchema)
+module.exports.COST_PANEL_TYPES = COST_PANEL_TYPES
 module.exports.EXPENSE_CATEGORIES = EXPENSE_CATEGORIES
 module.exports.EXPENSE_STATUSES = EXPENSE_STATUSES
 module.exports.EXPENSE_PAYMENT_METHODS = EXPENSE_PAYMENT_METHODS

@@ -8,6 +8,8 @@
     "seed": "node scripts/seed.js",
     "create-user": "node scripts/createUser.js",
     "backup:db": "node scripts/run-db-backup.js",
+    "test:project-expenses": "node scripts/test-combined-project-expenses.js",
+    "test:live-server": "node scripts/test-live-local-server.js",
     "postinstall": "npx puppeteer browsers install chrome || true"
   },
   "dependencies": {

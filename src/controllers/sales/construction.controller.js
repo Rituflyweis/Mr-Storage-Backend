@@ -1,14 +1,45 @@
 const Lead = require('../../models/Lead')
+const Task = require('../../models/Task')
 const { PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
-const { success } = require('../../utils/apiResponse')
+const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { businessUnitFields, applyBusinessUnitFilter } = require('../../utils/businessUnit')
 const {
   buildConstructionDeliveryCalendar,
   resolveConstructionCalendarLeadIds,
 } = require('../../utils/constructionProjectCalendar')
+const { CONSTRUCTION_STAGES } = require('../../utils/constructionProjectScope')
+const { enrichConstructionTaskForCard } = require('../../utils/constructionTaskCard.util')
+const {
+  listConstructionTasks,
+  TASK_LIST_POPULATE,
+} = require('../../services/constructionTasksQuery.service')
 
 const PROJECT_SELECT = 'projectName jobId businessUnit location lifecycleStatus endDate plannedStartDate'
+
+const loadSalesConstructionProject = async (leadId, salesId) => {
+  const lead = await Lead.findById(leadId)
+    .select('_id assignedSales lifecycleStatus isTerminated isArchived projectName jobId')
+    .lean()
+  if (!lead) return { status: 404, message: 'Project not found' }
+  if (String(lead.assignedSales) !== String(salesId)) {
+    return { status: 403, message: 'Access denied' }
+  }
+  if (lead.isTerminated === true || lead.isArchived === true) {
+    return { status: 404, message: 'Project not found' }
+  }
+  if (!CONSTRUCTION_STAGES.includes(lead.lifecycleStatus)) {
+    return { status: 404, message: 'Project is not in construction scope' }
+  }
+  return { lead }
+}
+
+const respondSalesConstructionGuard = (res, guard) => {
+  if (guard.status === 403) return forbidden(res, guard.message)
+  return notFound(res, guard.message)
+}
+
+const mapConstructionTaskCards = (tasks) => tasks.map(enrichConstructionTaskForCard)
 
 exports.getProjectCalendar = asyncHandler(async (req, res) => {
   const now = new Date()
@@ -50,6 +81,61 @@ exports.getProjects = asyncHandler(async (req, res) => {
   return success(res, {
     projects: leads.map((l) => ({ ...l, ...businessUnitFields(l) })),
     total: leads.length,
+    scope: 'sales_assigned_construction',
+  })
+})
+
+/** Project detail — "Project Construction Task" horizontal cards (read-only). */
+exports.getProjectConstructionTasks = asyncHandler(async (req, res) => {
+  const guard = await loadSalesConstructionProject(req.params.leadId, req.user._id)
+  if (guard.status) return respondSalesConstructionGuard(res, guard)
+
+  const query = { ...req.query, leadId: req.params.leadId }
+  const { tasks, total, stats } = await listConstructionTasks(query)
+  const constructionTasks = mapConstructionTaskCards(tasks)
+
+  return success(res, {
+    project: {
+      leadId: guard.lead._id,
+      projectName: guard.lead.projectName,
+      jobId: guard.lead.jobId,
+    },
+    constructionTasks,
+    total,
+    stats,
+    scope: 'sales_assigned_construction',
+  })
+})
+
+/** List construction tasks for assigned projects (`leadId` required). */
+exports.getConstructionTasks = asyncHandler(async (req, res) => {
+  const { leadId } = req.query
+  if (!leadId) return badRequest(res, 'leadId is required')
+
+  const guard = await loadSalesConstructionProject(leadId, req.user._id)
+  if (guard.status) return respondSalesConstructionGuard(res, guard)
+
+  const { tasks, total, stats } = await listConstructionTasks(req.query)
+  const constructionTasks = mapConstructionTaskCards(tasks)
+
+  return success(res, {
+    constructionTasks,
+    total,
+    stats,
+    scope: 'sales_assigned_construction',
+  })
+})
+
+exports.getConstructionTaskById = asyncHandler(async (req, res) => {
+  const task = await Task.findById(req.params.taskId).populate(TASK_LIST_POPULATE).lean()
+  if (!task) return notFound(res, 'Task not found')
+
+  const leadId = task.leadId?._id || task.leadId
+  const guard = await loadSalesConstructionProject(leadId, req.user._id)
+  if (guard.status) return respondSalesConstructionGuard(res, guard)
+
+  return success(res, {
+    task: enrichConstructionTaskForCard(task),
     scope: 'sales_assigned_construction',
   })
 })

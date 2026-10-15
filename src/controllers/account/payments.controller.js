@@ -60,3 +60,24 @@ exports.updateOrderPayment = asyncHandler(async (req, res) => {
   if (result.error) return badRequest(res, result.error)
   return success(res, accountPaymentsService.mapOrderDetail(result.wip), 'Payment updated')
 })
+
+exports.exportOrders = asyncHandler(async (req, res) => {
+  const { generateWIPProfitsExcel } = require('../../utils/exportFinancialAdmin')
+  const orders = await accountPaymentsService.listOrdersForExport(req.query)
+  const rows = orders.map((o) => ({
+    projectName: o.orderDetails?.customerName || '',
+    jobId: o.orderDetails?.orderId || '',
+    customerName: o.orderDetails?.customerName || '',
+    orderValue: o.orderValue,
+    currentCost: o.currentCost,
+    totalReceived: o.totalReceived,
+    outstanding: o.outstanding,
+    wipProfit: o.profit,
+    marginPct: o.marginPct,
+    status: o.status,
+  }))
+  const buffer = await generateWIPProfitsExcel(rows)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="payment-overview-orders.xlsx"')
+  return res.send(buffer)
+})

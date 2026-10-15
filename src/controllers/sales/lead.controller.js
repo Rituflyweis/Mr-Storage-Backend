@@ -484,6 +484,8 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     .filter((i) => ['sent', 'overdue'].includes(i.status))
     .reduce((s, i) => s + (i.totalAmount || 0), 0)
 
+  const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
+  const budgetTotal = budget ? resolveTotalBudget(budget) : 0
   const budgetOut = budget
     ? {
         materialBudget: budget.materialBudget,
@@ -491,9 +493,9 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
         productionBudget: budget.productionBudget,
         shipperBudget: budget.shipperBudget,
         otherCost: budget.otherCost,
-        totalBudget: budget.totalBudget,
-        expectedProfit:
-          (lead.quoteValue || 0) - (budget.totalBudget || 0),
+        customLines: budget.customLines || [],
+        totalBudget: budgetTotal,
+        expectedProfit: (lead.quoteValue || 0) - budgetTotal,
       }
     : null
 

@@ -125,6 +125,8 @@ const InvoiceSchema = new mongoose.Schema(
     vendorId:          { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', default: null },
     carrierId:         { type: mongoose.Schema.Types.ObjectId, ref: 'FreightCarrier', default: null },
     payeeName:         { type: String, default: '', trim: true },
+    /** Figma misc invoice tab — Maintenance, Software, Security, etc. */
+    serviceCategory:   { type: String, default: '', trim: true },
     quotationId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation', default: null },
     createdBy:         { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     invoiceNumber:     { type: String, unique: true },

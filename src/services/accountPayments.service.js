@@ -196,6 +196,11 @@ exports.listOrders = async (query = {}) => {
   }
 }
 
+exports.listOrdersForExport = async (query = {}) => {
+  const data = await exports.listOrders({ ...query, page: 1, limit: 5000 })
+  return data.orders
+}
+
 exports.resolveWip = async (idOrLeadId) => {
   let wip = await WIPProfit.findById(idOrLeadId)
     .populate({

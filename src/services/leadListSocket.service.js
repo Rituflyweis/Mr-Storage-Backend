@@ -15,16 +15,18 @@ const getLeadForAdminList = async (leadId, { includeDeleted = false } = {}) => {
     .lean()
   if (!lead) return null
 
+  const { resolveTotalBudget } = require('../utils/budgetVsActual.util')
   const budget = await ProjectBudget.findOne({ leadId })
-    .select('totalBudget')
+    .select('totalBudget materialBudget logisticBudget productionBudget shipperBudget otherCost customLines')
     .lean()
 
   return enrichLeadDocument({
     ...lead,
     budget: budget
       ? {
-        totalBudget: budget.totalBudget,
-        expectedProfit: (lead.quoteValue || 0) - (budget.totalBudget || 0),
+        totalBudget: resolveTotalBudget(budget),
+        customLines: budget.customLines || [],
+        expectedProfit: (lead.quoteValue || 0) - resolveTotalBudget(budget),
       }
       : null,
   })

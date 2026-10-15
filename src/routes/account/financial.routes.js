@@ -1,7 +1,18 @@
 const router = require('express').Router()
-const { body } = require('express-validator')
+const { body, query } = require('express-validator')
 const ctrl = require('../../controllers/account/financial.controller')
+const marginCtrl = require('../../controllers/account/margin.controller')
 const validate = require('../../middleware/validate')
+
+const marginQuery = [
+  query('projectId').optional({ checkFalsy: true }).isMongoId(),
+  query('leadId').optional({ checkFalsy: true }).isMongoId(),
+  query('startDate').optional({ checkFalsy: true }).isISO8601(),
+  query('endDate').optional({ checkFalsy: true }).isISO8601(),
+  query('period').optional().isIn(['monthly', 'quarterly', 'yearly']),
+  query('businessUnit').optional().trim(),
+  query('company').optional().trim(),
+]
 
 // Delivery Finance (dashboard card)
 router.get('/delivery-finance', ctrl.getDeliveryFinance)
@@ -22,6 +33,8 @@ router.get('/awarded-loads', ctrl.getAwardedFreightLoads)
 router.get('/project-summary', ctrl.getProjectFinancialSummary)
 
 // Payment Approvals
+router.get('/payment-approvals/filters', ctrl.getPaymentApprovalFilters)
+router.get('/payment-approvals/export', ctrl.exportPaymentApprovals)
 router.get('/payment-approvals/stats', ctrl.getPaymentApprovalStats)
 router.get('/payment-approvals', ctrl.getPaymentApprovals)
 router.get('/payment-approvals/:approvalId', ctrl.getPaymentApprovalDetail)
@@ -46,5 +59,29 @@ router.get('/reporting', ctrl.getAnalyticsReporting)
 router.get('/master-data/vendors',            ctrl.getMasterDataVendors)
 router.get('/master-data/carriers',           ctrl.getMasterDataCarriers)
 router.get('/master-data/delivery-companies', ctrl.getMasterDataDeliveryCompanies)
+
+// Margin Breakdown (Figma — Payments submenu)
+router.get('/margin-analysis/filters', marginCtrl.getMarginFilters)
+router.get('/margin-analysis/trend', [...marginQuery, query('period').optional().isIn(['month', 'quarter', 'year'])], validate, marginCtrl.getMarginTrend)
+router.get('/margin-analysis/by-project', marginQuery, validate, marginCtrl.getMarginByProjects)
+router.get('/margin-analysis', marginQuery, validate, marginCtrl.getMarginAnalysis)
+
+// Profit & Loss (Margin tab table + detail)
+router.get(
+  '/profit-loss/summary',
+  [
+    ...marginQuery,
+    query('search').optional().trim(),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+  ],
+  validate,
+  marginCtrl.getProfitLossSummary
+)
+router.get('/profit-loss/export', marginQuery, validate, marginCtrl.exportProfitLoss)
+router.get('/profit-loss', marginQuery, validate, marginCtrl.getProfitLossDetail)
+
+// Budget vs Actual tab
+router.get('/budget-vs-actual', marginQuery, validate, marginCtrl.getBudgetVsActual)
 
 module.exports = router

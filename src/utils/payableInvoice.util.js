@@ -46,6 +46,8 @@ const buildPayableListRow = (inv) => {
     dueDate: inv.dueDate,
     date: inv.date,
     category: inv.category,
+    serviceCategory: inv.serviceCategory || '',
+    serviceProvider: inv.payeeName || inv.vendorId?.vendorName || inv.carrierId?.carrierName || '—',
     description: inv.description || '',
     status: inv.status,
     payableStatus,
@@ -88,6 +90,7 @@ const createPayableInvoice = async ({
   payeeName,
   totalAmount,
   category,
+  serviceCategory,
   description,
   date,
   daysToPay,
@@ -99,9 +102,10 @@ const createPayableInvoice = async ({
   freightBidId,
   deliveryId,
   initialPayableStatus,
+  invoiceNumber: invoiceNumberOverride,
 }) => {
   const createdById = await resolveFallbackCreatedBy(createdBy)
-  const invoiceNumber = await generatePayableInvoiceNumber(invoiceType)
+  const invoiceNumber = invoiceNumberOverride?.trim() || (await generatePayableInvoiceNumber(invoiceType))
   const invoiceDate = date ? new Date(date) : new Date()
   const dueDate = computeInvoiceDueDate(invoiceDate, daysToPay ?? 30)
 
@@ -115,6 +119,7 @@ const createPayableInvoice = async ({
     vendorId: vendorId || null,
     carrierId: carrierId || null,
     payeeName: payeeName || '',
+    serviceCategory: serviceCategory || '',
     createdBy: createdById,
     invoiceNumber,
     description: description || '',

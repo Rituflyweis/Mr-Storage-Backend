@@ -1,10 +1,8 @@
 const Customer = require('../models/Customer')
 const Lead = require('../models/Lead')
 const Invoice = require('../models/Invoice')
-const Expense = require('../models/Expense')
 const ProjectBudget = require('../models/ProjectBudget')
-const Delivery = require('../models/Delivery')
-const FreightBid = require('../models/FreightBid')
+const { aggregateProjectExpenses } = require('../utils/projectExpenseAggregate.util')
 const { PO_PROJECT_MATCH } = require('../utils/customerPoFilter')
 const { buildPeriodDateFilter } = require('../utils/dateRange')
 const { isInvoiceOverdue } = require('../utils/invoiceScope')
@@ -154,21 +152,15 @@ const aggregateCustomerFinancials = async (customerMongoId) => {
     .lean()
   const leadIds = leads.map((l) => l._id)
 
-  const [budgets, expenses, invoices, deliveries] = await Promise.all([
+  const [budgets, invoices, expenseRollup] = await Promise.all([
     ProjectBudget.find({ leadId: { $in: leadIds } }).lean(),
-    Expense.find({ leadId: { $in: leadIds }, isActive: true }).select('amount category leadId').lean(),
     Invoice.find({
       customerId: customerMongoId,
       invoiceType: { $nin: ['vendor', 'freight_carrier'] },
       status: { $ne: 'cancelled' },
     }).lean(),
-    Delivery.find({ leadId: { $in: leadIds } }).select('_id leadId').lean(),
+    aggregateProjectExpenses(leadIds),
   ])
-
-  const deliveryIds = deliveries.map((d) => d._id)
-  const freightBids = deliveryIds.length
-    ? await FreightBid.find({ deliveryId: { $in: deliveryIds }, status: 'selected' }).select('quotedAmount').lean()
-    : []
 
   const expected = {
     revenue: 0,
@@ -184,6 +176,10 @@ const aggregateCustomerFinancials = async (customerMongoId) => {
   }
 
   for (const l of leads) expected.revenue += l.quoteValue || 0
+  const { sumCustomLineBudget, buildCustomProfitabilityRows } = require('../utils/budgetVsActual.util')
+  const Expense = require('../models/Expense')
+
+  let customExpectedTotal = 0
   for (const b of budgets) {
     expected.materialCost += b.materialBudget || 0
     expected.freightCost += b.logisticBudget || 0
@@ -191,6 +187,7 @@ const aggregateCustomerFinancials = async (customerMongoId) => {
     expected.siteCost += b.shipperBudget || 0
     expected.miscellaneous += b.otherCost || 0
     expected.logisticsCost += 0
+    customExpectedTotal += sumCustomLineBudget(b)
   }
   expected.totalCost =
     expected.materialCost +
@@ -198,7 +195,8 @@ const aggregateCustomerFinancials = async (customerMongoId) => {
     expected.logisticsCost +
     expected.manpowerCost +
     expected.siteCost +
-    expected.miscellaneous
+    expected.miscellaneous +
+    customExpectedTotal
   expected.profit = expected.revenue - expected.totalCost
   expected.marginPct = expected.revenue > 0 ? round2((expected.profit / expected.revenue) * 100) : 0
 
@@ -222,22 +220,15 @@ const aggregateCustomerFinancials = async (customerMongoId) => {
     actual.revenue = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0)
   }
 
-  for (const e of expenses) {
-    const cat = String(e.category || '').toLowerCase()
-    if (cat === 'materials') actual.materialCost += e.amount
-    else if (cat === 'labour') actual.manpowerCost += e.amount
-    else if (['transport', 'logistics'].includes(cat)) actual.logisticsCost += e.amount
-    else if (['subcontractor', 'permits'].includes(cat)) actual.siteCost += e.amount
-    else actual.miscellaneous += e.amount
-  }
-  actual.freightCost = freightBids.reduce((s, b) => s + (b.quotedAmount || 0), 0)
-  actual.totalCost =
-    actual.materialCost +
-    actual.freightCost +
-    actual.logisticsCost +
-    actual.manpowerCost +
-    actual.siteCost +
-    actual.miscellaneous
+  const cats = expenseRollup.categories || {}
+  actual.materialCost = cats.materialCost || 0
+  actual.manpowerCost = cats.manpowerCost || 0
+  actual.logisticsCost = cats.logisticsCost || 0
+  actual.siteCost = cats.siteCost || 0
+  actual.miscellaneous =
+    (cats.miscellaneous || 0) + (cats.administrativeCost || 0)
+  actual.freightCost = expenseRollup.freightFromBids || 0
+  actual.totalCost = expenseRollup.totalExpense || 0
   actual.profit = actual.revenue - actual.totalCost
   actual.marginPct = actual.revenue > 0 ? round2((actual.profit / actual.revenue) * 100) : 0
 
@@ -249,6 +240,37 @@ const aggregateCustomerFinancials = async (customerMongoId) => {
     variance: round2(actual[key] - expected[key]),
   })
 
+  const expenseByCategory = leadIds.length
+    ? await Expense.aggregate([
+        { $match: { leadId: { $in: leadIds }, isActive: true } },
+        { $group: { _id: '$category', total: { $sum: '$amount' } } },
+      ])
+    : []
+
+  const customRowMap = new Map()
+  for (const b of budgets) {
+    for (const line of b.customLines || []) {
+      const prev = customRowMap.get(line.key) || {
+        key: line.key,
+        label: line.label,
+        amount: 0,
+        expenseCategories: new Set(),
+      }
+      prev.amount += Number(line.amount) || 0
+      for (const c of line.expenseCategories || []) prev.expenseCategories.add(String(c).trim().toLowerCase())
+      customRowMap.set(line.key, prev)
+    }
+  }
+  const mergedCustomBudget = {
+    customLines: [...customRowMap.values()].map((r) => ({
+      key: r.key,
+      label: r.label,
+      amount: r.amount,
+      expenseCategories: [...r.expenseCategories],
+    })),
+  }
+  const customProfitRows = buildCustomProfitabilityRows(mergedCustomBudget, expenseByCategory)
+
   const profitabilityOverview = [
     metricRow('revenue', 'Revenue'),
     metricRow('materialCost', 'Material Cost'),
@@ -257,6 +279,7 @@ const aggregateCustomerFinancials = async (customerMongoId) => {
     metricRow('manpowerCost', 'Manpower Cost'),
     metricRow('siteCost', 'Site Cost'),
     metricRow('miscellaneous', 'Miscellaneous'),
+    ...customProfitRows,
     metricRow('totalCost', 'Total Cost'),
     metricRow('profit', 'Profit'),
     {

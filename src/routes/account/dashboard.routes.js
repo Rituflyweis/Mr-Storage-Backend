@@ -2,6 +2,7 @@ const router = require('express').Router()
 const ctrl = require('../../controllers/account/dashboard.controller')
 
 router.get('/overview',             ctrl.getOverview)
+router.get('/export',               ctrl.exportOverview)
 router.get('/stats',                ctrl.getStats)
 router.get('/invoice-stats',        ctrl.getInvoiceStats)
 router.get('/delivery-finance',     ctrl.getDeliveryFinance)

@@ -11,6 +11,18 @@ const statusQuery = query('status')
 router.get('/stats', ctrl.getStats)
 router.get('/overview', ctrl.getPaymentOverview)
 router.get(
+  '/orders/export',
+  [
+    statusQuery,
+    query('search').optional().trim(),
+    query('period').optional().isIn(['today', 'week', 'month']),
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.exportOrders
+)
+router.get(
   '/orders',
   [
     statusQuery,

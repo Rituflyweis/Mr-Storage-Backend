@@ -97,6 +97,16 @@ GET /api/sales/construction/projects
 
 Same shape as construction panel calendar, scoped to `assignedSales`.
 
+**Project Construction Task cards** (read-only):
+
+```http
+GET /api/sales/construction/projects/:leadId/construction-tasks
+GET /api/sales/construction/tasks?leadId=<required>
+GET /api/sales/construction/tasks/:taskId
+```
+
+See [`frontend-sales-construction-tasks-api.md`](./frontend-sales-construction-tasks-api.md).
+
 ---
 
 ## 12. Sales — edit/delete own lead notes

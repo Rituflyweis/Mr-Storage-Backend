@@ -101,7 +101,7 @@ const PAYABLE_WORKFLOW_STATUSES = [
   'paid',
   'unpaid',
 ]
-const PAYABLE_SOURCES = ['acceptance_upload', 'admin_manual']
+const PAYABLE_SOURCES = ['acceptance_upload', 'admin_manual', 'account_misc']
 const PAYABLE_COMMENT_AUTHOR_ROLES = ['admin', 'account']
 const FOLLOW_UP_STATUSES = ['pending', 'completed']
 const FOLLOW_UP_MODES = ['call', 'email', 'meeting', 'sms']

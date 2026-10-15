@@ -89,7 +89,18 @@ router.use('/:leadId/structural-drawing', require('../common/structuralDrawing.r
 router.get('/:leadId/budget', ctrl.getLeadBudget)
 
 router.post('/:leadId/budget',
-  [body('materialBudget').optional().isNumeric(), body('logisticBudget').optional().isNumeric()],
+  [
+    body('materialBudget').optional().isNumeric(),
+    body('logisticBudget').optional().isNumeric(),
+    body('productionBudget').optional().isNumeric(),
+    body('shipperBudget').optional().isNumeric(),
+    body('otherCost').optional().isNumeric(),
+    body('customLines').optional().isArray(),
+    body('customLines.*.key').optional().trim().isString(),
+    body('customLines.*.label').optional().trim().isString(),
+    body('customLines.*.amount').optional().isNumeric(),
+    body('customLines.*.expenseCategories').optional().isArray(),
+  ],
   validate,
   ctrl.setLeadBudget
 )

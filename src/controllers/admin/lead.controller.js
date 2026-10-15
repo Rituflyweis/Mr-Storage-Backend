@@ -227,6 +227,7 @@ exports.getAllLeads = asyncHandler(async (req, res) => {
 
   const leadIds = leads.map(l => l._id)
   const budgets = await ProjectBudget.find({ leadId: { $in: leadIds } }).lean()
+  const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
   const budgetMap = new Map(budgets.map(b => [String(b.leadId), b]))
 
   const result = leads.map(l => enrichLeadDocument({
@@ -234,7 +235,12 @@ exports.getAllLeads = asyncHandler(async (req, res) => {
     budget: (() => {
       const b = budgetMap.get(String(l._id))
       if (!b) return null
-      return { totalBudget: b.totalBudget, expectedProfit: (l.quoteValue || 0) - (b.totalBudget || 0) }
+      const total = resolveTotalBudget(b)
+      return {
+        totalBudget: total,
+        customLines: b.customLines || [],
+        expectedProfit: (l.quoteValue || 0) - total,
+      }
     })(),
   }))
 
@@ -574,15 +580,20 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
   const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
   const totalPending = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
 
-  const budgetOut = budget ? {
-    materialBudget: budget.materialBudget,
-    logisticBudget: budget.logisticBudget,
-    productionBudget: budget.productionBudget,
-    shipperBudget: budget.shipperBudget,
-    otherCost: budget.otherCost,
-    totalBudget: budget.totalBudget,
-    expectedProfit: (lead.quoteValue || 0) - (budget.totalBudget || 0),
-  } : null
+  const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
+  const budgetTotal = budget ? resolveTotalBudget(budget) : 0
+  const budgetOut = budget
+    ? {
+        materialBudget: budget.materialBudget,
+        logisticBudget: budget.logisticBudget,
+        productionBudget: budget.productionBudget,
+        shipperBudget: budget.shipperBudget,
+        otherCost: budget.otherCost,
+        customLines: budget.customLines || [],
+        totalBudget: budgetTotal,
+        expectedProfit: (lead.quoteValue || 0) - budgetTotal,
+      }
+    : null
 
   const leadNotes = await formatLeadNotes(lead)
 
@@ -750,16 +761,34 @@ exports.getLeadDocuments = asyncHandler(async (req, res) => {
 
 exports.setLeadBudget = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { materialBudget = 0, logisticBudget = 0, productionBudget = 0, shipperBudget = 0, otherCost = 0 } = req.body
+  const { materialBudget, logisticBudget, productionBudget, shipperBudget, otherCost, customLines } = req.body
 
   const lead = await Lead.findById(leadId).lean()
   if (!lead) return notFound(res, 'Lead not found')
 
-  const totalBudget = materialBudget + logisticBudget + productionBudget + shipperBudget + otherCost
+  const { normalizeCustomLines, computeStoredTotalBudget } = require('../../utils/budgetVsActual.util')
+  const existing = await ProjectBudget.findOne({ leadId }).lean()
+  const normalizedCustom =
+    customLines === undefined ? existing?.customLines || [] : normalizeCustomLines(customLines)
+
+  const payload = {
+    materialBudget: materialBudget ?? existing?.materialBudget ?? 0,
+    logisticBudget: logisticBudget ?? existing?.logisticBudget ?? 0,
+    productionBudget: productionBudget ?? existing?.productionBudget ?? 0,
+    shipperBudget: shipperBudget ?? existing?.shipperBudget ?? 0,
+    otherCost: otherCost ?? existing?.otherCost ?? 0,
+    customLines: normalizedCustom,
+  }
+  const totalBudget = computeStoredTotalBudget(payload)
 
   const budget = await ProjectBudget.findOneAndUpdate(
     { leadId },
-    { leadId, materialBudget, logisticBudget, productionBudget, shipperBudget, otherCost, totalBudget, createdBy: req.user._id },
+    {
+      leadId,
+      ...payload,
+      totalBudget,
+      createdBy: req.user._id,
+    },
     { upsert: true, new: true }
   )
 
@@ -785,10 +814,14 @@ exports.getLeadBudget = asyncHandler(async (req, res) => {
   const budget = await ProjectBudget.findOne({ leadId }).lean()
   if (!budget) return success(res, { budget: null })
 
+  const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
+  const total = resolveTotalBudget(budget)
   return success(res, {
     budget: {
       ...budget,
-      expectedProfit: (lead.quoteValue || 0) - (budget.totalBudget || 0),
+      totalBudget: total,
+      customLines: budget.customLines || [],
+      expectedProfit: (lead.quoteValue || 0) - total,
     },
   })
 })

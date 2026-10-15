@@ -13,50 +13,10 @@ const asyncHandler = require('../../utils/asyncHandler')
 const notificationService = require('../../services/notification.service')
 const auditService = require('../../services/audit.service')
 const { AUDIT_ACTIONS } = require('../../config/constants')
+const { listConstructionTasks } = require('../../services/constructionTasksQuery.service')
 
 exports.getTasks = asyncHandler(async (req, res) => {
-  const { leadId, status, priority, assignedTo, search, startDate, endDate, page = 1, limit = 50 } = req.query
-
-  const filter = {}
-  if (leadId) filter.leadId = leadId
-  if (status) filter.status = status
-  if (priority) filter.priority = priority
-  if (assignedTo) filter.assignedTo = assignedTo
-  if (search?.trim()) {
-    const regex = { $regex: search.trim(), $options: 'i' }
-    filter.$or = [{ title: regex }, { description: regex }]
-  }
-  if (startDate || endDate) {
-    filter.dueDate = {}
-    if (startDate) filter.dueDate.$gte = new Date(startDate)
-    if (endDate) filter.dueDate.$lte = new Date(endDate)
-  }
-
-  const skip = (Number(page) - 1) * Number(limit)
-  const [tasks, total] = await Promise.all([
-    Task.find(filter)
-      .populate('leadId', 'projectName jobId')
-      .populate('assignedTo', 'name email')
-      .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .lean(),
-    Task.countDocuments(filter),
-  ])
-
-  const stats = {
-    total: await Task.countDocuments(leadId ? { leadId } : {}),
-    todo: await Task.countDocuments({ ...(leadId ? { leadId } : {}), status: 'todo' }),
-    inProgress: await Task.countDocuments({ ...(leadId ? { leadId } : {}), status: 'in_progress' }),
-    done: await Task.countDocuments({ ...(leadId ? { leadId } : {}), status: 'done' }),
-    overdue: await Task.countDocuments({
-      ...(leadId ? { leadId } : {}),
-      dueDate: { $lt: new Date() },
-      status: { $ne: 'done' },
-    }),
-  }
-
+  const { tasks, total, stats } = await listConstructionTasks(req.query)
   return success(res, { tasks, total, stats })
 })
 

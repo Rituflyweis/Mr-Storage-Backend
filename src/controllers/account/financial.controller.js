@@ -10,6 +10,7 @@ const PaymentApproval = require('../../models/PaymentApproval')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
+const { resolveTotalBudget, budgetVarianceStatus } = require('../../utils/budgetVsActual.util')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -174,20 +175,20 @@ exports.getCostVarianceAnalysis = asyncHandler(async (req, res) => {
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ])
     const actual = expenseAgg[0]?.total || 0
-    const awarded = b.logisticBudget || 0
+    const awarded = resolveTotalBudget(b)
     const variance = actual - awarded
     const variancePct = awarded > 0 ? +(((variance / awarded) * 100).toFixed(2)) : 0
 
     return {
       project: b.leadId?.projectName || '',
       jobId: b.leadId?.jobId || '',
-      description: 'Logistics cost',
+      description: 'Total project expenses vs budget',
       vendor: '',
       awardedAmount: round2(awarded),
       actualInvoice: round2(actual),
       variance: round2(variance),
       variancePct,
-      status: variance > 0 ? 'Over Budget' : variance < 0 ? 'Under Budget' : 'On Budget',
+      status: budgetVarianceStatus(actual, awarded),
     }
   }))
 
@@ -449,9 +450,27 @@ const mapPaymentApprovalListRow = (a, deliveryMap) => {
     linkedType: a.linkedType,
     linkedId: a.linkedId,
     status: a.status,
-    statusLabel: a.status === 'under_review' ? 'Under Review' : a.status.charAt(0).toUpperCase() + a.status.slice(1),
+    statusLabel: resolveApprovalStatusLabel(a),
+    workflowStage: resolveApprovalWorkflowStage(a),
+    paidAt: a.paidAt || null,
     category: a.category,
   }
+}
+
+const resolveApprovalStatusLabel = (a) => {
+  if (a.status === 'approved' && a.paidAt) return 'Paid'
+  if (a.status === 'under_review') return 'Under Review'
+  if (a.status === 'pending') return 'Pending'
+  if (a.status === 'disputed') return 'Disputed'
+  if (a.status === 'rejected') return 'Rejected'
+  return a.status
+}
+
+const resolveApprovalWorkflowStage = (a) => {
+  if (a.status === 'disputed') return 'disputed'
+  if (a.status === 'approved' && a.paidAt) return 'paid'
+  if (a.status === 'approved') return 'approved'
+  return a.status
 }
 
 exports.getPaymentApprovalStats = asyncHandler(async (req, res) => {
@@ -679,7 +698,36 @@ exports.getPaymentStatusDashboard = asyncHandler(async (req, res) => {
   })
 })
 
-// ── Invoice Management: Vendor / Carrier / Delivery Company sub-tabs ────────
+// ── Invoice Management: Vendor / Carrier (legacy paths → Invoice model tabs) ─
+
+const invoiceMgmt = require('../../services/accountInvoiceManagement.service')
+
+const legacyPayableTab = async (tab, query) => {
+  const summaryFn =
+    tab === 'vendor' ? invoiceMgmt.getVendorSummary : invoiceMgmt.getCarrierSummary
+  const listFn =
+    tab === 'vendor' ? invoiceMgmt.listVendorRecords : invoiceMgmt.listCarrierRecords
+  const [stats, list] = await Promise.all([summaryFn(query), listFn(query)])
+  return {
+    stats: {
+      totalPayable: stats.invoiceAmount,
+      pendingAmount: stats.pendingPaymentAmount,
+      paidAmount: round2(stats.invoiceAmount - stats.pendingPaymentAmount),
+      ...stats,
+    },
+    invoices: list.records,
+    records: list.records,
+    total: list.total,
+    page: list.page,
+    limit: list.limit,
+  }
+}
+
+exports.getVendorInvoices = asyncHandler(async (req, res) => success(res, await legacyPayableTab('vendor', req.query)))
+exports.getCarrierInvoices = asyncHandler(async (req, res) => success(res, await legacyPayableTab('carrier', req.query)))
+exports.getDeliveryCompanyInvoices = asyncHandler(async (req, res) =>
+  success(res, await buildInvoiceManagementTab('delivery_company', req.query))
+)
 
 const buildInvoiceManagementTab = async (payeeType, query) => {
   const { search, status, page = 1, limit = 20 } = query
@@ -716,10 +764,6 @@ const buildInvoiceManagementTab = async (payeeType, query) => {
     limit: Number(limit),
   }
 }
-
-exports.getVendorInvoices = asyncHandler(async (req, res) => success(res, await buildInvoiceManagementTab('vendor', req.query)))
-exports.getCarrierInvoices = asyncHandler(async (req, res) => success(res, await buildInvoiceManagementTab('carrier', req.query)))
-exports.getDeliveryCompanyInvoices = asyncHandler(async (req, res) => success(res, await buildInvoiceManagementTab('delivery_company', req.query)))
 
 // ── Analytics -> Reporting ────────────────────────────────────────────────────
 
@@ -842,4 +886,45 @@ exports.getMasterDataDeliveryCompanies = asyncHandler(async (req, res) => {
     })),
     total: companies.length,
   })
+})
+
+exports.getPaymentApprovalFilters = asyncHandler(async (req, res) => {
+  const { PAYEE_TYPES, APPROVAL_STATUSES } = require('../../models/PaymentApproval')
+  const leadIds = await PaymentApproval.distinct('leadId', { leadId: { $ne: null } })
+  const projects = leadIds.length
+    ? await Lead.find({ _id: { $in: leadIds } })
+        .select('projectName jobId businessUnit')
+        .sort({ projectName: 1 })
+        .lean()
+    : []
+
+  return success(res, {
+    projects: projects.map((p) => ({
+      leadId: p._id,
+      projectName: p.projectName,
+      jobId: p.jobId,
+      businessUnit: p.businessUnit || null,
+    })),
+    payeeTypes: PAYEE_TYPES.map((t) => ({
+      code: t,
+      label: INVOICE_TYPE_LABELS[t] || t,
+    })),
+    statuses: APPROVAL_STATUSES,
+    workflowStages: ['pending', 'under_review', 'approved', 'paid', 'disputed'],
+  })
+})
+
+exports.exportPaymentApprovals = asyncHandler(async (req, res) => {
+  const { generatePaymentApprovalsExcel } = require('../../utils/exportFinancialAdmin')
+  const filter = await buildAccountPaymentApprovalFilter(req.query)
+  const approvals = await PaymentApproval.find(filter)
+    .populate('requestedBy', 'name')
+    .populate('leadId', 'projectName jobId')
+    .sort({ dueDate: 1, createdAt: -1 })
+    .lean()
+
+  const buffer = await generatePaymentApprovalsExcel(approvals)
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', 'attachment; filename="payment-approvals.xlsx"')
+  return res.send(buffer)
 })

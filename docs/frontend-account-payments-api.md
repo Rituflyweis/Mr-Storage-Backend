@@ -397,13 +397,18 @@ Content-Type: application/json
 
 ## FE routing map
 
+**Full account panel flow (all pages):** [`frontend-account-panel-api.md`](./frontend-account-panel-api.md) (updated 2026-10-15).
+
 | Figma screen | API |
 |--------------|-----|
 | Payment Overview cards | `GET /api/account/payments/stats` |
 | Orders table | `GET /api/account/payments/orders` |
+| Export reports | `GET /api/account/payments/orders/export` |
 | View order modal | `GET /api/account/payments/orders/:id` |
 | Update payment form | `PUT /api/account/payments/orders/:id` |
 | Add order payment | `POST /api/account/payments/orders` |
+| Approval filter dropdowns | `GET /api/account/financial/payment-approvals/filters` |
 | Approval stats | `GET /api/account/financial/payment-approvals/stats` or list `data.stats` |
 | Approval table | `GET /api/account/financial/payment-approvals` |
+| Approval export | `GET /api/account/financial/payment-approvals/export` |
 | Payment details modal | `GET /api/account/financial/payment-approvals/:approvalId` |

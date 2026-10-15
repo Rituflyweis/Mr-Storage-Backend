@@ -4,6 +4,7 @@ const Lead = require('../models/Lead')
 const FreightBid = require('../models/FreightBid')
 const PaymentApproval = require('../models/PaymentApproval')
 const ProjectBudget = require('../models/ProjectBudget')
+const { resolveTotalBudget } = require('../utils/budgetVsActual.util')
 const Tax = require('../models/Tax')
 const Vendor = require('../models/Vendor')
 const { buildDateFilter } = require('../utils/dateRange')
@@ -390,7 +391,7 @@ exports.computeProjectBudgetVsActual = async (query = {}, limit = 10) => {
   const projects = budgets.map((b) => {
     const key = String(b.leadId?._id)
     const material = round2(b.materialBudget || 0)
-    const estimated = round2(b.totalBudget || 0)
+    const estimated = round2(resolveTotalBudget(b))
     const actual = round2(actualMap[key] || 0)
     const variance = round2(actual - estimated)
     return {

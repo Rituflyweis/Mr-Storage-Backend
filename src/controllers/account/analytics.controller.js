@@ -5,6 +5,7 @@ const Lead = require('../../models/Lead')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
 
 exports.getWipProfit = asyncHandler(async (req, res) => {
   const leads = await Lead.find({
@@ -57,7 +58,7 @@ exports.getWipProfit = asyncHandler(async (req, res) => {
     const totalCost = exp.total
     const netProfit = revenue - totalCost
     const profitMargin = revenue > 0 ? Math.round((netProfit / revenue) * 100 * 10) / 10 : 0
-    const estimated = budget?.totalBudget || 0
+    const estimated = budget ? resolveTotalBudget(budget) : 0
     const variance = totalCost - estimated
 
     totalProjectValue += revenue
@@ -137,7 +138,7 @@ exports.getProjectCostAnalysis = asyncHandler(async (req, res) => {
     ? await ProjectBudget.find({ leadId }).lean()
     : []
   const budgetMap = {}
-  for (const b of budgets) budgetMap[String(b.leadId)] = b.totalBudget
+  for (const b of budgets) budgetMap[String(b.leadId)] = resolveTotalBudget(b)
 
   const rows = expenses.map((e) => {
     const estimated = budgetMap[String(e.leadId)] || 0

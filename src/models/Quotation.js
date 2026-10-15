@@ -184,6 +184,21 @@ const QuotationSchema = new mongoose.Schema(
     // Versioning
     versionNumber: { type: Number, default: 1 },
     changeNote: { type: String, default: "" },
+
+    /** Account panel — quotation-wise profit/loss upload overrides */
+    profitAnalysis: {
+      documentUrl: { type: String, default: "" },
+      documentFileName: { type: String, default: "" },
+      revenueOverride: { type: Number, default: null },
+      actualCostOverride: { type: Number, default: null },
+      statusOverride: {
+        type: String,
+        enum: ["Profitable", "Low Margin", "Loss", ""],
+        default: "",
+      },
+      uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      uploadedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true },
 );

@@ -4,6 +4,11 @@ const Lead = require('../../models/Lead')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const analyticsReports = require('../../services/accountAnalyticsReports.service')
+const {
+  aggregateProjectExpensesByLeadMap,
+  aggregateEmailBidExpenses,
+} = require('../../utils/projectExpenseAggregate.util')
 
 exports.getProfitLoss = asyncHandler(async (req, res) => {
   const { leadId, page = 1, limit = 20 } = req.query
@@ -24,21 +29,14 @@ exports.getProfitLoss = asyncHandler(async (req, res) => {
     Invoice.countDocuments(invoiceFilter),
   ])
 
-  const leadIds = [...new Set(invoices.map((i) => String(i.leadId?._id)).filter(Boolean))]
-  const expenses = await Expense.find({
-    leadId: { $in: leadIds },
-    isActive: true,
-  }).select('leadId amount').lean()
-
-  const expByLead = {}
-  for (const e of expenses) {
-    const key = String(e.leadId)
-    expByLead[key] = (expByLead[key] || 0) + e.amount
-  }
+  const leadIds = [...new Set(invoices.map((i) => i.leadId?._id).filter(Boolean))]
+  const expenseByLeadMap = leadIds.length
+    ? await aggregateProjectExpensesByLeadMap(leadIds)
+    : new Map()
 
   const rows = invoices.map((inv) => {
     const key = String(inv.leadId?._id)
-    const expense = expByLead[key] || 0
+    const expense = expenseByLeadMap.get(key)?.totalExpense || 0
     const revenue = inv.totalAmount
     const netProfit = revenue - expense
     const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100 * 10) / 10 : 0
@@ -61,10 +59,16 @@ exports.getProfitLoss = asyncHandler(async (req, res) => {
   const allExpenses = await Expense.find({
     isActive: true,
     ...buildDateFilter(req.query, 'date'),
-  }).select('amount category').lean()
+  }).select('amount category leadId').lean()
+
+  const scopedLeadIds = await Lead.find({ isTerminated: { $ne: true }, isArchived: { $ne: true } }).distinct(
+    '_id'
+  )
+  const bidTotals = await aggregateEmailBidExpenses(scopedLeadIds)
 
   const totalRevenue = allInvoices.reduce((s, i) => s + i.totalAmount, 0)
-  const totalExpense = allExpenses.reduce((s, e) => s + e.amount, 0)
+  const totalExpense =
+    allExpenses.reduce((s, e) => s + e.amount, 0) + (bidTotals.total || 0)
   const netProfit = totalRevenue - totalExpense
   const avgMargin = totalRevenue > 0 ? Math.round((netProfit / totalRevenue) * 100 * 10) / 10 : 0
 
@@ -125,4 +129,14 @@ exports.getCashFlow = asyncHandler(async (req, res) => {
     points,
     summary: { totalInflow, totalOutflow, netCashFlow: totalInflow - totalOutflow },
   })
+})
+
+exports.getProjectWiseExpense = asyncHandler(async (req, res) => {
+  const data = await analyticsReports.getProjectWiseExpense(req.query)
+  return success(res, data)
+})
+
+exports.getProjectWiseIncome = asyncHandler(async (req, res) => {
+  const data = await analyticsReports.getProjectWiseIncome(req.query)
+  return success(res, data)
 })

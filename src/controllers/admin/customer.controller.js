@@ -408,11 +408,13 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
     .lean()
 
   const leadIds = leads.map(l => l._id)
+  const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
   const budgets = await ProjectBudget.find({ leadId: { $in: leadIds } }).lean()
   const budgetMap = new Map(budgets.map(b => [String(b.leadId), b]))
 
   const projects = leads.map(l => {
     const b = budgetMap.get(String(l._id))
+    const total = b ? resolveTotalBudget(b) : 0
     return withProjectIdFields({
       _id: l._id,
       projectName: l.projectName || '',
@@ -422,7 +424,13 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
       assignedSales: l.assignedSales,
       quoteValue: l.quoteValue || 0,
       isTerminated: l.isTerminated,
-      budget: b ? { totalBudget: b.totalBudget, expectedProfit: (l.quoteValue || 0) - (b.totalBudget || 0) } : null,
+      budget: b
+        ? {
+            totalBudget: total,
+            customLines: b.customLines || [],
+            expectedProfit: (l.quoteValue || 0) - total,
+          }
+        : null,
       createdAt: l.createdAt,
     }, l.jobId)
   })

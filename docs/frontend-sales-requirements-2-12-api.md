@@ -22,7 +22,7 @@ This page maps each client requirement to **backend status**, **endpoints**, and
 | 8 | Final structural drawing (replace) | **Done** | [Features 8–12 §8](./frontend-features-8-12-api.md) |
 | 9 | Customer documents | **Done** | [Features 8–12 §9](./frontend-features-8-12-api.md) |
 | 10 | Lead under Steel / Storage Materials | **Done** (same as #4) | [Business unit guide](./frontend-project-business-unit-api.md) |
-| 11 | Sales construction calendar | **Done** | [Features 8–12 §11](./frontend-features-8-12-api.md) |
+| 11 | Sales construction calendar + project construction tasks | **Done** | [Features 8–12 §11](./frontend-features-8-12-api.md) · [Sales construction tasks](./frontend-sales-construction-tasks-api.md) |
 | 12 | Edit/delete own notes | **Done** | [Features 8–12 §12](./frontend-features-8-12-api.md) |
 
 **Smoke tests (8–12):** `node scripts/test-features-8-12-remote.js`

@@ -17,6 +17,12 @@ const { parse: parseCsv } = require('csv-parse/sync')
 const generateExpenseId = require('../../utils/generateExpenseId')
 const generatePaymentApprovalId = require('../../utils/generatePaymentApprovalId')
 const { computePaymentsDashboard } = require('../../services/adminPaymentsDashboard.service')
+const {
+  resolveTotalBudget,
+  budgetVarianceStatus,
+  sumExpenseCategories,
+  buildCostHeadRows,
+} = require('../../utils/budgetVsActual.util')
 
 exports.getOverview = asyncHandler(async (req, res) => {
   const base = buildDateFilter(req.query)
@@ -1546,39 +1552,15 @@ exports.exportProfitLoss = asyncHandler(async (req, res) => {
 
 // GET /profit-loss/projects — "Project-wise Profit & Loss" table
 exports.getProfitLossByProject = asyncHandler(async (req, res) => {
-  const { startDate, endDate, page = 1, limit = 20 } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
-
-  const leads = await Lead.find({ quoteValue: { $gt: 0 } })
-    .select('projectName jobId')
-    .sort({ createdAt: -1 })
-    .skip((parseInt(page) - 1) * parseInt(limit))
-    .limit(parseInt(limit))
-    .lean()
-  const total = await Lead.countDocuments({ quoteValue: { $gt: 0 } })
-
-  const projects = await Promise.all(leads.map(async (lead) => {
-    const [revenueAgg, expenseAgg] = await Promise.all([
-      Invoice.aggregate([{ $match: { leadId: lead._id, ...dateFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-      Expense.aggregate([{ $match: { leadId: lead._id, ...dateFilter, isActive: true } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
-    ])
-    const revenue = revenueAgg[0]?.total || 0
-    const totalExpenses = expenseAgg[0]?.total || 0
-    const netProfit = revenue - totalExpenses
-    const netProfitMargin = revenue > 0 ? Math.round((netProfit / revenue) * 100 * 100) / 100 : 0
-    return {
-      projectId: lead.jobId,
-      leadId: lead._id,
-      projectName: lead.projectName,
-      revenue,
-      totalExpenses,
-      netProfit,
-      netProfitMargin,
-      status: netProfit >= 0 ? 'Profitable' : 'Loss',
-    }
-  }))
-
-  return success(res, { projects, total, page: parseInt(page), limit: parseInt(limit) })
+  const marginService = require('../../services/accountMarginAnalysis.service')
+  const data = await marginService.getProfitLossSummaryTable(req.query)
+  return success(res, {
+    projects: data.rows,
+    rows: data.rows,
+    total: data.total,
+    page: data.page,
+    limit: data.limit,
+  })
 })
 
 exports.getFreightCostTracking = asyncHandler(async (req, res) => {
@@ -1721,150 +1703,28 @@ exports.exportFreightCosts = asyncHandler(async (req, res) => {
 })
 
 exports.getMarginAnalysis = asyncHandler(async (req, res) => {
-  const { projectId, startDate, endDate } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
-  const projectFilter = projectId ? { leadId: new mongoose.Types.ObjectId(projectId) } : {}
-
-  const now = new Date()
-  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-
-  const [overallAgg, trendAgg, projectMargins] = await Promise.all([
-    Invoice.aggregate([
-      { $match: { ...projectFilter, ...dateFilter, status: 'paid' } },
-      { $lookup: { from: 'expenses', localField: 'leadId', foreignField: 'leadId', as: 'expenses' } },
-      { $group: {
-        _id: null,
-        revenue:   { $sum: '$totalAmount' },
-        expenses:  { $sum: { $sum: '$expenses.amount' } },
-      }},
-    ]),
-    Invoice.aggregate([
-      { $match: { ...projectFilter, status: 'paid', date: dateFilter.date || { $gte: sixMonthsAgo } } },
-      { $group: { _id: { year: { $year: '$date' }, month: { $month: '$date' } }, revenue: { $sum: '$totalAmount' } } },
-      { $sort: { '_id.year': 1, '_id.month': 1 } },
-    ]),
-    Invoice.aggregate([
-      { $match: { ...projectFilter, ...dateFilter, status: 'paid' } },
-      { $group: { _id: '$leadId', revenue: { $sum: '$totalAmount' } } },
-      { $sort: { revenue: -1 } },
-      { $limit: 10 },
-      { $lookup: { from: 'leads', localField: '_id', foreignField: '_id', as: 'lead' } },
-      { $unwind: { path: '$lead', preserveNullAndEmptyArrays: true } },
-      { $project: { projectName: '$lead.projectName', category: '$lead.lifecycleStatus', revenue: 1 } },
-    ]),
-  ])
-
-  const s = overallAgg[0] || { revenue: 0, expenses: 0 }
-  const grossProfit = s.revenue - s.expenses
-  const grossMarginPct = s.revenue > 0 ? +(((grossProfit / s.revenue) * 100).toFixed(2)) : 0
-
-  return success(res, {
-    grossMarginPct,
-    operatingMarginPct:    +(grossMarginPct * 0.77).toFixed(2),
-    netProfitMarginPct:    +(grossMarginPct * 0.61).toFixed(2),
-    contributionMarginPct: +(grossMarginPct * 1.19).toFixed(2),
-    avgSellingPrice: 4900,
-    marginTrend: trendAgg,
-    projectMargins,
-    plSummary: projectMargins,
+  const marginService = require('../../services/accountMarginAnalysis.service')
+  const data = await marginService.getMarginAnalysisSummary({
+    ...req.query,
+    projectId: req.query.projectId,
   })
+  return success(res, data)
 })
 
 // GET /margin-analysis/trend?period=month|quarter|year — "Margin Trend Over Time" chart
 exports.getMarginTrendOverTime = asyncHandler(async (req, res) => {
-  const { period = 'month', projectId } = req.query
-  if (!['month', 'quarter', 'year'].includes(period)) return badRequest(res, 'period must be month, quarter, or year')
-
-  const now = new Date()
-  const rangeStart = period === 'year'
-    ? new Date(now.getFullYear() - 4, 0, 1)
-    : period === 'quarter'
-      ? new Date(now.getFullYear() - 2, 0, 1)
-      : new Date(now.getFullYear(), now.getMonth() - 11, 1)
-
-  const projectFilter = projectId ? { leadId: projectId } : {}
-
-  const groupId = period === 'year'
-    ? { year: { $year: '$date' } }
-    : period === 'quarter'
-      ? { year: { $year: '$date' }, quarter: { $ceil: { $divide: [{ $month: '$date' }, 3] } } }
-      : { year: { $year: '$date' }, month: { $month: '$date' } }
-
-  const [revenueAgg, expenseAgg] = await Promise.all([
-    Invoice.aggregate([
-      { $match: { ...projectFilter, status: 'paid', date: { $gte: rangeStart } } },
-      { $group: { _id: groupId, revenue: { $sum: '$totalAmount' } } },
-      { $sort: { '_id.year': 1, '_id.month': 1, '_id.quarter': 1 } },
-    ]),
-    Expense.aggregate([
-      { $match: { ...projectFilter, isActive: true, date: { $gte: rangeStart } } },
-      { $group: { _id: groupId, expense: { $sum: '$amount' } } },
-      { $sort: { '_id.year': 1, '_id.month': 1, '_id.quarter': 1 } },
-    ]),
-  ])
-
-  const keyOf = (id) => period === 'year' ? `${id.year}` : period === 'quarter' ? `${id.year}-Q${id.quarter}` : `${id.year}-${id.month}`
-  const revenueByKey = new Map(revenueAgg.map(r => [keyOf(r._id), r.revenue]))
-  const expenseByKey = new Map(expenseAgg.map(e => [keyOf(e._id), e.expense]))
-  const allKeys = [...new Set([...revenueByKey.keys(), ...expenseByKey.keys()])].sort()
-
-  const trend = allKeys.map(key => {
-    const revenue = revenueByKey.get(key) || 0
-    const expense = expenseByKey.get(key) || 0
-    const grossProfit = revenue - expense
-    return { period: key, revenue, expense, grossMarginPct: revenue > 0 ? Math.round((grossProfit / revenue) * 100) : 0 }
-  })
-
-  return success(res, { period, trend })
+  const marginService = require('../../services/accountMarginAnalysis.service')
+  const data = await marginService.getMarginTrendOverTime(req.query)
+  if (data.error) return badRequest(res, data.error)
+  return success(res, data)
 })
 
 // GET /margin-analysis/by-project?projectId=... — "Margin by Projects" chart, optionally scoped to one project
 exports.getMarginByProjects = asyncHandler(async (req, res) => {
-  const { projectId, startDate, endDate, limit = 10 } = req.query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
-  const filter = projectId ? { leadId: projectId } : {}
-
-  const revenueByProject = await Invoice.aggregate([
-    { $match: { ...filter, ...dateFilter, status: 'paid' } },
-    { $group: { _id: '$leadId', revenue: { $sum: '$totalAmount' } } },
-    { $sort: { revenue: -1 } },
-    { $limit: parseInt(limit) },
-    { $lookup: { from: 'leads', localField: '_id', foreignField: '_id', as: 'lead' } },
-    { $unwind: { path: '$lead', preserveNullAndEmptyArrays: true } },
-  ])
-
-  const projects = await Promise.all(revenueByProject.map(async (r) => {
-    const expenseAgg = await Expense.aggregate([
-      { $match: { leadId: r._id, ...dateFilter, isActive: true } },
-      { $group: { _id: null, total: { $sum: '$amount' } } },
-    ])
-    const expenses = expenseAgg[0]?.total || 0
-    const grossProfit = r.revenue - expenses
-    return {
-      leadId: r._id,
-      projectName: r.lead?.projectName || '',
-      jobId: r.lead?.jobId || '',
-      revenue: r.revenue,
-      expenses,
-      grossProfit,
-      grossMarginPct: r.revenue > 0 ? Math.round((grossProfit / r.revenue) * 100) : 0,
-    }
-  }))
-
-  return success(res, { projects })
+  const marginService = require('../../services/accountMarginAnalysis.service')
+  const data = await marginService.getMarginByProjects(req.query)
+  return success(res, data)
 })
-
-// Maps real Expense.category values onto the fixed "Cost Head" rows shown in the Figma table.
-// Best-effort — category names are free-text/dynamic (ExpenseCategory), not a fixed cost-head
-// taxonomy. Categories not matched by any row fall into Miscellaneous Cost.
-const COST_HEAD_CATEGORY_MAP = [
-  { head: 'Material Cost', categories: ['Vendor/Freight'], budgetField: 'materialBudget' },
-  { head: 'Carrier/Freight Cost', categories: ['Freight', 'Logistics'], budgetField: 'logisticBudget' },
-  { head: 'Manpower/Labor Cost', categories: ['Salaries', 'Operations'], budgetField: 'productionBudget' },
-  { head: 'Equipment Cost', categories: ['Equipment'], budgetField: null },
-  { head: 'Subcontractor Cost', categories: ['Subcontractor'], budgetField: 'shipperBudget' },
-  { head: 'Miscellaneous Cost', categories: ['Miscellaneous', 'Marketing'], budgetField: 'otherCost' },
-]
 
 exports.getBudgetVsActual = asyncHandler(async (req, res) => {
   const { leadId, startDate, endDate, department, costCategory, groupBy } = req.query
@@ -1881,41 +1741,46 @@ exports.getBudgetVsActual = asyncHandler(async (req, res) => {
   if (department) expenseFilter.department = department
   if (costCategory) expenseFilter.category = costCategory
 
+  const invoiceDateFilter =
+    startDate || endDate ? buildDateFilter({ startDate, endDate }, 'date') : {}
+
   const [lead, budget, invoiceAgg, expenseByCategory] = await Promise.all([
-    Lead.findById(leadId).populate('customerId', 'firstName lastName').lean(),
+    Lead.findById(leadId)
+      .populate('customerId', 'firstName lastName companyName')
+      .populate('assignedSales', 'name')
+      .lean(),
     ProjectBudget.findOne({ leadId }).lean(),
-    Invoice.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId), ...(startDate || endDate ? buildDateFilter({ startDate, endDate }, 'date') : {}) } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    Invoice.aggregate([
+      {
+        $match: {
+          leadId: new mongoose.Types.ObjectId(leadId),
+          status: { $ne: 'cancelled' },
+          ...invoiceDateFilter,
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+    ]),
     Expense.aggregate([{ $match: expenseFilter }, { $group: { _id: '$category', total: { $sum: '$amount' } } }]),
   ])
 
   if (!lead) return notFound(res, 'Project not found')
 
-  const totalActualExpense = expenseByCategory.reduce((s, c) => s + c.total, 0)
-  const totalBudget = budget?.totalBudget || 0
-  const totalActual = (invoiceAgg[0]?.total || 0) + totalActualExpense
-  const variance = totalActual - totalBudget
-  const budgetUsedPct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0
-
-  const matchedCategories = new Set(COST_HEAD_CATEGORY_MAP.flatMap(r => r.categories))
-  const costHeads = COST_HEAD_CATEGORY_MAP.map(row => {
-    let actual = expenseByCategory.filter(c => row.categories.includes(c._id)).reduce((s, c) => s + c.total, 0)
-    if (row.head === 'Miscellaneous Cost') {
-      actual += expenseByCategory.filter(c => !matchedCategories.has(c._id)).reduce((s, c) => s + c.total, 0)
-    }
-    const rowBudget = row.budgetField ? (budget?.[row.budgetField] || 0) : 0
-    return {
-      head: row.head,
-      budget: rowBudget,
-      actual,
-      variance: actual - rowBudget,
-      variancePct: rowBudget > 0 ? +((((actual - rowBudget) / rowBudget) * 100).toFixed(2)) : 0,
-      status: actual > rowBudget ? 'Over Budget' : 'Under Budget',
-    }
-  })
+  const totalActualExpenses = sumExpenseCategories(expenseByCategory)
+  const totalBudget = resolveTotalBudget(budget)
+  const totalVariance = totalActualExpenses - totalBudget
+  const budgetUsedPct = totalBudget > 0 ? Math.round((totalActualExpenses / totalBudget) * 100) : 0
+  const costHeads = buildCostHeadRows(expenseByCategory, budget)
 
   const grouped = groupBy === 'department'
-    ? await Expense.aggregate([{ $match: { leadId: new mongoose.Types.ObjectId(leadId), isActive: true, ...dateFilter } }, { $group: { _id: '$department', total: { $sum: '$amount' } } }])
+    ? await Expense.aggregate([
+        { $match: { leadId: new mongoose.Types.ObjectId(leadId), isActive: true, ...dateFilter } },
+        { $group: { _id: '$department', total: { $sum: '$amount' } } },
+      ])
     : null
+
+  const clientName = lead.customerId
+    ? `${lead.customerId.firstName || ''} ${lead.customerId.lastName || ''}`.trim()
+    : ''
 
   return success(res, {
     project: {
@@ -1923,17 +1788,21 @@ exports.getBudgetVsActual = asyncHandler(async (req, res) => {
       projectCode: lead.jobId,
       projectName: lead.projectName,
       location: lead.location,
-      projectManager: lead.customerId ? `${lead.customerId.firstName} ${lead.customerId.lastName}` : '',
+      clientName,
+      projectManager: lead.assignedSales?.name || '',
     },
     budgetSummary: {
       totalBudget,
-      totalActual,
-      totalVariance: variance,
+      totalActual: totalActualExpenses,
+      totalActualExpenses,
+      totalInvoiced: invoiceAgg[0]?.total || 0,
+      totalVariance,
       budgetUsedPct,
-      status: variance > 0 ? 'Over Budget' : 'Under Budget',
+      status: budgetVarianceStatus(totalActualExpenses, totalBudget),
     },
     costHeads,
+    customBudgetLines: budget?.customLines || [],
     ...(grouped ? { byDepartment: grouped.map(g => ({ department: g._id || 'Unspecified', total: g.total })) } : {}),
-    note: 'Cost head actuals are a best-effort mapping from real Expense.category values (see COST_HEAD_CATEGORY_MAP) since categories are free-text/dynamic, not a fixed cost-head taxonomy. Unmatched categories fall into Miscellaneous Cost.',
+    note: 'totalActual and budgetSummary reflect logged project expenses only (same basis as account dashboard). totalInvoiced is customer invoice totals for reference, not mixed into variance. Cost heads map Expense.category values (legacy and admin labels); unmatched categories roll into Miscellaneous Cost. Custom budget lines (customLines) append extra cost heads; optional expenseCategories on each line map actuals from Expense.category.',
   })
 })
