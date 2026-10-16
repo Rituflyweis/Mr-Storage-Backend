@@ -1,31 +1,32 @@
 const mongoose = require('mongoose')
-const Invoice = require('../models/Invoice')
-const Expense = require('../models/Expense')
 const Lead = require('../models/Lead')
-const Tax = require('../models/Tax')
-const { buildDateFilter } = require('../utils/dateRange')
+const Quotation = require('../models/Quotation')
 const { buildBusinessUnitFilter } = require('../utils/businessUnit')
+const { resolvePeriodRange, pctChange } = require('../utils/profitLossPeriod.util')
 const {
-  buildPeriodPL,
-  resolvePeriodRange,
-  pctChange,
+  round2,
+  resolveQuotationFinancials,
+  buildLeadFilter,
+  resolveLeadIds,
+  getLatestQuotationByLead,
+  portfolioRollup,
+  listQuotationsInProposalRange,
   marginPct,
-} = require('../utils/profitLossPeriod.util')
+} = require('../utils/quotationMargin.util')
 
-const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+const loadLeadsMap = async (leadIds) => {
+  if (!leadIds?.length) return new Map()
+  const leads = await Lead.find({ _id: { $in: leadIds } })
+    .select('projectName jobId businessUnit lifecycleStatus quoteValue')
+    .lean()
+  return new Map(leads.map((l) => [String(l._id), l]))
+}
 
-const buildProjectFilter = async (query = {}) => {
-  const filter = {}
-  if (query.projectId || query.leadId) {
-    filter.leadId = new mongoose.Types.ObjectId(query.projectId || query.leadId)
-    return filter
-  }
-  const bu = buildBusinessUnitFilter(query.businessUnit || query.company)
-  if (bu) {
-    const leadIds = await Lead.find({ ...bu, isTerminated: { $ne: true } }).distinct('_id')
-    filter.leadId = { $in: leadIds }
-  }
-  return filter
+const rollupForPeriod = async (query, startDate, endDate) => {
+  const leadIds = await resolveLeadIds(query)
+  const quotationByLead = await getLatestQuotationByLead(leadIds, { startDate, endDate })
+  const leadById = await loadLeadsMap([...quotationByLead.keys()].map((id) => new mongoose.Types.ObjectId(id)))
+  return portfolioRollup(quotationByLead, leadById)
 }
 
 const resolveEffectiveDates = (query) => {
@@ -59,68 +60,66 @@ exports.getMarginFilters = async () => {
 }
 
 exports.getMarginAnalysisSummary = async (query = {}) => {
-  const projectFilter = await buildProjectFilter(query)
   const { startDate, endDate } = resolveEffectiveDates(query)
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
 
   const periodEnd = endDate ? new Date(endDate) : new Date()
   const periodStart = startDate ? new Date(startDate) : new Date(periodEnd.getFullYear(), periodEnd.getMonth(), 1)
   const lengthMs = periodEnd.getTime() - periodStart.getTime()
   const prevEnd = new Date(periodStart.getTime() - 1)
   const prevStart = new Date(prevEnd.getTime() - lengthMs)
-  const prevDateFilter = buildDateFilter(
-    { startDate: prevStart.toISOString(), endDate: prevEnd.toISOString() },
-    'date'
-  )
 
   const [current, previous] = await Promise.all([
-    buildPeriodPL(projectFilter, dateFilter),
-    buildPeriodPL(projectFilter, prevDateFilter),
+    rollupForPeriod(query, startDate, endDate),
+    rollupForPeriod(query, prevStart.toISOString(), prevEnd.toISOString()),
   ])
 
-  const revenue = current.totalIncome
-  const grossMarginPct = marginPct(current.grossProfit, revenue)
-  const operatingMarginPct = marginPct(current.operatingProfit, revenue)
-  const netProfitMarginPct = marginPct(current.netProfit, revenue)
-  const contributionMarginPct = marginPct(revenue - current.cogs, revenue)
-
-  const prevGross = marginPct(previous.grossProfit, previous.totalIncome)
-  const prevOperating = marginPct(previous.operatingProfit, previous.totalIncome)
-  const prevNet = marginPct(previous.netProfit, previous.totalIncome)
-  const prevContribution = marginPct(previous.totalIncome - previous.cogs, previous.totalIncome)
-
-  const avgSellingPrice =
-    current.paidInvoiceCount > 0 ? round2(revenue / current.paidInvoiceCount) : 0
-  const prevAvg =
-    previous.paidInvoiceCount > 0
-      ? round2(previous.totalIncome / previous.paidInvoiceCount)
-      : 0
-
   return {
-    grossMarginPct,
-    operatingMarginPct,
-    netProfitMarginPct,
-    contributionMarginPct,
-    avgSellingPrice,
+    dataSource: 'quotation',
+    grossMarginPct: current.grossMarginPct,
+    operatingMarginPct: current.operatingMarginPct,
+    netProfitMarginPct: current.netProfitMarginPct,
+    contributionMarginPct: current.contributionMarginPct,
+    avgSellingPrice: current.avgSellingPrice,
     period: { startDate, endDate },
     kpis: {
-      grossMarginPct: { value: grossMarginPct, changePct: pctChange(grossMarginPct, prevGross) },
-      operatingMarginPct: { value: operatingMarginPct, changePct: pctChange(operatingMarginPct, prevOperating) },
-      netProfitMarginPct: { value: netProfitMarginPct, changePct: pctChange(netProfitMarginPct, prevNet) },
-      contributionMarginPct: {
-        value: contributionMarginPct,
-        changePct: pctChange(contributionMarginPct, prevContribution),
+      grossMarginPct: {
+        value: current.grossMarginPct,
+        changePct: pctChange(current.grossMarginPct, previous.grossMarginPct),
       },
-      avgSellingPrice: { value: avgSellingPrice, changePct: pctChange(avgSellingPrice, prevAvg) },
+      operatingMarginPct: {
+        value: current.operatingMarginPct,
+        changePct: pctChange(current.operatingMarginPct, previous.operatingMarginPct),
+      },
+      netProfitMarginPct: {
+        value: current.netProfitMarginPct,
+        changePct: pctChange(current.netProfitMarginPct, previous.netProfitMarginPct),
+      },
+      contributionMarginPct: {
+        value: current.contributionMarginPct,
+        changePct: pctChange(current.contributionMarginPct, previous.contributionMarginPct),
+      },
+      avgSellingPrice: {
+        value: current.avgSellingPrice,
+        changePct: pctChange(current.avgSellingPrice, previous.avgSellingPrice),
+      },
     },
     totals: {
-      revenue: round2(revenue),
-      cogs: round2(current.cogs),
-      grossProfit: round2(current.grossProfit),
-      operatingProfit: round2(current.operatingProfit),
-      netProfit: round2(current.netProfit),
+      revenue: current.revenue,
+      cogs: current.cogs,
+      grossProfit: current.grossProfit,
+      operatingProfit: current.operatingProfit,
+      netProfit: current.netProfit,
+      quotationCount: current.quotationCount,
     },
   }
+}
+
+const bucketKey = (date, period) => {
+  const dt = new Date(date)
+  if (Number.isNaN(dt.getTime())) return null
+  if (period === 'year') return `${dt.getFullYear()}`
+  if (period === 'quarter') return `${dt.getFullYear()}-Q${Math.ceil((dt.getMonth() + 1) / 3)}`
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
 }
 
 exports.getMarginTrendOverTime = async (query = {}) => {
@@ -129,7 +128,6 @@ exports.getMarginTrendOverTime = async (query = {}) => {
     return { error: 'period must be month, quarter, or year' }
   }
 
-  const projectFilter = await buildProjectFilter(query)
   const now = new Date()
   const rangeStart =
     period === 'year'
@@ -138,152 +136,128 @@ exports.getMarginTrendOverTime = async (query = {}) => {
         ? new Date(now.getFullYear() - 2, 0, 1)
         : new Date(now.getFullYear(), now.getMonth() - 11, 1)
 
-  const groupId =
-    period === 'year'
-      ? { year: { $year: '$date' } }
-      : period === 'quarter'
-        ? { year: { $year: '$date' }, quarter: { $ceil: { $divide: [{ $month: '$date' }, 3] } } }
-        : { year: { $year: '$date' }, month: { $month: '$date' } }
-
-  const taxGroupId =
-    period === 'year'
-      ? { year: { $year: '$createdAt' } }
-      : period === 'quarter'
-        ? {
-            year: { $year: '$createdAt' },
-            quarter: { $ceil: { $divide: [{ $month: '$createdAt' }, 3] } },
-          }
-        : { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }
-
-  const [revenueAgg, expenseAgg, taxAgg] = await Promise.all([
-    Invoice.aggregate([
-      { $match: { ...projectFilter, status: 'paid', date: { $gte: rangeStart } } },
-      { $group: { _id: groupId, revenue: { $sum: '$totalAmount' } } },
-      { $sort: { '_id.year': 1, '_id.month': 1, '_id.quarter': 1 } },
-    ]),
-    Expense.aggregate([
-      { $match: { ...projectFilter, isActive: true, date: { $gte: rangeStart } } },
-      { $group: { _id: groupId, expense: { $sum: '$amount' } } },
-      { $sort: { '_id.year': 1, '_id.month': 1, '_id.quarter': 1 } },
-    ]),
-    Tax.aggregate([
-      { $match: { status: 'paid', createdAt: { $gte: rangeStart } } },
-      { $group: { _id: taxGroupId, tax: { $sum: '$amount' } } },
-    ]),
-  ])
-
-  const keyOf = (id) =>
-    period === 'year'
-      ? `${id.year}`
-      : period === 'quarter'
-        ? `${id.year}-Q${id.quarter}`
-        : `${id.year}-${String(id.month).padStart(2, '0')}`
-
-  const revenueByKey = new Map(revenueAgg.map((r) => [keyOf(r._id), r.revenue]))
-  const expenseByKey = new Map(expenseAgg.map((e) => [keyOf(e._id), e.expense]))
-  const taxByKey = new Map(taxAgg.map((t) => [keyOf(t._id), t.tax]))
-  const allKeys = [...new Set([...revenueByKey.keys(), ...expenseByKey.keys()])].sort()
-
-  const trend = allKeys.map((key) => {
-    const revenue = revenueByKey.get(key) || 0
-    const expense = expenseByKey.get(key) || 0
-    const tax = taxByKey.get(key) || 0
-    const cogsEstimate = expense * 0.55
-    const grossProfit = revenue - cogsEstimate
-    const operatingProfit = revenue - expense
-    const netProfit = operatingProfit - tax
-    return {
-      period: key,
-      label: key,
-      grossMarginPct: marginPct(grossProfit, revenue),
-      operatingMarginPct: marginPct(operatingProfit, revenue),
-      netProfitMarginPct: marginPct(netProfit, revenue),
-      contributionMarginPct: marginPct(revenue - cogsEstimate, revenue),
-    }
+  const leadIds = await resolveLeadIds(query)
+  const quotations = await listQuotationsInProposalRange(leadIds, {
+    startDate: rangeStart.toISOString(),
+    endDate: now.toISOString(),
   })
 
-  return { period, trend }
+  const buckets = new Map()
+  for (const q of quotations) {
+    const key = bucketKey(q.proposalDate || q.createdAt, period)
+    if (!key) continue
+    const f = resolveQuotationFinancials(q)
+    const row = buckets.get(key) || { revenue: 0, cogs: 0 }
+    row.revenue += f.revenue
+    row.cogs += f.cogs
+    buckets.set(key, row)
+  }
+
+  const trend = [...buckets.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, { revenue, cogs }]) => {
+      const expense = cogs
+      const grossProfit = revenue - cogs
+      const operatingProfit = grossProfit
+      const netProfit = grossProfit
+      return {
+        period: key,
+        label: key,
+        revenue: round2(revenue),
+        expense: round2(expense),
+        cogs: round2(cogs),
+        grossProfit: round2(grossProfit),
+        grossMarginPct: marginPct(grossProfit, revenue),
+        operatingMarginPct: marginPct(operatingProfit, revenue),
+        netProfitMarginPct: marginPct(netProfit, revenue),
+        contributionMarginPct: marginPct(revenue - cogs, revenue),
+      }
+    })
+
+  return { period, dataSource: 'quotation', trend }
 }
 
 exports.getMarginByProjects = async (query = {}) => {
   const { startDate, endDate, limit = 10 } = query
-  const dateFilter = buildDateFilter({ startDate, endDate }, 'date')
-  const filter = await buildProjectFilter(query)
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50)
+  const leadIds = await resolveLeadIds(query)
+  const quotationByLead = await getLatestQuotationByLead(leadIds, { startDate, endDate })
+  const leadById = await loadLeadsMap([...quotationByLead.keys()].map((id) => new mongoose.Types.ObjectId(id)))
 
-  const revenueByProject = await Invoice.aggregate([
-    { $match: { ...filter, ...dateFilter, status: 'paid' } },
-    { $group: { _id: '$leadId', revenue: { $sum: '$totalAmount' } } },
-    { $sort: { revenue: -1 } },
-    { $limit: parseInt(limit, 10) },
-    { $lookup: { from: 'leads', localField: '_id', foreignField: '_id', as: 'lead' } },
-    { $unwind: { path: '$lead', preserveNullAndEmptyArrays: true } },
-  ])
-
-  const projects = await Promise.all(
-    revenueByProject.map(async (r) => {
-      const pl = await buildPeriodPL({ leadId: r._id }, dateFilter)
-      return {
-        leadId: r._id,
-        projectName: r.lead?.projectName || '',
-        jobId: r.lead?.jobId || '',
-        category: r.lead?.businessUnit || r.lead?.lifecycleStatus || '',
-        revenue: round2(r.revenue),
-        cogs: round2(pl.cogs),
-        grossProfit: round2(pl.grossProfit),
-        grossMarginPct: marginPct(pl.grossProfit, r.revenue),
-        operatingMarginPct: marginPct(pl.operatingProfit, r.revenue),
-        netProfitMarginPct: marginPct(pl.netProfit, r.revenue),
-        contributionMarginPct: marginPct(r.revenue - pl.cogs, r.revenue),
-      }
+  const projects = []
+  for (const [leadKey, q] of quotationByLead) {
+    const lead = leadById.get(leadKey)
+    const f = resolveQuotationFinancials(q, lead)
+    if (f.revenue <= 0 && f.cogs <= 0) continue
+    projects.push({
+      leadId: q.leadId,
+      quotationId: q._id,
+      projectName: lead?.projectName || '',
+      jobId: lead?.jobId || '',
+      category: lead?.businessUnit || lead?.lifecycleStatus || '',
+      revenue: f.revenue,
+      cogs: f.cogs,
+      expenses: f.cogs,
+      grossProfit: f.grossProfit,
+      grossMarginPct: marginPct(f.grossProfit, f.revenue),
+      operatingMarginPct: marginPct(f.operatingProfit, f.revenue),
+      netProfitMarginPct: marginPct(f.netProfit, f.revenue),
+      contributionMarginPct: marginPct(f.revenue - f.cogs, f.revenue),
     })
-  )
+  }
 
-  return { projects }
+  projects.sort((a, b) => b.revenue - a.revenue)
+  return { dataSource: 'quotation', projects: projects.slice(0, parsedLimit) }
 }
 
 exports.getProfitLossSummaryTable = async (query = {}) => {
-  const { search, page = 1, limit = 10 } = query
-  const dateFilter = buildDateFilter(query, 'date')
+  const { search, page = 1, limit = 10, startDate, endDate } = query
   const skip = (Math.max(parseInt(page, 10), 1) - 1) * parseInt(limit, 10)
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100)
 
-  const leadFilter = { quoteValue: { $gt: 0 }, isTerminated: { $ne: true } }
-  const bu = buildBusinessUnitFilter(query.businessUnit || query.company)
-  if (bu) Object.assign(leadFilter, bu)
-  if (query.projectId || query.leadId) leadFilter._id = query.projectId || query.leadId
+  const leadFilter = await buildLeadFilter(query)
+  const scopedLeadIds = await Lead.find(leadFilter).distinct('_id')
+  const quotedLeadIds = await Quotation.distinct('leadId', { leadId: { $in: scopedLeadIds } })
+
+  const tableFilter = { _id: { $in: quotedLeadIds }, isTerminated: { $ne: true } }
   if (search?.trim()) {
     const regex = new RegExp(search.trim(), 'i')
-    leadFilter.$or = [{ projectName: regex }, { jobId: regex }]
+    tableFilter.$or = [{ projectName: regex }, { jobId: regex }]
   }
 
   const [leads, total] = await Promise.all([
-    Lead.find(leadFilter)
-      .select('projectName jobId businessUnit lifecycleStatus')
+    Lead.find(tableFilter)
+      .select('projectName jobId businessUnit lifecycleStatus quoteValue')
       .sort({ projectName: 1 })
       .skip(skip)
       .limit(parsedLimit)
       .lean(),
-    Lead.countDocuments(leadFilter),
+    Lead.countDocuments(tableFilter),
   ])
 
-  const rows = await Promise.all(
-    leads.map(async (lead) => {
-      const pl = await buildPeriodPL({ leadId: lead._id }, dateFilter)
-      const sales = pl.totalIncome
-      return {
-        leadId: lead._id,
-        projectName: lead.projectName,
-        jobId: lead.jobId,
-        category: lead.businessUnit || lead.lifecycleStatus || 'General',
-        salesUSD: round2(sales),
-        cogsUSD: round2(pl.cogs),
-        grossProfitUSD: round2(pl.grossProfit),
-        grossMarginPct: marginPct(pl.grossProfit, sales),
-      }
-    })
+  const quotationByLead = await getLatestQuotationByLead(
+    leads.map((l) => l._id),
+    { startDate, endDate }
   )
 
+  const rows = leads.map((lead) => {
+    const q = quotationByLead.get(String(lead._id))
+    const f = resolveQuotationFinancials(q, lead)
+    return {
+      leadId: lead._id,
+      quotationId: f.quotationId,
+      projectName: lead.projectName,
+      jobId: lead.jobId,
+      category: lead.businessUnit || lead.lifecycleStatus || 'General',
+      salesUSD: f.revenue,
+      cogsUSD: f.cogs,
+      grossProfitUSD: f.grossProfit,
+      grossMarginPct: marginPct(f.grossProfit, f.revenue),
+    }
+  })
+
   return {
+    dataSource: 'quotation',
     rows,
     total,
     page: parseInt(page, 10) || 1,

@@ -742,6 +742,8 @@ Authorization: Bearer <token>
 
 ### 4.2 KPI cards (5 metrics + period change %)
 
+**Data source:** **`quotation`** — revenue/COGS come from the latest **extracted quotation** per project (`finalPrice`, `materialCost`, `freightCost`, `totalCOGS`), with optional `profitAnalysis.*Override` from account uploads. Not paid invoices. Admin uses the same service via `/api/admin/financial/margin-analysis` (or account `financial-extra`).
+
 ```http
 GET /api/account/financial/margin-analysis?startDate=2025-03-24&endDate=2025-03-31&projectId=67a1b2c3d4e5f6789012345b&businessUnit=steel
 Authorization: Bearer <token>
@@ -751,6 +753,7 @@ Authorization: Bearer <token>
 
 ```json
 {
+  "dataSource": "quotation",
   "grossMarginPct": 24.35,
   "operatingMarginPct": 18.71,
   "netProfitMarginPct": 14.82,
@@ -793,10 +796,15 @@ Authorization: Bearer <token>
 ```json
 {
   "period": "month",
+  "dataSource": "quotation",
   "trend": [
     {
       "period": "2025-01",
       "label": "2025-01",
+      "revenue": 485250,
+      "expense": 366820,
+      "cogs": 366820,
+      "grossProfit": 118430,
       "grossMarginPct": 22.1,
       "operatingMarginPct": 17.4,
       "netProfitMarginPct": 13.2,
