@@ -747,7 +747,7 @@ GET /api/account/financial/margin-analysis?startDate=2025-03-24&endDate=2025-03-
 Authorization: Bearer <token>
 ```
 
-**Note:** Account margin uses **paid invoices + expenses**. **Admin** Financial → Margin Analysis uses **extracted quotation** data — see [`frontend-admin-margin-analysis-quotation-api.md`](./frontend-admin-margin-analysis-quotation-api.md).
+**Note:** Account margin uses **paid invoices + expenses**. **Admin** Margin Analysis uses **extracted quotation** — see [`frontend-admin-margin-analysis-handoff.md`](./frontend-admin-margin-analysis-handoff.md).
 
 **Response `data`:**
 

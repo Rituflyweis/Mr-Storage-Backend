@@ -3,7 +3,9 @@
 **Audience:** Admin panel only (Financial Overview → Margin Analysis).  
 **Not** the account panel — account keeps invoice/expense-based margin under `/api/account/financial/margin-analysis`.
 
-**Base:** `https://mr-storage-backend-025k.onrender.com/api/admin/financial`
+**Base:** `https://mr-storage-backend-025k.onrender.com/api/admin/financials`
+
+**Full req/resp examples:** [`frontend-admin-margin-analysis-handoff.md`](./frontend-admin-margin-analysis-handoff.md)
 
 ---
 
@@ -41,7 +43,7 @@ Numbers come from the **latest quotation per project**, enriched from the linked
 | KPI cards | GET | `/margin-analysis?startDate=&endDate=&projectId=&businessUnit=` |
 | Trend chart | GET | `/margin-analysis/trend?period=month\|quarter\|year` |
 | By project chart | GET | `/margin-analysis/by-project?limit=10&startDate=&endDate=` |
-| P&L table | GET | `/profit-loss/summary?page=1&limit=10&search=` |
+| P&L table | GET | `/profit-loss/projects?page=1&limit=10&search=` |
 
 **Auth:** `Authorization: Bearer <admin token>`
 

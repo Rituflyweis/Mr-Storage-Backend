@@ -1555,6 +1555,8 @@ exports.getProfitLossByProject = asyncHandler(async (req, res) => {
   const marginService = require('../../services/adminQuotationMarginAnalysis.service')
   const data = await marginService.getProfitLossSummaryTable(req.query)
   return success(res, {
+    dataSource: data.dataSource,
+    audience: data.audience,
     projects: data.rows,
     rows: data.rows,
     total: data.total,
