@@ -1,5 +1,6 @@
 const mongoose = require('mongoose')
 const Quotation = require('../models/Quotation')
+const EstimateQuote = require('../models/EstimateQuote')
 const Lead = require('../models/Lead')
 const { buildDateFilter } = require('./dateRange')
 const { buildBusinessUnitFilter } = require('./businessUnit')
@@ -7,8 +8,13 @@ const { marginPct } = require('./profitLossPeriod.util')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
-/** Revenue & COGS from extracted quotation (plus optional profitAnalysis overrides). */
-const resolveQuotationFinancials = (quotation, leadFallback = null) => {
+const num = (v) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Revenue, COGS, margin % from Quotation + linked EstimateQuote (COG extraction). */
+const resolveQuotationFinancials = (quotation, leadFallback = null, estimate = null) => {
   if (!quotation) {
     const revenue = round2(leadFallback?.quoteValue || 0)
     return {
@@ -18,23 +24,60 @@ const resolveQuotationFinancials = (quotation, leadFallback = null) => {
       operatingProfit: revenue,
       netProfit: revenue,
       quotationId: null,
+      grossMarginPct: marginPct(revenue, revenue),
+      markupPercent: 0,
+      marginFromQuotation: 0,
+      labourInstallCost: 0,
     }
   }
 
   const pa = quotation.profitAnalysis || {}
+  const fq = estimate?.fullQuoteResult || {}
+  const pricing = fq.pricing || estimate?.pricingResult || {}
+
+  const material = num(quotation.materialCost || estimate?.materialCost)
+  const freight = num(quotation.freightCost || estimate?.freightCost)
+  const labourInstallCost = round2(num(estimate?.installCost ?? pricing.instCost ?? pricing.installCost))
+
   const revenue = round2(
     pa.revenueOverride != null && pa.revenueOverride !== ''
-      ? Number(pa.revenueOverride)
-      : Number(quotation.finalPrice || quotation.basePrice || leadFallback?.quoteValue || 0)
+      ? num(pa.revenueOverride)
+      : num(
+          quotation.finalPrice ||
+            quotation.basePrice ||
+            fq.grandTotal ||
+            estimate?.totalSell ||
+            pricing.totSell ||
+            leadFallback?.quoteValue
+        )
   )
-  const material = Number(quotation.materialCost) || 0
-  const freight = Number(quotation.freightCost) || 0
+
   const cogs = round2(
     pa.actualCostOverride != null && pa.actualCostOverride !== ''
-      ? Number(pa.actualCostOverride)
-      : Number(quotation.totalCOGS) || material + freight
+      ? num(pa.actualCostOverride)
+      : num(
+          quotation.totalCOGS ||
+            estimate?.totalCOGS ||
+            pricing.totCost ||
+            material + freight + labourInstallCost
+        ) || material + freight
   )
+
   const grossProfit = round2(revenue - cogs)
+  const markupValue = round2(num(quotation.markupValue) || Math.max(0, revenue - cogs))
+  const markupPercent = num(quotation.markupPercent)
+
+  const marginFromQuotation = num(
+    quotation.margin ||
+      fq.grandMargin ||
+      estimate?.marginPercent ||
+      pricing.profPct ||
+      markupPercent
+  )
+
+  const grossMarginPct =
+    marginFromQuotation > 0 ? round2(marginFromQuotation) : marginPct(grossProfit, revenue)
+
   return {
     revenue,
     cogs,
@@ -44,8 +87,25 @@ const resolveQuotationFinancials = (quotation, leadFallback = null) => {
     quotationId: quotation._id,
     materialCost: round2(material),
     freightCost: round2(freight),
-    markupValue: round2(Number(quotation.markupValue) || Math.max(0, revenue - cogs)),
+    labourInstallCost,
+    markupValue,
+    markupPercent,
+    marginFromQuotation: round2(marginFromQuotation),
+    grossMarginPct,
   }
+}
+
+const loadEstimatesForQuotations = async (quotationByLead) => {
+  const estimateIds = [...quotationByLead.values()]
+    .map((q) => q.sourceEstimateId)
+    .filter(Boolean)
+  if (!estimateIds.length) return new Map()
+  const rows = await EstimateQuote.find({ _id: { $in: estimateIds } })
+    .select(
+      'totalSell totalCOGS materialCost freightCost installCost marginPercent profit fullQuoteResult pricingResult'
+    )
+    .lean()
+  return new Map(rows.map((e) => [String(e._id), e]))
 }
 
 const buildLeadFilter = async (query = {}) => {
@@ -96,14 +156,15 @@ const getLatestQuotationByLead = async (leadIds, dateQuery = {}) => {
   return map
 }
 
-const portfolioRollup = (quotationByLead, leadById = new Map()) => {
+const portfolioRollup = (quotationByLead, leadById = new Map(), estimateById = new Map()) => {
   let revenue = 0
   let cogs = 0
   let count = 0
 
   for (const [leadKey, q] of quotationByLead) {
     const lead = leadById.get(leadKey) || leadById.get(String(q.leadId))
-    const f = resolveQuotationFinancials(q, lead)
+    const estimate = q.sourceEstimateId ? estimateById.get(String(q.sourceEstimateId)) : null
+    const f = resolveQuotationFinancials(q, lead, estimate)
     if (f.revenue <= 0 && f.cogs <= 0) continue
     revenue += f.revenue
     cogs += f.cogs
@@ -138,7 +199,7 @@ const listQuotationsInProposalRange = async (leadIds, dateQuery) => {
   if (dateFilter.proposalDate) match.proposalDate = dateFilter.proposalDate
   return Quotation.find(match)
     .select(
-      'leadId proposalDate finalPrice basePrice materialCost freightCost totalCOGS markupValue profitAnalysis createdAt'
+      'leadId sourceEstimateId proposalDate finalPrice basePrice margin markupPercent materialCost freightCost totalCOGS markupValue profitAnalysis createdAt'
     )
     .lean()
 }
@@ -146,6 +207,7 @@ const listQuotationsInProposalRange = async (leadIds, dateQuery) => {
 module.exports = {
   round2,
   resolveQuotationFinancials,
+  loadEstimatesForQuotations,
   buildLeadFilter,
   resolveLeadIds,
   getLatestQuotationByLead,
