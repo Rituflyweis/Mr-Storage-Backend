@@ -2972,13 +2972,13 @@ exports.sendChatMessage = asyncHandler(async (req, res) => {
     content: content.trim(),
   })
 
-  await notificationService.notifyLeadOwner(leadId, {
-    title: 'New customer message',
-    body: content.trim().slice(0, 200),
-    type: 'chat',
-    priority: 'medium',
-    refId: message._id,
-    refModel: 'Message',
+  const customerLeadChatStaff = require('../services/customerLeadChatStaff.service')
+  const customerDirectChat = require('../services/customerDirectChat.service')
+  await customerLeadChatStaff.notifyStaffOfLeadCustomerMessage(leadId, message)
+  await customerDirectChat.mirrorCustomerLeadMessageToDirectInbox(req.customer, content.trim(), {
+    leadId,
+    channel,
+    skipStaffNotify: true,
   })
 
   return created(res, { message }, 'Message sent')

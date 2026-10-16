@@ -28,7 +28,11 @@ exports.sendCustomerDirectMessage = asyncHandler(async (req, res) => {
 })
 
 exports.listStaffDirectConversations = asyncHandler(async (req, res) => {
-  const data = await customerDirectChat.listStaffConversations(req.query)
+  const data = await customerDirectChat.listStaffConversations({
+    ...req.query,
+    staffRole: req.user?.role,
+    staffUserId: req.user?._id,
+  })
   return success(res, data)
 })
 

@@ -3,6 +3,9 @@ const Lead = require('../../models/Lead')
 const chatService = require('../ai/chat.service')
 const scoringService = require('../ai/scoring.service')
 const leadListSocket = require('../leadListSocket.service')
+const customerLeadChatStaff = require('../customerLeadChatStaff.service')
+const customerDirectChat = require('../customerDirectChat.service')
+const Customer = require('../../models/Customer')
 const {
   isRequirementsGatheredFromChat,
   isReadyForSalesHandoff,
@@ -15,14 +18,6 @@ const {
   syncLeadProjectFieldsFromScore,
   syncPlannedStartFromMessages,
 } = require('../leadQuoteReady.service')
-
-const notifyAssignedSales = (leadId, assignedSales, message) => {
-  if (!global.io || !assignedSales) return
-  global.io.of('/admin').to(`user:${assignedSales}`).emit('new_customer_message', {
-    leadId,
-    message,
-  })
-}
 
 const saveLeadScoring = async (leadId, leadScoring) => {
   await Lead.findByIdAndUpdate(leadId, { $set: { leadScoring } })
@@ -44,34 +39,17 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
     content: content.trim(),
   })
 
-  if (global.io) {
-    global.io.of('/admin').to(`lead:${leadId}`).emit('new_message', {
-      _id: customerMsg._id,
-      senderType: 'customer',
-      content: customerMsg.content,
-      createdAt: customerMsg.createdAt,
+  await customerLeadChatStaff.notifyStaffOfLeadCustomerMessage(leadId, customerMsg)
+  const customerDoc = await Customer.findById(customerId).lean()
+  if (customerDoc) {
+    await customerDirectChat.mirrorCustomerLeadMessageToDirectInbox(customerDoc, content.trim(), {
       leadId,
+      skipStaffNotify: true,
     })
   }
 
   // Staff (admin/sales) has taken over — AI stays silent; admin assigns sales manually.
   if (leadForChat?.isStaffChatActive || leadForChat?.isHandedToSales) {
-    if (leadForChat.isHandedToSales && leadForChat.assignedSales) {
-      notifyAssignedSales(leadId, leadForChat.assignedSales, {
-        senderType: 'customer',
-        content: content.trim(),
-        createdAt: customerMsg.createdAt,
-      })
-    } else if (leadForChat.isStaffChatActive && global.io) {
-      global.io.of('/admin').to('admin_room').emit('new_customer_message', {
-        leadId,
-        message: {
-          senderType: 'customer',
-          content: content.trim(),
-          createdAt: customerMsg.createdAt,
-        },
-      })
-    }
     return
   }
 
