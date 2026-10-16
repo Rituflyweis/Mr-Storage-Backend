@@ -4,14 +4,25 @@ const ctrl = require('../../controllers/account/financial.controller')
 const marginCtrl = require('../../controllers/account/margin.controller')
 const validate = require('../../middleware/validate')
 
-const marginQuery = [
+const marginQueryBase = [
   query('projectId').optional({ checkFalsy: true }).isMongoId(),
   query('leadId').optional({ checkFalsy: true }).isMongoId(),
   query('startDate').optional({ checkFalsy: true }).isISO8601(),
   query('endDate').optional({ checkFalsy: true }).isISO8601(),
-  query('period').optional().isIn(['monthly', 'quarterly', 'yearly']),
   query('businessUnit').optional().trim(),
   query('company').optional().trim(),
+]
+
+/** KPI / P&L date presets when startDate & endDate omitted */
+const marginQuery = [
+  ...marginQueryBase,
+  query('period').optional().isIn(['monthly', 'quarterly', 'yearly']),
+]
+
+/** Trend chart bucket size (not the same as marginQuery period presets) */
+const marginTrendQuery = [
+  ...marginQueryBase,
+  query('period').optional().isIn(['month', 'quarter', 'year']),
 ]
 
 // Delivery Finance (dashboard card)
@@ -62,7 +73,7 @@ router.get('/master-data/delivery-companies', ctrl.getMasterDataDeliveryCompanie
 
 // Margin Breakdown (Figma — Payments submenu)
 router.get('/margin-analysis/filters', marginCtrl.getMarginFilters)
-router.get('/margin-analysis/trend', [...marginQuery, query('period').optional().isIn(['month', 'quarter', 'year'])], validate, marginCtrl.getMarginTrend)
+router.get('/margin-analysis/trend', marginTrendQuery, validate, marginCtrl.getMarginTrend)
 router.get('/margin-analysis/by-project', marginQuery, validate, marginCtrl.getMarginByProjects)
 router.get('/margin-analysis', marginQuery, validate, marginCtrl.getMarginAnalysis)
 

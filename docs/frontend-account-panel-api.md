@@ -966,7 +966,7 @@ Dashboard teaser (same math, list of projects):
 
 **Dynamic budget lines:** Each project still has the five fixed fields (`materialBudget`, `logisticBudget`, `productionBudget`, `shipperBudget`, `otherCost`). Admins/sales can add **`customLines[]`** on the same budget document; each line has `key`, `label`, `amount`, and optional `expenseCategories[]` (maps to `Expense.category` for that line’s **actual** in budget vs actual). **Total budget** = fixed fields + all custom amounts everywhere (`totalBudget`, dashboard teaser, variance, customer/project profitability, expense rollup `budgetVariance`).
 
-Set/read budget (admin lead API — sales lead detail returns the same shape):
+Set/read budget: **[`frontend-admin-project-budget-custom-lines-api.md`](./frontend-admin-project-budget-custom-lines-api.md)** (admin write + GET). Sales lead detail returns the same read shape. Quick reference:
 
 ```http
 POST /api/admin/leads/:leadId/budget
