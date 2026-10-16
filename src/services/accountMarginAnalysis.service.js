@@ -2,6 +2,7 @@ const mongoose = require('mongoose')
 const Invoice = require('../models/Invoice')
 const Expense = require('../models/Expense')
 const Lead = require('../models/Lead')
+const Tax = require('../models/Tax')
 const { buildDateFilter } = require('../utils/dateRange')
 const { buildBusinessUnitFilter } = require('../utils/businessUnit')
 const {
@@ -144,6 +145,16 @@ exports.getMarginTrendOverTime = async (query = {}) => {
         ? { year: { $year: '$date' }, quarter: { $ceil: { $divide: [{ $month: '$date' }, 3] } } }
         : { year: { $year: '$date' }, month: { $month: '$date' } }
 
+  const taxGroupId =
+    period === 'year'
+      ? { year: { $year: '$createdAt' } }
+      : period === 'quarter'
+        ? {
+            year: { $year: '$createdAt' },
+            quarter: { $ceil: { $divide: [{ $month: '$createdAt' }, 3] } },
+          }
+        : { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }
+
   const [revenueAgg, expenseAgg, taxAgg] = await Promise.all([
     Invoice.aggregate([
       { $match: { ...projectFilter, status: 'paid', date: { $gte: rangeStart } } },
@@ -157,7 +168,7 @@ exports.getMarginTrendOverTime = async (query = {}) => {
     ]),
     Tax.aggregate([
       { $match: { status: 'paid', createdAt: { $gte: rangeStart } } },
-      { $group: { _id: groupId, tax: { $sum: '$amount' } } },
+      { $group: { _id: taxGroupId, tax: { $sum: '$amount' } } },
     ]),
   ])
 
