@@ -11,6 +11,42 @@ All margin endpoints below return **`dataSource: "quotation"`** and **`audience:
 
 ---
 
+## What changed from earlier
+
+Delta for **Admin → Financial Overview → Margin Analysis** vs older frontend wiring and vs the **account** panel.
+
+### Before
+
+| Topic | Earlier |
+|-------|---------|
+| **Data source** | Admin margin often reused **account** logic (paid **invoices** + **expenses**) or **`lead.quoteValue`** only → COGS/margin could show **0** or **100%** when quotation extraction existed but was not used. |
+| **API prefix** | Docs or clients sometimes called **`/api/admin/financial`** (wrong) or account paths **`/api/account/financial/margin-analysis`**. |
+| **P&L table on admin screen** | Bound to account-style **`/profit-loss/summary`** or invoice rows — not quotation COGS/labour/markup. |
+| **Trend `period`** | Same query param name as account; values must match route (`month` \| `quarter` \| `year` on admin trend). |
+| **Response shape** | No **`dataSource`** / **`audience`** flags; labour/markup from estimate extraction not on by-project rows. |
+
+### After (`fcd1301`+, branch `shubham-changes-13-aug`)
+
+| Topic | Now |
+|-------|-----|
+| **Data source** | **`dataSource: "quotation"`** — latest **Quotation** per project, enriched from **`EstimateQuote`** when linked (`margin`, `markupPercent`, `installCost`, COGS fields). Dates filter on quotation **`proposalDate`**. |
+| **API prefix** | **`/api/admin/financials`** (with **`s`**) for KPI, trend, by-project, and **`GET /profit-loss/projects`**. |
+| **Account panel** | Unchanged: **`/api/account/financial/margin-analysis*`** still uses **invoices + expenses** — do **not** point admin UI at account routes. |
+| **P&L table** | Use **`GET /api/admin/financials/profit-loss/projects`** → bind **`data.projects[]`** (or **`rows`**). Single **`grossMarginPct`** column. |
+| **By-project chart** | Rows include **`labourInstallCost`**, **`marginFromQuotation`**, **`cogsUSD`**, **`salesUSD`**. |
+
+### Frontend actions
+
+| Action | Required? |
+|--------|-----------|
+| Switch admin Margin Analysis calls to **`/api/admin/financials/...`** | **Yes** |
+| P&L table → **`profit-loss/projects`**, not account **`summary`** | **Yes** |
+| Show KPI/trend from quotation-backed fields; ignore account invoice semantics on this screen | **Yes** |
+| Check **`data.dataSource === "quotation"`** in QA | Recommended |
+| Change account panel margin APIs | **No** |
+
+---
+
 ## Conventions
 
 ### Envelope

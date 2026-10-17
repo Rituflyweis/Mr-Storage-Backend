@@ -22,6 +22,7 @@ router.get(
   validate,
   ctrl.listInvoices
 )
+router.get('/billing-defaults', ctrl.getInvoiceBillingDefaults)
 router.get('/:invoiceId', ctrl.getInvoice)
 router.put('/:invoiceId', invoiceBodyValidators, validate, ctrl.updateInvoice)
 router.post('/:invoiceId/submit-approval', [body('note').optional().isString()], validate, ctrl.submitInvoiceForApproval)

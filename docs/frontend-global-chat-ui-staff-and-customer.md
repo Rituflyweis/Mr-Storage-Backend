@@ -140,7 +140,7 @@ Content-Type: application/json
 | Event | When |
 |--------|------|
 | **`customer_direct_message`** | Open thread; admin/sales on `/admin` after `join_customer_direct { customerId }` |
-| **`customer_direct_chat_updated`** | **Admin only** (in `admin_room`) — refresh sidebar row |
+| **`customer_direct_chat_updated`** | **Admin + assigned sales** — refresh Customers sidebar (see [`frontend-customer-chat-staff-inbox-handoff-2026-10.md`](./frontend-customer-chat-staff-inbox-handoff-2026-10.md) §1) |
 | Poll `GET …/conversations` | Sales / plant sidebar if no socket |
 
 ---

@@ -16,6 +16,7 @@ router.post('/vendor', createVendorPayableValidators, validate, ctrl.createVendo
 router.post('/freight-carrier', createFreightPayableValidators, validate, ctrl.createFreightCarrierPayable)
 
 router.get('/:invoiceId', mongoId, validate, ctrl.getPayableDetail)
+router.put('/:invoiceId/billing', mongoId, validate, ctrl.updatePayableBilling)
 router.put('/:invoiceId/approve', mongoId, validate, ctrl.approvePayable)
 router.put('/:invoiceId/reject', rejectValidators, validate, ctrl.rejectPayable)
 router.post('/:invoiceId/comments', commentValidators, validate, ctrl.addAdminPayableComment)

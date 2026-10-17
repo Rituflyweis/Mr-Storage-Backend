@@ -3,6 +3,11 @@ const Invoice = require('../models/Invoice')
 const User = require('../models/User')
 const generatePayableInvoiceNumber = require('./generatePayableInvoiceNumber')
 const { computeInvoiceDueDate } = require('./invoiceDueDate')
+const {
+  applyInvoiceBillingFields,
+  ensureInvoiceBillingDefaultsOnCreate,
+  pickBillingFieldsForListRow,
+} = require('./invoiceBilling.util')
 const { loadFreightLoadDetailsByLeadId } = require('../services/plant/freightLoadDetails.service')
 const { redactPayableLinkedSecrets } = require('./payablePublicBootstrap.util')
 
@@ -63,6 +68,7 @@ const buildPayableListRow = (inv) => {
     paymentMethod: inv.paymentMethod || null,
     createdAt: inv.createdAt,
     updatedAt: inv.updatedAt,
+    ...pickBillingFieldsForListRow(inv),
   }
 }
 
@@ -103,6 +109,9 @@ const createPayableInvoice = async ({
   deliveryId,
   initialPayableStatus,
   invoiceNumber: invoiceNumberOverride,
+  billingAddress,
+  recipientAddress,
+  bankDetails,
 }) => {
   const createdById = await resolveFallbackCreatedBy(createdBy)
   const invoiceNumber = invoiceNumberOverride?.trim() || (await generatePayableInvoiceNumber(invoiceType))
@@ -111,7 +120,7 @@ const createPayableInvoice = async ({
 
   const payableStatus = initialPayableStatus || 'pending_admin_approval'
 
-  const invoice = await Invoice.create({
+  const payload = {
     leadId,
     customerId: null,
     invoiceType,
@@ -139,7 +148,11 @@ const createPayableInvoice = async ({
       deliveryId: deliveryId || null,
       comments: [],
     },
-  })
+  }
+  applyInvoiceBillingFields(payload, { billingAddress, recipientAddress, bankDetails })
+  ensureInvoiceBillingDefaultsOnCreate(payload, { invoiceType })
+
+  const invoice = await Invoice.create(payload)
 
   syncTopLevelStatusFromPayable(invoice)
   await invoice.save()

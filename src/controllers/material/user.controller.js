@@ -119,6 +119,9 @@ const createFormLead = async ({
   await leadListSocket.emitLeadListCreated(lead._id, { trigger: via })
   await syncLeadBuildings(lead, { createdBy: null })
 
+  const { notifyAdminsOfNewLead } = require('../../utils/leadCreatedNotify.util')
+  await notifyAdminsOfNewLead(lead, { customerId, inbound: true, source: lead.source }).catch(() => {})
+
   return lead
 }
 

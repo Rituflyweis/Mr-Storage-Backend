@@ -10,6 +10,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const ExcelJS = require('exceljs')
 const { computeInvoiceDueDate } = require('../../utils/invoiceDueDate')
+const accountInvoiceFollowUp = require('../../services/accountInvoiceFollowUp.service')
 
 const computeDueDate = (inv) => {
   if (inv.dueDate) return new Date(inv.dueDate)
@@ -75,6 +76,37 @@ exports.markAsPaid = asyncHandler(async (req, res) => {
   })
 
   return success(res, { invoice }, 'Invoice marked as paid')
+})
+
+exports.downloadInvoicePdf = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId).lean()
+  if (!invoice) return notFound(res, 'Invoice not found')
+  if (['vendor', 'freight_carrier'].includes(invoice.invoiceType)) {
+    return badRequest(res, 'PDF download is for customer invoices only')
+  }
+
+  const customer = await Customer.findById(invoice.customerId).lean()
+  if (!customer) return notFound(res, 'Customer not found for this invoice')
+
+  const paymentSchedule = await PaymentSchedule.findOne({ leadId: invoice.leadId }).lean()
+  const buffer = await mailer.generateInvoicePdfBuffer(invoice, customer, paymentSchedule)
+  const filename = `Invoice-${invoice.invoiceNumber || invoice._id}.pdf`
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
+  return res.send(buffer)
+})
+
+exports.followUpInvoice = asyncHandler(async (req, res) => {
+  const result = await accountInvoiceFollowUp.sendInvoiceFollowUp(
+    req.params.invoiceId,
+    req.user,
+    req.body
+  )
+  if (result.error) {
+    if (result.code === 404) return notFound(res, result.error)
+    return badRequest(res, result.error)
+  }
+  return success(res, result, 'Payment follow-up sent')
 })
 
 exports.getAnalytics = asyncHandler(async (req, res) => {

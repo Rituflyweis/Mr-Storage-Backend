@@ -17,6 +17,7 @@ router.get('/:projectId/invoices/records', projectIdParam, validate, sub.listInv
 router.get('/:projectId/payments/summary', projectIdParam, validate, sub.getPaymentsSummary)
 router.get('/:projectId/payments/records', projectIdParam, validate, sub.listPayments)
 
+router.get('/:projectId/delivery', projectIdParam, validate, sub.getFinalDelivery)
 router.get('/:projectId/deliveries', projectIdParam, validate, sub.listDeliveries)
 router.get(
   '/:projectId/deliveries/:deliveryId',
@@ -33,6 +34,7 @@ router.get(
   sub.getQuotationDetail
 )
 
+router.get('/:projectId/bom/consolidated', projectIdParam, validate, sub.getConsolidatedBom)
 router.get('/:projectId/bom', projectIdParam, validate, sub.getBom)
 router.get('/:projectId/agreement', projectIdParam, validate, sub.getAgreement)
 

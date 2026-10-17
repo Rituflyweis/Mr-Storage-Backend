@@ -134,6 +134,13 @@ exports.chatInit = asyncHandler(async (req, res) => {
 
     await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'chat_init' })
     await syncLeadBuildings(lead, { createdBy: null })
+
+    const { notifyAdminsOfNewLead } = require('../utils/leadCreatedNotify.util')
+    await notifyAdminsOfNewLead(lead, {
+      customerId: customer._id,
+      inbound: true,
+      source: 'chat',
+    }).catch(() => {})
   }
 
   return success(res, {

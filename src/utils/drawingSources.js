@@ -20,6 +20,13 @@ const buildingNumberToLabel = (n) => `Building ${BUILDING_LETTERS[n - 1] || n}`
 
 const PLANT_DRAWING_STATUS_MAP = { pending_review: 'pending', approved: 'approved', rejected: 'rejected' }
 
+const getLatestPlantDrawing = (drawings = []) =>
+  (drawings || []).reduce(
+    (latest, drawing) =>
+      !latest || (drawing.versionNumber || 0) > (latest.versionNumber || 0) ? drawing : latest,
+    null
+  )
+
 // Maps a Building.drawings subdocument onto the same field shape as a DrawingDocument, so both
 // sources can be merged into a single array/count without changing any response structure.
 const mapPlantDrawing = (buildingDoc, drawing, leadId) => ({
@@ -71,9 +78,10 @@ const getMergedDrawings = async (leadIdOrIds) => {
     Building.find(leadFilter).select('leadId buildingNumber drawings').populate(POPULATE_PLANT).lean(),
   ])
 
-  const plantMapped = buildings.flatMap((b) =>
-    (b.drawings || []).map((d) => mapPlantDrawing(b, d, b.leadId))
-  )
+  const plantMapped = buildings.flatMap((b) => {
+    const latest = getLatestPlantDrawing(b.drawings)
+    return latest ? [mapPlantDrawing(b, latest, b.leadId)] : []
+  })
 
   return [...drawingDocs, ...plantMapped].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 }
@@ -92,4 +100,10 @@ const resolveDrawingRef = async (leadId, docId) => {
   return null
 }
 
-module.exports = { buildingNumberToLabel, mapPlantDrawing, getMergedDrawings, resolveDrawingRef }
+module.exports = {
+  buildingNumberToLabel,
+  mapPlantDrawing,
+  getMergedDrawings,
+  resolveDrawingRef,
+  getLatestPlantDrawing,
+}

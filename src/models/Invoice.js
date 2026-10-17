@@ -73,6 +73,34 @@ const PayableCommentSchema = new mongoose.Schema(
   { _id: true }
 )
 
+const InvoiceAddressSchema = new mongoose.Schema(
+  {
+    companyName: { type: String, default: '', trim: true },
+    line1: { type: String, default: '', trim: true },
+    line2: { type: String, default: '', trim: true },
+    city: { type: String, default: '', trim: true },
+    state: { type: String, default: '', trim: true },
+    postalCode: { type: String, default: '', trim: true },
+    country: { type: String, default: '', trim: true },
+    lines: { type: [String], default: [] },
+  },
+  { _id: false }
+)
+
+const InvoiceBankDetailsSchema = new mongoose.Schema(
+  {
+    bankName: { type: String, default: '', trim: true },
+    accountName: { type: String, default: '', trim: true },
+    accountNumber: { type: String, default: '', trim: true },
+    routingNumber: { type: String, default: '', trim: true },
+    swiftCode: { type: String, default: '', trim: true },
+    iban: { type: String, default: '', trim: true },
+    branchAddress: { type: String, default: '', trim: true },
+    paymentInstructions: { type: String, default: '', trim: true },
+  },
+  { _id: false }
+)
+
 const PayableWorkflowSchema = new mongoose.Schema(
   {
     status: {
@@ -139,6 +167,13 @@ const InvoiceSchema = new mongoose.Schema(
     daysToPay:         { type: Number, default: null },
     dueDate:           { type: Date, default: null },
     poNumber:          { type: String, default: '' },
+
+    /** Seller / remitter address shown on invoice PDFs and detail screens */
+    billingAddress:    { type: InvoiceAddressSchema, default: () => ({}) },
+    /** Bill-to / payee address (customer or vendor/carrier) */
+    recipientAddress:  { type: InvoiceAddressSchema, default: () => ({}) },
+    /** Wire / ACH instructions — editable per invoice */
+    bankDetails:       { type: InvoiceBankDetailsSchema, default: () => ({}) },
 
     lineItems:    { type: [LineItemSchema], default: [] },
     subtotal:     { type: Number, default: 0 },

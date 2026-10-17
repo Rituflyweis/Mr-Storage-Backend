@@ -1,6 +1,7 @@
 const router = require('express').Router()
 const { query, param } = require('express-validator')
 const ctrl = require('../../controllers/account/customer.controller')
+const customerDocCtrl = require('../../controllers/common/customerDocument.controller')
 const validate = require('../../middleware/validate')
 
 router.get(
@@ -27,6 +28,8 @@ router.get(
   validate,
   ctrl.listCustomers
 )
+
+router.get('/:customerId/documents', customerDocCtrl.listCustomerDocuments)
 
 router.get(
   '/:customerId',

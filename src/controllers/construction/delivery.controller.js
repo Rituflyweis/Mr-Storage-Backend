@@ -24,6 +24,8 @@ const {
   LABEL_UI_STATUSES,
   DISPATCH_VERIFICATION_UI_STATUSES,
 } = require('../../utils/constructionListQuery')
+const accountProjectSubpages = require('../../services/accountProjectSubpages.service')
+const { formatAccountDeliveryDetail } = require('../../utils/accountDeliveryDetail.util')
 
 const buildDeliveryCard = async (delivery) => {
   let carrier = null
@@ -152,12 +154,35 @@ exports.exportDeliveries = asyncHandler(async (req, res) => {
 
 exports.getDelivery = asyncHandler(async (req, res) => {
   const delivery = await Delivery.findById(req.params.deliveryId)
-    .populate('leadId', 'projectName jobId location')
+    .populate({
+      path: 'leadId',
+      select: 'projectName jobId location customerId',
+      populate: { path: 'customerId', select: 'firstName lastName company email phone' },
+    })
+    .populate({
+      path: 'selectedCarrierBidId',
+      populate: { path: 'carrierId', select: 'carrierName contactName phone email' },
+    })
     .lean()
   if (!delivery) return notFound(res, 'Delivery not found')
 
+  const lead = delivery.leadId
+  if (lead && typeof lead === 'object') {
+    const detail = await formatAccountDeliveryDetail(delivery, lead)
+    return success(res, { delivery: detail, card: await buildDeliveryCard(delivery) })
+  }
+
   const card = await buildDeliveryCard(delivery)
   return success(res, { delivery: card })
+})
+
+exports.getProjectFinalDelivery = asyncHandler(async (req, res) => {
+  const result = await accountProjectSubpages.getProjectFinalDelivery(req.params.leadId)
+  if (result.error) {
+    if (result.code === 404) return notFound(res, result.error)
+    return badRequest(res, result.error)
+  }
+  return success(res, result)
 })
 
 // POST /deliveries — "Add Delivery" screen on the construction mobile app

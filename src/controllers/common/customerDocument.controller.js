@@ -17,7 +17,20 @@ const assertCustomerAccess = async (customerId, user) => {
     return { customer }
   }
 
+  if (['account', 'plant', 'construction'].includes(user.role)) {
+    const linked = await Lead.exists({ customerId })
+    if (!linked) return { error: 'Access denied', code: 403 }
+    return { customer, readOnly: true }
+  }
+
   return { error: 'Access denied', code: 403 }
+}
+
+const assertCanMutateDocuments = (user) => {
+  if (!['admin', 'sales'].includes(user.role)) {
+    return { error: 'Only sales can upload customer documents', code: 403 }
+  }
+  return null
 }
 
 const formatCustomerDocuments = (customer) =>
@@ -57,6 +70,9 @@ exports.listCustomerDocuments = asyncHandler(async (req, res) => {
 })
 
 exports.addCustomerDocument = asyncHandler(async (req, res) => {
+  const mutateErr = assertCanMutateDocuments(req.user)
+  if (mutateErr) return forbidden(res, mutateErr.error)
+
   const { name, fileUrl, fileType, fileSize, category, notes } = req.body
   if (!name?.trim() || !fileUrl?.trim()) {
     return badRequest(res, 'name and fileUrl are required')
@@ -99,6 +115,9 @@ exports.addCustomerDocument = asyncHandler(async (req, res) => {
 })
 
 exports.deleteCustomerDocument = asyncHandler(async (req, res) => {
+  const mutateErr = assertCanMutateDocuments(req.user)
+  if (mutateErr) return forbidden(res, mutateErr.error)
+
   const access = await assertCustomerAccess(req.params.customerId, req.user)
   if (access.error) {
     if (access.code === 404) return notFound(res, access.error)

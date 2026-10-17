@@ -78,6 +78,14 @@ const loadPaymentScheduleForInvoice = async (invoice) => {
   return null;
 };
 
+const {
+  applyInvoiceBillingFields,
+  ensureInvoiceBillingDefaultsOnCreate,
+  resolveInvoiceBillingForResponse,
+  getDefaultBillingAddress,
+  getDefaultBankDetails,
+} = require("../../utils/invoiceBilling.util");
+
 const INVOICE_BODY_FIELDS = [
   "date",
   "daysToPay",
@@ -213,6 +221,10 @@ const decorateInvoiceForResponse = (invoiceLike) => {
   if (invoice.approval) {
     invoice.approval.history = [...(invoice.approval.history || [])].reverse();
   }
+  const billing = resolveInvoiceBillingForResponse(invoice);
+  invoice.billingAddress = billing.billingAddress;
+  invoice.bankDetails = billing.bankDetails;
+  invoice.recipientAddress = billing.recipientAddress;
   return invoice;
 };
 
@@ -273,7 +285,25 @@ const applyInvoiceBodyFields = (target, body) => {
   INVOICE_BODY_FIELDS.forEach((k) => {
     if (body[k] !== undefined) target[k] = body[k];
   });
+  applyInvoiceBillingFields(target, body);
 };
+
+exports.getInvoiceBillingDefaults = asyncHandler(async (_req, res) =>
+  success(res, {
+    billingAddress: getDefaultBillingAddress(),
+    bankDetails: getDefaultBankDetails(),
+    recipientAddress: {
+      companyName: "",
+      line1: "",
+      line2: "",
+      city: "",
+      state: "",
+      postalCode: "",
+      country: "",
+      lines: [],
+    },
+  }),
+);
 
 const toFiniteNumber = (value, fallback = 0) => {
   const n = Number(value);
@@ -500,8 +530,33 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     poNumber = await generatePONumber();
   }
 
-  const invoiceData = {};
+  const invoiceData = { invoiceType: "customer" };
   applyInvoiceBodyFields(invoiceData, req.body);
+  ensureInvoiceBillingDefaultsOnCreate(invoiceData, { invoiceType: "customer" });
+
+  if (
+    !invoiceData.recipientAddress?.line1 &&
+    !(invoiceData.recipientAddress?.lines || []).length
+  ) {
+    const customer = await Customer.findById(lead.customerId)
+      .select("firstName lastName company location")
+      .lean();
+    if (customer) {
+      invoiceData.recipientAddress = {
+        companyName:
+          [customer.firstName, customer.lastName].filter(Boolean).join(" ") ||
+          customer.company ||
+          "",
+        line1: customer.location || "",
+        line2: "",
+        city: "",
+        state: "",
+        postalCode: "",
+        country: "",
+        lines: customer.location ? [customer.location] : [],
+      };
+    }
+  }
   const quoteTax = await resolveQuoteSalesTaxForLead(
     leadId,
     req.body.quotationId,
@@ -668,11 +723,22 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error);
 
   const hasPaymentStageUpdate = req.body.paymentScheduleStageId !== undefined;
-  const hasBodyFieldUpdates = INVOICE_BODY_FIELDS.some(
+  const hasBillingUpdates =
+    req.body.billingAddress !== undefined ||
+    req.body.bankDetails !== undefined ||
+    req.body.recipientAddress !== undefined;
+  const hasLineOrAmountUpdates = INVOICE_BODY_FIELDS.some(
     (k) => req.body[k] !== undefined,
   );
+  const hasBodyFieldUpdates = hasLineOrAmountUpdates || hasBillingUpdates;
   let replacedPendingApproval = false;
   ensureApprovalState(invoice);
+
+  if (hasBillingUpdates && !hasLineOrAmountUpdates) {
+    applyInvoiceBillingFields(invoice, req.body);
+    await invoice.save();
+    return success(res, { invoice: decorateInvoiceForResponse(invoice) });
+  }
 
   if (
     hasBodyFieldUpdates &&

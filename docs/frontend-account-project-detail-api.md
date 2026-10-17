@@ -41,7 +41,12 @@ Returns overview, contact, financial KPIs, progress stepper, profitability table
 | View BOM | `bom` |
 | View Agreement | `agreement` |
 
-Mark customer invoice paid (account): `PUT /api/account/invoices/:invoiceId/mark-paid`
+**Row actions (account):** [`frontend-account-project-invoices-actions-api-2026-10-17.md`](./frontend-account-project-invoices-actions-api-2026-10-17.md)
+
+| Button | API |
+|--------|-----|
+| Mark as Paid | `PUT /api/account/invoices/:invoiceId/mark-paid` |
+| Follow up | `POST /api/account/invoices/:invoiceId/follow-up` |
 
 ---
 
@@ -83,7 +88,9 @@ Combines **customer invoices paid**, **approved payment approvals**, and **paid 
 GET /api/account/projects/:projectId/payments/records?page=1&limit=20&search=&status=
 ```
 
-**Row fields:** `paymentId`, `date`, `amount`, `relatedTo` (`Customer` | `Vendor` | `Carrier`), `status` (`Received`), `invoiceNumber`, `invoiceId`, `source` (`payment_approval` | `payable_invoice` | `customer_invoice`), optional `documentUrl`
+**Row fields:** `paymentId`, `date`, `amount`, `relatedTo`, `status`, `invoiceNumber`, `invoiceId`, `source`, **`documentUrl`**, **`pdfUrl`**, **`documentType`** (customer invoices — see [`frontend-account-project-payments-delivery-api-2026-10-17.md`](./frontend-account-project-payments-delivery-api-2026-10-17.md))
+
+**Customer invoice PDF:** `GET /api/account/invoices/:invoiceId/pdf`
 
 WIP order payment (Add/Edit payment modal): `GET /api/account/payments/orders/:orderId` (existing; `:orderId` = WIP id or `leadId`)
 
@@ -91,21 +98,29 @@ WIP order payment (Add/Edit payment modal): `GET /api/account/payments/orders/:o
 
 ## 4. Material Delivery
 
+**Full spec:** [`frontend-account-project-payments-delivery-api-2026-10-17.md`](./frontend-account-project-payments-delivery-api-2026-10-17.md)
+
+### Final delivery (Figma Delivery Details — use when you only have project id)
+
+```http
+GET /api/account/projects/:projectId/delivery
+```
+
+Latest **confirmed** delivery (same idea as plant `GET /api/plant/projects/:leadId/delivery`).
+
 ### List
 
 ```http
 GET /api/account/projects/:projectId/deliveries?page=1&limit=20&status=
 ```
 
-**Row fields:** `deliveryId`, `deliveryNumber`, `title`, `status`, `deliveryDate`, `pickupDate`, `timeWindow`, `siteAddress`, `materialCategory`, `priority`
-
-### Detail (Figma delivery screen)
+### Detail by id
 
 ```http
 GET /api/account/projects/:projectId/deliveries/:deliveryId
 ```
 
-**`data.delivery`:** `overview`, `vendor`, `deliveryCompany`, `siteCoordination`, `receivingPoc`, `statusHistory`, `freightLoadId`
+**`data.delivery`:** enriched payload — `overview`, `customer`, `deliveryInformation`, `receivingPoc`, `vendor`, `deliveryCompany`, `documents`, `statusHistory`, etc.
 
 Read-only for account (status changes remain plant/construction APIs).
 
@@ -133,19 +148,19 @@ PDF/HTML preview (same payload as sales): use sales/common only if account role 
 
 ---
 
-## 6. View BOM
+## 6. View BOM (consolidated)
+
+**Full spec:** [`frontend-account-project-bom-consolidated-api-2026-10-17.md`](./frontend-account-project-bom-consolidated-api-2026-10-17.md)
 
 ```http
-GET /api/account/projects/:projectId/bom
+GET /api/account/projects/:projectId/bom/consolidated
 ```
 
-**`data`:**
+**`data`:** `summary` (totals), `rows[]` (line table), `downloads` (Excel/PDF URLs), project header fields. **No** per-building `bomFiles[]`.
 
-- `bomFiles[]` — per-building uploads (`fileUrl`, `fileName`, `status`, `totalItems`, …)
-- `consolidatedBOM` — generated consolidated file metadata (or `null`)
-- `consolidatedUrlPath` — optional signed URL helper on plant BOM module (read-only)
+Alias: `GET .../bom` (same payload).
 
-Account cannot upload BOM (plant only).
+Account cannot upload or regenerate BOM (plant only).
 
 ---
 

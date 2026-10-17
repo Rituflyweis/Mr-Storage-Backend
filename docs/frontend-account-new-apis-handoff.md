@@ -73,7 +73,7 @@ Some routes still embed populated **`customerId`** (including legacy fields). **
 | GET | `/projects/:projectId/deliveries/:deliveryId` | Delivery detail |
 | GET | `/projects/:projectId/quotations` | Quotation list |
 | GET | `/projects/:projectId/quotations/:quotationId` | Quotation detail |
-| GET | `/projects/:projectId/bom` | BOM files + consolidated BOM |
+| GET | `/projects/:projectId/bom/consolidated` | Consolidated BOM detail (summary + rows + downloads) |
 | GET | `/projects/:projectId/agreement` | Signed agreement / contract |
 
 **Overview:** `GET /projects/:projectId` includes **`actionLinks`** — all paths under `/api/account/projects/...` (no sales/admin/plant URLs for sub-pages).
@@ -396,50 +396,16 @@ Authorization: Bearer <token>
 
 (`quotation` is the full Mongoose document shape — use list fields for tables; detail for read-only viewer.)
 
-### 1.10 BOM
+### 1.10 BOM (consolidated)
+
+See [`frontend-account-project-bom-consolidated-api-2026-10-17.md`](./frontend-account-project-bom-consolidated-api-2026-10-17.md).
 
 ```http
-GET /api/account/projects/6aadb0a0464b5c58eb1a042b/bom
+GET /api/account/projects/6aadb0a0464b5c58eb1a042b/bom/consolidated
 Authorization: Bearer <token>
 ```
 
-```json
-{
-  "success": true,
-  "message": "Success",
-  "data": {
-    "leadId": "6aadb0a0464b5c58eb1a042b",
-    "projectName": "Adam Gilchrist",
-    "jobId": "PRO-042",
-    "bomFiles": [
-      {
-        "buildingId": "6aadb0a2464b5c58eb1a043f",
-        "buildingNumber": 1,
-        "bomJobId": "6aadb4ce464b5c58eb1a0f4a",
-        "fileName": "9081_Split_Test_Building_1_20_Items_BOM.out",
-        "fileUrl": "https://mr-storage-project.s3.ap-south-1.amazonaws.com/boms/....out",
-        "fileFormat": "out",
-        "status": "completed",
-        "uploadedAt": "2026-09-18T22:01:50.332Z",
-        "totalItems": 20,
-        "isConfirmed": true
-      }
-    ],
-    "consolidatedBOM": {
-      "_id": "6aadb4fb78547f45e45e8f8e",
-      "status": "approved",
-      "fileUrl": "https://mr-storage-project.s3.ap-south-1.amazonaws.com/consolidated/...xlsx",
-      "fileName": "",
-      "generatedAt": "2026-09-18T22:02:34.937Z",
-      "itemCount": 40,
-      "totalCost": 77230.47
-    },
-    "consolidatedUrlPath": "/api/plant/bom/projects/6aadb0a0464b5c58eb1a042b/consolidated-url"
-  }
-}
-```
-
-Prefer **`consolidatedBOM.fileUrl`** / per-building **`fileUrl`** for downloads; `consolidatedUrlPath` is a plant helper if needed.
+Returns **`summary`**, **`rows[]`**, **`downloads`** — not per-building `bomFiles[]`. `GET .../bom` is an alias.
 
 ### 1.11 Agreement
 
@@ -475,6 +441,8 @@ When signed, `agreement` is typically `{ url, fileName, signedOn, ... }` (same s
 ---
 
 ## 2. Invoice management
+
+**Dedicated spec (Project + Carrier tabs, full route index):** [`frontend-account-invoice-management-api-2026-10-17.md`](./frontend-account-invoice-management-api-2026-10-17.md)
 
 Base: `/api/account/invoice-management`
 
@@ -963,6 +931,8 @@ Content-Type: application/json
 ---
 
 ## 4. Analytics reports
+
+**Full API spec (all keys, types, date-filter rules, related P&L routes):** [`frontend-account-analytics-project-wise-spec.md`](./frontend-account-analytics-project-wise-spec.md)
 
 Base: `/api/account/reports`
 

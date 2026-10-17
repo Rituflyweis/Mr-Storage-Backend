@@ -15,8 +15,14 @@ const optionalPaymentScheduleStageId = () =>
       return /^[a-f\d]{24}$/i.test(String(v))
     })
 
+const optionalAddressObject = (field) => body(field).optional().isObject()
+const optionalBankObject = () => body('bankDetails').optional().isObject()
+
 const invoiceCreateValidators = [
   body('totalAmount').notEmpty().custom((v) => !Number.isNaN(Number(v))),
+  optionalAddressObject('billingAddress'),
+  optionalAddressObject('recipientAddress'),
+  optionalBankObject(),
   body('date').optional().isISO8601(),
   optionalNumeric('daysToPay'),
   optionalNumeric('tax'),
@@ -28,6 +34,9 @@ const invoiceCreateValidators = [
 ]
 
 const invoiceBodyValidators = [
+  optionalAddressObject('billingAddress'),
+  optionalAddressObject('recipientAddress'),
+  optionalBankObject(),
   optionalNumeric('totalAmount'),
   body('date').optional().isISO8601(),
   optionalNumeric('daysToPay'),

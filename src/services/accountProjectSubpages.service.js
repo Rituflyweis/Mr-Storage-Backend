@@ -6,7 +6,12 @@ const ConsolidatedBOM = require('../models/ConsolidatedBOM')
 const User = require('../models/User')
 const { resolveProject } = require('./accountProject.service')
 const invoiceMgmt = require('./accountInvoiceManagement.service')
-const { getLatestBomJobsByBuilding } = require('../utils/plantBomAccess')
+const { formatAccountConsolidatedBom } = require('../utils/consolidatedBomAccount.util')
+const { resolveCustomerInvoiceDocuments } = require('../utils/customerInvoiceDocument.util')
+const {
+  formatAccountDeliveryDetail,
+  SELECTED_DELIVERY_STATUSES,
+} = require('../utils/accountDeliveryDetail.util')
 const {
   findLatestContractDocument,
   buildAgreementPayload,
@@ -171,6 +176,7 @@ exports.listProjectPayments = async (projectId, query = {}) => {
   }
 
   for (const inv of paidCustomer) {
+    const docs = resolveCustomerInvoiceDocuments(inv)
     rows.push({
       paymentId: inv._id,
       date: inv.paidAt || inv.updatedAt,
@@ -180,6 +186,9 @@ exports.listProjectPayments = async (projectId, query = {}) => {
       invoiceNumber: inv.invoiceNumber,
       invoiceId: inv._id,
       source: 'customer_invoice',
+      documentUrl: docs.documentUrl,
+      pdfUrl: docs.pdfUrl,
+      documentType: docs.documentType,
     })
   }
 
@@ -237,75 +246,57 @@ exports.listProjectDeliveries = async (projectId, query = {}) => {
   }
 }
 
+const deliveryDetailPopulate = [
+  { path: 'leadId', select: 'projectName jobId location customerId', populate: { path: 'customerId', select: 'firstName lastName company email phone' } },
+  {
+    path: 'selectedCarrierBidId',
+    populate: { path: 'carrierId', select: 'carrierName contactName phone email' },
+  },
+]
+
+exports.getProjectFinalDelivery = async (projectId) => {
+  const { lead, error, code } = await resolveLeadOrError(projectId)
+  if (error) return { error, code }
+
+  const delivery = await Delivery.findOne({
+    leadId: lead._id,
+    selectedCarrierBidId: { $ne: null },
+    status: { $in: SELECTED_DELIVERY_STATUSES },
+  })
+    .sort({ updatedAt: -1 })
+    .populate(deliveryDetailPopulate)
+    .lean()
+
+  if (!delivery) {
+    return {
+      error: 'No confirmed delivery found for this project',
+      code: 404,
+    }
+  }
+
+  const leadDoc = delivery.leadId && typeof delivery.leadId === 'object' ? delivery.leadId : lead
+  const deliveryPayload = await formatAccountDeliveryDetail(delivery, {
+    _id: lead._id,
+    projectName: leadDoc.projectName || lead.projectName,
+    jobId: leadDoc.jobId || lead.jobId,
+    customerId: leadDoc.customerId || lead.customerId,
+  })
+
+  return { delivery: deliveryPayload, isFinal: true }
+}
+
 exports.getProjectDeliveryDetail = async (projectId, deliveryId) => {
   const { lead, error, code } = await resolveLeadOrError(projectId)
   if (error) return { error, code }
 
   const delivery = await Delivery.findOne({ _id: deliveryId, leadId: lead._id })
-    .populate('leadId', 'projectName jobId location customerId')
-    .populate({
-      path: 'selectedCarrierBidId',
-      populate: { path: 'carrierId', select: 'carrierName contactName phone email' },
-    })
+    .populate(deliveryDetailPopulate)
     .lean()
 
   if (!delivery) return { error: 'Delivery not found', code: 404 }
 
-  const ShipperRequest = require('../models/ShipperRequest')
-  const Vendor = require('../models/Vendor')
-  const latestShipper = await ShipperRequest.findOne({ leadId: lead._id, status: 'approved' })
-    .sort({ updatedAt: -1 })
-    .populate('vendorId', 'vendorName contactName phone email')
-    .lean()
-
-  const carrier = delivery.selectedCarrierBidId?.carrierId
-  const vendor = latestShipper?.vendorId
-
-  return {
-    delivery: {
-      deliveryId: delivery._id,
-      deliveryNumber: delivery.deliveryNumber,
-      status: delivery.status,
-      statusHistory: delivery.statusHistory || [],
-      project: {
-        leadId: lead._id,
-        projectName: lead.projectName,
-        jobId: lead.jobId,
-      },
-      overview: {
-        description: delivery.description || delivery.loadDescription || '',
-        materialCategory: delivery.materialType || delivery.metalType || '',
-        deliveryDate: delivery.deliveryDate,
-        timeWindow: delivery.timings || delivery.deliveryTime || '',
-        siteAddress: delivery.deliveryLocation || delivery.deliveryLocationData?.address || '',
-        pickupDate: delivery.pickupDate,
-      },
-      vendor: vendor
-        ? {
-            name: vendor.vendorName,
-            contactName: vendor.contactName || '',
-            phone: vendor.phone || '',
-            email: vendor.email || '',
-          }
-        : null,
-      deliveryCompany: carrier
-        ? {
-            name: carrier.carrierName,
-            contactName: carrier.contactName || '',
-            phone: carrier.phone || '',
-            email: carrier.email || '',
-          }
-        : null,
-      siteCoordination: {
-        siteInstructions: delivery.additionalNotes || delivery.specialRequirements || '',
-        requiredEquipment: delivery.loadingEquipment || '',
-        equipmentConfirmationStatus: delivery.equipmentConfirmed ? 'Confirmed' : 'Pending',
-        specialNotes: delivery.specialRequirements || '',
-      },
-      receivingPoc: delivery.receivingPoc || delivery.siteContact || '',
-      freightLoadId: delivery.freightLoadId || delivery.freightReference || null,
-    },
-  }
+  const deliveryPayload = await formatAccountDeliveryDetail(delivery, lead)
+  return { delivery: deliveryPayload }
 }
 
 exports.listProjectQuotations = async (projectId, query = {}) => {
@@ -351,50 +342,23 @@ exports.getProjectQuotationDetail = async (projectId, quotationId) => {
   }
 }
 
-exports.getProjectBom = async (projectId) => {
+exports.getProjectConsolidatedBom = async (projectId) => {
   const { lead, error, code } = await resolveLeadOrError(projectId)
   if (error) return { error, code }
 
-  const leadId = lead._id
-  const [bomJobMap, consolidated] = await Promise.all([
-    getLatestBomJobsByBuilding(leadId),
-    ConsolidatedBOM.findOne({ leadId }).lean(),
-  ])
-
-  const bomFiles = [...bomJobMap.values()]
-    .map((j) => ({
-      buildingId: j.buildingId,
-      buildingNumber: j.buildingNumber,
-      bomJobId: j._id,
-      fileName: j.fileName || '',
-      fileUrl: j.fileUrl || '',
-      fileFormat: j.fileFormat,
-      status: j.status,
-      uploadedAt: j.createdAt,
-      totalItems: j.totalItems ?? 0,
-      isConfirmed: j.isConfirmed === true,
-    }))
-    .sort((a, b) => a.buildingNumber - b.buildingNumber)
-
-  return {
-    leadId,
-    projectName: lead.projectName,
-    jobId: lead.jobId,
-    bomFiles,
-    consolidatedBOM: consolidated
-      ? {
-          _id: consolidated._id,
-          status: consolidated.status,
-          fileUrl: consolidated.fileUrl || '',
-          fileName: consolidated.fileName || '',
-          generatedAt: consolidated.createdAt,
-          itemCount: consolidated.itemCount ?? consolidated.items?.length ?? 0,
-          totalCost: consolidated.totalCost ?? null,
-        }
-      : null,
-    consolidatedUrlPath: `/api/plant/bom/projects/${leadId}/consolidated-url`,
+  const consolidated = await ConsolidatedBOM.findOne({ leadId: lead._id }).lean()
+  if (!consolidated) {
+    return {
+      error: 'Consolidated BOM not found for this project. Plant must generate it first.',
+      code: 404,
+    }
   }
+
+  return formatAccountConsolidatedBom({ lead, consolidated })
 }
+
+/** @deprecated Use getProjectConsolidatedBom — returns same consolidated detail (no per-building bomFiles). */
+exports.getProjectBom = async (projectId) => exports.getProjectConsolidatedBom(projectId)
 
 exports.getProjectAgreement = async (projectId) => {
   const { lead, error, code } = await resolveLeadOrError(projectId)
@@ -416,8 +380,10 @@ exports.buildActionLinks = (lead) => ({
   payments: `/api/account/projects/${lead._id}/payments/summary`,
   paymentRecords: `/api/account/projects/${lead._id}/payments/records`,
   deliveries: `/api/account/projects/${lead._id}/deliveries`,
+  delivery: `/api/account/projects/${lead._id}/delivery`,
   quotations: `/api/account/projects/${lead._id}/quotations`,
-  bom: `/api/account/projects/${lead._id}/bom`,
+  bom: `/api/account/projects/${lead._id}/bom/consolidated`,
+  bomLegacy: `/api/account/projects/${lead._id}/bom`,
   agreement: `/api/account/projects/${lead._id}/agreement`,
   projectInvoicesBreakdown: `/api/account/invoices/project/${lead._id}/breakdown`,
   legacy: {

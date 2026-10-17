@@ -586,7 +586,8 @@ exports.uploadProjectDrawings = asyncHandler(async (req, res) => {
       rejectionReason: '',
     }
 
-    building.drawings.push(newDrawing)
+    // Replace prior versions — only the latest upload is active (versionNumber still increments for audit).
+    building.drawings = [newDrawing]
     building.status = 'drawing_uploaded'
 
     uploaded.push({

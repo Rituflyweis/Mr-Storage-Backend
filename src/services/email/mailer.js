@@ -15,7 +15,8 @@ const {
   PLANT_LOGIN_URL,
   DB_BACKUP_NOTIFY_EMAIL,
 } = require("../../config/env");
-const { getInvoiceCompany } = require("../../config/invoiceCompany");
+const { getInvoiceCompany, getDefaultBankDetails } = require("../../config/invoiceCompany");
+const { formatAddressLines, formatBankDetailsLines } = require("../../utils/invoiceBilling.util");
 const { computeInvoiceDueDate } = require("../../utils/invoiceDueDate");
 const path = require("path");
 const fs = require("fs");
@@ -152,22 +153,36 @@ const formatMultilineAddressHtml = (lines = []) =>
     .map((line) => escapeHtml(line))
     .join("<br />");
 
-const buildInvoiceCompanyTemplateFields = () => {
+const buildInvoiceCompanyTemplateFields = (invoiceLike = null) => {
   const company = getInvoiceCompany();
+  const billingLines =
+    invoiceLike?.billingAddress && formatAddressLines(invoiceLike.billingAddress).length
+      ? formatAddressLines(invoiceLike.billingAddress)
+      : company.addressLines;
   const detailLines = [
-    formatMultilineAddressHtml(company.addressLines),
+    formatMultilineAddressHtml(billingLines),
     company.email ? escapeHtml(company.email) : "",
     company.website ? escapeHtml(company.website) : "",
   ].filter(Boolean);
+  const bankLines = invoiceLike?.bankDetails
+    ? formatBankDetailsLines(invoiceLike.bankDetails)
+    : formatBankDetailsLines(getDefaultBankDetails());
+  const bankHtml = bankLines.length
+    ? `<div style="margin-top:12px;font-size:12px;color:#444"><strong>Bank details</strong><br />${formatMultilineAddressHtml(bankLines)}</div>`
+    : "";
 
   const logoBlock = company.logoUrl
     ? `<img src="${escapeHtml(company.logoUrl)}" alt="${escapeHtml(company.name)}" class="logo" />`
     : getLogoHtml();
 
+  const companyName =
+    invoiceLike?.billingAddress?.companyName?.trim() || company.name;
+
   return {
     LOGO_BLOCK: logoBlock,
-    COMPANY_NAME: escapeHtml(company.name),
-    COMPANY_DETAILS_HTML: detailLines.join("<br />"),
+    COMPANY_NAME: escapeHtml(companyName),
+    COMPANY_DETAILS_HTML: detailLines.join("<br />") + bankHtml,
+    BANK_DETAILS_HTML: bankHtml,
   };
 };
 
@@ -542,10 +557,14 @@ const sendInvoice = async ({
     paymentSchedule,
     inv,
   );
+  const recipientLines = formatAddressLines(inv.recipientAddress)
+  const recipientHtml = recipientLines.length
+    ? formatMultilineAddressHtml(recipientLines)
+    : customerAddressHtml
   const html = fillTemplate(template, {
-    ...buildInvoiceCompanyTemplateFields(),
+    ...buildInvoiceCompanyTemplateFields(inv),
     CUSTOMER_NAME: escapeHtml(customerName),
-    CUSTOMER_ADDRESS_BLOCK: buildCustomerAddressBlock(customerAddressHtml),
+    CUSTOMER_ADDRESS_BLOCK: buildCustomerAddressBlock(recipientHtml),
     INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || "—"),
     DATE: formatInvoiceDate(inv.date),
     DUE_DATE: buildInvoiceDueDate(inv),
@@ -1371,11 +1390,56 @@ const sendDbBackupFailureNotification = async ({
   });
 };
 
+/** On-demand PDF for account/admin invoice download (same render as outbound email). */
+const generateInvoicePdfBuffer = async (invoice, customer, paymentSchedule = null) => {
+  const inv = invoice?.toObject ? invoice.toObject() : invoice
+  const customerName =
+    `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
+    customer?.firstName ||
+    'Customer'
+  const customerAddressHtml = buildCustomerBillToAddressHtml({
+    company: customer?.company,
+    location: customer?.location || '',
+  })
+  const recipientLines = formatAddressLines(inv.recipientAddress)
+  const recipientHtml = recipientLines.length
+    ? formatMultilineAddressHtml(recipientLines)
+    : customerAddressHtml
+  const template = loadTemplate('invoice')
+  const hasDeposit = inv.depositAmount != null && Number(inv.depositAmount) !== 0
+  const paymentScheduleSection = buildPaymentScheduleSection(paymentSchedule, inv)
+  const html = fillTemplate(template, {
+    ...buildInvoiceCompanyTemplateFields(inv),
+    CUSTOMER_NAME: escapeHtml(customerName),
+    CUSTOMER_ADDRESS_BLOCK: buildCustomerAddressBlock(recipientHtml),
+    INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || '—'),
+    DATE: formatInvoiceDate(inv.date),
+    DUE_DATE: buildInvoiceDueDate(inv),
+    PAYMENT_TERMS: buildInvoicePaymentTerms(inv),
+    DAYS_TO_PAY:
+      inv.daysToPay != null && inv.daysToPay !== '' ? String(inv.daysToPay) : '—',
+    PO_NUMBER: escapeHtml(inv.poNumber || '—'),
+    SUBTOTAL: formatInvoiceMoney(inv.subtotal),
+    MARKUP_TOTAL: formatInvoiceMoney(inv.markupTotal),
+    TAX: formatInvoiceMoney(inv.tax),
+    DISCOUNT: formatInvoiceMoney(inv.discount),
+    DEPOSIT_AMOUNT: formatInvoiceMoney(inv.depositAmount),
+    TOTAL_AMOUNT: formatInvoiceMoney(inv.totalAmount),
+    LINE_ITEMS: buildInvoiceLineItemsRows(inv.lineItems),
+    TOTALS_ROWS: buildInvoiceTotalsRows(inv),
+    DEPOSIT_NOTE: hasDeposit ? ' (deposit shown separately)' : '',
+    PAYMENT_SCHEDULE_SECTION: paymentScheduleSection,
+  })
+  const pdfDocument = buildInvoicePdfDocument(inv, customerName, paymentSchedule)
+  return generateInvoicePdf(html, pdfDocument)
+}
+
 module.exports = {
   isEmailConfigured,
   isSmtpConfigured,
   isEnquiryNotificationConfigured,
   buildCustomerBillToAddressHtml,
+  generateInvoicePdfBuffer,
   sendQuotation,
   sendInvoice,
   sendOtp,

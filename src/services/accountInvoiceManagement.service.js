@@ -7,6 +7,8 @@ const { buildDateFilter } = require('../utils/dateRange')
 const { buildPayableListRow, createPayableInvoice, populatePayableQuery } = require('../utils/payableInvoice.util')
 const { aggregateProjectExpensesForLead } = require('../utils/projectExpenseAggregate.util')
 const { marginPct } = require('../utils/profitLossPeriod.util')
+const { resolveCustomerInvoiceDocuments } = require('../utils/customerInvoiceDocument.util')
+const { pickBillingFieldsForListRow } = require('../utils/invoiceBilling.util')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 const LOW_MARGIN_PCT = 15
@@ -259,6 +261,7 @@ exports.listProjectRecords = async (query = {}) => {
       ? [cust.firstName, cust.lastName].filter(Boolean).join(' ') || cust.companyName || '—'
       : '—'
     const paid = inv.status === 'paid' ? inv.totalAmount : 0
+    const docs = resolveCustomerInvoiceDocuments(inv)
     return {
       invoiceId: inv._id,
       invoiceNumber: inv.invoiceNumber,
@@ -276,6 +279,10 @@ exports.listProjectRecords = async (query = {}) => {
       invoiceStatus: inv.status,
       paid: round2(paid),
       amountDue: round2(inv.status === 'paid' ? 0 : inv.totalAmount),
+      documentUrl: docs.documentUrl,
+      pdfUrl: docs.pdfUrl,
+      documentType: docs.documentType,
+      ...pickBillingFieldsForListRow(inv),
     }
   })
 
@@ -415,6 +422,9 @@ exports.createMiscellaneousInvoice = async (body, userId) => {
     createdBy: userId,
     initialPayableStatus: mapPaymentStatusToPayable(paymentStatus),
     invoiceNumber: invoiceNumber?.trim(),
+    billingAddress: body.billingAddress,
+    recipientAddress: body.recipientAddress,
+    bankDetails: body.bankDetails,
   })
 
   if (dueDate) {

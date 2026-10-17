@@ -26,6 +26,9 @@ exports.listPayments = asyncHandler(async (req, res) =>
 exports.listDeliveries = asyncHandler(async (req, res) =>
   handle(res, await svc.listProjectDeliveries(req.params.projectId, req.query))
 )
+exports.getFinalDelivery = asyncHandler(async (req, res) =>
+  handle(res, await svc.getProjectFinalDelivery(req.params.projectId))
+)
 exports.getDeliveryDetail = asyncHandler(async (req, res) =>
   handle(res, await svc.getProjectDeliveryDetail(req.params.projectId, req.params.deliveryId))
 )
@@ -38,6 +41,9 @@ exports.getQuotationDetail = asyncHandler(async (req, res) =>
 )
 
 exports.getBom = asyncHandler(async (req, res) => handle(res, await svc.getProjectBom(req.params.projectId)))
+exports.getConsolidatedBom = asyncHandler(async (req, res) =>
+  handle(res, await svc.getProjectConsolidatedBom(req.params.projectId))
+)
 exports.getAgreement = asyncHandler(async (req, res) =>
   handle(res, await svc.getProjectAgreement(req.params.projectId))
 )

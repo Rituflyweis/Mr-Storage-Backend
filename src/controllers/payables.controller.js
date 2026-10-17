@@ -13,6 +13,7 @@ const {
   enrichPayableForDetailResponse,
 } = require('../utils/payableInvoice.util')
 const { INVOICE_TYPES, INVOICE_CATEGORIES, PAYABLE_WORKFLOW_STATUSES } = require('../config/constants')
+const { applyInvoiceBillingFields } = require('../utils/invoiceBilling.util')
 
 const PAYABLE_TYPES = INVOICE_TYPES.filter((t) => t !== 'customer')
 
@@ -66,6 +67,9 @@ const createManualPayable = async (req, res, invoiceType) => {
     documentUrl,
     documentFileName,
     payeeName,
+    billingAddress,
+    recipientAddress,
+    bankDetails,
   } = req.body
 
   const lead = await Lead.findById(leadId)
@@ -97,11 +101,28 @@ const createManualPayable = async (req, res, invoiceType) => {
     source: 'admin_manual',
     createdBy: req.user._id,
     initialPayableStatus: 'pending_admin_approval',
+    billingAddress,
+    recipientAddress,
+    bankDetails,
   })
 
   const detail = await populatePayableQuery(Invoice.findById(invoice._id)).lean()
   return created(res, { invoice: detail }, 'Payable invoice submitted for admin approval')
 }
+
+exports.updatePayableBilling = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId)
+  const check = assertPayableInvoice(invoice)
+  if (check.error) return check.code === 404 ? notFound(res, check.error) : badRequest(res, check.error)
+  if (invoice.status === 'cancelled') return badRequest(res, 'Cancelled invoices cannot be edited')
+
+  applyInvoiceBillingFields(invoice, req.body)
+  await invoice.save()
+
+  const detail = await populatePayableQuery(Invoice.findById(invoice._id)).lean()
+  const payload = await enrichPayableForDetailResponse(detail)
+  return success(res, payload, 'Invoice billing details updated')
+})
 
 exports.createVendorPayable = asyncHandler((req, res) => createManualPayable(req, res, 'vendor'))
 exports.createFreightCarrierPayable = asyncHandler((req, res) => createManualPayable(req, res, 'freight_carrier'))

@@ -493,31 +493,27 @@ exports.getConstructionDeliveries = asyncHandler(async (req, res) => {
 
 // GET /deliveries/:deliveryId — delivery detail
 exports.getConstructionDeliveryDetail = asyncHandler(async (req, res) => {
+  const { formatAccountDeliveryDetail } = require('../../utils/accountDeliveryDetail.util')
   const delivery = await Delivery.findById(req.params.deliveryId)
-    .populate({ path: 'leadId', select: 'projectName jobId customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
-    .populate({ path: 'selectedCarrierBidId', select: 'carrierId', populate: { path: 'carrierId', select: 'carrierName contactName phone' } })
+    .populate({
+      path: 'leadId',
+      select: 'projectName jobId customerId location',
+      populate: { path: 'customerId', select: 'firstName lastName company email phone' },
+    })
+    .populate({
+      path: 'selectedCarrierBidId',
+      populate: { path: 'carrierId', select: 'carrierName contactName phone email' },
+    })
     .lean()
   if (!delivery) return notFound(res, 'Delivery not found')
 
-  return success(res, {
-    delivery: {
-      deliveryId: delivery._id,
-      deliveryNumber: delivery.deliveryNumber,
-      project: delivery.leadId ? { leadId: delivery.leadId._id, projectName: delivery.leadId.projectName, jobId: delivery.leadId.jobId } : null,
-      material: delivery.materialType || delivery.loadDescription || '',
-      description: delivery.description || '',
-      deliveryDate: delivery.deliveryDate,
-      timings: delivery.timings || '',
-      transporter: delivery.selectedCarrierBidId?.carrierId?.carrierName || '',
-      driver: delivery.selectedCarrierBidId?.carrierId?.contactName || '',
-      driverPhone: delivery.selectedCarrierBidId?.carrierId?.phone || '',
-      siteContact: delivery.receivingPoc || '',
-      deliveryLocation: delivery.deliveryLocation || '',
-      additionalNotes: delivery.additionalNotes || '',
-      status: delivery.status,
-      statusHistory: delivery.statusHistory || [],
-    },
-  })
+  const lead = delivery.leadId
+  if (lead && typeof lead === 'object') {
+    const detail = await formatAccountDeliveryDetail(delivery, lead)
+    return success(res, { delivery: detail })
+  }
+
+  return success(res, { delivery: { deliveryId: delivery._id, deliveryNumber: delivery.deliveryNumber } })
 })
 
 // GET /deliveries/export — "Export" button on the All Deliveries screen

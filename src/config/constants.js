@@ -186,6 +186,7 @@ const AUDIT_ACTIONS = {
   INVOICE_REJECTED: "invoice.rejected",
   INVOICE_SENT: "invoice.sent",
   INVOICE_PAID: "invoice.paid",
+  INVOICE_FOLLOWUP_SENT: "invoice.follow_up_sent",
   INVOICE_EDITED: "invoice.edited",
   PAYMENT_PROOF_SUBMITTED: "invoice.payment_proof_submitted",
   PAYMENT_PROOF_VERIFIED: "invoice.payment_proof_verified",

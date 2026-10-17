@@ -10,6 +10,8 @@
     "backup:db": "node scripts/run-db-backup.js",
     "test:project-expenses": "node scripts/test-combined-project-expenses.js",
     "test:live-server": "node scripts/test-live-local-server.js",
+    "test:margin-analysis": "node scripts/test-margin-analysis-local.js",
+    "test:cross-panel": "node scripts/test-cross-panel-changes-local.js",
     "postinstall": "npx puppeteer browsers install chrome || true"
   },
   "dependencies": {

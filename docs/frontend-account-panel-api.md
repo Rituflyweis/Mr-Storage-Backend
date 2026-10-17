@@ -35,6 +35,7 @@ Errors: `{ "success": false, "message": "…" }` with HTTP 4xx/5xx.
 | **Customers** — list + Today/Week/Month stats | **Done** | `/api/account/customers/stats`, `/customers` |
 | **Customers** — detail (KPIs, profitability, revenue, projects, invoices) | **Done** | `GET /api/account/customers/:id` |
 | **Customers** — mark invoice paid | **Done** | `PUT /api/account/invoices/:id/mark-paid` |
+| **Project invoices** — follow up (overdue) | **Done** | `POST /api/account/invoices/:id/follow-up` — see [`frontend-account-project-invoices-actions-api-2026-10-17.md`](./frontend-account-project-invoices-actions-api-2026-10-17.md) |
 | **Customer → Project detail** | **Done** | `GET /api/account/projects/:projectId` |
 | **Project sub-pages** — Invoices, Payments, Deliveries, Quotation, BOM, Agreement | **Done** | `GET /api/account/projects/:projectId/{invoices,payments,deliveries,quotations,bom,agreement}/*` — see [`frontend-account-project-detail-api.md`](./frontend-account-project-detail-api.md) |
 | **Payments → All Payments** | **Done** | `/api/account/payments/*` |
@@ -1257,6 +1258,8 @@ GET /api/account/projects?search=&status=payment_done&startDate=&endDate=
 
 ## 8. Analytics — Income / Expense (project wise)
 
+**Full field-level spec (query params, types, business rules, example JSON):** [`frontend-account-analytics-project-wise-spec.md`](./frontend-account-analytics-project-wise-spec.md)
+
 Sidebar: **Income (Project wise)**, **Expense (Project wise)**, **Profit/Loss Analysis** (P&L uses the same combined expense rules as below).
 
 ### 8.1 Project-wise expense
@@ -1378,6 +1381,8 @@ Legacy aliases (still available): `GET /api/account/financial/freight-costs`, `l
 
 ## 10. Invoice Management (`/api/account/invoice-management`)
 
+**Full spec (Project + Carrier tabs with examples):** [`frontend-account-invoice-management-api-2026-10-17.md`](./frontend-account-invoice-management-api-2026-10-17.md)
+
 Sidebar: **Project Invoices**, **Vendor Invoices**, **Carrier Invoices**, **Miscellaneous Inv**, **Quotation-wise Profit / Loss**.
 
 Shared: `GET /invoice-management/filters` (projects, status enums, misc categories).
@@ -1386,7 +1391,7 @@ Shared: `GET /invoice-management/filters` (projects, status enums, misc categori
 
 | Figma tab | Summary KPIs | Table | Export | Upload / create |
 |-----------|--------------|-------|--------|-----------------|
-| **Project Invoices** | `GET …/project/summary` — `totalInvoices`, `invoiceAmount`, `totalBilled`, `totalReceived`, `outstandingAmount`, `overdueAmount` | `GET …/project/records` → `records[]` | `GET …/project/export` | Customer AR: use existing invoice flows; mark paid → `PUT /api/account/invoices/:id/mark-paid` |
+| **Project Invoices** | `GET …/project/summary` — `totalInvoices`, `invoiceAmount`, `totalBilled`, `totalReceived`, `outstandingAmount`, `overdueAmount` | `GET …/project/records` → `records[]` | `GET …/project/export` | Mark paid → `PUT /api/account/invoices/:id/mark-paid`; follow up → `POST …/follow-up` — [`frontend-account-project-invoices-actions-api-2026-10-17.md`](./frontend-account-project-invoices-actions-api-2026-10-17.md) |
 | **Vendor Invoices** | `GET …/vendor/summary` — `totalInvoices`, `invoiceAmount`, `pendingVerification`, `pendingPaymentAmount` | `GET …/vendor/records` — `verification`, `payment` labels | `GET …/vendor/export` | Payables from plant/admin; account marks paid → `PUT /api/account/payables/:invoiceId/mark-paid` |
 | **Carrier Invoices** | `GET …/carrier/summary` | `GET …/carrier/records` | `GET …/carrier/export` | Same payables API |
 | **Miscellaneous Inv** | `GET …/miscellaneous/summary` — `totalInvoices`, `totalInvoiceAmount`, `pendingPaymentAmount`, `overdueAmount` | `GET …/miscellaneous/records` — `serviceProvider`, `category`, `approval`, `payment` | `GET …/miscellaneous/export` | `POST …/miscellaneous` (see body below) |
@@ -1504,6 +1509,7 @@ Still available for tax filing, expense CRUD, etc. Prefer **`/api/account/financ
 | GET | `/api/account/customers/:customerId` |
 | GET | `/api/account/projects/:projectId` |
 | PUT | `/api/account/invoices/:invoiceId/mark-paid` |
+| POST | `/api/account/invoices/:invoiceId/follow-up` |
 | GET | `/api/account/payments/stats` |
 | GET | `/api/account/payments/orders` |
 | GET | `/api/account/payments/orders/export` |

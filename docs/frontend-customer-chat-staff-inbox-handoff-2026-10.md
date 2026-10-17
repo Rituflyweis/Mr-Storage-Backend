@@ -13,7 +13,53 @@
 
 ---
 
-## 1. What changed (backend behavior)
+## 1. What changed from earlier
+
+This section is the **delta vs prior production** and vs older frontend notes. REST paths and list/message JSON shapes are **unchanged**; routing, sockets, and notifications are not.
+
+### 1.1 Before (legacy behavior)
+
+| Topic | Earlier |
+|-------|---------|
+| **Customer → project / finance / construction tab** (`POST /api/customer/chat/:channel/messages`) | Saved on the lead **`Message`** collection only. **Did not** appear in Global Communication → **Customers** (`customer-direct-chat` thread). Assigned sales often saw an **empty** Customers list even after the customer chatted. |
+| **Customer → widget / socket** (`customer_message` on `/chat`) | Fired mainly on **`lead:{leadId}`** for users who joined lead chat. **No** mirror into direct-chat; staff inbox list did not update. |
+| **Customer → direct chat** (`POST /api/customer/chat/direct/messages`) | Direct-chat path worked more often; this fix mainly closes the **project-channel / widget** gap. |
+| **In-app notifications** (`type: chat`) | Not reliably created for project-tab or widget customer posts; **admins** were often missing alerts. |
+| **Real-time sidebar** | **`customer_direct_chat_updated`** was treated as **admin-only** in [`frontend-global-chat-ui-staff-and-customer.md`](./frontend-global-chat-ui-staff-and-customer.md). Sales relied on polling conversations. |
+| **Sales Customers list** | Not consistently limited to customers whose **non-terminated** lead has **`assignedSales`** = logged-in sales user. |
+| **Staff reading project-channel history** | Still only via lead **`Message`** APIs / lead detail chat — **not** added in this change (see §7 “Do not rely on”). |
+
+### 1.2 After (current backend, `b882a9c`+)
+
+| Topic | Now |
+|-------|-----|
+| **Project tabs + widget** | Each customer post is **mirrored** into **`CustomerDirectChat`** (same store as direct chat). Assigned sales + **all admins** get notifications and socket events. |
+| **Sales inbox** | `GET …/customer-direct-chat/conversations` returns customers only when a **non-terminated** lead has **`assignedSales`** = that rep. |
+| **Admin inbox** | Sees **all** customers with direct-chat activity, including mirrored project/widget lines (even if sales is unassigned). |
+| **Sockets** | **`customer_direct_chat_updated`** and **`customer_direct_message`** should refresh **sales and admin** Customers UI (not admin-only). **`new_customer_message`** / **`new_message`** still drive lead-detail chat. |
+| **Mirrored line labels** | Non-`project` channels may prefix content with **`[Finance]`** / **`[Construction]`** in the direct-chat thread (see §3.2). Optional payload: **`mirroredFrom`**, **`leadId`**, **`channel`**. |
+
+### 1.3 Frontend work (vs what you built before)
+
+| Action | Required? |
+|--------|-----------|
+| Change customer send URLs or body | **No** |
+| Change staff REST paths or response parsing | **No** |
+| Listen for **`customer_direct_chat_updated`** on **sales** Global Communication (not only admin) | **Yes** — refresh Customers sidebar |
+| Listen for **`customer_direct_message`** when thread open | **Yes** (sales + admin) |
+| Treat empty **sales** Customers list as possible **unassigned lead** (`assignedSales: null`) | **Yes** — assign in admin, not a missing API |
+| Use **`GET …/customer-direct-chat/...`** for Global Communication thread | **Yes** — do not expect project **`Message`** REST alone to populate Customers tab |
+
+### 1.4 Unchanged (no migration)
+
+- Staff endpoints under `/api/admin|sales|plant/customer-direct-chat/…`
+- Customer endpoints in §6
+- **`join_customer_direct`**, **`join_lead_chat`**, `/admin` namespace auth
+- Conversation list object shape (`customerId`, `unreadCount`, `lastMessage`, …)
+
+---
+
+## 2. Backend behavior by channel (reference)
 
 When a **customer** sends a message, staff should now get:
 
@@ -29,7 +75,7 @@ When a **customer** sends a message, staff should now get:
 
 ---
 
-## 2. Staff — REST (Global Communication → Customers)
+## 3. Staff — REST (Global Communication → Customers)
 
 Use the same paths as before; behavior is enriched, not renamed.
 
@@ -41,7 +87,7 @@ Use the same paths as before; behavior is enriched, not renamed.
 
 **Auth:** `Authorization: Bearer <staff_token>`
 
-### 2.1 List conversations
+### 3.1 List conversations
 
 ```http
 GET /api/sales/customer-direct-chat/conversations?search=daniel&page=1&limit=20
@@ -73,7 +119,7 @@ Authorization: Bearer <token>
 **Sales:** Row appears only if that `customerId` has a lead assigned to **this** sales user.  
 **Admin:** All customers with at least one direct-chat row (including **mirrored** project/widget messages).
 
-### 2.2 Load thread
+### 3.2 Load thread
 
 ```http
 GET /api/sales/customer-direct-chat/67a1b2c3d4e5f6789012345a/messages?page=1&limit=50
@@ -94,7 +140,7 @@ Mirrored project messages may be prefixed with `[Finance]` / `[Construction]` wh
 
 Use `leadId` to deep-link to project detail if needed; thread UI can stay on direct-chat messages.
 
-### 2.3 Reply
+### 3.3 Reply
 
 ```http
 POST /api/sales/customer-direct-chat/67a1b2c3d4e5f6789012345a/messages
@@ -108,11 +154,11 @@ Customer sees this on **`GET /api/customer/chat/direct/messages`** (not on proje
 
 ---
 
-## 3. Staff — Socket.IO (`/admin` namespace)
+## 4. Staff — Socket.IO (`/admin` namespace)
 
 Connect with staff JWT (same as existing lead chat).
 
-### 3.1 Rooms / joins (existing)
+### 4.1 Rooms / joins (existing)
 
 | Action | Event | When |
 |--------|--------|------|
@@ -120,7 +166,7 @@ Connect with staff JWT (same as existing lead chat).
 | Lead pre-sales thread | `join_lead_chat` `{ leadId }` | Lead detail chat panel |
 | Auto | On connect, server joins `user:{userId}` | Required for per-user pushes |
 
-### 3.2 Events to handle (Customers tab + badges)
+### 4.2 Events to handle (Customers tab + badges)
 
 | Event | Payload (summary) | UI action |
 |-------|-------------------|-----------|
@@ -155,7 +201,7 @@ Connect with staff JWT (same as existing lead chat).
 
 ---
 
-## 4. In-app notifications
+## 5. In-app notifications
 
 New customer messages create notifications:
 
@@ -175,7 +221,7 @@ Poll or subscribe: `GET /api/notifications?type=chat` (staff notifications API f
 
 ---
 
-## 5. Customer app — send paths (unchanged URLs)
+## 6. Customer app — send paths (unchanged URLs)
 
 Frontend does **not** need new customer endpoints. Any of these now fan out to staff:
 
@@ -189,7 +235,7 @@ Ensure **`leadId`** on project tabs matches the project the customer is viewing.
 
 ---
 
-## 6. Frontend checklist
+## 7. Frontend checklist
 
 ### Global Communication → **Customers** (sales + admin)
 
@@ -220,7 +266,7 @@ Ensure **`leadId`** on project tabs matches the project the customer is viewing.
 
 ---
 
-## 7. Quick QA script
+## 8. Quick QA script
 
 1. **Admin:** Assign customer’s lead to sales user **Sales One** (`assignedSales` set, `isHandedToSales: true` recommended).
 2. **Customer:** Send `POST /api/customer/chat/project/messages` with that `leadId`.
@@ -232,7 +278,7 @@ Repeat with `POST /api/customer/chat/direct/messages` — same staff visibility 
 
 ---
 
-## 8. Deployment note
+## 9. Deployment note
 
 Requires backend deploy including **`customerLeadChatStaff.service.js`** and updates to **`customerDirectChat.service.js`**, **`processCustomerMessage.js`**, **`customerPortal.controller.js`**.
 

@@ -18,6 +18,7 @@ const logisticsNavCtrl = require('../../controllers/construction/logisticsNav.co
 router.use('/chat', require('../admin/chat.routes'))
 
 const validate = require('../../middleware/validate')
+const { param } = require('express-validator')
 const { businessUnitQueryValidator } = require('../../utils/businessUnit')
 const businessUnitQuery = [businessUnitQueryValidator(), validate]
 // Dashboard
@@ -28,6 +29,12 @@ router.get('/dashboard/filters', dashCtrl.getDashboardFilters)
 // Projects & Calendar (static routes before param routes)
 router.get('/projects', businessUnitQuery, projectCtrl.getProjects)
 router.get('/projects/calendar', businessUnitQuery, projectCtrl.getProjectCalendar)
+router.get(
+  '/projects/:leadId/delivery',
+  [param('leadId').isMongoId(), validate],
+  deliveryCtrl.getProjectFinalDelivery
+)
+router.use('/customers', require('../common/customerDocumentsRead.routes'))
 router.use('/projects', require('./projectManufacturing.routes'))
 router.get('/projects/:leadId/phases', taskCtrl.getProjectPhases)
 router.get('/projects/:leadId/progress', taskCtrl.getProjectProgress)
