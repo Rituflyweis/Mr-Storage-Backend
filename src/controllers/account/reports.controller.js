@@ -5,6 +5,8 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const analyticsReports = require('../../services/accountAnalyticsReports.service')
+const analyticsProjectDetail = require('../../services/accountAnalyticsProjectDetail.service')
+const { created, notFound, badRequest } = require('../../utils/apiResponse')
 const {
   aggregateProjectExpensesByLeadMap,
   aggregateEmailBidExpenses,
@@ -138,5 +140,62 @@ exports.getProjectWiseExpense = asyncHandler(async (req, res) => {
 
 exports.getProjectWiseIncome = asyncHandler(async (req, res) => {
   const data = await analyticsReports.getProjectWiseIncome(req.query)
+  return success(res, data)
+})
+
+exports.getProjectWiseIncomeDetail = asyncHandler(async (req, res) => {
+  const data = await analyticsProjectDetail.getProjectWiseIncomeDetail(req.params.leadId, req.query)
+  if (data.error) {
+    if (data.code === 404) return notFound(res, data.error)
+    return badRequest(res, data.error)
+  }
+  return success(res, data)
+})
+
+exports.getProjectWiseIncomeTransaction = asyncHandler(async (req, res) => {
+  const data = await analyticsProjectDetail.getProjectWiseIncomeTransaction(
+    req.params.leadId,
+    req.params.transactionId
+  )
+  if (data.error) {
+    if (data.code === 404) return notFound(res, data.error)
+    return badRequest(res, data.error)
+  }
+  return success(res, data)
+})
+
+exports.createProjectReceivedIncome = asyncHandler(async (req, res) => {
+  const data = await analyticsProjectDetail.createProjectReceivedIncome(
+    req.params.leadId,
+    req.body,
+    req.user._id
+  )
+  if (data.error) {
+    if (data.code === 404) return notFound(res, data.error)
+    if (data.code === 409) return badRequest(res, data.error)
+    return badRequest(res, data.error)
+  }
+  return created(res, data, 'Income recorded')
+})
+
+exports.getProjectWiseExpenseDetail = asyncHandler(async (req, res) => {
+  const data = await analyticsProjectDetail.getProjectWiseExpenseDetail(req.params.leadId, req.query)
+  if (data.error) {
+    if (data.code === 404) return notFound(res, data.error)
+    return badRequest(res, data.error)
+  }
+  return success(res, data)
+})
+
+exports.getProjectWiseExpenseRecord = asyncHandler(async (req, res) => {
+  const data = await analyticsProjectDetail.getProjectWiseExpenseRecord(
+    req.params.leadId,
+    req.params.recordId
+  )
+  if (data.error) {
+    if (data.code === 404) return notFound(res, data.error)
+    if (data.code === 400) return badRequest(res, data.error)
+    return badRequest(res, data.error)
+  }
   return success(res, data)
 })

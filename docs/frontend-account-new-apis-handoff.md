@@ -11,6 +11,7 @@ This document lists **account-panel routes only** (`/api/account/...`) with **co
 | Topic | Document |
 |-------|----------|
 | Full account screen matrix & budget vs actual | [`frontend-account-panel-api.md`](./frontend-account-panel-api.md) |
+| **Payments — `quoteOrderId` on POST `/payments/orders`** | [`frontend-account-payments-orders-quote-order-id-handoff-2026-10-17.md`](./frontend-account-payments-orders-quote-order-id-handoff-2026-10-17.md) |
 | Project sub-page field reference | [`frontend-account-project-detail-api.md`](./frontend-account-project-detail-api.md) |
 | **Admin — set project budget & `customLines[]`** | [`frontend-admin-project-budget-custom-lines-api.md`](./frontend-admin-project-budget-custom-lines-api.md) |
 
@@ -933,6 +934,8 @@ Content-Type: application/json
 ## 4. Analytics reports
 
 **Full API spec (all keys, types, date-filter rules, related P&L routes):** [`frontend-account-analytics-project-wise-spec.md`](./frontend-account-analytics-project-wise-spec.md)
+
+**Project drill-down (income / expense detail pages, tabs, Add Received modal):** [`frontend-account-analytics-project-detail-api.md`](./frontend-account-analytics-project-detail-api.md)
 
 Base: `/api/account/reports`
 
