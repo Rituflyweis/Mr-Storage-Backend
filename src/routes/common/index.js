@@ -13,6 +13,10 @@ const notifGuard = [
   roleGuard(["admin", "sales", "account", "plant", "construction"]),
 ];
 const guard = [verifyToken, roleGuard(["admin", "sales"])];
+const quotationReadGuard = [
+  verifyToken,
+  roleGuard(["admin", "sales", "account"]),
+];
 const lookupGuard = [verifyToken, roleGuard(["admin", "sales", "plant"])];
 const uploadGuard = [
   verifyToken,
@@ -67,6 +71,16 @@ router.post(
 );
 
 // Resource routes
+router.get(
+  "/quotations/:quotationId/pdf",
+  ...quotationReadGuard,
+  quotationCtrl.downloadQuotationPdf,
+);
+router.get(
+  "/quotations/:quotationId",
+  ...quotationReadGuard,
+  quotationCtrl.getQuotation,
+);
 router.use("/quotations", ...guard, require("./quotation.routes"));
 router.use("/invoices", ...guard, require("./invoice.routes"));
 router.use("/email-send-jobs", ...guard, require("./emailSendJob.routes"));

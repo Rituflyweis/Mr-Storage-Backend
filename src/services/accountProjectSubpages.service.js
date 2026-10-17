@@ -338,7 +338,8 @@ exports.getProjectQuotationDetail = async (projectId, quotationId) => {
     quotation,
     leadId: lead._id,
     projectName: lead.projectName,
-    downloadPath: `/api/account/projects/${lead._id}/quotations/${quotation._id}/pdf`,
+    downloadPath: `/api/quotations/${quotation._id}/pdf`,
+    downloadPathAccount: `/api/account/projects/${lead._id}/quotations/${quotation._id}/pdf`,
   }
 }
 

@@ -1,6 +1,7 @@
 const asyncHandler = require('../../utils/asyncHandler')
 const { success, notFound } = require('../../utils/apiResponse')
 const svc = require('../../services/accountProjectSubpages.service')
+const quotationCtrl = require('../common/quotation.controller')
 
 const handle = async (res, result) => {
   if (result?.error) {
@@ -39,6 +40,17 @@ exports.listQuotations = asyncHandler(async (req, res) =>
 exports.getQuotationDetail = asyncHandler(async (req, res) =>
   handle(res, await svc.getProjectQuotationDetail(req.params.projectId, req.params.quotationId))
 )
+
+exports.downloadQuotationPdf = asyncHandler(async (req, res) => {
+  const check = await svc.getProjectQuotationDetail(
+    req.params.projectId,
+    req.params.quotationId
+  )
+  if (check?.error) {
+    return check.code === 404 ? notFound(res, check.error) : notFound(res, check.error)
+  }
+  return quotationCtrl.downloadQuotationPdf(req, res)
+})
 
 exports.getBom = asyncHandler(async (req, res) => handle(res, await svc.getProjectBom(req.params.projectId)))
 exports.getConsolidatedBom = asyncHandler(async (req, res) =>

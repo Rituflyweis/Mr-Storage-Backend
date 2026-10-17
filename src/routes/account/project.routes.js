@@ -33,6 +33,12 @@ router.get(
   validate,
   sub.getQuotationDetail
 )
+router.get(
+  '/:projectId/quotations/:quotationId/pdf',
+  [param('projectId').notEmpty().trim(), param('quotationId').isMongoId()],
+  validate,
+  sub.downloadQuotationPdf
+)
 
 router.get('/:projectId/bom/consolidated', projectIdParam, validate, sub.getConsolidatedBom)
 router.get('/:projectId/bom', projectIdParam, validate, sub.getBom)
