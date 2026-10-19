@@ -61,7 +61,11 @@ app.use('/sales',         require('./src/routes/sales/index'))
 app.use('/api/account',       require('./src/routes/account/index'))
 app.use('/api/plant',         require('./src/routes/plant/index'))
 app.use('/api/construction',  require('./src/routes/construction/index'))
-app.use('/api',         require('./src/routes/common/index'))
+// Shared staff routes (invoices, quotations, upload, …). Mounted at /api/* and
+// /api/common/* — frontend handoffs use both; canonical paths remain /api/invoices etc.
+const commonRoutes = require('./src/routes/common/index')
+app.use('/api/common', commonRoutes)
+app.use('/api', commonRoutes)
 app.use('/api/v1',      require('./src/routes/material/index'))
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
