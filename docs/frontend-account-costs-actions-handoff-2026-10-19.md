@@ -119,24 +119,88 @@ Authorization: Bearer <token>
       "amount": 4500,
       "downloadUrl": ""
     },
+    "costComparisonSummary": {
+      "awardedBid": 4500,
+      "invoicedAmount": 4500,
+      "variance": 0
+    },
     "approvalId": "64approval...",
-    "canMarkPaid": true
+    "actions": {
+      "canApprove": true,
+      "canReject": true,
+      "canMarkPaid": true,
+      "canDownloadInvoice": true
+    }
   }
 }
 ```
 
+Use `data.actions.*` to show/hide **Approve**, **Reject**, **Mark paid**, **Download invoice** in the modal.
+
 **Alias:** `GET /api/account/costs/freight/records/:bidId/detail`
 
-### 2.2 Mark Paid (modal action)
+### 2.2 Approve invoice (purple button)
+
+```http
+PATCH /api/account/costs/freight/64freightbid001/approve
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Body (optional):** `{ "reviewNotes": "Approved for payment" }`
+
+**Response `200`:** Updated detail; `invoiceStatus` → `"Approved"`, carrier `paymentStatus` → `"Invoiced"`, `actions.canApprove` / `canReject` → `false`.
+
+**Alias:** `PATCH /api/account/costs/freight/records/:bidId/approve`
+
+### 2.3 Reject invoice (grey button)
+
+```http
+PATCH /api/account/costs/freight/64freightbid001/reject
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Body (optional):** `{ "reviewNotes": "Amount mismatch" }`
+
+**Response `200`:** Updated detail; `paymentStatus` → `"Rejected"`.
+
+**Alias:** `PATCH /api/account/costs/freight/records/:bidId/reject`
+
+### 2.4 Mark paid (green button)
 
 ```http
 PATCH /api/account/costs/freight/64freightbid001/mark-paid
 Authorization: Bearer <token>
 ```
 
-**Response `200`:** Same object shape as detail, with `paymentStatus` / `canMarkPaid: false` after pay. Creates or updates `PaymentApproval` linked to the bid.
+**Response `200`:** Updated detail; `paymentStatus` → `"Paid"`. Auto-approves if still under review (except when rejected).
 
 **Alias:** `PATCH /api/account/costs/freight/records/:bidId/mark-paid`
+
+### 2.5 Download invoice
+
+```http
+GET /api/account/costs/freight/64freightbid001/invoice-download
+Authorization: Bearer <token>
+```
+
+**Response:** `302` redirect to S3/https when `Invoice.documentUrl` is set; otherwise `200`:
+
+```json
+{
+  "success": true,
+  "message": "Success",
+  "data": {
+    "downloadUrl": "https://...",
+    "invoiceNumber": "INV-45892"
+  }
+}
+```
+
+**404** if no `payableInvoiceId` on the bid or no file URL.
+
+**Alias:** `GET /api/account/costs/freight/records/:bidId/invoice-download`
 
 ---
 
@@ -189,7 +253,12 @@ Authorization: Bearer <token>
       "amount": 4500,
       "downloadUrl": ""
     },
-    "canMarkPaid": true,
+    "actions": {
+      "canApprove": true,
+      "canReject": true,
+      "canMarkPaid": false,
+      "canDownloadInvoice": false
+    },
     "approvalStatus": "Pending"
   }
 }
@@ -197,16 +266,18 @@ Authorization: Bearer <token>
 
 **Aliases:** `GET /logistics/records/:id/detail`
 
-### 3.2 Mark Paid
+### 3.2 Approve / Reject / Mark paid / Download
 
-```http
-PATCH /api/account/costs/logistics/64approval001/mark-paid
-Authorization: Bearer <token>
-```
+Same pattern as freight (`:id` = approval id):
 
-**Response `200`:** Updated detail payload; `paymentStatus` → `"Paid"`, `canMarkPaid` → `false`.
+| Button | Method | Path |
+|--------|--------|------|
+| Approve | `PATCH` | `/api/account/costs/logistics/:id/approve` |
+| Reject | `PATCH` | `/api/account/costs/logistics/:id/reject` |
+| Mark paid | `PATCH` | `/api/account/costs/logistics/:id/mark-paid` |
+| Download invoice | `GET` | `/api/account/costs/logistics/:id/invoice-download` |
 
-**Alias:** `PATCH /api/account/costs/logistics/records/:id/mark-paid`
+Optional body on approve/reject: `{ "reviewNotes": "..." }`.
 
 ---
 
@@ -256,9 +327,12 @@ Authorization: Bearer <token>
 |--------|---------|--------|------|
 | Manpower | Mark Paid | `PATCH` | `/costs/manpower/:id/mark-paid` |
 | Freight | Open modal | `GET` | `/costs/freight/:bidId/detail` |
+| Freight | Approve | `PATCH` | `/costs/freight/:bidId/approve` |
+| Freight | Reject | `PATCH` | `/costs/freight/:bidId/reject` |
 | Freight | Mark Paid | `PATCH` | `/costs/freight/:bidId/mark-paid` |
+| Freight | Download invoice | `GET` | `/costs/freight/:bidId/invoice-download` |
 | Logistics | Open modal | `GET` | `/costs/logistics/:id/detail` |
-| Logistics | Mark Paid | `PATCH` | `/costs/logistics/:id/mark-paid` |
+| Logistics | Approve / Reject / Mark paid / Download | `PATCH` / `GET` | `/costs/logistics/:id/approve`, `/reject`, `/mark-paid`, `/invoice-download` |
 | Rent | Mark Paid | `PATCH` | `/costs/rent/:id/mark-paid` |
 
 After mark-paid, refresh the list row or merge `data` into local state.

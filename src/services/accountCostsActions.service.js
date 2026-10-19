@@ -12,9 +12,44 @@ const formatMoney = (n) => round2(n)
 
 const paymentStatusLabel = (approval) => {
   if (!approval) return 'Pending'
-  if (approval.paidAt || approval.status === 'approved') return 'Paid'
+  if (approval.paidAt) return 'Paid'
+  if (approval.status === 'approved') return 'Invoiced'
+  if (approval.status === 'rejected') return 'Rejected'
   if (approval.status === 'under_review') return 'Under Review'
   return 'Pending'
+}
+
+const invoiceReviewStatus = (approval, invoice) => {
+  if (approval?.status === 'rejected') return 'Rejected'
+  if (approval?.paidAt || invoice?.status === 'paid') return 'Paid'
+  if (approval?.status === 'approved') return 'Approved'
+  if (approval?.status === 'under_review') return 'Under Review'
+  return 'Pending'
+}
+
+const ensureFreightApproval = async (bidId, userId) => {
+  const bid = await FreightBid.findOne({ _id: bidId, status: 'selected' })
+    .populate('carrierId', 'carrierName')
+    .populate('deliveryId')
+  if (!bid) return null
+
+  let approval = await PaymentApproval.findOne({ linkedType: 'freight_bid', linkedId: bidId })
+  if (!approval) {
+    approval = await PaymentApproval.create({
+      paymentId: await generatePaymentApprovalId(),
+      payee: bid.carrierId?.carrierName || 'Carrier',
+      payeeType: 'carrier',
+      category: 'other_expenses',
+      amount: Number(bid.quotedAmount) || 0,
+      requestedBy: userId,
+      leadId: bid.deliveryId?.leadId || null,
+      linkedType: 'freight_bid',
+      linkedId: bidId,
+      invoiceNumber: `FR-${String(bidId).slice(-5).toUpperCase()}`,
+      status: 'under_review',
+    })
+  }
+  return { bid, approval }
 }
 
 const deliveryDocumentLinks = (delivery = {}) => {
@@ -84,12 +119,13 @@ exports.getFreightCostDetail = async (bidId) => {
   let invoice = null
   if (bid.payableInvoiceId) {
     invoice = await Invoice.findById(bid.payableInvoiceId)
-      .select('invoiceNumber date dueDate status pdfUrl documentUrl totalAmount')
+      .select('invoiceNumber date dueDate status documentUrl totalAmount')
       .lean()
   }
 
   const payLabel = paymentStatusLabel(approval)
-  const invoiceStatus = invoice?.status === 'paid' ? 'Paid' : approval?.status === 'under_review' ? 'Under Review' : payLabel === 'Paid' ? 'Invoiced' : 'Pending'
+  const invoiceStatus = invoiceReviewStatus(approval, invoice)
+  const invoicedAmount = invoice ? round2(invoice.totalAmount) : awarded
 
   return {
     bidId: bid._id,
@@ -114,6 +150,11 @@ exports.getFreightCostDetail = async (bidId) => {
       amount: round2(b.quotedAmount),
       selected: String(b._id) === String(bid._id),
     })),
+    costComparisonSummary: {
+      awardedBid: awarded,
+      invoicedAmount,
+      variance: round2(invoicedAmount - awarded),
+    },
     projectInformation: {
       projectName: delivery?.leadId?.projectName || '',
       leadId: delivery?.leadId?._id || null,
@@ -139,7 +180,7 @@ exports.getFreightCostDetail = async (bidId) => {
           paymentDueDate: invoice.dueDate,
           invoiceStatus,
           amount: round2(invoice.totalAmount),
-          downloadUrl: invoice.pdfUrl || invoice.documentUrl || '',
+          downloadUrl: invoice.documentUrl || '',
         }
       : approval
         ? {
@@ -152,44 +193,74 @@ exports.getFreightCostDetail = async (bidId) => {
           }
         : null,
     approvalId: approval?._id || null,
-    canMarkPaid: payLabel !== 'Paid',
+    actions: {
+      canApprove: !approval || ['pending', 'under_review'].includes(approval.status),
+      canReject: !approval || ['pending', 'under_review'].includes(approval.status),
+      canMarkPaid: !approval?.paidAt && approval?.status !== 'rejected',
+      canDownloadInvoice: Boolean(invoice?.documentUrl),
+    },
   }
 }
 
-exports.markFreightPaid = async (bidId, userId) => {
-  const bid = await FreightBid.findOne({ _id: bidId, status: 'selected' })
-    .populate('carrierId', 'carrierName')
-    .populate('deliveryId')
-    .lean()
-  if (!bid) return null
+exports.approveFreightInvoice = async (bidId, userId, { reviewNotes = '' } = {}) => {
+  const ctx = await ensureFreightApproval(bidId, userId)
+  if (!ctx) return null
+  const { approval } = ctx
+  if (approval.status === 'rejected') return { error: 'already_rejected' }
+  if (approval.paidAt) return { error: 'already_paid' }
 
-  let approval = await PaymentApproval.findOne({ linkedType: 'freight_bid', linkedId: bidId })
-  if (!approval) {
-    approval = await PaymentApproval.create({
-      paymentId: await generatePaymentApprovalId(),
-      payee: bid.carrierId?.carrierName || 'Carrier',
-      payeeType: 'carrier',
-      category: 'other_expenses',
-      amount: Number(bid.quotedAmount) || 0,
-      requestedBy: userId,
-      leadId: bid.deliveryId?.leadId || null,
-      linkedType: 'freight_bid',
-      linkedId: bidId,
-      invoiceNumber: `FR-${String(bidId).slice(-5).toUpperCase()}`,
-      status: 'approved',
-      paidAt: new Date(),
-      reviewedBy: userId,
-      reviewedAt: new Date(),
-    })
-  } else {
+  approval.status = 'approved'
+  approval.reviewedBy = userId
+  approval.reviewedAt = new Date()
+  if (reviewNotes) approval.reviewNotes = String(reviewNotes).trim()
+  await approval.save()
+  return exports.getFreightCostDetail(bidId)
+}
+
+exports.rejectFreightInvoice = async (bidId, userId, { reviewNotes = '' } = {}) => {
+  const ctx = await ensureFreightApproval(bidId, userId)
+  if (!ctx) return null
+  const { approval } = ctx
+  if (approval.paidAt) return { error: 'already_paid' }
+
+  approval.status = 'rejected'
+  approval.reviewedBy = userId
+  approval.reviewedAt = new Date()
+  approval.reviewNotes = String(reviewNotes || 'Rejected from freight cost detail').trim()
+  await approval.save()
+  return exports.getFreightCostDetail(bidId)
+}
+
+exports.markFreightPaid = async (bidId, userId) => {
+  const ctx = await ensureFreightApproval(bidId, userId)
+  if (!ctx) return null
+  const { approval } = ctx
+  if (approval.status === 'rejected') return { error: 'rejected' }
+
+  if (approval.status !== 'approved') {
     approval.status = 'approved'
-    approval.paidAt = new Date()
-    approval.reviewedBy = userId
-    approval.reviewedAt = new Date()
-    await approval.save()
   }
+  approval.paidAt = new Date()
+  approval.reviewedBy = userId
+  approval.reviewedAt = new Date()
+  await approval.save()
 
   return exports.getFreightCostDetail(bidId)
+}
+
+exports.resolveFreightInvoiceDownload = async (bidId) => {
+  const bid = await FreightBid.findOne({ _id: bidId, status: 'selected' }).lean()
+  if (!bid) return null
+  if (!bid.payableInvoiceId) return { error: 'no_invoice' }
+
+  const invoice = await Invoice.findById(bid.payableInvoiceId)
+    .select('invoiceNumber documentUrl')
+    .lean()
+  if (!invoice) return { error: 'no_invoice' }
+
+  const url = invoice.documentUrl || ''
+  if (!url) return { error: 'no_file' }
+  return { url, invoiceNumber: invoice.invoiceNumber, invoiceId: invoice._id }
 }
 
 exports.getLogisticsCostDetail = async (approvalId) => {
@@ -212,8 +283,7 @@ exports.getLogisticsCostDetail = async (approvalId) => {
 
   const amount = round2(approval.amount)
   const payLabel = paymentStatusLabel(approval)
-  const invoiceStatus =
-    approval.status === 'under_review' ? 'Under Review' : payLabel === 'Paid' ? 'Invoiced' : 'Pending'
+  const invoiceStatus = invoiceReviewStatus(approval, null)
 
   return {
     id: approval._id,
@@ -247,9 +317,47 @@ exports.getLogisticsCostDetail = async (approvalId) => {
       amount,
       downloadUrl: '',
     },
-    canMarkPaid: payLabel !== 'Paid',
-    approvalStatus: approval.status === 'approved' ? 'Approved' : 'Pending',
+    actions: {
+      canApprove: ['pending', 'under_review'].includes(approval.status),
+      canReject: ['pending', 'under_review'].includes(approval.status),
+      canMarkPaid: approval.status === 'approved' && !approval.paidAt,
+      canDownloadInvoice: false,
+    },
+    approvalStatus: approval.status === 'approved' ? 'Approved' : approval.status === 'rejected' ? 'Rejected' : 'Pending',
   }
+}
+
+exports.approveLogisticsInvoice = async (approvalId, userId, { reviewNotes = '' } = {}) => {
+  const approval = await PaymentApproval.findOne({
+    _id: approvalId,
+    payeeType: { $in: ['carrier', 'delivery_company'] },
+  })
+  if (!approval) return null
+  if (approval.status === 'rejected') return { error: 'already_rejected' }
+  if (approval.paidAt) return { error: 'already_paid' }
+
+  approval.status = 'approved'
+  approval.reviewedBy = userId
+  approval.reviewedAt = new Date()
+  if (reviewNotes) approval.reviewNotes = String(reviewNotes).trim()
+  await approval.save()
+  return exports.getLogisticsCostDetail(approvalId)
+}
+
+exports.rejectLogisticsInvoice = async (approvalId, userId, { reviewNotes = '' } = {}) => {
+  const approval = await PaymentApproval.findOne({
+    _id: approvalId,
+    payeeType: { $in: ['carrier', 'delivery_company'] },
+  })
+  if (!approval) return null
+  if (approval.paidAt) return { error: 'already_paid' }
+
+  approval.status = 'rejected'
+  approval.reviewedBy = userId
+  approval.reviewedAt = new Date()
+  approval.reviewNotes = String(reviewNotes || 'Rejected from logistics cost detail').trim()
+  await approval.save()
+  return exports.getLogisticsCostDetail(approvalId)
 }
 
 exports.markLogisticsPaid = async (approvalId, userId) => {
@@ -258,12 +366,25 @@ exports.markLogisticsPaid = async (approvalId, userId) => {
     payeeType: { $in: ['carrier', 'delivery_company'] },
   })
   if (!approval) return null
+  if (approval.status === 'rejected') return { error: 'rejected' }
 
-  approval.status = 'approved'
+  if (approval.status !== 'approved') approval.status = 'approved'
   approval.paidAt = new Date()
   approval.reviewedBy = userId
   approval.reviewedAt = new Date()
   await approval.save()
 
   return exports.getLogisticsCostDetail(approvalId)
+}
+
+exports.resolveLogisticsInvoiceDownload = async (approvalId) => {
+  const approval = await PaymentApproval.findOne({
+    _id: approvalId,
+    payeeType: { $in: ['carrier', 'delivery_company'] },
+  }).lean()
+  if (!approval) return null
+  if (approval.linkedType !== 'freight_bid' || !approval.linkedId) {
+    return { error: 'no_invoice' }
+  }
+  return exports.resolveFreightInvoiceDownload(approval.linkedId)
 }

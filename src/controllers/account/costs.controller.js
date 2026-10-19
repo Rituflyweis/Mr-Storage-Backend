@@ -80,7 +80,29 @@ exports.getFreightCostDetail = asyncHandler(async (req, res) => {
 exports.markFreightPaid = asyncHandler(async (req, res) => {
   const detail = await costActions.markFreightPaid(req.params.id, req.user._id)
   if (!detail) return notFound(res, 'Freight record not found')
+  if (detail.error === 'rejected') return badRequest(res, 'Cannot pay a rejected freight invoice')
   return success(res, detail, 'Freight marked as paid')
+})
+exports.approveFreightInvoice = asyncHandler(async (req, res) => {
+  const detail = await costActions.approveFreightInvoice(req.params.id, req.user._id, req.body)
+  if (!detail) return notFound(res, 'Freight record not found')
+  if (detail.error === 'already_rejected') return badRequest(res, 'Invoice was rejected')
+  if (detail.error === 'already_paid') return badRequest(res, 'Already marked as paid')
+  return success(res, detail, 'Freight invoice approved')
+})
+exports.rejectFreightInvoice = asyncHandler(async (req, res) => {
+  const detail = await costActions.rejectFreightInvoice(req.params.id, req.user._id, req.body)
+  if (!detail) return notFound(res, 'Freight record not found')
+  if (detail.error === 'already_paid') return badRequest(res, 'Already marked as paid')
+  return success(res, detail, 'Freight invoice rejected')
+})
+exports.downloadFreightInvoice = asyncHandler(async (req, res) => {
+  const resolved = await costActions.resolveFreightInvoiceDownload(req.params.id)
+  if (!resolved) return notFound(res, 'Freight record not found')
+  if (resolved.error === 'no_invoice') return notFound(res, 'No invoice linked to this freight bid')
+  if (resolved.error === 'no_file') return notFound(res, 'Invoice file not available')
+  if (resolved.url.startsWith('http')) return res.redirect(resolved.url)
+  return success(res, { downloadUrl: resolved.url, invoiceNumber: resolved.invoiceNumber })
 })
 
 exports.getLogisticsCostDetail = asyncHandler(async (req, res) => {
@@ -91,7 +113,29 @@ exports.getLogisticsCostDetail = asyncHandler(async (req, res) => {
 exports.markLogisticsPaid = asyncHandler(async (req, res) => {
   const detail = await costActions.markLogisticsPaid(req.params.id, req.user._id)
   if (!detail) return notFound(res, 'Logistics record not found')
+  if (detail.error === 'rejected') return badRequest(res, 'Cannot pay a rejected logistics invoice')
   return success(res, detail, 'Logistics payment marked as paid')
+})
+exports.approveLogisticsInvoice = asyncHandler(async (req, res) => {
+  const detail = await costActions.approveLogisticsInvoice(req.params.id, req.user._id, req.body)
+  if (!detail) return notFound(res, 'Logistics record not found')
+  if (detail.error === 'already_rejected') return badRequest(res, 'Invoice was rejected')
+  if (detail.error === 'already_paid') return badRequest(res, 'Already marked as paid')
+  return success(res, detail, 'Logistics invoice approved')
+})
+exports.rejectLogisticsInvoice = asyncHandler(async (req, res) => {
+  const detail = await costActions.rejectLogisticsInvoice(req.params.id, req.user._id, req.body)
+  if (!detail) return notFound(res, 'Logistics record not found')
+  if (detail.error === 'already_paid') return badRequest(res, 'Already marked as paid')
+  return success(res, detail, 'Logistics invoice rejected')
+})
+exports.downloadLogisticsInvoice = asyncHandler(async (req, res) => {
+  const resolved = await costActions.resolveLogisticsInvoiceDownload(req.params.id)
+  if (!resolved) return notFound(res, 'Logistics record not found')
+  if (resolved.error === 'no_invoice') return notFound(res, 'No invoice linked to this logistics record')
+  if (resolved.error === 'no_file') return notFound(res, 'Invoice file not available')
+  if (resolved.url.startsWith('http')) return res.redirect(resolved.url)
+  return success(res, { downloadUrl: resolved.url, invoiceNumber: resolved.invoiceNumber })
 })
 
 exports.getMiscellaneousSummary = asyncHandler(async (req, res) => success(res, await costs.getMiscellaneousSummary(req.query)))
