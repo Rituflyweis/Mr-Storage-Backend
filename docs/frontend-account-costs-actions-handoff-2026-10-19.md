@@ -204,11 +204,12 @@ Authorization: Bearer <token>
 
 ---
 
-## 3. Logistics — Detail modal & Mark Paid
+## 3. Logistics — Detail modal (Figma parity with freight)
 
-**List row id:** `rows[].id` or `approvalId` (`PaymentApproval` `_id`).
+**List row id:** `rows[].id` or `approvalId` (`PaymentApproval` `_id`).  
+**Header:** bind `loadId` + `deliveryRef` / `deliveryId` from detail (same as list `loadId` + `deliveryRef`).
 
-### 3.1 Detail
+### 3.1 Detail (eye icon → modal)
 
 ```http
 GET /api/account/costs/logistics/64approval001/detail
@@ -223,13 +224,17 @@ Authorization: Bearer <token>
   "message": "Success",
   "data": {
     "id": "64approval001",
-    "loadId": "PR-2026-00042",
+    "approvalId": "64approval001",
+    "freightBidId": "64freightbid001",
+    "loadId": "TRX-9876",
+    "deliveryRef": "DEL-1235",
     "deliveryId": "DEL-1235",
     "deliveryMongoId": "64del...",
     "totalLogisticsCost": 4500,
     "totalLogisticsCostFormatted": 4500,
     "invoiceStatus": "Under Review",
     "paymentStatus": "Pending",
+    "status": "Under Review",
     "projectInformation": {
       "projectName": "ABC Logistics Warehouse",
       "leadId": "64lead...",
@@ -239,45 +244,91 @@ Authorization: Bearer <token>
     "carrierInformation": {
       "carrier": "FastFreight Logistics",
       "logisticCost": 4500,
-      "paymentStatus": "Pending"
+      "paymentStatus": "Invoiced"
     },
     "deliveryLink": {
       "deliveryStatus": "delivered",
-      "documents": []
+      "documents": [
+        { "label": "Proof of Delivery (POD)", "url": "https://...", "type": "pod" },
+        { "label": "Delivery Receipt", "url": "https://...", "type": "attachment" },
+        { "label": "Bill of Lading", "url": "https://...", "type": "attachment" }
+      ]
+    },
+    "costComparisonSummary": {
+      "awardedBid": 4500,
+      "invoicedAmount": 4500,
+      "variance": 0
     },
     "invoiceDetails": {
+      "invoiceId": "64inv...",
       "invoiceNumber": "INV-45892",
-      "invoiceDate": "2026-03-20T00:00:00.000Z",
+      "invoiceDate": "2026-03-25T00:00:00.000Z",
       "paymentDueDate": "2026-04-01T00:00:00.000Z",
       "invoiceStatus": "Under Review",
       "amount": 4500,
-      "downloadUrl": ""
+      "downloadUrl": "https://..."
     },
     "actions": {
       "canApprove": true,
       "canReject": true,
-      "canMarkPaid": false,
-      "canDownloadInvoice": false
+      "canMarkPaid": true,
+      "canDownloadInvoice": true
     },
     "approvalStatus": "Pending"
   }
 }
 ```
 
-**Aliases:** `GET /logistics/records/:id/detail`
+**UI mapping**
 
-### 3.2 Approve / Reject / Mark paid / Download
+| Figma block | API field |
+|-------------|-----------|
+| Top green card — total + invoice/payment status | `totalLogisticsCost`, `invoiceStatus`, `paymentStatus` |
+| Header Load ID / Delivery ID | `loadId`, `deliveryRef` |
+| Project / Carrier / Delivery link columns | `projectInformation`, `carrierInformation`, `deliveryLink.documents` |
+| Invoice Details box | `invoiceDetails` |
+| Footer **Download Invoice** | `GET …/invoice-download` when `actions.canDownloadInvoice` |
+| Optional Approve / Reject / Mark paid (same as freight invoice row) | `PATCH …/approve`, `/reject`, `/mark-paid` via `actions.*` |
 
-Same pattern as freight (`:id` = approval id):
+**Alias:** `GET /api/account/costs/logistics/records/:id/detail`
 
-| Button | Method | Path |
-|--------|--------|------|
-| Approve | `PATCH` | `/api/account/costs/logistics/:id/approve` |
-| Reject | `PATCH` | `/api/account/costs/logistics/:id/reject` |
-| Mark paid | `PATCH` | `/api/account/costs/logistics/:id/mark-paid` |
-| Download invoice | `GET` | `/api/account/costs/logistics/:id/invoice-download` |
+### 3.2 Approve invoice
 
-Optional body on approve/reject: `{ "reviewNotes": "..." }`.
+```http
+PATCH /api/account/costs/logistics/64approval001/approve
+Authorization: Bearer <token>
+```
+
+Optional body: `{ "reviewNotes": "Approved" }`. Returns updated detail; carrier `paymentStatus` → `"Invoiced"`.
+
+### 3.3 Reject invoice
+
+```http
+PATCH /api/account/costs/logistics/64approval001/reject
+Authorization: Bearer <token>
+```
+
+Optional body: `{ "reviewNotes": "Disputed amount" }`.
+
+### 3.4 Mark paid
+
+```http
+PATCH /api/account/costs/logistics/64approval001/mark-paid
+Authorization: Bearer <token>
+```
+
+Returns detail with `paymentStatus` → `"Paid"`.
+
+### 3.5 Download invoice (footer blue button)
+
+```http
+GET /api/account/costs/logistics/64approval001/invoice-download
+Authorization: Bearer <token>
+```
+
+`302` to `Invoice.documentUrl` when linked via freight bid / delivery; else `404` if no file.
+
+**Aliases:** `/logistics/records/:id/approve`, `/reject`, `/mark-paid`, `/invoice-download`
 
 ---
 

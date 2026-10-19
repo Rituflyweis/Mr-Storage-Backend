@@ -589,14 +589,16 @@ exports.listLogisticsRecords = async (query) => {
   const mapped = rows.map((r) => ({
     id: r._id,
     approvalId: r._id,
+    loadId: r.paymentId,
     deliveryId: r.invoiceNumber || r.paymentId,
+    deliveryRef: r.invoiceNumber || '',
     deliveryCompany: r.payee,
     project: r.leadId?.projectName || '',
     finalAmount: round2(r.amount),
     date: r.createdAt,
-    approvalStatus: r.status === 'approved' ? 'Approved' : 'Pending',
-    paymentStatus: r.paidAt || r.status === 'approved' ? 'Paid' : 'Unpaid',
-    status: r.paidAt || r.status === 'approved' ? 'Paid' : 'Unpaid',
+    approvalStatus: r.status === 'approved' ? 'Approved' : r.status === 'under_review' ? 'Under Review' : 'Pending',
+    paymentStatus: r.paidAt ? 'Paid' : r.status === 'approved' ? 'Invoiced' : 'Pending',
+    status: r.paidAt ? 'Paid' : r.status === 'approved' ? 'Invoiced' : 'Pending',
   }))
   return { rows: mapped, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 } }
 }
