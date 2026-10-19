@@ -1,5 +1,7 @@
 # Cross-panel: plant drawings, customer documents, construction delivery, admin lead alerts
 
+> **Superseded (2026-10-19):** Use **[`frontend-cross-panel-drawings-customer-docs-full-handoff-2026-10-19.md`](./frontend-cross-panel-drawings-customer-docs-full-handoff-2026-10-19.md)** — includes **sales** delivery routes (`GET /api/sales/construction/projects/:leadId/delivery`), correct customer document enums, and full panel matrix. Customer documents detail: [`frontend-customer-documents-full-api-handoff-2026-10-19.md`](./frontend-customer-documents-full-api-handoff-2026-10-19.md).
+
 **Date:** 2026-10-17  
 **Base URL:** `/api`  
 **Auth:** Bearer JWT (panel role as noted)

@@ -14,6 +14,7 @@ const {
   listConstructionTasks,
   TASK_LIST_POPULATE,
 } = require('../../services/constructionTasksQuery.service')
+const accountProjectSubpages = require('../../services/accountProjectSubpages.service')
 
 const PROJECT_SELECT = 'projectName jobId businessUnit location lifecycleStatus endDate plannedStartDate'
 
@@ -138,4 +139,33 @@ exports.getConstructionTaskById = asyncHandler(async (req, res) => {
     task: enrichConstructionTaskForCard(task),
     scope: 'sales_assigned_construction',
   })
+})
+
+const handleProjectSubpageResult = (res, result) => {
+  if (result?.error) {
+    if (result.code === 404) return notFound(res, result.error)
+    return badRequest(res, result.error)
+  }
+  return success(res, result)
+}
+
+/** Figma delivery detail — latest confirmed delivery (same payload as account/construction). */
+exports.getProjectFinalDelivery = asyncHandler(async (req, res) => {
+  const guard = await loadSalesConstructionProject(req.params.leadId, req.user._id)
+  if (guard.status) return respondSalesConstructionGuard(res, guard)
+
+  const result = await accountProjectSubpages.getProjectFinalDelivery(req.params.leadId)
+  return handleProjectSubpageResult(res, result)
+})
+
+/** Delivery detail when project id + delivery id are known (read-only). */
+exports.getProjectDeliveryDetail = asyncHandler(async (req, res) => {
+  const guard = await loadSalesConstructionProject(req.params.leadId, req.user._id)
+  if (guard.status) return respondSalesConstructionGuard(res, guard)
+
+  const result = await accountProjectSubpages.getProjectDeliveryDetail(
+    req.params.leadId,
+    req.params.deliveryId
+  )
+  return handleProjectSubpageResult(res, result)
 })

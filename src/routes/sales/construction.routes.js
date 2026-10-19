@@ -18,6 +18,18 @@ const taskListQuery = [
 router.get('/projects/calendar', businessUnitQuery, ctrl.getProjectCalendar)
 router.get('/projects', businessUnitQuery, ctrl.getProjects)
 router.get(
+  '/projects/:leadId/delivery',
+  [param('leadId').isMongoId()],
+  validate,
+  ctrl.getProjectFinalDelivery
+)
+router.get(
+  '/projects/:leadId/deliveries/:deliveryId',
+  [param('leadId').isMongoId(), param('deliveryId').isMongoId()],
+  validate,
+  ctrl.getProjectDeliveryDetail
+)
+router.get(
   '/projects/:leadId/construction-tasks',
   [param('leadId').isMongoId(), ...taskListQuery],
   ctrl.getProjectConstructionTasks
