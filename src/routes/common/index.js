@@ -82,6 +82,12 @@ router.get(
   quotationCtrl.getQuotation,
 );
 router.use("/quotations", ...guard, require("./quotation.routes"));
+// Account panel invoice forms — defaults must be readable by `account` (not only admin/sales).
+router.get(
+  "/invoices/billing-defaults",
+  ...quotationReadGuard,
+  invoiceCtrl.getInvoiceBillingDefaults,
+);
 router.use("/invoices", ...guard, require("./invoice.routes"));
 router.use("/email-send-jobs", ...guard, require("./emailSendJob.routes"));
 router.use("/payment-schedules", ...guard, require("./payment.routes"));

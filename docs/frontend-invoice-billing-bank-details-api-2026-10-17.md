@@ -50,7 +50,37 @@
 
 | Action | Method | Path |
 |--------|--------|------|
-| Defaults for forms | GET | `/api/common/invoices/billing-defaults` |
+| Defaults for forms | GET | `/api/common/invoices/billing-defaults` (roles: **admin**, **sales**, **account**) |
+| Same (account base) | GET | `/api/account/invoices/billing-defaults` |
+
+**Example — billing defaults**
+
+```http
+GET /api/common/invoices/billing-defaults
+Authorization: Bearer <token>
+```
+
+```json
+{
+  "success": true,
+  "message": "Success",
+  "data": {
+    "billingAddress": {
+      "companyName": "STEEL BUILDING DEPOT",
+      "line1": "1851 Madison Ave Suite 300",
+      "line2": "",
+      "city": "Council Bluffs",
+      "state": "IA",
+      "postalCode": "51503",
+      "country": "United States",
+      "lines": ["1851 Madison Ave Suite 300", "Council Bluffs, IA", "51503", "United States"]
+    },
+    "bankDetails": { "bankName": "", "accountName": "", "accountNumber": "", "routingNumber": "" },
+    "recipientAddress": { "companyName": "", "line1": "", "city": "", "state": "", "postalCode": "", "country": "", "lines": [] }
+  }
+}
+```
+
 | Create | POST | `/api/common/leads/:leadId/invoices` |
 | Update | PUT | `/api/common/invoices/:invoiceId` |
 | Detail | GET | `/api/common/invoices/:invoiceId` |

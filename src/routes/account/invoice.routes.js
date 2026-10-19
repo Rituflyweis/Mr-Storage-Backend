@@ -1,10 +1,12 @@
 const router = require('express').Router()
 const { param, body } = require('express-validator')
 const ctrl = require('../../controllers/account/invoice.controller')
+const commonInvoiceCtrl = require('../../controllers/common/invoice.controller')
 const validate = require('../../middleware/validate')
 
 const invoiceIdParam = param('invoiceId').isMongoId()
 
+router.get('/billing-defaults', commonInvoiceCtrl.getInvoiceBillingDefaults)
 router.get('/',                          ctrl.getInvoices)
 router.get('/analytics',                 ctrl.getAnalytics)
 router.get('/project/:leadId/breakdown', ctrl.getProjectBreakdown)
