@@ -1,5 +1,6 @@
 const costs = require('../../services/accountCostsPanel.service')
 const salaryPayslip = require('../../services/accountSalaryPayslip.service')
+const costActions = require('../../services/accountCostsActions.service')
 const smdtCosts = require('../../services/accountSmdtItemCost.service')
 const generateExpenseId = require('../../utils/generateExpenseId')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
@@ -65,6 +66,33 @@ exports.deleteManpowerEntry = asyncHandler(async (req, res) => {
   if (!ok) return notFound(res, 'Manpower entry not found')
   return success(res, {}, 'Deleted')
 })
+exports.markManpowerPaid = asyncHandler(async (req, res) => {
+  const row = await costActions.markManpowerPaid(req.params.id)
+  if (!row) return notFound(res, 'Manpower entry not found')
+  return success(res, row, 'Marked as paid')
+})
+
+exports.getFreightCostDetail = asyncHandler(async (req, res) => {
+  const detail = await costActions.getFreightCostDetail(req.params.id)
+  if (!detail) return notFound(res, 'Freight record not found')
+  return success(res, detail)
+})
+exports.markFreightPaid = asyncHandler(async (req, res) => {
+  const detail = await costActions.markFreightPaid(req.params.id, req.user._id)
+  if (!detail) return notFound(res, 'Freight record not found')
+  return success(res, detail, 'Freight marked as paid')
+})
+
+exports.getLogisticsCostDetail = asyncHandler(async (req, res) => {
+  const detail = await costActions.getLogisticsCostDetail(req.params.id)
+  if (!detail) return notFound(res, 'Logistics record not found')
+  return success(res, detail)
+})
+exports.markLogisticsPaid = asyncHandler(async (req, res) => {
+  const detail = await costActions.markLogisticsPaid(req.params.id, req.user._id)
+  if (!detail) return notFound(res, 'Logistics record not found')
+  return success(res, detail, 'Logistics payment marked as paid')
+})
 
 exports.getMiscellaneousSummary = asyncHandler(async (req, res) => success(res, await costs.getMiscellaneousSummary(req.query)))
 exports.getMiscellaneousOverviewChart = asyncHandler(async (req, res) =>
@@ -101,6 +129,11 @@ exports.listVarianceDetails = asyncHandler(async (req, res) => success(res, awai
 exports.getRentSummary = asyncHandler(async (req, res) => success(res, await costs.getRentSummary()))
 exports.listRentRecords = asyncHandler(async (req, res) => success(res, await costs.listRentRecords(req.query)))
 exports.createRentEntry = withGen(costs.createRentEntry)
+exports.markRentPaid = asyncHandler(async (req, res) => {
+  const row = await costActions.markRentPaid(req.params.id)
+  if (!row) return notFound(res, 'Rent entry not found')
+  return success(res, row, 'Marked as paid')
+})
 
 exports.getFutureSummary = asyncHandler(async (req, res) => success(res, await costs.getFutureSummary()))
 exports.listFutureRecords = asyncHandler(async (req, res) => success(res, await costs.listFutureRecords(req.query)))

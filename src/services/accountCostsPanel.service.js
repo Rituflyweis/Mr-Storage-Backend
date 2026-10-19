@@ -239,6 +239,13 @@ exports.listManpowerRecords = async (query) => {
   }
 }
 
+exports.getManpowerRecordById = async (id) => {
+  const expense = await Expense.findOne({ _id: id, costPanelType: 'manpower', isActive: true })
+    .populate('leadId', 'projectName jobId')
+    .lean()
+  return expense ? mapManpowerRow(expense) : null
+}
+
 exports.createManpowerEntry = async (body, userId, generateExpenseId) => {
   const hours = Number(body.workingHours) || 0
   const ot = Number(body.otHours) || 0
@@ -537,6 +544,7 @@ exports.listFreightRecords = async (query) => {
       date: b.selectedAt,
       cost: round2(b.quotedAmount),
       approvalStatus: st === 'approved' ? 'Approved' : st ? 'Pending' : 'Pending',
+      paymentStatus: st === 'approved' ? 'Paid' : 'Unpaid',
       source: 'email_freight_bid',
     }
   })
@@ -580,12 +588,15 @@ exports.listLogisticsRecords = async (query) => {
   ])
   const mapped = rows.map((r) => ({
     id: r._id,
+    approvalId: r._id,
     deliveryId: r.invoiceNumber || r.paymentId,
     deliveryCompany: r.payee,
     project: r.leadId?.projectName || '',
     finalAmount: round2(r.amount),
     date: r.createdAt,
     approvalStatus: r.status === 'approved' ? 'Approved' : 'Pending',
+    paymentStatus: r.paidAt || r.status === 'approved' ? 'Paid' : 'Unpaid',
+    status: r.paidAt || r.status === 'approved' ? 'Paid' : 'Unpaid',
   }))
   return { rows: mapped, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 } }
 }
@@ -769,6 +780,25 @@ exports.getRentSummary = async () => {
   return { totalRentCost: round2(total), paidRent: round2(paid), pendingRent: round2(total - paid) }
 }
 
+const mapRentRow = (e) => ({
+  id: e._id,
+  expenseId: e.expenseId,
+  property: e.metadata?.propertyName || e.description,
+  type: e.metadata?.propertyType || '',
+  location: e.metadata?.location || '',
+  landlord: e.metadata?.landlord || '',
+  monthlyRent: round2(e.metadata?.monthlyRent ?? e.amount),
+  amount: round2(e.amount),
+  date: e.date,
+  dueDate: e.metadata?.dueDate || e.date,
+  rentPeriod: e.metadata?.periodLabel || '',
+  leaseEnd: e.metadata?.leaseEnd || null,
+  daysRemaining: e.metadata?.daysRemaining ?? null,
+  status: e.status === 'paid' ? 'Paid' : e.metadata?.scheduleStatus || 'Upcoming',
+  paymentStatus: e.status,
+  project: e.leadId?.projectName || '',
+})
+
 exports.listRentRecords = async (query) => {
   const { page, limit, skip } = paginate(query)
   const filter = panelBaseFilter('rent', query)
@@ -777,16 +807,16 @@ exports.listRentRecords = async (query) => {
     Expense.countDocuments(filter),
   ])
   return {
-    rows: rows.map((e) => ({
-      id: e._id,
-      property: e.metadata?.propertyName || e.description,
-      amount: round2(e.amount),
-      date: e.date,
-      status: e.status,
-      project: e.leadId?.projectName || '',
-    })),
+    rows: rows.map(mapRentRow),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
   }
+}
+
+exports.getRentRecordById = async (id) => {
+  const expense = await Expense.findOne({ _id: id, costPanelType: 'rent', isActive: true })
+    .populate('leadId', 'projectName')
+    .lean()
+  return expense ? mapRentRow(expense) : null
 }
 
 exports.createRentEntry = async (body, userId, generateExpenseId) => {

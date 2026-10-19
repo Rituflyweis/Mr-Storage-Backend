@@ -31,6 +31,13 @@ router.post(
 )
 router.put('/manpower/records/:id', mongoId, validate, ctrl.updateManpowerEntry)
 router.delete('/manpower/records/:id', mongoId, validate, ctrl.deleteManpowerEntry)
+router.patch('/manpower/records/:id/mark-paid', mongoId, validate, ctrl.markManpowerPaid)
+router.patch('/manpower/:id/mark-paid', mongoId, validate, ctrl.markManpowerPaid)
+
+router.get('/freight/records/:id/detail', mongoId, validate, ctrl.getFreightCostDetail)
+router.get('/freight/:id/detail', mongoId, validate, ctrl.getFreightCostDetail)
+router.patch('/freight/records/:id/mark-paid', mongoId, validate, ctrl.markFreightPaid)
+router.patch('/freight/:id/mark-paid', mongoId, validate, ctrl.markFreightPaid)
 
 router.get('/miscellaneous/summary', ctrl.getMiscellaneousSummary)
 router.get('/miscellaneous/overview-chart', ctrl.getMiscellaneousOverviewChart)
@@ -58,6 +65,10 @@ router.post(
   validate,
   ctrl.createLogisticsCost
 )
+router.get('/logistics/records/:id/detail', mongoId, validate, ctrl.getLogisticsCostDetail)
+router.get('/logistics/:id/detail', mongoId, validate, ctrl.getLogisticsCostDetail)
+router.patch('/logistics/records/:id/mark-paid', mongoId, validate, ctrl.markLogisticsPaid)
+router.patch('/logistics/:id/mark-paid', mongoId, validate, ctrl.markLogisticsPaid)
 
 router.get('/variance/summary', ctrl.getVarianceSummary)
 router.get('/variance/alerts', ctrl.getVarianceAlerts)
@@ -67,6 +78,8 @@ router.get('/variance/details', ctrl.listVarianceDetails)
 router.get('/rent/summary', ctrl.getRentSummary)
 router.get('/rent/records', ctrl.listRentRecords)
 router.post('/rent/records', [body('amount').isNumeric(), body('date').isISO8601()], validate, ctrl.createRentEntry)
+router.patch('/rent/records/:id/mark-paid', mongoId, validate, ctrl.markRentPaid)
+router.patch('/rent/:id/mark-paid', mongoId, validate, ctrl.markRentPaid)
 
 router.get('/future/summary', ctrl.getFutureSummary)
 router.get('/future/records', ctrl.listFutureRecords)
