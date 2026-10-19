@@ -29,16 +29,6 @@ router.put('/:invoiceId/approve', [body('note').optional().isString()], validate
 router.put('/:invoiceId/reject', [body('reason').optional().isString(), body('note').optional().isString()], validate, ctrl.rejectInvoice)
 router.post('/:invoiceId/send', outboundSendBodyValidators, validate, ctrl.sendInvoice)
 router.post('/:invoiceId/mark-sent', markSentBodyValidators, validate, ctrl.markInvoiceSent)
-
-// Tax (Avalara) — preview estimate, adjust/void, and read persisted breakdown (spec §7, §9)
-router.post('/:invoiceId/tax-preview', ctrl.previewInvoiceTax)
-router.post(
-  '/:invoiceId/tax-adjust',
-  [body('action').optional().isIn(['adjust', 'void']), body('reason').optional().isString()],
-  validate,
-  ctrl.adjustInvoiceTax
-)
-router.get('/:invoiceId/tax', ctrl.getInvoiceTax)
 router.put('/:invoiceId/mark-paid', ctrl.markAsPaid)
 const paymentProofRejectValidators = [
   body('reviewNotes').optional().isString(),
