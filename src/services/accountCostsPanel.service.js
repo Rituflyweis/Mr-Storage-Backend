@@ -63,6 +63,9 @@ const mapSalaryRow = (e) => ({
   adminApproval: e.metadata?.adminApproval || (e.status === 'approved' || e.status === 'paid' ? 'Approved' : 'Pending'),
   date: e.date,
   paymentStatus: e.status,
+  payslipGeneratedAt: e.metadata?.payslipGeneratedAt || null,
+  hasPayslip: Boolean(e.metadata?.payslipGeneratedAt),
+  payslipFileName: e.metadata?.payslipFileName || '',
 })
 
 const mapManpowerRow = (e) => {
@@ -195,6 +198,11 @@ exports.markSalaryPaid = async (id) => {
   if (expense.metadata) expense.metadata.adminApproval = 'Approved'
   await expense.save()
   return mapSalaryRow(expense.toObject())
+}
+
+exports.getSalaryRecordById = async (id) => {
+  const expense = await Expense.findOne({ _id: id, costPanelType: 'salary', isActive: true }).lean()
+  return expense ? mapSalaryRow(expense) : null
 }
 
 exports.getManpowerSummary = async () => {

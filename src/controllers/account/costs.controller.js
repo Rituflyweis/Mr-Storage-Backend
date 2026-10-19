@@ -1,4 +1,5 @@
 const costs = require('../../services/accountCostsPanel.service')
+const salaryPayslip = require('../../services/accountSalaryPayslip.service')
 const smdtCosts = require('../../services/accountSmdtItemCost.service')
 const generateExpenseId = require('../../utils/generateExpenseId')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
@@ -24,6 +25,31 @@ exports.deleteSalaryEntry = asyncHandler(async (req, res) => {
   const ok = await costs.deactivatePanelExpense(req.params.id, 'salary')
   if (!ok) return notFound(res, 'Salary entry not found')
   return success(res, {}, 'Deleted')
+})
+
+exports.generateSalaryPayslip = asyncHandler(async (req, res) => {
+  const result = await salaryPayslip.generateSalaryPayslip(req.params.id)
+  if (!result) return notFound(res, 'Salary entry not found')
+  const row = await costs.getSalaryRecordById(result.expense._id)
+  return success(
+    res,
+    {
+      ...row,
+      downloadPath: `/api/account/costs/salary/${result.expense._id}/payslip`,
+    },
+    'Payslip generated'
+  )
+})
+
+exports.downloadSalaryPayslip = asyncHandler(async (req, res) => {
+  const result = await salaryPayslip.getSalaryPayslipPdfBuffer(req.params.id)
+  if (!result) return notFound(res, 'Salary entry not found')
+  const name =
+    result.expense.metadata?.payslipFileName ||
+    `payslip-${result.expense.expenseId || result.expense._id}.pdf`
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `inline; filename="${name}"`)
+  return res.send(result.buffer)
 })
 
 exports.getManpowerSummary = asyncHandler(async (req, res) => success(res, await costs.getManpowerSummary()))
