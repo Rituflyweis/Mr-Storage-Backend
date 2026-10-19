@@ -1,6 +1,6 @@
-# Account → Costs panel — Manpower, Freight, Logistics, Rent actions
+# Account → Costs panel — Salary, Rent, Manpower, Freight, Logistics
 
-**Scope:** Mark paid + freight/logistics detail modals only. **No Avalara / tax changes.**
+**Scope:** Expenses submenu action buttons (Figma). **No Avalara / tax changes.**
 
 **Base:** `/api/account/costs`  
 **Auth:** `Authorization: Bearer <token>` — roles **`admin`** or **`account`**.
@@ -9,9 +9,141 @@
 
 Short paths (no `/records`) match the UI; long `/records/...` paths are aliases.
 
+### Quick reference (Figma buttons)
+
+| Tab | UI button | Method | Path |
+|-----|-----------|--------|------|
+| **Salary** | **Generate Slip** (dark) | `POST` | `/api/account/costs/salary/:id/generate-payslip` |
+| **Salary** | **Mark Paid** (blue) | `PATCH` | `/api/account/costs/salary/:id/mark-paid` |
+| **Salary** | View payslip (eye) | `GET` | `/api/account/costs/salary/:id/payslip` |
+| **Rent** | **Mark Paid** (upcoming table) | `PATCH` | `/api/account/costs/rent/:id/mark-paid` |
+| Manpower | Mark Paid | `PATCH` | `/api/account/costs/manpower/:id/mark-paid` |
+| Freight | Modal actions | various | §4 |
+| Logistics | Modal actions | various | §5 |
+
+List endpoints: `GET /costs/salary/records`, `GET /costs/rent/records`, etc.
+
 ---
 
-## 1. Manpower — Mark Paid
+## 1. Salary — Generate payslip & Mark Paid
+
+**List row id:** `rows[].id` from `GET /api/account/costs/salary/records`.
+
+Figma shows two **Payslip** columns: **Generate Slip** on unpaid rows, **Mark Paid** on others — both use the same row `id`.
+
+### 1.1 Generate payslip
+
+**Button:** “Generate Slip”
+
+```http
+POST /api/account/costs/salary/6ad2552bd3c19e0410fa17d5/generate-payslip
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Body:** `{}` or omit.
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "message": "Payslip generated",
+  "data": {
+    "id": "6ad2552bd3c19e0410fa17d5",
+    "expenseId": "EXP-2026-0042",
+    "employeeName": "Jane Smith",
+    "employeeId": "EMP-A1B2",
+    "designation": "Accountant",
+    "netSalary": 4500,
+    "status": "Unpaid",
+    "adminApproval": "Pending",
+    "date": "2026-10-01T00:00:00.000Z",
+    "paymentStatus": "pending",
+    "payslipGeneratedAt": "2026-10-19T06:00:00.000Z",
+    "hasPayslip": true,
+    "payslipFileName": "payslip-EXP-2026-0042.pdf",
+    "downloadPath": "/api/account/costs/salary/6ad2552bd3c19e0410fa17d5/payslip"
+  }
+}
+```
+
+**Alias:** `POST /api/account/costs/salary/records/:id/generate-payslip`
+
+### 1.2 View / download payslip (eye icon)
+
+```http
+GET /api/account/costs/salary/6ad2552bd3c19e0410fa17d5/payslip
+Authorization: Bearer <token>
+```
+
+**Response:** `200` with `Content-Type: application/pdf` (binary PDF, not JSON).
+
+```javascript
+const res = await fetch(`${API_BASE}/api/account/costs/salary/${rowId}/payslip`, {
+  headers: { Authorization: `Bearer ${token}` },
+});
+window.open(URL.createObjectURL(await res.blob()), '_blank');
+```
+
+**Alias:** `GET /api/account/costs/salary/records/:id/payslip`
+
+### 1.3 Mark paid (salary)
+
+```http
+PATCH /api/account/costs/salary/6ad2552bd3c19e0410fa17d5/mark-paid
+Authorization: Bearer <token>
+```
+
+**Response `200`:** Updated salary row; `status` → `"Paid"`, `paymentStatus` → `"paid"`.
+
+**Alias:** `PATCH /api/account/costs/salary/records/:id/mark-paid`
+
+Also: `DELETE /api/account/costs/salary/:id` (trash icon).
+
+---
+
+## 2. Rent — Mark Paid
+
+**List row id:** `rows[].id` from `GET /api/account/costs/rent/records` (use **Upcoming Rent Payments** row id for the blue **Mark Paid** button).
+
+```http
+PATCH /api/account/costs/rent/6ad252efd3c19e0410fa13d2/mark-paid
+Authorization: Bearer <token>
+```
+
+**Body:** `{}` or omit.
+
+**Response `200`**
+
+```json
+{
+  "success": true,
+  "message": "Marked as paid",
+  "data": {
+    "id": "6ad252efd3c19e0410fa13d2",
+    "expenseId": "EXP-2026-0200",
+    "property": "Main Plant",
+    "type": "Plant",
+    "location": "Ahmedabad",
+    "landlord": "Rajesh Properties",
+    "monthlyRent": 214000,
+    "amount": 214000,
+    "date": "2026-10-01T00:00:00.000Z",
+    "dueDate": "2026-10-05T00:00:00.000Z",
+    "rentPeriod": "Oct 2026",
+    "status": "Paid",
+    "paymentStatus": "paid",
+    "project": ""
+  }
+}
+```
+
+**Alias:** `PATCH /api/account/costs/rent/records/:id/mark-paid`
+
+---
+
+## 3. Manpower — Mark Paid
 
 **List row id:** `rows[].id` (Expense `_id`).
 
@@ -53,11 +185,11 @@ Authorization: Bearer <token>
 
 ---
 
-## 2. Freight — Detail modal & Mark Paid
+## 4. Freight — Detail modal & actions
 
 **List row:** use `bidId` from `GET /freight/records` (Mongo id of selected `FreightBid`).
 
-### 2.1 Detail (eye icon / modal)
+### 4.1 Detail (eye icon / modal)
 
 ```http
 GET /api/account/costs/freight/64freightbid001/detail
@@ -139,7 +271,7 @@ Use `data.actions.*` to show/hide **Approve**, **Reject**, **Mark paid**, **Down
 
 **Alias:** `GET /api/account/costs/freight/records/:bidId/detail`
 
-### 2.2 Approve invoice (purple button)
+### 4.2 Approve invoice (purple button)
 
 ```http
 PATCH /api/account/costs/freight/64freightbid001/approve
@@ -153,7 +285,7 @@ Content-Type: application/json
 
 **Alias:** `PATCH /api/account/costs/freight/records/:bidId/approve`
 
-### 2.3 Reject invoice (grey button)
+### 4.3 Reject invoice (grey button)
 
 ```http
 PATCH /api/account/costs/freight/64freightbid001/reject
@@ -167,7 +299,7 @@ Content-Type: application/json
 
 **Alias:** `PATCH /api/account/costs/freight/records/:bidId/reject`
 
-### 2.4 Mark paid (green button)
+### 4.4 Mark paid (green button)
 
 ```http
 PATCH /api/account/costs/freight/64freightbid001/mark-paid
@@ -178,7 +310,7 @@ Authorization: Bearer <token>
 
 **Alias:** `PATCH /api/account/costs/freight/records/:bidId/mark-paid`
 
-### 2.5 Download invoice
+### 4.5 Download invoice
 
 ```http
 GET /api/account/costs/freight/64freightbid001/invoice-download
@@ -204,12 +336,12 @@ Authorization: Bearer <token>
 
 ---
 
-## 3. Logistics — Detail modal (Figma parity with freight)
+## 5. Logistics — Detail modal (Figma parity with freight)
 
 **List row id:** `rows[].id` or `approvalId` (`PaymentApproval` `_id`).  
 **Header:** bind `loadId` + `deliveryRef` / `deliveryId` from detail (same as list `loadId` + `deliveryRef`).
 
-### 3.1 Detail (eye icon → modal)
+### 5.1 Detail (eye icon → modal)
 
 ```http
 GET /api/account/costs/logistics/64approval001/detail
@@ -292,7 +424,7 @@ Authorization: Bearer <token>
 
 **Alias:** `GET /api/account/costs/logistics/records/:id/detail`
 
-### 3.2 Approve invoice
+### 5.2 Approve invoice
 
 ```http
 PATCH /api/account/costs/logistics/64approval001/approve
@@ -301,7 +433,7 @@ Authorization: Bearer <token>
 
 Optional body: `{ "reviewNotes": "Approved" }`. Returns updated detail; carrier `paymentStatus` → `"Invoiced"`.
 
-### 3.3 Reject invoice
+### 5.3 Reject invoice
 
 ```http
 PATCH /api/account/costs/logistics/64approval001/reject
@@ -310,7 +442,7 @@ Authorization: Bearer <token>
 
 Optional body: `{ "reviewNotes": "Disputed amount" }`.
 
-### 3.4 Mark paid
+### 5.4 Mark paid
 
 ```http
 PATCH /api/account/costs/logistics/64approval001/mark-paid
@@ -319,7 +451,7 @@ Authorization: Bearer <token>
 
 Returns detail with `paymentStatus` → `"Paid"`.
 
-### 3.5 Download invoice (footer blue button)
+### 5.5 Download invoice (footer blue button)
 
 ```http
 GET /api/account/costs/logistics/64approval001/invoice-download
@@ -332,50 +464,14 @@ Authorization: Bearer <token>
 
 ---
 
-## 4. Rent — Mark Paid
-
-**List row id:** `rows[].id` (Expense `_id`).
-
-```http
-PATCH /api/account/costs/rent/6ad252efd3c19e0410fa13d2/mark-paid
-Authorization: Bearer <token>
-```
-
-**Response `200`**
-
-```json
-{
-  "success": true,
-  "message": "Marked as paid",
-  "data": {
-    "id": "6ad252efd3c19e0410fa13d2",
-    "expenseId": "EXP-2026-0200",
-    "property": "Main Plant",
-    "type": "Plant",
-    "location": "Ahmedabad",
-    "landlord": "Rajesh Properties",
-    "monthlyRent": 214000,
-    "amount": 214000,
-    "date": "2026-10-01T00:00:00.000Z",
-    "dueDate": "2026-10-05T00:00:00.000Z",
-    "rentPeriod": "Oct 2026",
-    "leaseEnd": null,
-    "daysRemaining": null,
-    "status": "Paid",
-    "paymentStatus": "paid",
-    "project": ""
-  }
-}
-```
-
-**Alias:** `PATCH /api/account/costs/rent/records/:id/mark-paid`
-
----
-
-## 5. Frontend wiring
+## 6. Frontend wiring (full table)
 
 | Screen | Control | Method | Path |
 |--------|---------|--------|------|
+| **Salary** | **Generate Slip** | `POST` | `/api/account/costs/salary/:id/generate-payslip` |
+| **Salary** | **Mark Paid** | `PATCH` | `/api/account/costs/salary/:id/mark-paid` |
+| **Salary** | View payslip | `GET` | `/api/account/costs/salary/:id/payslip` |
+| **Rent** | **Mark Paid** | `PATCH` | `/api/account/costs/rent/:id/mark-paid` |
 | Manpower | Mark Paid | `PATCH` | `/costs/manpower/:id/mark-paid` |
 | Freight | Open modal | `GET` | `/costs/freight/:bidId/detail` |
 | Freight | Approve | `PATCH` | `/costs/freight/:bidId/approve` |
@@ -384,9 +480,7 @@ Authorization: Bearer <token>
 | Freight | Download invoice | `GET` | `/costs/freight/:bidId/invoice-download` |
 | Logistics | Open modal | `GET` | `/costs/logistics/:id/detail` |
 | Logistics | Approve / Reject / Mark paid / Download | `PATCH` / `GET` | `/costs/logistics/:id/approve`, `/reject`, `/mark-paid`, `/invoice-download` |
-| Rent | Mark Paid | `PATCH` | `/costs/rent/:id/mark-paid` |
-
-After mark-paid, refresh the list row or merge `data` into local state.
+After mark-paid / generate-payslip, refresh the list row or merge `data` into local state.
 
 **List fields added**
 
@@ -396,7 +490,7 @@ After mark-paid, refresh the list row or merge `data` into local state.
 
 ---
 
-## 6. Errors
+## 7. Errors
 
 | HTTP | Body |
 |------|------|
@@ -405,11 +499,12 @@ After mark-paid, refresh the list row or merge `data` into local state.
 
 ---
 
-## 7. Backend files (this release)
+## 8. Backend files
 
-- `src/services/accountCostsActions.service.js`
-- `src/services/accountCostsPanel.service.js` (rent row + list tweaks, manpower/rent getters)
+- `src/routes/account/costs.routes.js` — all paths above
 - `src/controllers/account/costs.controller.js`
-- `src/routes/account/costs.routes.js`
+- `src/services/accountCostsPanel.service.js` — salary / rent / manpower rows
+- `src/services/accountSalaryPayslip.service.js` — salary PDF
+- `src/services/accountCostsActions.service.js` — freight / logistics / rent mark-paid
 
-Related (already live): salary mark-paid / payslip — see `frontend-account-salary-payslip-api-handoff-2026-10-19.md`.
+Duplicate detail: `docs/frontend-account-salary-payslip-api-handoff-2026-10-19.md` (salary-only).

@@ -12,6 +12,10 @@ This document lists **account-panel routes only** (`/api/account/...`) with **co
 |-------|----------|
 | Full account screen matrix & budget vs actual | [`frontend-account-panel-api.md`](./frontend-account-panel-api.md) |
 | **Payments — `quoteOrderId` on POST `/payments/orders`** | [`frontend-account-payments-orders-quote-order-id-handoff-2026-10-17.md`](./frontend-account-payments-orders-quote-order-id-handoff-2026-10-17.md) |
+| **Analytics Figma (income/expense/P&L — full req/res)** | [`frontend-account-analytics-figma-integration-handoff-2026-10-17.md`](./frontend-account-analytics-figma-integration-handoff-2026-10-17.md) |
+| **Tax & Filing Figma (3 pages + modals — screen map)** | [`frontend-account-tax-filing-figma-integration-handoff-2026-10-19.md`](./frontend-account-tax-filing-figma-integration-handoff-2026-10-19.md) |
+| **All gap fixes — addresses + tax + invoices (START HERE)** | [`frontend-gap-changes-tax-address-avalara-2026-10-19.md`](./frontend-gap-changes-tax-address-avalara-2026-10-19.md) |
+| **Tax API — extra req/res examples** | [`frontend-account-tax-full-api-handoff-2026-10-19.md`](./frontend-account-tax-full-api-handoff-2026-10-19.md) |
 | Project sub-page field reference | [`frontend-account-project-detail-api.md`](./frontend-account-project-detail-api.md) |
 | **Admin — set project budget & `customLines[]`** | [`frontend-admin-project-budget-custom-lines-api.md`](./frontend-admin-project-budget-custom-lines-api.md) |
 
@@ -858,12 +862,16 @@ Content-Type: application/json
 
 **Response `data`:** single salary row object (same shape as list item).
 
-**Other salary routes**
+**Other salary routes (Figma Payslip column)**
 
-| Method | Path |
-|--------|------|
-| PATCH | `/costs/salary/records/:id/mark-paid` |
-| DELETE | `/costs/salary/records/:id` |
+| UI | Method | Path |
+|----|--------|------|
+| **Generate Slip** | `POST` | `/api/account/costs/salary/:id/generate-payslip` |
+| **Mark Paid** | `PATCH` | `/api/account/costs/salary/:id/mark-paid` |
+| View PDF (eye) | `GET` | `/api/account/costs/salary/:id/payslip` |
+| Delete (trash) | `DELETE` | `/api/account/costs/salary/:id` |
+
+Aliases: `/costs/salary/records/:id/...` for each. Full req/res: **`docs/frontend-account-costs-actions-handoff-2026-10-19.md`** §1.
 
 ### 3.3 Manpower
 
@@ -910,7 +918,7 @@ Content-Type: application/json
 | Area | GET endpoints |
 |------|----------------|
 | Cost variation | `/variance/summary`, `/variance/alerts`, `/variance/trend`, `/variance/details` |
-| Rent | `/rent/summary`, `/rent/records` · POST `{ "amount", "date" }` |
+| Rent | `/rent/summary`, `/rent/records` · POST create · **`PATCH /rent/:id/mark-paid`** (Upcoming table blue button) — see costs handoff §2 |
 | Future income/expense | `/future/summary`, `/future/records` · POST `{ "amount", "date", "flowType": "income"|"expense" }` |
 
 ### 3.7 SMDT item list

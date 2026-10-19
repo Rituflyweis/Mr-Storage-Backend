@@ -109,6 +109,12 @@ Payable list rows (`buildPayableListRow`) and account invoice-management vendor/
 
 ---
 
+## Related — Account costs (not invoice billing)
+
+Salary **Generate Slip** / **Mark Paid** and rent **Mark Paid** live under `/api/account/costs/*`, not this doc. See **`docs/frontend-account-costs-actions-handoff-2026-10-19.md`** §1 (salary) and §2 (rent).
+
+---
+
 ## PDF & email
 
 Customer invoice PDF (`GET /api/account/invoices/:invoiceId/pdf`) and send-invoice email use stored `billingAddress`, `bankDetails`, and `recipientAddress` when set.
