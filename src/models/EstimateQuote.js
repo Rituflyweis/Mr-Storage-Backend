@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+const { StructuredAddressSchema } = require('./schemas/structuredAddress')
 
 const JOB_TYPES = ['PEMB', 'Storage']
 const SCOPES = ['Supply', 'Install', 'Both']
@@ -30,6 +31,7 @@ const EstimateQuoteSchema = new mongoose.Schema(
     customerEmail:   { type: String, default: '' },
     streetAddress:   { type: String, default: '' },
     cityStateZip:    { type: String, default: '' },
+    shipToAddress:   { type: StructuredAddressSchema, default: () => ({ country: 'US' }) },
     buildingSize:    { type: String, default: '' },
     squareFootage:   { type: Number, default: 0 },
     jobNumber:       { type: String, default: '' },

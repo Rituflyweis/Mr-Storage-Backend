@@ -105,7 +105,9 @@ async function main() {
       `/api/account/projects/${projectId}/deliveries?limit=3`,
       `/api/account/projects/${projectId}/quotations`,
       `/api/account/projects/${projectId}/bom`,
-      `/api/account/projects/${projectId}/agreement`
+      `/api/account/projects/${projectId}/agreement`,
+      `/api/account/reports/project-wise-income/${projectId}?tab=received&limit=5`,
+      `/api/account/reports/project-wise-expense/${projectId}?tab=approved&limit=5`
     )
   }
 

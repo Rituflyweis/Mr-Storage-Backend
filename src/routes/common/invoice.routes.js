@@ -23,6 +23,9 @@ router.get(
   ctrl.listInvoices
 )
 router.get('/:invoiceId', ctrl.getInvoice)
+router.post('/:invoiceId/tax-preview', invoiceBodyValidators, validate, ctrl.previewInvoiceTax)
+router.post('/:invoiceId/tax-adjust', [body('action').optional().isString(), body('reason').optional().isString()], validate, ctrl.adjustInvoiceTax)
+router.get('/:invoiceId/tax', ctrl.getInvoiceTax)
 router.put('/:invoiceId', invoiceBodyValidators, validate, ctrl.updateInvoice)
 router.post('/:invoiceId/submit-approval', [body('note').optional().isString()], validate, ctrl.submitInvoiceForApproval)
 router.put('/:invoiceId/approve', [body('note').optional().isString()], validate, ctrl.approveInvoice)

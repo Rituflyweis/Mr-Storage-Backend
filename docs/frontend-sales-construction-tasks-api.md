@@ -4,7 +4,7 @@
 **Auth:** `Authorization: Bearer <sales_jwt>`  
 **Role:** `sales`
 
-Powers the **Project Construction Task** card row on the **Sales** project / construction view — same underlying `Task` records as the Construction panel (`GET /api/construction/tasks?leadId=…`). Sales users only see tasks for leads where **`assignedSales`** is their user id and the lead is in **plant/construction** lifecycle.
+Powers the **Project Construction Task** card row on **Sales** — including **Customer tab → project detail** (see [`frontend-sales-customer-project-construction-tasks-handoff-2026-10-19.md`](./frontend-sales-customer-project-construction-tasks-handoff-2026-10-19.md)). Same underlying `Task` records as the Construction panel (`GET /api/construction/tasks?leadId=…`). Sales users only see tasks for leads where **`assignedSales`** is their user id and the lead is in **plant/construction** lifecycle.
 
 Construction panel task CRUD remains under `/api/construction/tasks` (construction/admin roles).
 

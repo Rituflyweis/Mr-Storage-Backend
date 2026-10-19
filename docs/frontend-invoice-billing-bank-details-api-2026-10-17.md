@@ -48,6 +48,8 @@
 
 ## Customer invoices (admin / sales)
 
+**Base paths (equivalent):** `/api/common/...` and `/api/...` (e.g. `GET /api/common/invoices/:id` = `GET /api/invoices/:id`). Sales/admin integrations may use either; deploy must include the `/api/common` mount (added 2026-10-19).
+
 | Action | Method | Path |
 |--------|--------|------|
 | Defaults for forms | GET | `/api/common/invoices/billing-defaults` (roles: **admin**, **sales**, **account**) |

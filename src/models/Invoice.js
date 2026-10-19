@@ -73,6 +73,8 @@ const PayableCommentSchema = new mongoose.Schema(
   { _id: true }
 )
 
+const { StructuredAddressSchema } = require('./schemas/structuredAddress')
+
 const InvoiceAddressSchema = new mongoose.Schema(
   {
     companyName: { type: String, default: '', trim: true },
@@ -172,13 +174,80 @@ const InvoiceSchema = new mongoose.Schema(
     billingAddress:    { type: InvoiceAddressSchema, default: () => ({}) },
     /** Bill-to / payee address (customer or vendor/carrier) */
     recipientAddress:  { type: InvoiceAddressSchema, default: () => ({}) },
+    /** Project install address used for sales tax jurisdiction */
+    shipToAddress:     { type: StructuredAddressSchema, default: () => ({ country: 'US' }) },
     /** Wire / ACH instructions — editable per invoice */
     bankDetails:       { type: InvoiceBankDetailsSchema, default: () => ({}) },
+
+    /**
+     * Operational metadata for tax context (spec §3). These do NOT by themselves
+     * decide taxability — the client/accountant determines contract treatment.
+     */
+    orderType: {
+      type: String,
+      enum: ['SUPPLY_ONLY', 'SUPPLY_AND_INSTALL', 'UNKNOWN'],
+      default: 'UNKNOWN',
+    },
+    installationProvider: {
+      type: String,
+      enum: ['OWN_CREW', 'SUBCONTRACTOR', 'BOTH', 'UNKNOWN'],
+      default: 'UNKNOWN',
+    },
+    /**
+     * Customer exemption (spec §3). Never assume business customers are exempt —
+     * applied to AvaTax only when isExempt AND (entityUseCode OR exemptionNo) is present.
+     */
+    exemption: {
+      isExempt: { type: Boolean, default: false },
+      entityUseCode: { type: String, default: '', trim: true }, // AvaTax customerUsageType, e.g. 'A','G'
+      exemptionNo: { type: String, default: '', trim: true },
+      certificateRef: { type: String, default: '', trim: true },
+      reason: { type: String, default: '', trim: true },
+    },
 
     lineItems:    { type: [LineItemSchema], default: [] },
     subtotal:     { type: Number, default: 0 },
     markupTotal:  { type: Number, default: 0 },
     tax:          { type: Number, default: 0 },
+    /** Denormalized from AvaTax at commit (sent invoice). */
+    taxableSales: { type: Number, default: 0 },
+    taxCollected: { type: Number, default: 0 },
+    avalara: {
+      provider: { type: String, default: '' },
+      transactionType: { type: String, default: '' },
+      transactionCode: { type: String, default: '' },
+      documentId: { type: String, default: '' },
+      documentStatus: { type: String, default: '' },
+      totalTaxable: { type: Number, default: 0 },
+      totalTax: { type: Number, default: 0 },
+      rate: { type: Number, default: 0 },
+      /** True when tax is an estimate or used unapproved placeholder codes — never final (§5, §8). */
+      testOnly: { type: Boolean, default: false },
+      estimate: { type: Boolean, default: false },
+      exemptionApplied: { type: Boolean, default: false },
+      mappingVersion: { type: String, default: '' },
+      warnings: { type: [String], default: [] },
+      /** Frozen per-line tax codes for reconciliation (§6). */
+      lineCodes: {
+        type: [
+          {
+            number: String,
+            taxCode: String,
+            approved: Boolean,
+            source: String,
+            category: String,
+            amount: Number,
+          },
+        ],
+        default: [],
+      },
+      correlationId: { type: String, default: '' },
+      lastError: { type: String, default: '' },
+      lastCalculatedAt: { type: Date, default: null },
+      committedAt: { type: Date, default: null },
+      adjustedAt: { type: Date, default: null },
+      voidedAt: { type: Date, default: null },
+    },
     discount:     { type: Number, default: 0 },
     depositAmount:{ type: Number, default: 0 },
     totalAmount:  { type: Number, default: 0 },

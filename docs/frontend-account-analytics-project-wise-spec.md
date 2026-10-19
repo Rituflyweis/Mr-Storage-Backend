@@ -506,7 +506,9 @@ Use **`jobId`** here (not `projectId`) for the job column.
 | Profit/Loss Analysis (analytics) | `GET /api/account/reports/profit-loss` |
 | Margin Breakdown → P&L table | `GET /api/account/financial/profit-loss/summary` |
 | Margin Breakdown → P&L detail / export | `GET /api/account/financial/profit-loss`, `…/export` |
-| Row “eye” → project financial detail | `GET /api/account/projects/:id` (lead id) |
+| Row “eye” → **Income** project detail (tabs, sidebar, Add Received) | `GET /api/account/reports/project-wise-income/:leadId` — **[detail spec](./frontend-account-analytics-project-detail-api.md)** |
+| Row “eye” → **Expense** project detail (approved / pending tabs) | `GET /api/account/reports/project-wise-expense/:leadId` — **[detail spec](./frontend-account-analytics-project-detail-api.md)** |
+| General project overview (Customers / project hub) | `GET /api/account/projects/:id` (lead id) |
 
 ---
 

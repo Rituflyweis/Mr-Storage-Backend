@@ -1319,7 +1319,7 @@ Manual salary / manpower / misc / rent / future entries are stored as **`Expense
 
 | Figma tab | Summary | List / charts | Create / actions |
 |-----------|---------|---------------|------------------|
-| **Salary** | `GET /costs/salary/summary` | `GET /costs/salary/records` | `POST /costs/salary/records`, `PATCH …/:id/mark-paid`, `DELETE …/:id` |
+| **Salary** | `GET /costs/salary/summary` | `GET /costs/salary/records` | `POST /costs/salary/records`, `PATCH …/:id/mark-paid`, `DELETE …/:id` — see `frontend-account-salary-payslip-api-handoff-2026-10-19.md` |
 | **Manpower** | `GET /costs/manpower/summary` | `GET /costs/manpower/records` | `POST /costs/manpower/records`, `PUT …/:id`, `DELETE …/:id` |
 | **Miscellaneous** | `GET /costs/miscellaneous/summary` | `GET …/overview-chart`, `…/by-category`, `…/by-project`, `…/records` | `POST /costs/miscellaneous/records` |
 | **Freight** | `GET /costs/freight/summary` | `GET …/trend`, `…/carrier-distribution`, `…/records` (from selected bids) | Read-only (bids from plant/logistics) |
@@ -1455,7 +1455,7 @@ Still available for tax filing, expense CRUD, etc. Prefer **`/api/account/financ
 
 | Need | Path |
 |------|------|
-| Tax filing | `/api/account/financial-extra/tax-filing` |
+| Tax filing + address/tax gaps | [`frontend-gap-changes-tax-address-avalara-2026-10-19.md`](./frontend-gap-changes-tax-address-avalara-2026-10-19.md) |
 | Expenses admin | `/api/account/financial-extra/expenses` |
 | WIP export (alt) | `/api/account/financial-extra/wip-profits/export` |
 
@@ -1485,8 +1485,8 @@ Still available for tax filing, expense CRUD, etc. Prefer **`/api/account/financ
 | Payment Approvals | filters + list | search, status, project | Review PUT; Export |
 | Margin Breakdown | filters + margin-analysis + trend + by-project + profit-loss/summary | company, project, dates | P&L detail; Export |
 | Budget VS Actual | `budget-vs-actual` | pick `leadId` | — |
-| Income (project wise) | `reports/project-wise-income` | search, dates, page | Row eye → project detail |
-| Expense (project wise) | `reports/project-wise-expense` | search, dates, page | Row eye → project detail |
+| Income (project wise) | `reports/project-wise-income` | search, dates, page | Row eye → [`reports/project-wise-income/:leadId`](./frontend-account-analytics-project-detail-api.md) |
+| Expense (project wise) | `reports/project-wise-expense` | search, dates, page | Row eye → [`reports/project-wise-expense/:leadId`](./frontend-account-analytics-project-detail-api.md) |
 | Profit/Loss Analysis | `financial/profit-loss/summary` + detail/export | dates, project | Export report |
 | Expenses → Salary / Manpower / Misc / Rent / Future | `costs/{tab}/summary` + `records` | dates, search, project | POST create; salary mark-paid |
 | Expenses → Freight / Logistics | `costs/freight/*`, `costs/logistics/*` | filters | Logistics POST + delivery lookup |
@@ -1519,7 +1519,12 @@ Still available for tax filing, expense CRUD, etc. Prefer **`/api/account/financ
 | GET | `/api/account/financial/profit-loss/summary` |
 | GET | `/api/account/financial/budget-vs-actual` |
 | GET | `/api/account/reports/project-wise-expense` |
+| GET | `/api/account/reports/project-wise-expense/:leadId` |
+| GET | `/api/account/reports/project-wise-expense/:leadId/transactions/:source/:id` |
 | GET | `/api/account/reports/project-wise-income` |
+| GET | `/api/account/reports/project-wise-income/:leadId` |
+| GET | `/api/account/reports/project-wise-income/:leadId/transactions/:transactionId` |
+| POST | `/api/account/reports/project-wise-income/:leadId/received` |
 | GET | `/api/account/reports/profit-loss` |
 | GET | `/api/account/costs/filters` |
 | GET/POST | `/api/account/costs/salary/*`, `/manpower/*`, `/miscellaneous/*`, `/rent/*`, `/future/*` |

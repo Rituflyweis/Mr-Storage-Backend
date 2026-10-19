@@ -2,16 +2,24 @@
   "name": "construction-ai-backend",
   "version": "1.0.0",
   "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "vercel dev",
     "seed": "node scripts/seed.js",
+    "seed:tax-mappings": "node scripts/seed-tax-mappings.js",
     "create-user": "node scripts/createUser.js",
     "backup:db": "node scripts/run-db-backup.js",
     "test:project-expenses": "node scripts/test-combined-project-expenses.js",
     "test:live-server": "node scripts/test-live-local-server.js",
     "test:margin-analysis": "node scripts/test-margin-analysis-local.js",
     "test:cross-panel": "node scripts/test-cross-panel-changes-local.js",
+    "test:tax-engine": "node scripts/test-tax-engine-local.js",
+    "test:avalara-smoke": "node scripts/test-avalara-smoke.js",
+    "test:avalara-full": "TAX_ENGINE=avalara node scripts/test-avalara-full.js",
+    "test:tax-gaps": "node scripts/test-tax-gap-fixes-local.js",
     "postinstall": "npx puppeteer browsers install chrome || true"
   },
   "dependencies": {

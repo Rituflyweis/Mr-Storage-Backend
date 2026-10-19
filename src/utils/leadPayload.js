@@ -1,11 +1,16 @@
 const { LEAD_SOURCES, LIFECYCLE_STAGES } = require('../config/constants')
 const { normalizeBusinessUnit } = require('./businessUnit')
+const { normalizeStructuredAddress } = require('../models/schemas/structuredAddress')
 
 const LEAD_EDIT_BODY_KEYS = [
   'projectName',
   'businessUnit',
   'buildingType',
   'location',
+  'installAddress',
+  'city',
+  'state',
+  'pincode',
   'source',
   'quoteValue',
   'roofStyle',
@@ -56,6 +61,8 @@ const buildLeadCreatePayload = (body, options = {}) => {
     city,
     state,
     pincode,
+    installAddress,
+    line1,
     source,
     quoteValue,
     estimatedValue,
@@ -103,6 +110,17 @@ const buildLeadCreatePayload = (body, options = {}) => {
     location = [cityStr, stateStr, pincodeStr].filter(Boolean).join(', ')
   }
 
+  const line1Str = line1 ? String(line1).trim() : ''
+  const resolvedInstall = installAddress
+    ? normalizeStructuredAddress(installAddress)
+    : normalizeStructuredAddress({
+        line1: line1Str || location,
+        city: cityStr,
+        state: stateStr,
+        postalCode: pincodeStr,
+        country: 'US',
+      })
+
   return {
     payload: {
       customerId,
@@ -110,6 +128,7 @@ const buildLeadCreatePayload = (body, options = {}) => {
       businessUnit: unit.skip ? null : unit.value,
       buildingType: buildingType ? String(buildingType).trim() : '',
       location,
+      installAddress: resolvedInstall,
       city: cityStr,
       state: stateStr,
       pincode: pincodeStr,
@@ -160,6 +179,29 @@ const applyLeadUpdateFromBody = (lead, body) => {
   }
   if (body.location !== undefined) {
     lead.location = body.location === null ? '' : String(body.location).trim()
+  }
+  if (body.city !== undefined) {
+    lead.city = body.city === null ? '' : String(body.city).trim()
+  }
+  if (body.state !== undefined) {
+    lead.state = body.state === null ? '' : String(body.state).trim()
+  }
+  if (body.pincode !== undefined) {
+    lead.pincode = body.pincode === null ? '' : String(body.pincode).trim()
+  }
+  if (body.installAddress !== undefined || body.line1 !== undefined) {
+    const current = lead.installAddress?.toObject?.() || lead.installAddress || {}
+    lead.installAddress = normalizeStructuredAddress({
+      ...current,
+      ...(body.installAddress || {}),
+      ...(body.line1 !== undefined ? { line1: body.line1 } : {}),
+      city: body.city !== undefined ? body.city : current.city || lead.city,
+      state: body.state !== undefined ? body.state : current.state || lead.state,
+      postalCode:
+        body.pincode !== undefined
+          ? body.pincode
+          : current.postalCode || lead.pincode,
+    })
   }
   if (body.source !== undefined) {
     if (body.source === null || body.source === '') {

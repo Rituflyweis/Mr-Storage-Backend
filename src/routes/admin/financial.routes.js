@@ -32,7 +32,23 @@ router.get('/tax-filing/stats',
 )
 router.get('/tax-filing/filters',      ctrl.getTaxFilingFilters)
 router.get('/tax-filing/export',       taxFilingListQuery, validate, ctrl.exportTaxFiling)
+router.get('/tax-filing/notification-settings', ctrl.getTaxFilingNotificationSettings)
+router.put(
+  '/tax-filing/notification-settings',
+  [
+    body('emailReminders').optional().isBoolean(),
+    body('deadlineAlerts').optional().isBoolean(),
+    body('daysBeforeDue').optional().isInt({ min: 1, max: 90 }),
+    body('recipientEmail').optional().isString().trim(),
+  ],
+  validate,
+  ctrl.updateTaxFilingNotificationSettings
+)
 router.get('/tax-filing/:taxId/prepare', ctrl.prepareFiling)
+router.get('/tax-filing/:taxId/detail', ctrl.getTaxFilingDetail)
+router.post('/tax-filing/:taxId/pay', ctrl.payTaxFiling)
+router.post('/tax-filing/:taxId/approve', ctrl.approveTaxFiling)
+router.get('/tax-filing/:taxId/receipt', ctrl.getTaxFilingReceipt)
 router.put('/tax-filing/:taxId/file',  ctrl.completeFiling)
 
 // State Wise Tax
@@ -53,6 +69,7 @@ router.get('/state-wise-tax/upcoming-deadlines',
   ctrl.getUpcomingFilingDeadlines
 )
 router.post('/state-wise-tax/sync', ctrl.syncStateTax)
+router.get('/tax-compliance/status', ctrl.getTaxComplianceStatus)
 
 // Project Wise Tax
 const projectWiseTaxQuery = [

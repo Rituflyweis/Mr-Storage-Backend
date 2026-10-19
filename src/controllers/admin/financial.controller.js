@@ -4,6 +4,7 @@ const Lead = require('../../models/Lead')
 const Customer = require('../../models/Customer')
 const ProjectBudget = require('../../models/ProjectBudget')
 const Tax = require('../../models/Tax')
+const TaxComplianceSettings = require('../../models/TaxComplianceSettings')
 const PaymentApproval = require('../../models/PaymentApproval')
 const PaymentSchedule = require('../../models/PaymentSchedule')
 const { PAYMENT_CATEGORIES, APPROVAL_STATUSES } = require('../../models/PaymentApproval')
@@ -208,7 +209,9 @@ exports.getTaxFiling = asyncHandler(async (req, res) => {
   const filed = await Tax.countDocuments({ ...filter, status: 'paid' })
   const unfiled = await Tax.countDocuments({ ...filter, status: 'pending' })
 
-  return success(res, {
+  const { mapPendingRow, mapHistoryRow } = require('../../utils/taxFilingPresentation.util')
+
+  return success(res, await attachTaxMeta({
     stats: {
       totalTaxable: s.totalTaxable || 0,
       totalCollected: s.totalCollected || 0,
@@ -216,11 +219,11 @@ exports.getTaxFiling = asyncHandler(async (req, res) => {
       filed,
       unfiled,
     },
-    pendingFiling: pending,
-    filingHistory: history,
+    pendingFiling: pending.map(mapPendingRow),
+    filingHistory: history.map(mapHistoryRow),
     page: parsedPage,
     limit: parsedLimit,
-  })
+  }))
 })
 
 // GET /tax-filing/export
@@ -327,8 +330,140 @@ exports.getTaxFilingFilters = asyncHandler(async (req, res) => {
 
 exports.prepareFiling = asyncHandler(async (req, res) => {
   const tax = await Tax.findById(req.params.taxId)
+    .populate('leadId', 'projectName jobId')
+    .populate('customerId', 'firstName lastName')
+    .lean()
   if (!tax) return notFound(res, 'Tax record not found')
-  return success(res, { tax, message: 'Filing details ready for review' })
+  const { mapDetailModal } = require('../../utils/taxFilingPresentation.util')
+  return success(res, {
+    tax,
+    detail: mapDetailModal(tax),
+    message: 'Filing details ready for review',
+  })
+})
+
+exports.getTaxFilingDetail = asyncHandler(async (req, res) => {
+  const tax = await Tax.findById(req.params.taxId)
+    .populate('leadId', 'projectName jobId location')
+    .populate('customerId', 'firstName lastName email')
+    .lean()
+  if (!tax) return notFound(res, 'Tax record not found')
+  const { mapDetailModal } = require('../../utils/taxFilingPresentation.util')
+  const { isReturnsConfigured } = require('../../config/taxEngine')
+  return success(res, {
+    detail: mapDetailModal(tax),
+    avalara: {
+      filingId: tax.avalaraFilingId || null,
+      returnsConfigured: isReturnsConfigured(),
+      source: tax.source,
+    },
+  })
+})
+
+const handleTaxPayment = async (req, res, { useAvalaraApprove }) => {
+  const taxFilingActions = require('../../services/tax/taxFilingActions.service')
+  const result = await taxFilingActions.submitTaxPayment(
+    req.params.taxId,
+    req.user,
+    req.body,
+    { useAvalaraApprove }
+  )
+  if (result.error === 'not_found') return notFound(res, 'Tax record not found')
+  if (result.error === 'already_paid') return badRequest(res, 'Tax filing already paid')
+  if (result.error === 'avalara_approve_failed') {
+    return badRequest(res, result.message || 'Avalara approve failed')
+  }
+  return success(
+    res,
+    { payment: result.payment, tax: result.tax, avalara: result.avalara || null },
+    useAvalaraApprove ? 'Filing approved via Avalara' : 'Payment submitted successfully'
+  )
+}
+
+/** Figma Pay Now — local ledger (no Returns call unless forced). */
+exports.payTaxFiling = asyncHandler(async (req, res) => handleTaxPayment(req, res, { useAvalaraApprove: false }))
+
+/** Figma Pay Tax / Prepare remittance — calls Avalara `approveFilings` when Returns env is set. */
+exports.approveTaxFiling = asyncHandler(async (req, res) =>
+  handleTaxPayment(req, res, { useAvalaraApprove: true })
+)
+
+exports.getTaxFilingReceipt = asyncHandler(async (req, res) => {
+  const tax = await Tax.findById(req.params.taxId).lean()
+  if (!tax) return notFound(res, 'Tax record not found')
+  if (tax.status !== 'paid') return badRequest(res, 'Receipt available after payment')
+
+  const wantsPdf =
+    String(req.query.format || '').toLowerCase() === 'pdf' ||
+    String(req.headers.accept || '').includes('application/pdf')
+
+  if (wantsPdf) {
+    const { buildTaxFilingReceiptPdfBuffer } = require('../../utils/taxFilingReceiptPdf.util')
+    const buffer = await buildTaxFilingReceiptPdfBuffer(tax)
+    const filename = `tax-receipt-${tax.confirmationNumber || tax._id}.pdf`
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    return res.send(buffer)
+  }
+
+  return success(res, {
+    confirmationNumber: tax.confirmationNumber,
+    amountPaid: tax.paidFiled ?? tax.amount,
+    paidAt: tax.paidAt,
+    state: tax.state,
+    method: tax.providerMethod,
+    paymentMethod: tax.paymentMethod,
+    receipt: {
+      confirmationNumber: tax.confirmationNumber,
+      receiptDate: tax.paidAt,
+    },
+    download: {
+      format: 'pdf',
+      urlHint: `GET .../tax-filing/${tax._id}/receipt?format=pdf`,
+    },
+  })
+})
+
+const defaultTaxFilingNotifications = () => ({
+  emailReminders: true,
+  deadlineAlerts: true,
+  daysBeforeDue: 7,
+  recipientEmail: '',
+})
+
+exports.getTaxFilingNotificationSettings = asyncHandler(async (req, res) => {
+  const doc = await TaxComplianceSettings.findOne({ key: 'default' }).lean()
+  const settings = {
+    ...defaultTaxFilingNotifications(),
+    ...(doc?.taxFilingNotifications || {}),
+  }
+  return success(res, { settings })
+})
+
+exports.updateTaxFilingNotificationSettings = asyncHandler(async (req, res) => {
+  const patch = {}
+  const allowed = ['emailReminders', 'deadlineAlerts', 'daysBeforeDue', 'recipientEmail']
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) patch[`taxFilingNotifications.${key}`] = req.body[key]
+  }
+  if (!Object.keys(patch).length) return badRequest(res, 'No settings to update')
+
+  const doc = await TaxComplianceSettings.findOneAndUpdate(
+    { key: 'default' },
+    { $set: patch },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean()
+
+  return success(
+    res,
+    {
+      settings: {
+        ...defaultTaxFilingNotifications(),
+        ...(doc.taxFilingNotifications || {}),
+      },
+    },
+    'Notification settings saved'
+  )
 })
 
 exports.completeFiling = asyncHandler(async (req, res) => {
@@ -358,23 +493,22 @@ const buildStateWiseFilter = ({ projectId, startDate, endDate }) => {
   return filter
 }
 
+const { stateWiseGroupStage, taxRollupFields } = require('../../utils/taxAggregate.util')
+const taxOrchestrator = require('../../services/tax/taxOrchestrator.service')
+const taxSync = require('../../services/tax/taxSync.service')
+
+const attachTaxMeta = async (payload) => ({
+  ...payload,
+  meta: await taxOrchestrator.getTaxComplianceMeta(),
+})
+
 const computeStateWiseTax = async ({ projectId, startDate, endDate }) => {
   const filter = buildStateWiseFilter({ projectId, startDate, endDate })
 
   const stateStats = await Tax.aggregate([
     { $match: filter },
-    { $group: {
-      _id: '$state',
-      taxCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-      taxableSales: { $sum: '$amount' },
-      paidFiled: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-      payable: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
-      // Only pending dueDates count as "next filing due" — an already-paid record's dueDate is
-      // irrelevant, but $min across all statuses would still pick it up if it happened to be earliest.
-      nextDue: { $min: { $cond: [{ $eq: ['$status', 'pending'] }, '$dueDate', null] } },
-      status: { $first: '$status' },
-    }},
-    { $sort: { nextDue: 1 } }
+    stateWiseGroupStage,
+    { $sort: { nextDue: 1 } },
   ])
 
   const totalTaxCollected   = stateStats.reduce((s, r) => s + r.taxCollected, 0)
@@ -391,11 +525,22 @@ exports.getStateWiseTax = asyncHandler(async (req, res) => {
   const { stateStats, totalTaxCollected, totalPaid, totalPayable, pendingFilingStates, nextFilingDue } =
     await computeStateWiseTax({ projectId, startDate, endDate })
 
-  return success(res, {
+  const { mapStateOverviewRow } = require('../../utils/taxFilingPresentation.util')
+  const stateOverview = await Promise.all(
+    stateStats.map(async (row) => {
+      const rec = await Tax.findOne({ state: row._id, status: 'pending' })
+        .sort({ dueDate: 1 })
+        .select('_id')
+        .lean()
+      return mapStateOverviewRow({ ...row, taxRecordId: rec?._id || null })
+    })
+  )
+
+  return success(res, await attachTaxMeta({
     stats: { totalTaxCollected, totalPaid, totalPayable, pendingFilingStates, nextFilingDue },
-    stateOverview: stateStats,
-    lastSynced: new Date(),
-  })
+    stateOverview,
+    lastSynced: (await taxOrchestrator.getTaxComplianceMeta()).lastSyncedAt || new Date(),
+  }))
 })
 
 // GET /state-wise-tax/stats — stat cards on State-wise Tax screen
@@ -477,29 +622,53 @@ const FILING_FREQUENCY_LABELS = {
 
 // GET /state-wise-tax/upcoming-deadlines
 exports.getUpcomingFilingDeadlines = asyncHandler(async (req, res) => {
-  const { projectId, limit = 6 } = req.query
+  const { projectId, limit = 6, scope } = req.query
   const parsedLimit = Math.min(parseInt(limit, 10) || 6, 50)
   const filter = buildStateWiseFilter({ projectId })
   const now = new Date()
+  const scopeNorm = String(scope || '').toLowerCase()
+
+  if (scopeNorm === 'project') {
+    filter.leadId = filter.leadId || { $ne: null }
+  } else if (scopeNorm === 'state') {
+    filter.leadId = null
+  }
 
   const upcoming = await Tax.find({ ...filter, status: 'pending', dueDate: { $gte: now } })
     .sort({ dueDate: 1 })
     .limit(parsedLimit)
+    .populate('leadId', 'projectName jobId location')
     .lean()
 
-  const deadlines = upcoming.map((tax) => ({
-    _id: tax._id,
-    state: tax.state,
-    filingType: FILING_FREQUENCY_LABELS[tax.filingFrequency] || tax.filingFrequency,
-    dueDate: tax.dueDate,
-    daysLeft: Math.ceil((new Date(tax.dueDate) - now) / 86400000),
-  }))
+  const deadlines = upcoming.map((tax) => {
+    const lead = tax.leadId && typeof tax.leadId === 'object' ? tax.leadId : null
+    const leadId = lead?._id || tax.leadId || null
+    return {
+      _id: tax._id,
+      taxRecordId: tax._id,
+      state: tax.state,
+      leadId,
+      projectName: lead?.projectName || null,
+      jobId: lead?.jobId || null,
+      location: lead?.location || null,
+      filingType: FILING_FREQUENCY_LABELS[tax.filingFrequency] || tax.filingFrequency,
+      dueDate: tax.dueDate,
+      daysLeft: Math.ceil((new Date(tax.dueDate) - now) / 86400000),
+      payable: tax.payable ?? tax.amount ?? 0,
+    }
+  })
 
-  return success(res, { deadlines, total: deadlines.length })
+  return success(res, await attachTaxMeta({ deadlines, total: deadlines.length }))
 })
 
 exports.syncStateTax = asyncHandler(async (req, res) => {
-  return success(res, { syncedAt: new Date() }, 'Tax data synced successfully')
+  const result = await taxSync.syncTaxData()
+  return success(res, result, 'Tax data synced successfully')
+})
+
+exports.getTaxComplianceStatus = asyncHandler(async (req, res) => {
+  const meta = await taxOrchestrator.getTaxComplianceMeta()
+  return success(res, meta)
 })
 
 // ── Project Wise Tax ───────────────────────────────────────────────────────────
@@ -513,14 +682,7 @@ const computeProjectWiseTax = async ({ projectId, startDate, endDate }) => {
 
   const grouped = await Tax.aggregate([
     { $match: filter },
-    { $group: {
-      _id: '$leadId',
-      taxCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-      taxableSales: { $sum: '$amount' },
-      paidFiled: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-      payable: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
-      nextDue: { $min: { $cond: [{ $eq: ['$status', 'pending'] }, '$dueDate', null] } },
-    }},
+    { $group: { _id: '$leadId', ...taxRollupFields } },
   ])
 
   const leadIds = grouped.map(g => g._id)
@@ -530,23 +692,37 @@ const computeProjectWiseTax = async ({ projectId, startDate, endDate }) => {
     : []
   const leadMap = new Map(leads.map(l => [String(l._id), l]))
 
-  const projects = grouped
-    .map(g => {
-      const lead = leadMap.get(String(g._id))
-      return {
-        leadId: g._id,
-        projectName: lead?.projectName || '',
-        jobId: lead?.jobId || '',
-        location: lead?.location || '',
-        customerName: lead ? `${lead.customerId?.firstName || ''} ${lead.customerId?.lastName || ''}`.trim() : '',
-        taxCollected: g.taxCollected,
-        taxableSales: g.taxableSales,
-        paidFiled: g.paidFiled,
-        payable: g.payable,
-        dueDate: g.nextDue,
-        status: g.payable > 0 ? 'Payment Due' : 'Filed',
-      }
-    })
+  const { mapProjectOverviewRow } = require('../../utils/taxFilingPresentation.util')
+  const { computeSalesTaxRate } = require('../../utils/taxSalesRate.util')
+
+  const projectsRaw = grouped.map((g) => {
+    const lead = leadMap.get(String(g._id))
+    return {
+      leadId: g._id,
+      projectName: lead?.projectName || '',
+      jobId: lead?.jobId || '',
+      location: lead?.location || '',
+      customerName: lead ? `${lead.customerId?.firstName || ''} ${lead.customerId?.lastName || ''}`.trim() : '',
+      taxCollected: g.taxCollected,
+      taxableSales: g.taxableSales,
+      salesTaxRate: computeSalesTaxRate(g.taxCollected, g.taxableSales),
+      paidFiled: g.paidFiled,
+      payable: g.payable,
+      dueDate: g.nextDue,
+    }
+  })
+
+  const projects = (
+    await Promise.all(
+      projectsRaw.map(async (row) => {
+        const rec = await Tax.findOne({ leadId: row.leadId, status: 'pending' })
+          .sort({ dueDate: 1 })
+          .select('_id')
+          .lean()
+        return mapProjectOverviewRow({ ...row, taxRecordId: rec?._id || null })
+      })
+    )
+  )
     .sort((a, b) => {
       if (!a.dueDate) return 1
       if (!b.dueDate) return -1
@@ -571,7 +747,16 @@ exports.getProjectWiseTax = asyncHandler(async (req, res) => {
   const total = projects.length
   const paged = projects.slice((parsedPage - 1) * parsedLimit, (parsedPage - 1) * parsedLimit + parsedLimit)
 
-  return success(res, { projects: paged, total, page: parsedPage, limit: parsedLimit })
+  return success(
+    res,
+    await attachTaxMeta({
+      projects: paged,
+      total,
+      page: parsedPage,
+      limit: parsedLimit,
+      lastSynced: (await taxOrchestrator.getTaxComplianceMeta()).lastSyncedAt || new Date(),
+    })
+  )
 })
 
 // GET /project-wise-tax/stats — stat cards on Project-wise Tax screen

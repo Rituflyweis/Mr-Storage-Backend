@@ -1,5 +1,7 @@
 # Delivery quick actions — Frontend integration
 
+**Cross-panel (Contact POC, Account, Construction):** [`frontend-delivery-quick-actions-cross-panel-api.md`](./frontend-delivery-quick-actions-cross-panel-api.md)
+
 **Screens:** Delivery detail, **All Deliveries** row menu, **Deliveries Calendar** event actions (same APIs on each).
 
 **Base URL (UAT):** `https://mr-storage-backend-025k.onrender.com`  

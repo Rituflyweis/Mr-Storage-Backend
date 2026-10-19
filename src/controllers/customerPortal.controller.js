@@ -629,11 +629,21 @@ exports.createProject = asyncHandler(async (req, res) => {
     location, roofStyle, sqft,
   } = req.body
 
+  const { normalizeStructuredAddress } = require('../models/schemas/structuredAddress')
+  const installAddress = normalizeStructuredAddress({
+    line1: fullAddress || location || '',
+    city: city || '',
+    state: state || '',
+    postalCode: pincode || '',
+    country: 'US',
+  })
+
   const lead = await Lead.create({
     customerId:        req.customer._id,
     projectName:       projectName || '',
     buildingType,
     location:           fullAddress || location || '',
+    installAddress,
     city:               city || '',
     state:              state || '',
     pincode:            pincode || '',

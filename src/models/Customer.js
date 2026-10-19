@@ -36,6 +36,16 @@ const CustomerSchema = new mongoose.Schema(
     source:            { type: String, enum: LEAD_SOURCES, default: 'chat' },
     company:           { type: String, default: '', trim: true },
     location:          { type: String, default: '', trim: true },
+    /**
+     * Optional default sales-tax exemption (spec §3). Seeded onto new invoices when
+     * the invoice body does not specify its own. Never assume exemption — default off.
+     */
+    taxExemption: {
+      isExempt:       { type: Boolean, default: false },
+      entityUseCode:  { type: String, default: '', trim: true },
+      exemptionNo:    { type: String, default: '', trim: true },
+      certificateRef: { type: String, default: '', trim: true },
+    },
     resetOtp:          { type: String,  default: null },
     resetOtpExpiry:    { type: Date,    default: null },
     resetOtpVerified:  { type: Boolean, default: false },

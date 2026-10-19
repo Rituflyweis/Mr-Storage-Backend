@@ -17,6 +17,8 @@ router.use("/followups", require("./followup.routes"));
 router.use("/escalations", require("./escalation.routes"));
 router.use("/po-orders", require("./po.routes"));
 router.use("/financials", require("./financial.routes"));
+router.use("/tax-mappings", require("./taxMapping.routes"));
+router.use("/tax-codes", require("./taxCode.routes"));
 router.use("/reports", require("./reports.routes"));
 router.use("/activity", require("./pageActivity.routes"));
 router.use("/audit-logs", require("./auditLog.routes"));

@@ -29,6 +29,106 @@ const {
   getScopedLeadIds,
 } = require("../../utils/invoiceScope");
 const { assertPlantProjectAccess } = require("../../utils/plantProjectAccess");
+const { buildInstallAddressFromLead } = require("../../models/schemas/structuredAddress");
+const taxOrchestrator = require("../../services/tax/taxOrchestrator.service");
+const { shouldBlockOnTaxFailure } = require("../../config/taxEngine");
+
+// Skip reasons that mean "tax genuinely could not be confirmed" and must block
+// finalization when the active provider is Avalara (spec §9, §10).
+const BLOCKING_TAX_SKIP_REASONS = new Set([
+  "ship_from_incomplete",
+  "unapproved_tax_codes",
+  "tax_calc_skipped",
+]);
+
+/**
+ * Commit invoice tax and decide whether finalization (send / mark-sent) may proceed.
+ * Returns { ok: true } to proceed, or { blocked: true, message, correlationId, reason }
+ * when tax must be confirmed but could not be. In local/legacy mode (shouldBlockOnTaxFailure
+ * false) failures are logged and never block.
+ */
+const commitTaxForFinalization = async (invoiceId) => {
+  try {
+    const result = await taxOrchestrator.commitInvoiceTax(invoiceId);
+    if (result?.skipped) {
+      // Benign skips (not customer invoice, legacy/local provider) never block.
+      if (
+        shouldBlockOnTaxFailure() &&
+        result.reason &&
+        BLOCKING_TAX_SKIP_REASONS.has(result.reason)
+      ) {
+        return {
+          blocked: true,
+          reason: result.reason,
+          message: result.error || "Tax could not be confirmed",
+          warnings: result.warnings || [],
+        };
+      }
+      return { ok: true, skipped: true };
+    }
+    return { ok: true };
+  } catch (taxErr) {
+    if (shouldBlockOnTaxFailure()) {
+      return {
+        blocked: true,
+        reason: "tax_error",
+        message: taxErr.message,
+        correlationId: taxErr.correlationId || null,
+      };
+    }
+    console.warn("[tax] commit (non-blocking):", taxErr.message);
+    return { ok: true, nonBlockingError: true };
+  }
+};
+
+// POST /:invoiceId/tax-preview — non-committed SalesOrder estimate (spec §7, §9)
+exports.previewInvoiceTax = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
+  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+
+  // Apply any supplied draft changes to a NON-persisted copy for the estimate.
+  if (req.body && Object.keys(req.body).length) applyInvoiceBodyFields(invoice, req.body);
+
+  const result = await taxOrchestrator.previewInvoiceTax(invoice, {});
+  if (result.skipped) {
+    return success(res, { taxStatus: "unavailable", reason: result.reason, message: result.error, preview: null });
+  }
+  return success(res, { taxStatus: "estimate", provider: result.provider, preview: result.preview });
+});
+
+// POST /:invoiceId/tax-adjust — corrections / refunds / voids (spec §7, §9)
+exports.adjustInvoiceTax = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId);
+  if (!invoice) return notFound(res, "Invoice not found");
+  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+
+  const action = String(req.body?.action || "adjust").toLowerCase();
+  if (!["adjust", "void"].includes(action)) return badRequest(res, "action must be 'adjust' or 'void'");
+  const reason = String(req.body?.reason || "").trim();
+
+  const result = await taxOrchestrator.adjustInvoiceTax(invoice._id, { action, reason });
+  if (result.skipped) {
+    return badRequest(res, result.error || "Tax adjustment could not be applied", {
+      reason: result.reason || "skipped",
+    });
+  }
+  return success(res, { mode: result.mode, snapshot: result.snapshot || null }, "Tax adjustment applied");
+});
+
+// GET /:invoiceId/tax — persisted tax breakdown/status (spec §7)
+exports.getInvoiceTax = asyncHandler(async (req, res) => {
+  const invoice = await Invoice.findById(req.params.invoiceId).select("leadId").lean();
+  if (!invoice) return notFound(res, "Invoice not found");
+  const { error: accessError, code } = await checkLeadAccess(invoice.leadId, req.user);
+  if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
+
+  const tax = await taxOrchestrator.getInvoiceTax(req.params.invoiceId);
+  if (tax.error === "not_found") return notFound(res, "Invoice not found");
+  return success(res, { tax });
+});
 
 const pickPaymentProofReviewNotes = (body = {}) =>
   String(body.reviewNotes || body.notes || body.note || "").trim();
@@ -97,6 +197,11 @@ const INVOICE_BODY_FIELDS = [
   "discount",
   "depositAmount",
   "totalAmount",
+  // Tax context metadata (spec §3)
+  "orderType",
+  "installationProvider",
+  "exemption",
+  "shipToAddress",
 ];
 
 const INVOICE_EDITABLE_STATUSES = ["draft", "sent"];
@@ -562,6 +667,21 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     req.body.quotationId,
   );
   applyQuoteTaxToInvoiceData(invoiceData, quoteTax);
+  invoiceData.shipToAddress = buildInstallAddressFromLead(lead);
+
+  // Seed exemption from the customer's default when the invoice body didn't set one (§3).
+  if (invoiceData.exemption === undefined && lead.customerId) {
+    const exCustomer = await Customer.findById(lead.customerId).select("taxExemption").lean();
+    if (exCustomer?.taxExemption?.isExempt) {
+      invoiceData.exemption = {
+        isExempt: true,
+        entityUseCode: exCustomer.taxExemption.entityUseCode || "",
+        exemptionNo: exCustomer.taxExemption.exemptionNo || "",
+        certificateRef: exCustomer.taxExemption.certificateRef || "",
+        reason: "Seeded from customer default",
+      };
+    }
+  }
 
   const { paymentScheduleStageId } = req.body;
   let paymentScheduleId = null;
@@ -680,6 +800,13 @@ exports.createInvoice = asyncHandler(async (req, res) => {
         source: "create_invoice_admin",
       },
     });
+  }
+
+  try {
+    await taxOrchestrator.calculateInvoiceTax(invoice, { lead });
+    await invoice.save();
+  } catch (taxErr) {
+    console.warn('[tax] calculate on create:', taxErr.message);
   }
 
   return created(res, { invoice: decorateInvoiceForResponse(invoice) });
@@ -807,6 +934,19 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
     if (linkResult.error) return badRequest(res, linkResult.error);
   }
 
+  if (
+    invoice.invoiceType === "customer" &&
+    invoice.status === "draft" &&
+    (hasLineOrAmountUpdates || hasBodyFieldUpdates)
+  ) {
+    try {
+      const leadDoc = await Lead.findById(invoice.leadId).lean();
+      await taxOrchestrator.calculateInvoiceTax(invoice, { lead: leadDoc });
+    } catch (taxErr) {
+      console.warn("[tax] calculate on update:", taxErr.message);
+    }
+  }
+
   await invoice.save();
 
   await auditService.log({
@@ -884,18 +1024,42 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
     : 0;
 
   if (!runningJob) {
-    applyInvoiceSentFields(invoice, {
+    // §9/§10 — confirm/commit tax BEFORE finalizing. Do not send on unconfirmed tax.
+    const taxResult = await commitTaxForFinalization(invoice._id);
+    if (taxResult.blocked) {
+      invoice.avalara = {
+        ...(invoice.avalara ? invoice.avalara.toObject?.() || invoice.avalara : {}),
+        lastError: taxResult.message || "",
+        correlationId: taxResult.correlationId || invoice.avalara?.correlationId || "",
+      };
+      await invoice.save();
+      return error(
+        res,
+        `Invoice not sent — tax could not be confirmed: ${taxResult.message}`,
+        409,
+        {
+          taxStatus: "tax_pending",
+          reason: taxResult.reason,
+          correlationId: taxResult.correlationId || null,
+          warnings: taxResult.warnings || [],
+        },
+      );
+    }
+
+    const freshForSend = await Invoice.findById(invoice._id);
+    applyInvoiceSentFields(freshForSend, {
       sendMethod: "platform",
       sentTo: recipients.toEmail,
       sentCc: recipients.cc,
       sentMessage: customMessage,
     });
-    pushApprovalHistory(invoice, {
+    pushApprovalHistory(freshForSend, {
       status: "sent",
       note: `Invoice sent to ${recipients.toEmail}${recipients.cc.length ? ` (cc: ${recipients.cc.join(", ")})` : ""}`,
       by: req.user._id,
     });
-    await invoice.save();
+    await freshForSend.save();
+    invoice.set(freshForSend.toObject());
 
     await queueEmailSendJob({
       type: "invoice",
@@ -912,10 +1076,12 @@ exports.sendInvoice = asyncHandler(async (req, res) => {
     });
   }
 
+  const freshInvoice = await Invoice.findById(invoice._id);
+
   return success(
     res,
     {
-      invoice: decorateInvoiceForResponse(invoice),
+      invoice: decorateInvoiceForResponse(freshInvoice || invoice),
       sendMethod: "platform",
       sentTo: recipients.toEmail,
       sentCc: recipients.cc,
@@ -954,20 +1120,44 @@ exports.markInvoiceSent = asyncHandler(async (req, res) => {
   if (Number.isNaN(sentAt.getTime())) return badRequest(res, "Invalid sentAt");
   const note = String(req.body?.note || req.body?.message || "").trim();
 
-  applyInvoiceSentFields(invoice, {
+  // §9/§10 — confirm/commit tax BEFORE marking sent. Do not finalize on unconfirmed tax.
+  const taxResult = await commitTaxForFinalization(invoice._id);
+  if (taxResult.blocked) {
+    invoice.avalara = {
+      ...(invoice.avalara ? invoice.avalara.toObject?.() || invoice.avalara : {}),
+      lastError: taxResult.message || "",
+      correlationId: taxResult.correlationId || invoice.avalara?.correlationId || "",
+    };
+    await invoice.save();
+    return error(
+      res,
+      `Invoice not marked sent — tax could not be confirmed: ${taxResult.message}`,
+      409,
+      {
+        taxStatus: "tax_pending",
+        reason: taxResult.reason,
+        correlationId: taxResult.correlationId || null,
+        warnings: taxResult.warnings || [],
+      },
+    );
+  }
+
+  const freshForSend = await Invoice.findById(invoice._id);
+  applyInvoiceSentFields(freshForSend, {
     sendMethod: "manual",
     sentTo: "",
     sentCc: [],
     sentMessage: note,
     sentAt,
   });
-  pushApprovalHistory(invoice, {
+  pushApprovalHistory(freshForSend, {
     status: "sent",
     note: note || "Marked as sent (sent outside the platform)",
     by: req.user._id,
     at: sentAt,
   });
-  await invoice.save();
+  await freshForSend.save();
+  invoice.set(freshForSend.toObject());
 
   await auditService.log({
     type: "invoice",
@@ -984,10 +1174,12 @@ exports.markInvoiceSent = asyncHandler(async (req, res) => {
     },
   });
 
+  const freshInvoice = await Invoice.findById(invoice._id);
+
   return success(
     res,
     {
-      invoice: decorateInvoiceForResponse(invoice),
+      invoice: decorateInvoiceForResponse(freshInvoice || invoice),
       sendMethod: "manual",
     },
     "Invoice marked as sent",

@@ -1357,6 +1357,52 @@ const sendDbBackupNotification = async ({
   );
 };
 
+const sendTaxPaymentConfirmationEmail = async ({ toEmail, tax = {} }) => {
+  if (!toEmail) return
+  const { buildTaxFilingReceiptPdfBuffer } = require("../../utils/taxFilingReceiptPdf.util");
+  const amount = Number(tax.paidFiled ?? tax.amount ?? 0);
+  const amountLabel = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(amount);
+  const paidAt = tax.paidAt ? formatInvoiceDate(tax.paidAt) : "—";
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2937">
+      <h2 style="margin:0 0 12px">Tax payment confirmation</h2>
+      <p>Your tax payment was recorded successfully.</p>
+      <ul>
+        <li><strong>State:</strong> ${escapeHtml(tax.state || "—")}</li>
+        <li><strong>Amount:</strong> ${amountLabel}</li>
+        <li><strong>Confirmation #:</strong> ${escapeHtml(tax.confirmationNumber || "—")}</li>
+        <li><strong>Paid on:</strong> ${paidAt}</li>
+        <li><strong>Method:</strong> ${escapeHtml(tax.paymentMethod || tax.providerMethod || "—")}</li>
+      </ul>
+      <p style="font-size:12px;color:#64748b">A PDF receipt is attached when available.</p>
+    </div>
+  `;
+  let attachments = [];
+  try {
+    const pdf = await buildTaxFilingReceiptPdfBuffer(tax);
+    attachments = [
+      {
+        filename: `tax-receipt-${tax.confirmationNumber || tax._id || "payment"}.pdf`,
+        content: pdf,
+        contentType: "application/pdf",
+      },
+    ];
+  } catch (err) {
+    console.warn("[tax-filing] receipt PDF attachment skipped:", err.message);
+  }
+  await transporter.sendMail({
+    from: resolvedMailFrom,
+    to: toEmail,
+    subject: `Tax payment confirmed — ${tax.state || "Filing"} (${tax.confirmationNumber || "receipt"})`,
+    html,
+    text: `Tax payment confirmed. State: ${tax.state || "—"}. Amount: ${amountLabel}. Confirmation: ${tax.confirmationNumber || "—"}.`,
+    attachments,
+  });
+};
+
 const sendDbBackupFailureNotification = async ({
   toEmail,
   dateLabel,
@@ -1460,4 +1506,5 @@ module.exports = {
   sendDeliveryCallbackRequestEmail,
   sendDbBackupNotification,
   sendDbBackupFailureNotification,
+  sendTaxPaymentConfirmationEmail,
 };

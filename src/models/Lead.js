@@ -62,6 +62,8 @@ const DocumentSchema = new mongoose.Schema(
   { _id: true }
 )
 
+const { StructuredAddressSchema } = require('./schemas/structuredAddress')
+
 const LeadNoteSchema = new mongoose.Schema(
   {
     note:    { type: String, required: true },
@@ -76,6 +78,8 @@ const LeadSchema = new mongoose.Schema(
     customerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
     buildingType:    { type: String, default: '' },
     location:        { type: String, default: '' },
+    /** Structured install / ship-to address for sales tax (AvaTax). */
+    installAddress:  { type: StructuredAddressSchema, default: () => ({ country: 'US' }) },
     city:            { type: String, default: '' },
     state:           { type: String, default: '' },
     pincode:         { type: String, default: '' },
