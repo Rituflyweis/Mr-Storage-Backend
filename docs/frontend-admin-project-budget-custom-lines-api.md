@@ -4,7 +4,20 @@
 **Base path:** `/api/admin/leads/:leadId`  
 **Auth:** `Authorization: Bearer <token>` · roles **`admin`** (and routes that already use admin lead APIs)
 
-This document covers **setting and reading project budgets**, including **`customLines[]`**. Account/sales **read** the same budget data via their own endpoints; they do not use these admin routes for writes.
+This document covers **Budget Planning** (category cards per project): fixed heads (Material, Logistic, Production, Shipper) plus **dynamic** categories you can **add** and **delete**. Account/sales **read** the same budget data via their own endpoints; they do not use these admin routes for writes.
+
+## Budget Planning UI (Figma) → API
+
+| Screen action | API |
+|---------------|-----|
+| Load cards + header totals | `GET …/budget` → `planningCards[]`, `totalBudget`, `expectedProfit` |
+| **Update** on Material / Logistic / Production / Shipper card | `PUT …/budget/categories/{material\|logistic\|production\|shipper}` body `{ "amount": 343000 }` |
+| **Update Budget** / **Save as Draft** (full form) | `POST …/budget` (partial body OK) |
+| **Add** new category card | `POST …/budget/custom-lines` `{ "label": "Permits", "amount": 8000 }` |
+| **Update** on a custom card | `PUT …/budget/custom-lines/:lineKey` |
+| **Delete** custom category | `DELETE …/budget/custom-lines/:lineKey` |
+
+Render cards from **`data.budget.planningCards`** (do not hardcode only four cards). Preset rows have `isPreset: true`, `canDelete: false`. Custom rows have `canDelete: true`.
 
 **Account panel (read-only consumption):** [`frontend-account-panel-api.md`](./frontend-account-panel-api.md) §5 Budget vs actual · [`frontend-account-new-apis-handoff.md`](./frontend-account-new-apis-handoff.md) (account routes only).
 
@@ -73,7 +86,27 @@ Authorization: Bearer <admin-token>
       "createdBy": "69e79dc9e3d92b7f3e1df429",
       "createdAt": "2026-09-20T10:00:00.000Z",
       "updatedAt": "2026-10-15T08:00:00.000Z",
-      "expectedProfit": 1472600
+      "expectedProfit": 1472600,
+      "planningCards": [
+        {
+          "key": "material",
+          "label": "Material Budget",
+          "description": "Estimate all material related costs for the project.",
+          "amount": 120000,
+          "isPreset": true,
+          "canDelete": false,
+          "expenseCategories": []
+        },
+        {
+          "key": "permits",
+          "label": "Permits & fees",
+          "description": "",
+          "amount": 8000,
+          "isPreset": false,
+          "canDelete": true,
+          "expenseCategories": ["permits"]
+        }
+      ]
     }
   }
 }
@@ -181,6 +214,50 @@ Unmentioned fields (`logisticBudget`, `productionBudget`, etc.) stay as stored b
 | `customLines.*.expenseCategories` | optional array |
 
 Lines without a non-empty `label` are dropped. Empty `customLines: []` clears all custom lines.
+
+---
+
+## Dynamic category CRUD (add / delete)
+
+### Add category
+
+```http
+POST /api/admin/leads/{leadId}/budget/custom-lines
+Content-Type: application/json
+
+{
+  "label": "Equipment rental",
+  "amount": 12000,
+  "key": "equipment-rental",
+  "expenseCategories": ["Equipment"]
+}
+```
+
+`label` required. `key` optional (auto-generated if omitted).
+
+### Update custom category
+
+```http
+PUT /api/admin/leads/{leadId}/budget/custom-lines/equipment-rental
+{ "amount": 15000, "label": "Equipment rental (revised)" }
+```
+
+### Delete custom category
+
+```http
+DELETE /api/admin/leads/{leadId}/budget/custom-lines/equipment-rental
+```
+
+Preset keys (`material`, `logistic`, `production`, `shipper`) **cannot** be deleted — set `amount` to `0` or hide in UI if needed.
+
+### Update one preset card (per-card Update button)
+
+```http
+PUT /api/admin/leads/{leadId}/budget/categories/material
+{ "amount": 343000 }
+```
+
+`categoryKey`: `material` · `logistic` · `production` · `shipper` · `other`
 
 ---
 

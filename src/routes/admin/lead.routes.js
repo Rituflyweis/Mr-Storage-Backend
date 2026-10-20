@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body, query } = require('express-validator')
+const { body, query, param } = require('express-validator')
 const { LEAD_TEMPERATURES, LIFECYCLE_STAGES } = require('../../config/constants')
 const ctrl = require('../../controllers/admin/lead.controller')
 const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
@@ -88,6 +88,13 @@ router.delete('/:leadId/notes/:noteId', ctrl.deleteLeadNote)
 router.use('/:leadId/structural-drawing', require('../common/structuralDrawing.routes'))
 router.get('/:leadId/budget', ctrl.getLeadBudget)
 
+const budgetCustomLineBody = [
+  body('key').optional().trim().isString(),
+  body('label').optional().trim().isString(),
+  body('amount').optional().isNumeric(),
+  body('expenseCategories').optional().isArray(),
+]
+
 router.post('/:leadId/budget',
   [
     body('materialBudget').optional().isNumeric(),
@@ -104,6 +111,19 @@ router.post('/:leadId/budget',
   validate,
   ctrl.setLeadBudget
 )
+
+router.put(
+  '/:leadId/budget/categories/:categoryKey',
+  [body('amount').isNumeric(), param('categoryKey').isIn(['material', 'logistic', 'production', 'shipper', 'other'])],
+  validate,
+  ctrl.updateBudgetPresetCategory
+)
+
+router.post('/:leadId/budget/custom-lines', [...budgetCustomLineBody, body('label').notEmpty().trim()], validate, ctrl.addBudgetCustomLine)
+
+router.put('/:leadId/budget/custom-lines/:lineKey', budgetCustomLineBody, validate, ctrl.updateBudgetCustomLine)
+
+router.delete('/:leadId/budget/custom-lines/:lineKey', ctrl.deleteBudgetCustomLine)
 
 router.put('/:leadId/buildings/:buildingId/approve-bom',
   [body('action').isIn(['approved', 'rejected'])],

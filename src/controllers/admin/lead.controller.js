@@ -54,6 +54,62 @@ const {
 } = require('../../utils/businessUnit')
 const leadListSocket = require('../../services/leadListSocket.service')
 const { buildArchivedLeadListFilter } = require('../../utils/leadArchive')
+const {
+  normalizeCustomLines,
+  computeStoredTotalBudget,
+  resolveTotalBudget,
+  buildBudgetPlanningCards,
+  BUDGET_PRESET_KEY_TO_FIELD,
+} = require('../../utils/budgetVsActual.util')
+
+const formatLeadBudgetPayload = (budgetDoc, lead) => {
+  const b = budgetDoc?.toObject ? budgetDoc.toObject() : budgetDoc
+  const total = resolveTotalBudget(b)
+  return {
+    ...b,
+    totalBudget: total,
+    customLines: b.customLines || [],
+    expectedProfit: (lead.quoteValue || 0) - total,
+    planningCards: buildBudgetPlanningCards(b),
+  }
+}
+
+const saveProjectBudgetForLead = async ({ leadId, lead, userId, patch }) => {
+  const existing = await ProjectBudget.findOne({ leadId }).lean()
+  const payload = {
+    materialBudget: patch.materialBudget ?? existing?.materialBudget ?? 0,
+    logisticBudget: patch.logisticBudget ?? existing?.logisticBudget ?? 0,
+    productionBudget: patch.productionBudget ?? existing?.productionBudget ?? 0,
+    shipperBudget: patch.shipperBudget ?? existing?.shipperBudget ?? 0,
+    otherCost: patch.otherCost ?? existing?.otherCost ?? 0,
+    customLines:
+      patch.customLines === undefined
+        ? existing?.customLines || []
+        : normalizeCustomLines(patch.customLines),
+  }
+  const totalBudget = computeStoredTotalBudget(payload)
+  const budget = await ProjectBudget.findOneAndUpdate(
+    { leadId },
+    {
+      leadId,
+      ...payload,
+      totalBudget,
+      createdBy: userId,
+    },
+    { upsert: true, new: true }
+  )
+
+  await auditService.log({
+    type: 'lead',
+    action: AUDIT_ACTIONS.BUDGET_SET,
+    leadId,
+    customerId: lead.customerId,
+    performedBy: userId,
+    metadata: { totalBudget },
+  })
+  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'budget' })
+  return formatLeadBudgetPayload(budget, lead)
+}
 
 exports.getLeadStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
@@ -580,20 +636,7 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
   const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
   const totalPending = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
 
-  const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
-  const budgetTotal = budget ? resolveTotalBudget(budget) : 0
-  const budgetOut = budget
-    ? {
-        materialBudget: budget.materialBudget,
-        logisticBudget: budget.logisticBudget,
-        productionBudget: budget.productionBudget,
-        shipperBudget: budget.shipperBudget,
-        otherCost: budget.otherCost,
-        customLines: budget.customLines || [],
-        totalBudget: budgetTotal,
-        expectedProfit: (lead.quoteValue || 0) - budgetTotal,
-      }
-    : null
+  const budgetOut = budget ? formatLeadBudgetPayload(budget, lead) : null
 
   const leadNotes = await formatLeadNotes(lead)
 
@@ -766,43 +809,21 @@ exports.setLeadBudget = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(leadId).lean()
   if (!lead) return notFound(res, 'Lead not found')
 
-  const { normalizeCustomLines, computeStoredTotalBudget } = require('../../utils/budgetVsActual.util')
-  const existing = await ProjectBudget.findOne({ leadId }).lean()
-  const normalizedCustom =
-    customLines === undefined ? existing?.customLines || [] : normalizeCustomLines(customLines)
-
-  const payload = {
-    materialBudget: materialBudget ?? existing?.materialBudget ?? 0,
-    logisticBudget: logisticBudget ?? existing?.logisticBudget ?? 0,
-    productionBudget: productionBudget ?? existing?.productionBudget ?? 0,
-    shipperBudget: shipperBudget ?? existing?.shipperBudget ?? 0,
-    otherCost: otherCost ?? existing?.otherCost ?? 0,
-    customLines: normalizedCustom,
-  }
-  const totalBudget = computeStoredTotalBudget(payload)
-
-  const budget = await ProjectBudget.findOneAndUpdate(
-    { leadId },
-    {
-      leadId,
-      ...payload,
-      totalBudget,
-      createdBy: req.user._id,
-    },
-    { upsert: true, new: true }
-  )
-
-  await auditService.log({
-    type: 'lead',
-    action: AUDIT_ACTIONS.BUDGET_SET,
+  const budget = await saveProjectBudgetForLead({
     leadId,
-    customerId: lead.customerId,
-    performedBy: req.user._id,
-    metadata: { totalBudget },
+    lead,
+    userId: req.user._id,
+    patch: {
+      materialBudget,
+      logisticBudget,
+      productionBudget,
+      shipperBudget,
+      otherCost,
+      customLines,
+    },
   })
-  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'budget' })
 
-  return success(res, { budget: { ...budget.toObject(), expectedProfit: (lead.quoteValue || 0) - totalBudget } })
+  return success(res, { budget })
 })
 
 exports.getLeadBudget = asyncHandler(async (req, res) => {
@@ -814,16 +835,110 @@ exports.getLeadBudget = asyncHandler(async (req, res) => {
   const budget = await ProjectBudget.findOne({ leadId }).lean()
   if (!budget) return success(res, { budget: null })
 
-  const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
-  const total = resolveTotalBudget(budget)
-  return success(res, {
-    budget: {
-      ...budget,
-      totalBudget: total,
-      customLines: budget.customLines || [],
-      expectedProfit: (lead.quoteValue || 0) - total,
-    },
+  return success(res, { budget: formatLeadBudgetPayload(budget, lead) })
+})
+
+/** Per-card Update on preset categories (Material, Logistic, …). */
+exports.updateBudgetPresetCategory = asyncHandler(async (req, res) => {
+  const { leadId, categoryKey } = req.params
+  const field = BUDGET_PRESET_KEY_TO_FIELD[categoryKey]
+  if (!field) return badRequest(res, 'Invalid categoryKey')
+
+  const amount = Number(req.body.amount)
+  if (Number.isNaN(amount) || amount < 0) {
+    return badRequest(res, 'amount must be a non-negative number')
+  }
+
+  const lead = await Lead.findById(leadId).lean()
+  if (!lead) return notFound(res, 'Lead not found')
+
+  const budget = await saveProjectBudgetForLead({
+    leadId,
+    lead,
+    userId: req.user._id,
+    patch: { [field]: amount },
   })
+
+  return success(res, { budget })
+})
+
+/** Add a dynamic budget category card (Budget Planning + Add). */
+exports.addBudgetCustomLine = asyncHandler(async (req, res) => {
+  const { leadId } = req.params
+  const lead = await Lead.findById(leadId).lean()
+  if (!lead) return notFound(res, 'Lead not found')
+
+  const [line] = normalizeCustomLines([req.body])
+  if (!line) return badRequest(res, 'label is required')
+
+  const existing = await ProjectBudget.findOne({ leadId }).lean()
+  const customLines = [...(existing?.customLines || [])]
+  if (customLines.some((c) => c.key === line.key)) {
+    return badRequest(res, 'A budget line with this key already exists')
+  }
+  customLines.push(line)
+
+  const budget = await saveProjectBudgetForLead({
+    leadId,
+    lead,
+    userId: req.user._id,
+    patch: { customLines },
+  })
+
+  return created(res, { budget, line })
+})
+
+/** Update one dynamic budget line (amount, label, expenseCategories). */
+exports.updateBudgetCustomLine = asyncHandler(async (req, res) => {
+  const { leadId, lineKey } = req.params
+  const lead = await Lead.findById(leadId).lean()
+  if (!lead) return notFound(res, 'Lead not found')
+
+  const existing = await ProjectBudget.findOne({ leadId }).lean()
+  const idx = (existing?.customLines || []).findIndex((c) => c.key === lineKey)
+  if (idx === -1) return notFound(res, 'Budget line not found')
+
+  const merged = {
+    ...existing.customLines[idx],
+    ...req.body,
+    key: lineKey,
+  }
+  const [normalized] = normalizeCustomLines([merged])
+  if (!normalized) return badRequest(res, 'label is required')
+
+  const customLines = [...existing.customLines]
+  customLines[idx] = normalized
+
+  const budget = await saveProjectBudgetForLead({
+    leadId,
+    lead,
+    userId: req.user._id,
+    patch: { customLines },
+  })
+
+  return success(res, { budget, line: normalized })
+})
+
+/** Remove a dynamic budget category (preset cards cannot be deleted). */
+exports.deleteBudgetCustomLine = asyncHandler(async (req, res) => {
+  const { leadId, lineKey } = req.params
+  const lead = await Lead.findById(leadId).lean()
+  if (!lead) return notFound(res, 'Lead not found')
+
+  const existing = await ProjectBudget.findOne({ leadId }).lean()
+  const customLines = (existing?.customLines || []).filter((c) => c.key !== lineKey)
+  if (customLines.length === (existing?.customLines || []).length) {
+    return notFound(res, 'Budget line not found')
+  }
+
+  const budget = await saveProjectBudgetForLead({
+    leadId,
+    lead,
+    userId: req.user._id,
+    patch: { customLines },
+  })
+
+  return success(res, { budget }, 'Budget line removed')
 })
 
 exports.approveBOM = asyncHandler(async (req, res) => {

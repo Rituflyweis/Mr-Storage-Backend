@@ -10,6 +10,39 @@ const BUDGET_PART_FIELDS = [
   'otherCost',
 ]
 
+/** Admin Budget Planning screen (Figma) — preset category cards. */
+const BUDGET_PLANNING_PRESETS = [
+  {
+    key: 'material',
+    label: 'Material Budget',
+    description: 'Estimate all material related costs for the project.',
+    amountField: 'materialBudget',
+  },
+  {
+    key: 'logistic',
+    label: 'Logistic Budget',
+    description: 'Estimate all logistic related cost.',
+    amountField: 'logisticBudget',
+  },
+  {
+    key: 'production',
+    label: 'Production Budget',
+    description: 'Estimate Production and fabrication cost.',
+    amountField: 'productionBudget',
+  },
+  {
+    key: 'shipper',
+    label: 'Shipper Budget',
+    description: 'Estimate shipper quotation and related costs.',
+    amountField: 'shipperBudget',
+  },
+]
+
+const BUDGET_PRESET_KEY_TO_FIELD = Object.fromEntries(
+  BUDGET_PLANNING_PRESETS.map((p) => [p.key, p.amountField])
+)
+BUDGET_PRESET_KEY_TO_FIELD.other = 'otherCost'
+
 const COST_HEAD_CATEGORY_MAP = [
   {
     head: 'Material Cost',
@@ -206,6 +239,44 @@ const buildCostHeadRows = (expenseByCategory, budget) => {
 }
 
 /** Profitability table rows for custom budget lines (expected from budget; actual from expense categories). */
+/** Unified card list for Admin Budget Planning UI (presets + dynamic custom lines). */
+const buildBudgetPlanningCards = (budget) => {
+  const presetCards = BUDGET_PLANNING_PRESETS.map((preset) => ({
+    key: preset.key,
+    label: preset.label,
+    description: preset.description,
+    amount: Math.max(0, Number(budget?.[preset.amountField]) || 0),
+    isPreset: true,
+    canDelete: false,
+    expenseCategories: [],
+  }))
+
+  const otherAmount = Math.max(0, Number(budget?.otherCost) || 0)
+  if (otherAmount > 0) {
+    presetCards.push({
+      key: 'other',
+      label: 'Other Cost',
+      description: 'Miscellaneous and other planned costs.',
+      amount: otherAmount,
+      isPreset: true,
+      canDelete: false,
+      expenseCategories: [],
+    })
+  }
+
+  const customCards = (budget?.customLines || []).map((line) => ({
+    key: line.key,
+    label: line.label,
+    description: '',
+    amount: Math.max(0, Number(line.amount) || 0),
+    isPreset: false,
+    canDelete: true,
+    expenseCategories: line.expenseCategories || [],
+  }))
+
+  return [...presetCards, ...customCards]
+}
+
 const buildCustomProfitabilityRows = (budget, expenseByCategory) => {
   const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
   return (budget?.customLines || []).map((line) => {
@@ -224,6 +295,8 @@ const buildCustomProfitabilityRows = (budget, expenseByCategory) => {
 
 module.exports = {
   BUDGET_PART_FIELDS,
+  BUDGET_PLANNING_PRESETS,
+  BUDGET_PRESET_KEY_TO_FIELD,
   COST_HEAD_CATEGORY_MAP,
   normalizeCustomLines,
   sumFixedBudgetParts,
@@ -232,6 +305,7 @@ module.exports = {
   resolveTotalBudget,
   budgetVarianceStatus,
   sumExpenseCategories,
+  buildBudgetPlanningCards,
   buildCostHeadRows,
   buildCustomBudgetRows,
   buildCustomProfitabilityRows,
