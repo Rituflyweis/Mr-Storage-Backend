@@ -9,7 +9,13 @@ const {
   resolveConstructionCalendarLeadIds,
 } = require('../../utils/constructionProjectCalendar')
 const { CONSTRUCTION_STAGES } = require('../../utils/constructionProjectScope')
-const { enrichConstructionTaskForCard } = require('../../utils/constructionTaskCard.util')
+const {
+  enrichConstructionTaskForCard,
+  enrichLifecycleStepForCard,
+  lifecycleStepsForActivePhase,
+  statsFromConstructionCards,
+} = require('../../utils/constructionTaskCard.util')
+const { loadProjectPhasesPayload } = require('../../services/projectPhases.service')
 const {
   listConstructionTasks,
   TASK_LIST_POPULATE,
@@ -93,7 +99,32 @@ exports.getProjectConstructionTasks = asyncHandler(async (req, res) => {
 
   const query = { ...req.query, leadId: req.params.leadId }
   const { tasks, total, stats } = await listConstructionTasks(query)
-  const constructionTasks = mapConstructionTaskCards(tasks)
+  let constructionTasks = mapConstructionTaskCards(tasks)
+  let tasksSource = 'task_records'
+  let statsOut = stats
+  let totalOut = total
+
+  const phasesPayload = await loadProjectPhasesPayload(req.params.leadId)
+  const projectProgress = phasesPayload
+    ? {
+        overallProgressPct: phasesPayload.progress.overallProgressPct,
+        currentStepNumber: phasesPayload.progress.currentStepNumber,
+        totalSteps: phasesPayload.progress.totalSteps,
+        currentStepLabel: phasesPayload.progress.currentStepLabel,
+        phases: phasesPayload.phases,
+      }
+    : null
+
+  if (!constructionTasks.length && phasesPayload) {
+    const stepRows = lifecycleStepsForActivePhase(
+      phasesPayload.phases,
+      phasesPayload.progress.steps
+    )
+    constructionTasks = stepRows.map(enrichLifecycleStepForCard)
+    tasksSource = 'lifecycle_active_phase'
+    statsOut = statsFromConstructionCards(constructionTasks)
+    totalOut = constructionTasks.length
+  }
 
   return success(res, {
     project: {
@@ -102,8 +133,10 @@ exports.getProjectConstructionTasks = asyncHandler(async (req, res) => {
       jobId: guard.lead.jobId,
     },
     constructionTasks,
-    total,
-    stats,
+    total: totalOut,
+    stats: statsOut,
+    tasksSource,
+    projectProgress,
     scope: 'sales_assigned_construction',
   })
 })

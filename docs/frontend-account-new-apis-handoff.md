@@ -13,9 +13,7 @@ This document lists **account-panel routes only** (`/api/account/...`) with **co
 | Full account screen matrix & budget vs actual | [`frontend-account-panel-api.md`](./frontend-account-panel-api.md) |
 | **Payments — `quoteOrderId` on POST `/payments/orders`** | [`frontend-account-payments-orders-quote-order-id-handoff-2026-10-17.md`](./frontend-account-payments-orders-quote-order-id-handoff-2026-10-17.md) |
 | **Analytics Figma (income/expense/P&L — full req/res)** | [`frontend-account-analytics-figma-integration-handoff-2026-10-17.md`](./frontend-account-analytics-figma-integration-handoff-2026-10-17.md) |
-| **Tax & Filing Figma (3 pages + modals — screen map)** | [`frontend-account-tax-filing-figma-integration-handoff-2026-10-19.md`](./frontend-account-tax-filing-figma-integration-handoff-2026-10-19.md) |
-| **All gap fixes — addresses + tax + invoices (START HERE)** | [`frontend-gap-changes-tax-address-avalara-2026-10-19.md`](./frontend-gap-changes-tax-address-avalara-2026-10-19.md) |
-| **Tax API — extra req/res examples** | [`frontend-account-tax-full-api-handoff-2026-10-19.md`](./frontend-account-tax-full-api-handoff-2026-10-19.md) |
+| **Account Tax & Filing (Figma + API + migration)** | [`frontend-handoff/account-tax/README.md`](./frontend-handoff/account-tax/README.md) |
 | Project sub-page field reference | [`frontend-account-project-detail-api.md`](./frontend-account-project-detail-api.md) |
 | **Admin — set project budget & `customLines[]`** | [`frontend-admin-project-budget-custom-lines-api.md`](./frontend-admin-project-budget-custom-lines-api.md) |
 

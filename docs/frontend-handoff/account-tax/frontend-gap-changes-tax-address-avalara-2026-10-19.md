@@ -494,4 +494,4 @@ POST/PUT  lead create/update routes     → installAddress, city, state, pincode
 
 **Give frontend this file first:** `frontend-gap-changes-tax-address-avalara-2026-10-19.md`
 
-**Complete before/after + req/res (all APIs):** [`avalara-full-changes-master-handoff-2026-10-19.md`](./avalara-full-changes-master-handoff-2026-10-19.md)
+**Complete before/after + req/res (all APIs):** [`avalara-full-changes-master-handoff-2026-10-19.md`](../../avalara-full-changes-master-handoff-2026-10-19.md)

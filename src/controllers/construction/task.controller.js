@@ -4,10 +4,7 @@ const Lead = require('../../models/Lead')
 const User = require('../../models/User')
 const Milestone = require('../../models/Milestone')
 const ProjectStepDetail = require('../../models/ProjectStepDetail')
-const {
-  computeProjectSteps,
-  buildPhasesFromSteps,
-} = require('../../utils/computeProjectSteps')
+const { loadProjectPhasesPayload } = require('../../services/projectPhases.service')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const notificationService = require('../../services/notification.service')
@@ -199,19 +196,6 @@ exports.getTaskStats = asyncHandler(async (req, res) => {
   return success(res, { stats })
 })
 
-const loadProjectPhasesPayload = async (leadId) => {
-  const lead = await Lead.findById(leadId)
-    .select('projectName jobId endDate plannedStartDate lifecycleStatus lifecycleHistory')
-    .lean()
-  if (!lead) return null
-
-  const stepDetails = await ProjectStepDetail.find({ leadId: lead._id }).lean()
-  const progress = computeProjectSteps(lead, stepDetails)
-  const phases = buildPhasesFromSteps(lead, progress.steps)
-
-  return { lead, progress, phases, stepDetails }
-}
-
 // GET /projects/:leadId/phases — lifecycle phases + granular steps with completion %
 exports.getProjectPhases = asyncHandler(async (req, res) => {
   const payload = await loadProjectPhasesPayload(req.params.leadId)
@@ -236,9 +220,9 @@ exports.getProjectProgress = asyncHandler(async (req, res) => {
     .lean()
   if (!lead) return notFound(res, 'Project not found')
 
-  const stepDetails = await ProjectStepDetail.find({ leadId: lead._id }).lean()
-  const stepProgress = computeProjectSteps(lead, stepDetails)
-  const phases = buildPhasesFromSteps(lead, stepProgress.steps)
+  const payload = await loadProjectPhasesPayload(req.params.leadId)
+  if (!payload) return notFound(res, 'Project not found')
+  const { progress: stepProgress, phases } = payload
 
   const [tasks, milestones] = await Promise.all([
     Task.find({ leadId: lead._id }).select('status').lean(),

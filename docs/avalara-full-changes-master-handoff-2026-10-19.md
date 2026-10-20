@@ -11,8 +11,7 @@ Single reference for **what to change in the UI/API client**: old behavior vs ne
 
 | Doc | Use |
 |-----|-----|
-| [`frontend-gap-changes-tax-address-avalara-2026-10-19.md`](./frontend-gap-changes-tax-address-avalara-2026-10-19.md) | Short migration checklist |
-| [`frontend-account-tax-full-api-handoff-2026-10-19.md`](./frontend-account-tax-full-api-handoff-2026-10-19.md) | More account copy-paste examples |
+| [`frontend-handoff/account-tax/`](./frontend-handoff/account-tax/README.md) | Account tax bundle: Figma map, full API req/res, migration checklist |
 
 ---
 
@@ -859,4 +858,4 @@ POST   /api/customer/projects
 
 ---
 
-**Give frontend this file** for before/after + req/res. Checklist-only: [`frontend-gap-changes-tax-address-avalara-2026-10-19.md`](./frontend-gap-changes-tax-address-avalara-2026-10-19.md).
+**Give frontend this file** for before/after + req/res (Sales/Admin). Account tax Figma pages: [`frontend-handoff/account-tax/`](./frontend-handoff/account-tax/README.md).

@@ -56,6 +56,67 @@ const enrichConstructionTaskForCard = (task) => {
   }
 }
 
+const LIFECYCLE_STATUS_TO_TASK = {
+  completed: 'done',
+  in_progress: 'in_progress',
+  pending: 'todo',
+}
+
+/**
+ * Read-only card for a lifecycle step (Sales / Construction when no Task documents exist).
+ */
+const enrichLifecycleStepForCard = (step) => {
+  const status = LIFECYCLE_STATUS_TO_TASK[step.status] || 'todo'
+  const taskLike = {
+    _id: step.key,
+    title: step.label,
+    description: step.notes || '',
+    status,
+    priority: 'medium',
+    dueDate: step.expectedCompletion || null,
+    completedAt: step.completedAt || (step.status === 'completed' ? step.date : null),
+    createdAt: step.startedAt || step.date || null,
+    updatedAt: step.completedAt || step.startedAt || step.date || null,
+    source: 'lifecycle',
+    stepKey: step.key,
+    lifecycleStatus: step.status,
+    assignedTo: null,
+    createdBy: null,
+    leadId: null,
+    attachments: step.attachments || [],
+  }
+  return enrichConstructionTaskForCard(taskLike)
+}
+
+/** Steps in the current Inprogress timeline phase (Figma horizontal row). */
+const lifecycleStepsForActivePhase = (phases = [], steps = []) => {
+  const active =
+    phases.find((p) => p.status === 'Inprogress') ||
+    [...phases].reverse().find((p) => p.status === 'Completed')
+  if (!active?.stageKeys?.length) return []
+  const keys = new Set(active.stageKeys)
+  return steps.filter((s) => keys.has(s.key))
+}
+
+const statsFromConstructionCards = (cards = []) => {
+  const now = new Date()
+  return {
+    total: cards.length,
+    todo: cards.filter((c) => c.status === 'todo').length,
+    inProgress: cards.filter((c) => c.status === 'in_progress').length,
+    done: cards.filter((c) => c.status === 'done').length,
+    overdue: cards.filter(
+      (c) =>
+        c.status !== 'done' &&
+        c.estimatedEndDate &&
+        new Date(c.estimatedEndDate) < now
+    ).length,
+  }
+}
+
 module.exports = {
   enrichConstructionTaskForCard,
+  enrichLifecycleStepForCard,
+  lifecycleStepsForActivePhase,
+  statsFromConstructionCards,
 }

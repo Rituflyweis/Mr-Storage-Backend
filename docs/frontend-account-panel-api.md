@@ -1455,7 +1455,7 @@ Still available for tax filing, expense CRUD, etc. Prefer **`/api/account/financ
 
 | Need | Path |
 |------|------|
-| Tax filing + address/tax gaps | [`frontend-gap-changes-tax-address-avalara-2026-10-19.md`](./frontend-gap-changes-tax-address-avalara-2026-10-19.md) |
+| Tax filing + address/tax gaps | [`docs/frontend-handoff/account-tax/`](./frontend-handoff/account-tax/README.md) (Figma + full API + migration) |
 | Expenses admin | `/api/account/financial-extra/expenses` |
 | WIP export (alt) | `/api/account/financial-extra/wip-profits/export` |
 

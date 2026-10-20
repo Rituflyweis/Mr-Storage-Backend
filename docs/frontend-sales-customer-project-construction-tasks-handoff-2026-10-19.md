@@ -20,6 +20,8 @@ Full field reference (badges, stats, errors): [`frontend-sales-construction-task
 
 Construction tasks are **not** embedded in lead detail — load them in a **second request** using the same `leadId` from the project row or route param.
 
+When the Construction panel has **not** created manual `Task` rows yet, the API **falls back** to lifecycle steps in the **current Inprogress phase** (same pipeline as `GET /api/construction/projects/:leadId/phases`). Check **`data.tasksSource`**: `task_records` vs `lifecycle_active_phase`. Cards from lifecycle include **`source: "lifecycle"`** and **`stepKey`** (not a Mongo task `_id`).
+
 ---
 
 ## 2. Primary API — horizontal task cards
@@ -96,10 +98,20 @@ Authorization: Bearer eyJ...
       "done": 2,
       "overdue": 1
     },
+    "tasksSource": "task_records",
+    "projectProgress": {
+      "overallProgressPct": 57,
+      "currentStepLabel": "BOM Review",
+      "currentStepNumber": 12,
+      "totalSteps": 21,
+      "phases": []
+    },
     "scope": "sales_assigned_construction"
   }
 }
 ```
+
+**Lifecycle fallback (`tasksSource: "lifecycle_active_phase"`)** — e.g. Design phase: BOM Received (done), BOM Review (in progress), Material Check (pending). Task detail by id applies only when **`tasksSource === "task_records"`**.
 
 ### Figma card mapping
 
