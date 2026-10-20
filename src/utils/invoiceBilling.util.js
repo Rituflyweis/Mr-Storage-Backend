@@ -84,19 +84,80 @@ const bankHasContent = (bank) => {
   )
 }
 
+/** "Council Bluffs, IA" → { city, state } */
+const parseCityStateLine = (line = '') => {
+  const text = String(line).trim()
+  const comma = text.match(/^(.+?),\s*([A-Za-z]{2})\s*$/)
+  if (comma) {
+    return { city: comma[1].trim(), state: comma[2].toUpperCase() }
+  }
+  return { city: text, state: '' }
+}
+
+const isLikelyPostalCode = (value) => /^\d{5}(-\d{4})?$/.test(String(value || '').trim())
+
+/**
+ * Map company PDF-style address lines to structured billing fields.
+ * Expected: [street, "City, ST", postal, country]
+ */
+const billingAddressFromLines = (companyName, lines = []) => {
+  const normalizedLines = lines.map((l) => String(l || '').trim()).filter(Boolean)
+  if (!normalizedLines.length) {
+    return normalizeAddress({ companyName })
+  }
+
+  const line1 = normalizedLines[0] || ''
+  let line2 = ''
+  let city = ''
+  let state = ''
+  let postalCode = ''
+  let country = ''
+
+  if (normalizedLines.length >= 4) {
+    line2 = normalizedLines[1] || ''
+    const cs = parseCityStateLine(normalizedLines[1])
+    city = cs.city
+    state = cs.state
+    postalCode = normalizedLines[2] || ''
+    country = normalizedLines[normalizedLines.length - 1] || ''
+  } else if (normalizedLines.length === 3) {
+    line2 = normalizedLines[1] || ''
+    const cs = parseCityStateLine(normalizedLines[1])
+    city = cs.city
+    state = cs.state
+    postalCode = normalizedLines[2] || ''
+  } else if (normalizedLines.length === 2) {
+    line2 = normalizedLines[1] || ''
+    const cs = parseCityStateLine(normalizedLines[1])
+    city = cs.city
+    state = cs.state
+  }
+
+  return normalizeAddress({
+    companyName,
+    line1,
+    line2,
+    city,
+    state,
+    postalCode,
+    country,
+    lines: normalizedLines,
+  })
+}
+
+/** Fix legacy rows that stored postal code in `city` when `lines` are present. */
+const repairBillingAddressFromLines = (addr) => {
+  const a = normalizeAddress(addr)
+  const lines = a.lines?.length ? a.lines : []
+  if (lines.length >= 3 && a.line1 && isLikelyPostalCode(a.city) && !a.state) {
+    return billingAddressFromLines(a.companyName, lines)
+  }
+  return a
+}
+
 exports.getDefaultBillingAddress = () => {
   const company = getInvoiceCompany()
-  const lines = company.addressLines || []
-  return normalizeAddress({
-    companyName: company.name,
-    lines,
-    line1: lines[0] || '',
-    line2: lines[1] || '',
-    city: lines[2] || '',
-    state: '',
-    postalCode: '',
-    country: lines[lines.length - 1] || '',
-  })
+  return billingAddressFromLines(company.name, company.addressLines || [])
 }
 
 exports.getDefaultBankDetails = () => normalizeBankDetails(getCompanyDefaultBankDetails())
@@ -134,7 +195,7 @@ exports.ensureInvoiceBillingDefaultsOnCreate = (target, { invoiceType } = {}) =>
 
 exports.resolveInvoiceBillingForResponse = (invoiceLike) => {
   const billingAddress = addressHasContent(invoiceLike?.billingAddress)
-    ? normalizeAddress(invoiceLike.billingAddress)
+    ? repairBillingAddressFromLines(invoiceLike.billingAddress)
     : exports.getDefaultBillingAddress()
   const bankDetails = bankHasContent(invoiceLike?.bankDetails)
     ? normalizeBankDetails(invoiceLike.bankDetails)
@@ -163,6 +224,10 @@ exports.formatBankDetailsLines = (bank) => {
   if (b.paymentInstructions) lines.push(b.paymentInstructions)
   return lines
 }
+
+exports.parseCityStateLine = parseCityStateLine
+exports.billingAddressFromLines = billingAddressFromLines
+exports.repairBillingAddressFromLines = repairBillingAddressFromLines
 
 exports.pickBillingFieldsForListRow = (invoiceLike) => {
   const resolved = exports.resolveInvoiceBillingForResponse(invoiceLike)

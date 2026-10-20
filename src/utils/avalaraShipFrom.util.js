@@ -5,14 +5,7 @@ const {
   isTaxAddressReady,
 } = require('../models/schemas/structuredAddress')
 
-const parseCityStateLine = (line = '') => {
-  const text = String(line).trim()
-  const comma = text.match(/^(.+?),\s*([A-Za-z]{2})\s*$/)
-  if (comma) {
-    return { city: comma[1].trim(), state: comma[2].toUpperCase() }
-  }
-  return { city: text, state: '' }
-}
+const { parseCityStateLine } = require('./invoiceBilling.util')
 
 /** Parse invoice PDF company address lines into a structured tax address. */
 const structuredAddressFromCompanyLines = (lines = []) => {
