@@ -88,7 +88,9 @@ const enrichLifecycleStepForCard = (step) => {
   return enrichConstructionTaskForCard(taskLike)
 }
 
-/** Steps in the current Inprogress timeline phase (Figma horizontal row). */
+const { PLANT_LIFECYCLE_STAGES } = require('../config/constants')
+
+/** Steps in the current Inprogress timeline phase bucket (Planning, Design, …). */
 const lifecycleStepsForActivePhase = (phases = [], steps = []) => {
   const active =
     phases.find((p) => p.status === 'Inprogress') ||
@@ -96,6 +98,21 @@ const lifecycleStepsForActivePhase = (phases = [], steps = []) => {
   if (!active?.stageKeys?.length) return []
   const keys = new Set(active.stageKeys)
   return steps.filter((s) => keys.has(s.key))
+}
+
+/** Plant pipeline only — same stages as Construction after release to plant (13 steps). */
+const lifecycleStepsForPlantPipeline = (steps = []) => {
+  const plantKeys = new Set(PLANT_LIFECYCLE_STAGES)
+  return steps.filter((s) => plantKeys.has(s.key))
+}
+
+/**
+ * @param {'active_phase'|'plant_pipeline'|'full'} scope
+ */
+const lifecycleStepsForSalesCards = (scope, phases, steps) => {
+  if (scope === 'full') return steps
+  if (scope === 'active_phase') return lifecycleStepsForActivePhase(phases, steps)
+  return lifecycleStepsForPlantPipeline(steps)
 }
 
 const statsFromConstructionCards = (cards = []) => {
@@ -118,5 +135,7 @@ module.exports = {
   enrichConstructionTaskForCard,
   enrichLifecycleStepForCard,
   lifecycleStepsForActivePhase,
+  lifecycleStepsForPlantPipeline,
+  lifecycleStepsForSalesCards,
   statsFromConstructionCards,
 }

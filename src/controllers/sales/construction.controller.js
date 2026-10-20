@@ -12,7 +12,7 @@ const { CONSTRUCTION_STAGES } = require('../../utils/constructionProjectScope')
 const {
   enrichConstructionTaskForCard,
   enrichLifecycleStepForCard,
-  lifecycleStepsForActivePhase,
+  lifecycleStepsForSalesCards,
   statsFromConstructionCards,
 } = require('../../utils/constructionTaskCard.util')
 const { loadProjectPhasesPayload } = require('../../services/projectPhases.service')
@@ -112,16 +112,28 @@ exports.getProjectConstructionTasks = asyncHandler(async (req, res) => {
         totalSteps: phasesPayload.progress.totalSteps,
         currentStepLabel: phasesPayload.progress.currentStepLabel,
         phases: phasesPayload.phases,
+        /** Same 21-step list as GET /api/construction/projects/:leadId/phases */
+        steps: phasesPayload.progress.steps,
       }
     : null
 
   if (!constructionTasks.length && phasesPayload) {
-    const stepRows = lifecycleStepsForActivePhase(
+    const scopeRaw = String(req.query.lifecycleScope || 'plant_pipeline').toLowerCase()
+    const lifecycleScope = ['active_phase', 'plant_pipeline', 'full'].includes(scopeRaw)
+      ? scopeRaw
+      : 'plant_pipeline'
+    const stepRows = lifecycleStepsForSalesCards(
+      lifecycleScope,
       phasesPayload.phases,
       phasesPayload.progress.steps
     )
     constructionTasks = stepRows.map(enrichLifecycleStepForCard)
-    tasksSource = 'lifecycle_active_phase'
+    tasksSource =
+      lifecycleScope === 'active_phase'
+        ? 'lifecycle_active_phase'
+        : lifecycleScope === 'full'
+          ? 'lifecycle_full'
+          : 'lifecycle_plant_pipeline'
     statsOut = statsFromConstructionCards(constructionTasks)
     totalOut = constructionTasks.length
   }

@@ -20,7 +20,24 @@ Full field reference (badges, stats, errors): [`frontend-sales-construction-task
 
 Construction tasks are **not** embedded in lead detail — load them in a **second request** using the same `leadId` from the project row or route param.
 
-When the Construction panel has **not** created manual `Task` rows yet, the API **falls back** to lifecycle steps in the **current Inprogress phase** (same pipeline as `GET /api/construction/projects/:leadId/phases`). Check **`data.tasksSource`**: `task_records` vs `lifecycle_active_phase`. Cards from lifecycle include **`source: "lifecycle"`** and **`stepKey`** (not a Mongo task `_id`).
+When the Construction panel has **not** created manual `Task` rows yet, the API **falls back** to **lifecycle steps** (same data as Construction **`GET /api/construction/projects/:leadId/phases`**). Check **`data.tasksSource`**:
+
+| `tasksSource` | Meaning |
+|---------------|---------|
+| `task_records` | Rows from **`Task`** collection (created in Construction → Tasks) |
+| `lifecycle_plant_pipeline` | **Default fallback** — 13 plant stages from *Released to Plant* → *Delivered* |
+| `lifecycle_active_phase` | Only the current Figma phase bucket (e.g. Design → 3 steps) — query `?lifecycleScope=active_phase` |
+| `lifecycle_full` | All 21 lifecycle steps — query `?lifecycleScope=full` |
+
+**Construction vs Sales (same project):**
+
+| Construction `…/phases` | Sales `…/construction-tasks` |
+|---------------------------|------------------------------|
+| `steps[]` — **21** items (sales funnel + plant) | `projectProgress.steps[]` — **same 21** when fallback runs |
+| `phases[]` — **5** buckets (Planning → Handover) | `projectProgress.phases[]` — **same 5** |
+| Full tracker UI | `constructionTasks[]` — **cards** for the horizontal row (default **13** plant steps, not 21) |
+
+Cards from lifecycle include **`source: "lifecycle"`** and **`stepKey`** (not a Mongo task `_id`). If the response has **no** `tasksSource` / `projectProgress`, prod is on an **older backend** — redeploy `shubham-changes-13-aug`.
 
 ---
 
@@ -111,7 +128,7 @@ Authorization: Bearer eyJ...
 }
 ```
 
-**Lifecycle fallback (`tasksSource: "lifecycle_active_phase"`)** — e.g. Design phase: BOM Received (done), BOM Review (in progress), Material Check (pending). Task detail by id applies only when **`tasksSource === "task_records"`**.
+**Lifecycle fallback (default `tasksSource: "lifecycle_plant_pipeline"`)** — 13 plant cards for daniels-style projects. Use `?lifecycleScope=active_phase` for 3 cards or `full` for 21. Task detail by id applies only when **`tasksSource === "task_records"`**.
 
 ### Figma card mapping
 
