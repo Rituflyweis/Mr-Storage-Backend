@@ -9,13 +9,7 @@ const {
   resolveConstructionCalendarLeadIds,
 } = require('../../utils/constructionProjectCalendar')
 const { CONSTRUCTION_STAGES } = require('../../utils/constructionProjectScope')
-const {
-  enrichConstructionTaskForCard,
-  enrichLifecycleStepForCard,
-  lifecycleStepsForSalesCards,
-  statsFromConstructionCards,
-} = require('../../utils/constructionTaskCard.util')
-const { loadProjectPhasesPayload } = require('../../services/projectPhases.service')
+const { enrichConstructionTaskForCard } = require('../../utils/constructionTaskCard.util')
 const {
   listConstructionTasks,
   TASK_LIST_POPULATE,
@@ -99,44 +93,7 @@ exports.getProjectConstructionTasks = asyncHandler(async (req, res) => {
 
   const query = { ...req.query, leadId: req.params.leadId }
   const { tasks, total, stats } = await listConstructionTasks(query)
-  let constructionTasks = mapConstructionTaskCards(tasks)
-  let tasksSource = 'task_records'
-  let statsOut = stats
-  let totalOut = total
-
-  const phasesPayload = await loadProjectPhasesPayload(req.params.leadId)
-  const projectProgress = phasesPayload
-    ? {
-        overallProgressPct: phasesPayload.progress.overallProgressPct,
-        currentStepNumber: phasesPayload.progress.currentStepNumber,
-        totalSteps: phasesPayload.progress.totalSteps,
-        currentStepLabel: phasesPayload.progress.currentStepLabel,
-        phases: phasesPayload.phases,
-        /** Same 21-step list as GET /api/construction/projects/:leadId/phases */
-        steps: phasesPayload.progress.steps,
-      }
-    : null
-
-  if (!constructionTasks.length && phasesPayload) {
-    const scopeRaw = String(req.query.lifecycleScope || 'plant_pipeline').toLowerCase()
-    const lifecycleScope = ['active_phase', 'plant_pipeline', 'full'].includes(scopeRaw)
-      ? scopeRaw
-      : 'plant_pipeline'
-    const stepRows = lifecycleStepsForSalesCards(
-      lifecycleScope,
-      phasesPayload.phases,
-      phasesPayload.progress.steps
-    )
-    constructionTasks = stepRows.map(enrichLifecycleStepForCard)
-    tasksSource =
-      lifecycleScope === 'active_phase'
-        ? 'lifecycle_active_phase'
-        : lifecycleScope === 'full'
-          ? 'lifecycle_full'
-          : 'lifecycle_plant_pipeline'
-    statsOut = statsFromConstructionCards(constructionTasks)
-    totalOut = constructionTasks.length
-  }
+  const constructionTasks = mapConstructionTaskCards(tasks)
 
   return success(res, {
     project: {
@@ -145,10 +102,10 @@ exports.getProjectConstructionTasks = asyncHandler(async (req, res) => {
       jobId: guard.lead.jobId,
     },
     constructionTasks,
-    total: totalOut,
-    stats: statsOut,
-    tasksSource,
-    projectProgress,
+    total,
+    stats,
+    /** User-created tasks in Construction panel only — empty until POST /api/construction/tasks */
+    tasksSource: 'task_records',
     scope: 'sales_assigned_construction',
   })
 })

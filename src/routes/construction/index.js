@@ -37,6 +37,7 @@ router.get(
 router.use('/customers', require('../common/customerDocumentsRead.routes'))
 router.use('/projects', require('./projectManufacturing.routes'))
 router.get('/projects/:leadId/phases', taskCtrl.getProjectPhases)
+router.get('/projects/:leadId/timeline-tasks', taskCtrl.getProjectTimelineTasks)
 router.get('/projects/:leadId/progress', taskCtrl.getProjectProgress)
 router.post('/projects/:leadId/milestones', taskCtrl.createMilestone)
 router.get('/projects/:leadId', projectCtrl.getProjectDetail)

@@ -11,6 +11,8 @@ const notificationService = require('../../services/notification.service')
 const auditService = require('../../services/audit.service')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { listConstructionTasks } = require('../../services/constructionTasksQuery.service')
+const { PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
+const { enrichConstructionTaskForCard } = require('../../utils/constructionTaskCard.util')
 
 exports.getTasks = asyncHandler(async (req, res) => {
   const { tasks, total, stats } = await listConstructionTasks(req.query)
@@ -202,14 +204,61 @@ exports.getProjectPhases = asyncHandler(async (req, res) => {
   if (!payload) return notFound(res, 'Project not found')
 
   const { lead, progress, phases } = payload
+  const stepsScope = String(req.query.stepsScope || 'all').toLowerCase()
+  let steps = progress.steps
+  if (stepsScope === 'plant') {
+    const plantKeys = new Set(PLANT_LIFECYCLE_STAGES)
+    steps = progress.steps.filter((s) => plantKeys.has(s.key))
+  }
+
+  const currentPlantIdx = steps.findIndex((s) => s.key === lead.lifecycleStatus)
+  const scopedCurrentStepNumber =
+    stepsScope === 'plant' && currentPlantIdx >= 0 ? currentPlantIdx + 1 : progress.currentStepNumber
+  const scopedTotalSteps = stepsScope === 'plant' ? steps.length : progress.totalSteps
+  const scopedCurrentLabel =
+    stepsScope === 'plant' && currentPlantIdx >= 0
+      ? steps[currentPlantIdx].label
+      : progress.currentStepLabel
+  const scopedOverallPct =
+    stepsScope === 'plant' && steps.length
+      ? Math.round(
+          (steps.filter((s) => s.status === 'completed').length / steps.length) * 100
+        )
+      : progress.overallProgressPct
+
   return success(res, {
     project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId },
     phases,
-    steps: progress.steps,
-    overallProgressPct: progress.overallProgressPct,
-    currentStepNumber: progress.currentStepNumber,
-    totalSteps: progress.totalSteps,
-    currentStepLabel: progress.currentStepLabel,
+    steps,
+    stepsScope: stepsScope === 'plant' ? 'plant' : 'all',
+    /** For dated timeline tasks created in Construction, use GET .../timeline-tasks */
+    timelineTasksEndpoint: `/api/construction/projects/${lead._id}/timeline-tasks`,
+    overallProgressPct: scopedOverallPct,
+    currentStepNumber: scopedCurrentStepNumber,
+    totalSteps: scopedTotalSteps,
+    currentStepLabel: scopedCurrentLabel,
+  })
+})
+
+/** GET /projects/:leadId/timeline-tasks — user-added construction timeline (Task collection). */
+exports.getProjectTimelineTasks = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId)
+    .select('projectName jobId')
+    .lean()
+  if (!lead) return notFound(res, 'Project not found')
+
+  const { tasks, total, stats } = await listConstructionTasks({
+    ...req.query,
+    leadId: req.params.leadId,
+  })
+  const timelineTasks = tasks.map(enrichConstructionTaskForCard)
+
+  return success(res, {
+    project: { leadId: lead._id, projectName: lead.projectName, jobId: lead.jobId },
+    timelineTasks,
+    total,
+    stats,
+    dataSource: 'task_records',
   })
 })
 

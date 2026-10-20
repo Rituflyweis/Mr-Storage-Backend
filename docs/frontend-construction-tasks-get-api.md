@@ -6,6 +6,8 @@
 
 Tasks are **planned work** on a project (assignee, due date, status). For daily site diary entries, use **work logs** → [`frontend-construction-work-logs-get-api.md`](./frontend-construction-work-logs-get-api.md).
 
+**Construction timeline UI (per project):** prefer **`GET /projects/:leadId/timeline-tasks`** — same tasks with card fields. Do **not** use **`GET /projects/:leadId/phases`** for timeline tasks; `/phases` is the cross-panel **lifecycle** pipeline. See [`frontend-construction-timeline-tasks-api.md`](./frontend-construction-timeline-tasks-api.md).
+
 ---
 
 ## 1. List tasks
