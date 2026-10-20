@@ -23,6 +23,10 @@ const { businessUnitFields } = require('../../utils/businessUnit')
 const { notifyCustomerDrawingUploadedForLabel } = require('../../services/customerNotification.service')
 const generateDeliveryNumber = require('../../utils/generateDeliveryNumber')
 const generateMaterialRequestId = require('../../utils/generateMaterialRequestId')
+const {
+  parseTaskScheduleFromBody,
+  applyTaskStatusAndCompletion,
+} = require('../../utils/constructionTaskFields.util')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
 const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered')
 
@@ -596,14 +600,25 @@ exports.getTasks = asyncHandler(async (req, res) => {
 })
 
 exports.createTask = asyncHandler(async (req, res) => {
-  const { title, description, leadId, assignedTo, priority, dueDate, notes } = req.body
+  const { title, description, leadId, assignedTo, priority, notes, status } = req.body
 
   const lead = await Lead.findById(leadId)
   if (!lead) return notFound(res, 'Project not found')
 
+  const schedule = parseTaskScheduleFromBody(req.body)
+  const initialStatus = status || 'todo'
   const task = await Task.create({
-    title, description, leadId, assignedTo: assignedTo || null, priority: priority || 'medium',
-    dueDate: dueDate || null, notes: notes || '', createdBy: req.user._id,
+    title,
+    description,
+    leadId,
+    assignedTo: assignedTo || null,
+    priority: priority || 'medium',
+    startDate: schedule.startDate ?? new Date(),
+    dueDate: schedule.dueDate ?? null,
+    notes: notes || '',
+    status: initialStatus,
+    completedAt: initialStatus === 'done' ? schedule.completedAt ?? new Date() : null,
+    createdBy: req.user._id,
   })
 
   return created(res, { task })
@@ -613,17 +628,17 @@ exports.updateTask = asyncHandler(async (req, res) => {
   const task = await Task.findById(req.params.taskId)
   if (!task) return notFound(res, 'Task not found')
 
-  const { title, description, status, priority, assignedTo, dueDate, notes } = req.body
-  if (title !== undefined)       task.title = title
+  const { title, description, status, priority, assignedTo, notes } = req.body
+  const schedule = parseTaskScheduleFromBody(req.body)
+
+  if (title !== undefined) task.title = title
   if (description !== undefined) task.description = description
-  if (status !== undefined) {
-    task.status = status
-    if (status === 'done') task.completedAt = new Date()
-  }
-  if (priority !== undefined)   task.priority = priority
+  if (priority !== undefined) task.priority = priority
   if (assignedTo !== undefined) task.assignedTo = assignedTo || null
-  if (dueDate !== undefined)    task.dueDate = dueDate || null
-  if (notes !== undefined)      task.notes = notes
+  if (notes !== undefined) task.notes = notes
+  if (schedule.dueDate !== undefined) task.dueDate = schedule.dueDate
+  if (schedule.startDate !== undefined) task.startDate = schedule.startDate
+  applyTaskStatusAndCompletion(task, status, schedule.completedAt)
 
   await task.save()
   return success(res, { task })

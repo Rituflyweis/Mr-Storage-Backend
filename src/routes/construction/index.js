@@ -58,6 +58,8 @@ router.post('/media/:leadId', mediaCtrl.uploadLeadMedia)
 router.get('/tasks/stats', taskCtrl.getTaskStats)
 router.get('/tasks', taskCtrl.getTasks)
 router.post('/tasks', taskCtrl.createTask)
+router.get('/tasks/:taskId', taskCtrl.getTaskById)
+router.put('/tasks/:taskId/complete', taskCtrl.completeTask)
 router.put('/tasks/:taskId', taskCtrl.updateTask)
 router.delete('/tasks/:taskId', taskCtrl.deleteTask)
 

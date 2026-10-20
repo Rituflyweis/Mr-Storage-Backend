@@ -9,7 +9,11 @@ const TaskSchema = new mongoose.Schema(
     createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     priority:    { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
     status:      { type: String, enum: ['todo', 'in_progress', 'done'], default: 'todo' },
+    /** Planned start (Construction timeline). */
+    startDate:   { type: Date, default: null },
+    /** Expected end date (shown as estimatedEndDate on timeline cards). */
     dueDate:     { type: Date, default: null },
+    /** Actual completion date (shown as completedDate on timeline cards). */
     completedAt: { type: Date, default: null },
     notes:       { type: String, default: '' },
     attachments: { type: [String], default: [] },

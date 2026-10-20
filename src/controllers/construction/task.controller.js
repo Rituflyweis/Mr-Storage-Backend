@@ -13,35 +13,73 @@ const { AUDIT_ACTIONS } = require('../../config/constants')
 const { listConstructionTasks } = require('../../services/constructionTasksQuery.service')
 const { PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
 const { enrichConstructionTaskForCard } = require('../../utils/constructionTaskCard.util')
+const {
+  parseTaskScheduleFromBody,
+  applyTaskStatusAndCompletion,
+} = require('../../utils/constructionTaskFields.util')
+
+const populateTask = (taskId) =>
+  Task.findById(taskId).populate('leadId', 'projectName jobId').populate('assignedTo', 'name email').lean()
+
+const taskResponse = (taskDoc) => enrichConstructionTaskForCard(taskDoc)
 
 exports.getTasks = asyncHandler(async (req, res) => {
   const { tasks, total, stats } = await listConstructionTasks(req.query)
   return success(res, { tasks, total, stats })
 })
 
+/** GET /tasks/:taskId — task detail modal (Project Construction Task). */
+exports.getTaskById = asyncHandler(async (req, res) => {
+  const populated = await populateTask(req.params.taskId)
+  if (!populated) return notFound(res, 'Task not found')
+  return success(res, { task: taskResponse(populated) })
+})
+
 exports.createTask = asyncHandler(async (req, res) => {
-  const { title, description, leadId, assignedTo, priority, status, dueDate, attachments } = req.body
+  const {
+    title,
+    description,
+    workDescription,
+    leadId,
+    assignedTo,
+    priority,
+    status,
+    attachments,
+  } = req.body
+  const taskDescription =
+    description !== undefined ? description : workDescription !== undefined ? workDescription : ''
   if (!title || !leadId) return badRequest(res, 'title and leadId are required')
+
+  const schedule = parseTaskScheduleFromBody(req.body)
+  if (
+    (req.body.dueDate !== undefined || req.body.estimatedEndDate !== undefined) &&
+    schedule.dueDate === undefined
+  ) {
+    return badRequest(res, 'Invalid estimated end date (dueDate / estimatedEndDate)')
+  }
+  if (req.body.startDate !== undefined && schedule.startDate === undefined) {
+    return badRequest(res, 'Invalid startDate')
+  }
 
   const lead = await Lead.findById(leadId).select('_id').lean()
   if (!lead) return notFound(res, 'Project not found')
 
+  const initialStatus = status || 'todo'
   const task = await Task.create({
     title,
-    description,
+    description: taskDescription,
     leadId,
     assignedTo: assignedTo || null,
     createdBy: req.user._id,
     priority: priority || 'medium',
-    status: status || 'todo',
-    dueDate: dueDate || null,
+    status: initialStatus,
+    startDate: schedule.startDate ?? new Date(),
+    dueDate: schedule.dueDate ?? null,
+    completedAt: initialStatus === 'done' ? schedule.completedAt ?? new Date() : null,
     attachments: Array.isArray(attachments) ? attachments : [],
   })
 
-  const populated = await Task.findById(task._id)
-    .populate('leadId', 'projectName jobId')
-    .populate('assignedTo', 'name email')
-    .lean()
+  const populated = await populateTask(task._id)
 
   if (task.assignedTo) {
     await notificationService.notify({
@@ -65,14 +103,15 @@ exports.createTask = asyncHandler(async (req, res) => {
     metadata: { title: task.title },
   })
 
-  return success(res, { task: populated }, 'Task created')
+  return success(res, { task: taskResponse(populated) }, 'Task created')
 })
 
 exports.updateTask = asyncHandler(async (req, res) => {
   const task = await Task.findById(req.params.taskId)
   if (!task) return notFound(res, 'Task not found')
 
-  const { title, description, assignedTo, priority, status, dueDate, notes, attachments } = req.body
+  const { title, description, assignedTo, priority, status, notes, attachments } = req.body
+  const schedule = parseTaskScheduleFromBody(req.body)
   const previousAssignedTo = task.assignedTo ? String(task.assignedTo) : null
 
   if (title !== undefined) task.title = title
@@ -80,20 +119,14 @@ exports.updateTask = asyncHandler(async (req, res) => {
   if (assignedTo !== undefined) task.assignedTo = assignedTo || null
   if (priority !== undefined) task.priority = priority
   if (notes !== undefined) task.notes = notes
-  if (dueDate !== undefined) task.dueDate = dueDate || null
+  if (schedule.dueDate !== undefined) task.dueDate = schedule.dueDate
+  if (schedule.startDate !== undefined) task.startDate = schedule.startDate
   if (attachments !== undefined) task.attachments = Array.isArray(attachments) ? attachments : []
-  if (status !== undefined) {
-    task.status = status
-    if (status === 'done' && !task.completedAt) task.completedAt = new Date()
-    if (status !== 'done') task.completedAt = null
-  }
+  applyTaskStatusAndCompletion(task, status, schedule.completedAt)
 
   await task.save()
 
-  const populated = await Task.findById(task._id)
-    .populate('leadId', 'projectName jobId')
-    .populate('assignedTo', 'name email')
-    .lean()
+  const populated = await populateTask(task._id)
 
   const nowAssignedTo = task.assignedTo ? String(task.assignedTo) : null
   if (nowAssignedTo && nowAssignedTo !== previousAssignedTo) {
@@ -118,7 +151,40 @@ exports.updateTask = asyncHandler(async (req, res) => {
     metadata: { title: task.title, status: task.status },
   })
 
-  return success(res, { task: populated }, 'Task updated')
+  return success(res, { task: taskResponse(populated) }, 'Task updated')
+})
+
+/** Mark complete with optional actual completion date (Construction timeline). */
+exports.completeTask = asyncHandler(async (req, res) => {
+  const task = await Task.findById(req.params.taskId)
+  if (!task) return notFound(res, 'Task not found')
+
+  const schedule = parseTaskScheduleFromBody(req.body)
+  const completedAt = schedule.completedAt ?? new Date()
+  if (!(completedAt instanceof Date)) return badRequest(res, 'Invalid completedAt / completedDate')
+
+  task.status = 'done'
+  task.completedAt = completedAt
+  if (req.body.notes !== undefined) task.notes = String(req.body.notes || '')
+  if (req.body.description !== undefined) task.description = String(req.body.description || '')
+  else if (req.body.workDescription !== undefined) task.description = String(req.body.workDescription || '')
+  if (req.body.attachments !== undefined) {
+    task.attachments = Array.isArray(req.body.attachments) ? req.body.attachments : []
+  }
+
+  await task.save()
+
+  await auditService.logFromRequest(req, {
+    type: 'construction',
+    action: AUDIT_ACTIONS.CONSTRUCTION_TASK_UPDATED,
+    leadId: task.leadId,
+    entityType: 'task',
+    entityId: task._id,
+    metadata: { title: task.title, status: 'done', completedAt: task.completedAt },
+  })
+
+  const populated = await populateTask(task._id)
+  return success(res, { task: taskResponse(populated) }, 'Task marked complete')
 })
 
 exports.deleteTask = asyncHandler(async (req, res) => {

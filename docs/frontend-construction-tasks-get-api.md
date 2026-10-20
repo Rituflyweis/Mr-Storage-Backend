@@ -156,5 +156,8 @@ Returns `taskProgress`, `milestones`, and `timeline` for that `leadId`.
 | Method | Path |
 |--------|------|
 | POST | `/api/construction/tasks` |
+| PUT | `/api/construction/tasks/:taskId/complete` — set **actual** completion date (`completedAt` / `completedDate`) |
 | PUT | `/api/construction/tasks/:taskId` |
 | DELETE | `/api/construction/tasks/:taskId` |
+
+Timeline fields, on-time logic, and examples: [`frontend-construction-timeline-tasks-api.md`](./frontend-construction-timeline-tasks-api.md).

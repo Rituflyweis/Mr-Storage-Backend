@@ -16,35 +16,61 @@ const calendarDaysBetween = (from, to) => {
  * Start date uses task `createdAt` until a dedicated start field exists on Task.
  */
 const enrichConstructionTaskForCard = (task) => {
-  const startDate = task.createdAt || null
+  const startDate = task.startDate || task.createdAt || null
   const estimatedEndDate = task.dueDate || null
   const completedDate = task.completedAt || null
   const now = new Date()
 
   let timelineBadge = { label: 'Pending', tone: 'neutral' }
+  let onTimeStatus = 'pending'
+  let daysLateOrEarly = 0
+  let daysPastDue = 0
+
+  if (task.status !== 'done' && estimatedEndDate && new Date(estimatedEndDate) < now) {
+    daysPastDue = calendarDaysBetween(estimatedEndDate, now)
+  }
 
   if (task.status === 'done') {
     if (estimatedEndDate && completedDate) {
       const lateDays = calendarDaysBetween(estimatedEndDate, completedDate)
-      if (lateDays > 0) {
+      daysLateOrEarly = lateDays
+      if (lateDays > 1) {
+        onTimeStatus = 'late'
         timelineBadge = {
-          label: `${lateDays} Day${lateDays === 1 ? '' : 's'} Late`,
+          label: `${lateDays} Days Late`,
           tone: 'success',
         }
+      } else if (lateDays === 1) {
+        onTimeStatus = 'late'
+        timelineBadge = { label: 'Under timeline', tone: 'success' }
       } else {
+        onTimeStatus = lateDays < 0 ? 'early' : 'on_time'
         timelineBadge = { label: 'Under timeline', tone: 'success' }
       }
     } else {
-      timelineBadge = { label: 'Completed', tone: 'success' }
+      onTimeStatus = 'unknown'
+      timelineBadge = { label: 'Under timeline', tone: 'success' }
     }
   } else if (task.status === 'in_progress') {
-    if (estimatedEndDate && new Date(estimatedEndDate) < now) {
+    if (daysPastDue > 0) {
+      onTimeStatus = 'overdue'
       timelineBadge = { label: 'Delayed', tone: 'danger' }
     } else {
+      onTimeStatus = 'in_progress'
       timelineBadge = { label: 'In Progress', tone: 'info' }
     }
-  } else if (estimatedEndDate && new Date(estimatedEndDate) < now) {
+  } else if (daysPastDue > 0) {
+    onTimeStatus = 'overdue'
     timelineBadge = { label: 'Delayed', tone: 'danger' }
+  }
+
+  let timelineStatusLine = null
+  if (task.status === 'done') {
+    timelineStatusLine = timelineBadge.label
+  } else if (daysPastDue > 0) {
+    timelineStatusLine = `${daysPastDue} Day${daysPastDue === 1 ? '' : 's'} Delayed`
+  } else if (task.status === 'in_progress') {
+    timelineStatusLine = 'In Progress'
   }
 
   return {
@@ -52,6 +78,17 @@ const enrichConstructionTaskForCard = (task) => {
     startDate,
     estimatedEndDate,
     completedDate,
+    onTimeStatus,
+    daysLateOrEarly,
+    daysPastDue,
+    timelineStatusLine,
+    canMarkComplete: task.status !== 'done',
+    onTime:
+      onTimeStatus === 'on_time' || onTimeStatus === 'early'
+        ? true
+        : onTimeStatus === 'late' || onTimeStatus === 'overdue'
+          ? false
+          : null,
     timelineBadge,
   }
 }
