@@ -124,6 +124,9 @@ module.exports = {
   DB_BACKUP_NOTIFY_EMAIL:
     (process.env.DB_BACKUP_NOTIFY_EMAIL || "").trim() ||
     "info@steelbuildingdepot.com",
+  /** When false (default), outbound mail to info@steelbuildingdepot.com is dropped in mailer. */
+  ALLOW_MAIL_TO_INFO_STEELBUILDING:
+    process.env.ALLOW_MAIL_TO_INFO_STEELBUILDING === "true",
   DB_BACKUP_S3_PREFIX:
     (process.env.DB_BACKUP_S3_PREFIX || "").trim() ||
     `db-backups/${process.env.NODE_ENV || "development"}`,

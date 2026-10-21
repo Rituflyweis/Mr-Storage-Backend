@@ -59,6 +59,9 @@ services:
         value: "true"
       - key: DB_BACKUP_NOTIFY_EMAIL
         value: info@steelbuildingdepot.com
+      # Go-live: set to "true" to allow enquiry/backup/form mail to info@steelbuildingdepot.com
+      - key: ALLOW_MAIL_TO_INFO_STEELBUILDING
+        value: "false"
       - key: DB_BACKUP_TIMEZONE
         value: Asia/Kolkata
       - key: PROJECT_ID_TIMEZONE

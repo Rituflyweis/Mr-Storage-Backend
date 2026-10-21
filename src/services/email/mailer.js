@@ -30,6 +30,10 @@ const {
   formatFreightLoadDetailsHtml,
   formatFreightLoadDetailsText,
 } = require("../plant/freightLoadDetails.service");
+const {
+  isOutboundMailBlockedForSteelInfo,
+  logBlockedSteelInfoEmail,
+} = require("../../utils/emailRecipientGuard.util");
 
 if (SENDGRID_API_KEY) {
   sgMail.setApiKey(SENDGRID_API_KEY);
@@ -49,7 +53,7 @@ const isEnquiryNotificationConfigured = () =>
   );
 
 // Nodemailer/SMTP is only for public form (and chat) enquiry notifications.
-const enquiryTransporter = isEnquiryNotificationConfigured()
+let enquiryTransporter = isEnquiryNotificationConfigured()
   ? nodemailer.createTransport({
       host: SMTP_HOST,
       port: SMTP_PORT,
@@ -62,6 +66,19 @@ const enquiryTransporter = isEnquiryNotificationConfigured()
       },
     })
   : null;
+
+if (enquiryTransporter) {
+  const rawEnquirySendMail = enquiryTransporter.sendMail.bind(enquiryTransporter);
+  enquiryTransporter = {
+    sendMail: async (mailOptions = {}) => {
+      if (isOutboundMailBlockedForSteelInfo(mailOptions)) {
+        logBlockedSteelInfoEmail(mailOptions, "nodemailer-enquiry");
+        return { messageId: "blocked-info-steelbuilding", blocked: true };
+      }
+      return rawEnquirySendMail(mailOptions);
+    },
+  };
+}
 
 const normalizeAttachmentsForSendGrid = (attachments = []) =>
   attachments.map((attachment) => {
@@ -77,6 +94,11 @@ const normalizeAttachmentsForSendGrid = (attachments = []) =>
 
 const transporter = {
   sendMail: async (mailOptions = {}) => {
+    if (isOutboundMailBlockedForSteelInfo(mailOptions)) {
+      logBlockedSteelInfoEmail(mailOptions, "sendgrid");
+      return { provider: "sendgrid", blocked: true, messageId: "blocked-info-steelbuilding" };
+    }
+
     if (!SENDGRID_API_KEY) {
       throw new Error(
         "Email service is not configured. Set SENDGRID_API_KEY.",
