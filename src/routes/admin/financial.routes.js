@@ -14,18 +14,24 @@ router.get('/payments-dashboard/export', ctrl.exportPaymentsDashboard)
 
 // Tax & Filling
 const taxFilingListQuery = [
+  query('state').optional({ checkFalsy: true }).trim().isString(),
   query('projectId').optional({ checkFalsy: true }).isMongoId(),
   query('clientId').optional({ checkFalsy: true }).isMongoId(),
   query('startDate').optional({ checkFalsy: true }).isISO8601(),
   query('endDate').optional({ checkFalsy: true }).isISO8601(),
   query('search').optional().trim(),
+  query('page').optional({ checkFalsy: true }).isInt({ min: 1 }),
+  query('limit').optional({ checkFalsy: true }).isInt({ min: 1, max: 100 }),
 ]
 router.get('/tax-filing',              taxFilingListQuery, validate, ctrl.getTaxFiling)
 router.get('/tax-filing/stats',
   [
+    query('state').optional({ checkFalsy: true }).trim().isString(),
     query('projectId').optional({ checkFalsy: true }).isMongoId(),
     query('clientId').optional({ checkFalsy: true }).isMongoId(),
     query('search').optional().trim(),
+    query('startDate').optional({ checkFalsy: true }).isISO8601(),
+    query('endDate').optional({ checkFalsy: true }).isISO8601(),
   ],
   validate,
   ctrl.getTaxFilingStats
@@ -53,6 +59,7 @@ router.put('/tax-filing/:taxId/file',  ctrl.completeFiling)
 
 // State Wise Tax
 const stateWiseTaxQuery = [
+  query('state').optional({ checkFalsy: true }).trim().isString(),
   query('projectId').optional({ checkFalsy: true }).isMongoId(),
   query('startDate').optional({ checkFalsy: true }).isISO8601(),
   query('endDate').optional({ checkFalsy: true }).isISO8601(),

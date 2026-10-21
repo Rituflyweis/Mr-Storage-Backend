@@ -3,6 +3,7 @@
 Share this **folder** with frontend for the Account panel taxation section (Figma: Tax & Filling, State Wise, Project Wise).
 
 **Base path:** `/api/account/financial-extra`  
+**Admin panel (same APIs):** `/api/admin/financial-extra` — see [`../admin-tax/README.md`](../admin-tax/README.md)  
 **Auth:** `Bearer` token · roles **`account`**, **`admin`**
 
 ## Read order
