@@ -11,8 +11,19 @@ const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { resolveTotalBudget, budgetVarianceStatus } = require('../../utils/budgetVsActual.util')
-
-const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+const {
+  round2,
+  resolveApprovalStatusLabel,
+  resolveApprovalWorkflowStage,
+  resolveCategoryLabel,
+} = require('../../utils/paymentApprovalPresentation.util')
+const {
+  loadApprovalDetailContext,
+  buildPaymentApprovalDetailPayload,
+  appendPaymentApprovalActivity,
+  addPaymentApprovalRemark,
+  addPaymentApprovalAttachment,
+} = require('../../services/paymentApprovalDetail.service')
 
 // ── Delivery Finance (dashboard card) ────────────────────────────────────────
 
@@ -437,6 +448,8 @@ const mapPaymentApprovalListRow = (a, deliveryMap) => {
   const linked = formatLinkedTo(a, delivery)
   return {
     approvalId: a._id,
+    paymentId: a.paymentId,
+    createdAt: a.createdAt,
     invoiceType: INVOICE_TYPE_LABELS[a.payeeType] || a.payeeType,
     invoiceTypeCode: a.payeeType,
     companyName: a.payee,
@@ -454,23 +467,9 @@ const mapPaymentApprovalListRow = (a, deliveryMap) => {
     workflowStage: resolveApprovalWorkflowStage(a),
     paidAt: a.paidAt || null,
     category: a.category,
+    categoryLabel: resolveCategoryLabel(a.category),
+    canReview: ['pending', 'under_review'].includes(a.status),
   }
-}
-
-const resolveApprovalStatusLabel = (a) => {
-  if (a.status === 'approved' && a.paidAt) return 'Paid'
-  if (a.status === 'under_review') return 'Under Review'
-  if (a.status === 'pending') return 'Pending'
-  if (a.status === 'disputed') return 'Disputed'
-  if (a.status === 'rejected') return 'Rejected'
-  return a.status
-}
-
-const resolveApprovalWorkflowStage = (a) => {
-  if (a.status === 'disputed') return 'disputed'
-  if (a.status === 'approved' && a.paidAt) return 'paid'
-  if (a.status === 'approved') return 'approved'
-  return a.status
 }
 
 exports.getPaymentApprovalStats = asyncHandler(async (req, res) => {
@@ -544,84 +543,46 @@ exports.getPaymentApprovals = asyncHandler(async (req, res) => {
   })
 })
 
-exports.getPaymentApprovalDetail = asyncHandler(async (req, res) => {
-  const approval = await PaymentApproval.findById(req.params.approvalId)
-    .populate('requestedBy', 'name email')
-    .populate('reviewedBy', 'name')
-    .populate('leadId', 'projectName jobId location')
-    .lean()
+const paymentApprovalDetailOptions = (req) => ({
+  canReviewPendingOnly: /\/admin\//.test(req.originalUrl || ''),
+})
+
+const respondPaymentApprovalDetail = async (req, res, message) => {
+  const ctx = await loadApprovalDetailContext(req.params.approvalId)
+  if (!ctx) return notFound(res, 'Payment approval not found')
+  const data = buildPaymentApprovalDetailPayload(
+    ctx.approval,
+    ctx.delivery,
+    ctx.freightBid,
+    paymentApprovalDetailOptions(req)
+  )
+  return success(res, data, message)
+}
+
+exports.getPaymentApprovalDetail = asyncHandler(async (req, res) => respondPaymentApprovalDetail(req, res))
+
+exports.addPaymentApprovalRemark = asyncHandler(async (req, res) => {
+  const { text } = req.body
+  const result = await addPaymentApprovalRemark(req.params.approvalId, req.user._id, text)
+  if (result.error === 'not_found') return notFound(res, 'Payment approval not found')
+  if (result.error === 'bad_request') return badRequest(res, result.message)
+  return respondPaymentApprovalDetail(req, res, 'Remark added')
+})
+
+exports.addPaymentApprovalAttachment = asyncHandler(async (req, res) => {
+  const { name, url, fileSize } = req.body
+  const result = await addPaymentApprovalAttachment(req.params.approvalId, req.user._id, { name, url, fileSize })
+  if (result.error === 'not_found') return notFound(res, 'Payment approval not found')
+  if (result.error === 'bad_request') return badRequest(res, result.message)
+  return respondPaymentApprovalDetail(req, res, 'Attachment added')
+})
+
+exports.downloadPaymentApprovalAttachment = asyncHandler(async (req, res) => {
+  const approval = await PaymentApproval.findById(req.params.approvalId).select('attachments').lean()
   if (!approval) return notFound(res, 'Payment approval not found')
-
-  let delivery = null
-  let freightBid = null
-  if (approval.linkedType === 'delivery' && approval.linkedId) {
-    delivery = await Delivery.findById(approval.linkedId).lean()
-  } else if (approval.linkedType === 'freight_bid' && approval.linkedId) {
-    freightBid = await FreightBid.findById(approval.linkedId)
-      .populate('carrierId', 'carrierName phone email')
-      .populate('deliveryId')
-      .lean()
-    delivery = freightBid?.deliveryId || null
-  }
-
-  const amount = round2(approval.amount)
-  const costBreakdown = {
-    baseFreight: round2(amount * 0.89),
-    fuelSurcharge: round2(amount * 0.07),
-    handlingFee: round2(amount * 0.04),
-    total: amount,
-  }
-
-  const route =
-    delivery?.pickupLocation && delivery?.deliveryLocation
-      ? `${delivery.pickupLocation} → ${delivery.deliveryLocation}`
-      : ''
-
-  return success(res, {
-    approvalId: approval._id,
-    status: approval.status,
-    statusLabel: approval.status === 'under_review' ? 'Under Review' : approval.status,
-    invoiceNumber: approval.invoiceNumber,
-    invoiceType: INVOICE_TYPE_LABELS[approval.payeeType] || approval.payeeType,
-    invoiceTypeCode: approval.payeeType,
-    companyName: approval.payee,
-    invoiceDetails: {
-      invoiceAmount: amount,
-      status: approval.status === 'pending' ? 'Pending Approval' : approval.status,
-      paymentDueDate: approval.dueDate,
-      paymentPriority: paymentApprovalPriority(approval.dueDate),
-    },
-    companyInformation: {
-      companyName: approval.payee,
-      deliveryDate: delivery?.deliveryDate || freightBid?.estimatedDeliveryDate || null,
-      deliveryId: delivery?.deliveryNumber || '',
-    },
-    costBreakdown,
-    linkedTransaction: {
-      freightRequestId: approval.paymentId,
-      loadId: delivery?.deliveryNumber || '',
-      projectName: approval.leadId?.projectName || '',
-      linkedDeliveryId: delivery?._id || null,
-      linkedDeliveryNumber: delivery?.deliveryNumber || '',
-      route,
-    },
-    project: approval.leadId
-      ? {
-        leadId: approval.leadId._id,
-        projectName: approval.leadId.projectName,
-        jobId: approval.leadId.jobId,
-        location: approval.leadId.location,
-      }
-      : null,
-    requestedBy: approval.requestedBy,
-    reviewedBy: approval.reviewedBy,
-    reviewNotes: approval.reviewNotes,
-    category: approval.category,
-    amount,
-    dueDate: approval.dueDate,
-    paidAt: approval.paidAt,
-    notes: approval.notes,
-  })
+  const attachment = approval.attachments?.[Number(req.params.index)]
+  if (!attachment) return notFound(res, 'Attachment not found')
+  return res.redirect(attachment.url)
 })
 
 exports.reviewPaymentApproval = asyncHandler(async (req, res) => {
@@ -636,6 +597,25 @@ exports.reviewPaymentApproval = asyncHandler(async (req, res) => {
   approval.reviewedAt = new Date()
   if (reviewNotes !== undefined) approval.reviewNotes = reviewNotes
   if (action === 'approved') approval.paidAt = new Date()
+
+  const noteText = String(reviewNotes || '').trim()
+  if (noteText) {
+    if (!approval.remarks) approval.remarks = []
+    approval.remarks.push({ text: noteText, author: req.user._id })
+  }
+
+  await appendPaymentApprovalActivity(approval, {
+    type: 'review',
+    label: `Status changed to ${action.replace('_', ' ')}`,
+    userId: req.user._id,
+  })
+  if (action === 'approved') {
+    await appendPaymentApprovalActivity(approval, {
+      type: 'approved',
+      label: 'Payment approved',
+      userId: req.user._id,
+    })
+  }
   await approval.save()
 
   return success(res, { approval }, `Payment marked ${action.replace('_', ' ')}`)

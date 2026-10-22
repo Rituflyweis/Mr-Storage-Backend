@@ -5,6 +5,34 @@ const PAYMENT_CATEGORIES = ['vendor_payment', 'shipper_payment', 'equipment', 'o
 const PAYEE_TYPES = ['vendor', 'shipper', 'department', 'carrier', 'delivery_company']
 const LINKED_TYPES = ['delivery', 'freight_bid']
 
+const PaymentApprovalRemarkSchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true, trim: true },
+    author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  },
+  { timestamps: true }
+)
+
+const PaymentApprovalAttachmentSchema = new mongoose.Schema(
+  {
+    name: { type: String, default: '', trim: true },
+    url: { type: String, required: true, trim: true },
+    fileSize: { type: Number, default: 0 },
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  },
+  { timestamps: true }
+)
+
+const PaymentApprovalActivitySchema = new mongoose.Schema(
+  {
+    at: { type: Date, default: Date.now },
+    type: { type: String, required: true, trim: true },
+    label: { type: String, default: '', trim: true },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  },
+  { _id: false }
+)
+
 const PaymentApprovalSchema = new mongoose.Schema(
   {
     paymentId:    { type: String, required: true, unique: true, trim: true },
@@ -27,6 +55,10 @@ const PaymentApprovalSchema = new mongoose.Schema(
     linkedType:    { type: String, enum: LINKED_TYPES, default: null },
     linkedId:      { type: mongoose.Schema.Types.ObjectId, default: null },
     paidAt:        { type: Date, default: null },
+
+    remarks:      { type: [PaymentApprovalRemarkSchema], default: [] },
+    attachments:  { type: [PaymentApprovalAttachmentSchema], default: [] },
+    activityLog:  { type: [PaymentApprovalActivitySchema], default: [] },
   },
   { timestamps: true }
 )

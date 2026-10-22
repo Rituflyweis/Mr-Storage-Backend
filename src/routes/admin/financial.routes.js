@@ -1,6 +1,7 @@
 const router = require('express').Router()
-const { body, query } = require('express-validator')
+const { body, query, param } = require('express-validator')
 const ctrl = require('../../controllers/admin/financial.controller')
+const accountFinancialCtrl = require('../../controllers/account/financial.controller')
 const validate = require('../../middleware/validate')
 
 // Existing
@@ -112,8 +113,28 @@ router.post('/payment-approvals',
   validate,
   ctrl.createPaymentApproval
 )
+router.post('/payment-approvals/:approvalId/remarks',
+  [param('approvalId').isMongoId(), body('text').notEmpty().trim()],
+  validate,
+  accountFinancialCtrl.addPaymentApprovalRemark
+)
+router.post('/payment-approvals/:approvalId/attachments',
+  [param('approvalId').isMongoId(), body('url').notEmpty().trim()],
+  validate,
+  accountFinancialCtrl.addPaymentApprovalAttachment
+)
+router.get('/payment-approvals/:approvalId/attachments/:index/download',
+  [param('approvalId').isMongoId(), param('index').isInt({ min: 0 })],
+  validate,
+  accountFinancialCtrl.downloadPaymentApprovalAttachment
+)
+router.get('/payment-approvals/:approvalId',
+  [param('approvalId').isMongoId()],
+  validate,
+  (req, res, next) => accountFinancialCtrl.getPaymentApprovalDetail(req, res, next)
+)
 router.put('/payment-approvals/:approvalId/review',
-  [body('action').isIn(['approved', 'rejected'])],
+  [param('approvalId').isMongoId(), body('action').isIn(['approved', 'rejected'])],
   validate,
   ctrl.reviewPaymentApproval
 )

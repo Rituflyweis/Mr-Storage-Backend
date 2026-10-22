@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body, query } = require('express-validator')
+const { body, query, param } = require('express-validator')
 const ctrl = require('../../controllers/account/financial.controller')
 const marginCtrl = require('../../controllers/account/margin.controller')
 const validate = require('../../middleware/validate')
@@ -48,9 +48,28 @@ router.get('/payment-approvals/filters', ctrl.getPaymentApprovalFilters)
 router.get('/payment-approvals/export', ctrl.exportPaymentApprovals)
 router.get('/payment-approvals/stats', ctrl.getPaymentApprovalStats)
 router.get('/payment-approvals', ctrl.getPaymentApprovals)
-router.get('/payment-approvals/:approvalId', ctrl.getPaymentApprovalDetail)
+router.post('/payment-approvals/:approvalId/remarks',
+  [param('approvalId').isMongoId(), body('text').notEmpty().trim()],
+  validate,
+  ctrl.addPaymentApprovalRemark
+)
+router.post('/payment-approvals/:approvalId/attachments',
+  [param('approvalId').isMongoId(), body('url').notEmpty().trim()],
+  validate,
+  ctrl.addPaymentApprovalAttachment
+)
+router.get('/payment-approvals/:approvalId/attachments/:index/download',
+  [param('approvalId').isMongoId(), param('index').isInt({ min: 0 })],
+  validate,
+  ctrl.downloadPaymentApprovalAttachment
+)
+router.get('/payment-approvals/:approvalId',
+  [param('approvalId').isMongoId()],
+  validate,
+  ctrl.getPaymentApprovalDetail
+)
 router.put('/payment-approvals/:approvalId/review',
-  [body('action').isIn(['under_review', 'approved', 'disputed', 'rejected'])],
+  [param('approvalId').isMongoId(), body('action').isIn(['under_review', 'approved', 'disputed', 'rejected'])],
   validate,
   ctrl.reviewPaymentApproval
 )

@@ -17,6 +17,11 @@ const { generateFinancialOverviewExcel, generateWIPProfitsExcel, generateExpense
 const { parse: parseCsv } = require('csv-parse/sync')
 const generateExpenseId = require('../../utils/generateExpenseId')
 const generatePaymentApprovalId = require('../../utils/generatePaymentApprovalId')
+const {
+  resolveApprovalStatusLabel,
+  resolveCategoryLabel,
+} = require('../../utils/paymentApprovalPresentation.util')
+const { appendPaymentApprovalActivity } = require('../../services/paymentApprovalDetail.service')
 const { computePaymentsDashboard } = require('../../services/adminPaymentsDashboard.service')
 const {
   resolveTotalBudget,
@@ -872,8 +877,17 @@ exports.getPaymentApprovals = asyncHandler(async (req, res) => {
   const statMap = { pending: { count: 0, amount: 0 }, approved: { count: 0, amount: 0 }, rejected: { count: 0, amount: 0 } }
   stats.forEach(s => { statMap[s._id] = { count: s.count, amount: s.amount } })
 
+  const mappedApprovals = approvals.map((a) => ({
+    ...a,
+    approvalId: a._id,
+    companyName: a.payee,
+    statusLabel: resolveApprovalStatusLabel(a),
+    categoryLabel: resolveCategoryLabel(a.category),
+    canReview: a.status === 'pending',
+  }))
+
   return success(res, {
-    approvals,
+    approvals: mappedApprovals,
     total,
     page: parsedPage,
     limit: parsedLimit,
@@ -917,7 +931,17 @@ exports.exportPaymentApprovals = asyncHandler(async (req, res) => {
 
 exports.createPaymentApproval = asyncHandler(async (req, res) => {
   const paymentId = await generatePaymentApprovalId()
-  const approval = await PaymentApproval.create({ ...req.body, paymentId, requestedBy: req.user._id })
+  const approval = await PaymentApproval.create({
+    ...req.body,
+    paymentId,
+    requestedBy: req.user._id,
+    activityLog: [{
+      at: new Date(),
+      type: 'created',
+      label: 'Payment approval requested',
+      user: req.user._id,
+    }],
+  })
   return created(res, { approval }, 'Payment request created')
 })
 
@@ -933,6 +957,26 @@ exports.reviewPaymentApproval = asyncHandler(async (req, res) => {
   approval.reviewedBy = req.user._id
   approval.reviewedAt = new Date()
   approval.reviewNotes = reviewNotes || ''
+  if (action === 'approved') approval.paidAt = new Date()
+
+  const noteText = String(reviewNotes || '').trim()
+  if (noteText) {
+    if (!approval.remarks) approval.remarks = []
+    approval.remarks.push({ text: noteText, author: req.user._id })
+  }
+
+  await appendPaymentApprovalActivity(approval, {
+    type: 'review',
+    label: `Status changed to ${action}`,
+    userId: req.user._id,
+  })
+  if (action === 'approved') {
+    await appendPaymentApprovalActivity(approval, {
+      type: 'approved',
+      label: 'Payment approved',
+      userId: req.user._id,
+    })
+  }
   await approval.save()
 
   return success(res, { approval }, `Payment ${action}`)
