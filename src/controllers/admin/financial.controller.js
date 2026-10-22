@@ -687,13 +687,19 @@ const computeProjectWiseTax = async ({ projectId, startDate, endDate }) => {
 
   const leadIds = grouped.map(g => g._id)
   const leads = leadIds.length
-    ? await Lead.find({ _id: { $in: leadIds } }).select('projectName jobId location customerId')
-        .populate('customerId', 'firstName lastName').lean()
+    ? await Lead.find({ _id: { $in: leadIds } })
+        .select('projectName jobId location state installAddress customerId')
+        .populate('customerId', 'firstName lastName')
+        .lean()
     : []
   const leadMap = new Map(leads.map(l => [String(l._id), l]))
 
   const { mapProjectOverviewRow } = require('../../utils/taxFilingPresentation.util')
   const { computeSalesTaxRate } = require('../../utils/taxSalesRate.util')
+  const {
+    findPrimaryPendingTaxForProject,
+    resolveLeadJurisdictionState,
+  } = require('../../utils/taxProjectRecord.util')
 
   const projectsRaw = grouped.map((g) => {
     const lead = leadMap.get(String(g._id))
@@ -715,11 +721,14 @@ const computeProjectWiseTax = async ({ projectId, startDate, endDate }) => {
   const projects = (
     await Promise.all(
       projectsRaw.map(async (row) => {
-        const rec = await Tax.findOne({ leadId: row.leadId, status: 'pending' })
-          .sort({ dueDate: 1 })
-          .select('_id')
-          .lean()
-        return mapProjectOverviewRow({ ...row, taxRecordId: rec?._id || null })
+        const lead = leadMap.get(String(row.leadId))
+        const rec = await findPrimaryPendingTaxForProject(row.leadId, lead)
+        const jurisdictionState = resolveLeadJurisdictionState(lead) || rec?.state || ''
+        return mapProjectOverviewRow({
+          ...row,
+          state: rec?.state || jurisdictionState,
+          taxRecordId: rec?._id || null,
+        })
       })
     )
   )

@@ -165,6 +165,8 @@ const mapProjectOverviewRow = (row = {}) => {
   const uiStatus = deriveUiStatus(pseudo)
   return {
     ...row,
+    state: row.state || '',
+    stateLabel: row.state || '',
     salesTaxRateLabel: salesTaxRateLabelForTax(pseudo) || '—',
     status: uiStatus,
     showPayTax: uiStatus.code === 'payment_due' || uiStatus.code === 'due_soon',
