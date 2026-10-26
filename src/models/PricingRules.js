@@ -78,6 +78,9 @@ const PricingRulesSchema = new mongoose.Schema(
     },
 
     customTabRules: { type: [CustomTabRuleSchema], default: [] },
+
+    /** v6 quoting tool flat rates (doors, decking SF, structural finish, etc.) */
+    itemRates: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
   },
   { timestamps: true }
 )

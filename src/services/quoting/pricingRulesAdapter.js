@@ -1,18 +1,41 @@
 /** Maps PricingRules document → HTML tool PR object + normalized custom rules */
 
+const DEFAULT_ITEM_RATES = {
+  gutterLF: 7.0,
+  downspoutLF: 7.0,
+  door8x7: 310,
+  door3x7: 260,
+  flushHeader: 2.25,
+  redIron: 1.089,
+  galvSteel: 1.175,
+  mandoor: 1400,
+  wedgeBolt: 0.37,
+  screwEach: 0.08,
+  mlocLF: 3.11,
+  staircaseCost: 35000,
+  bdCost: 2.184,
+  bdSell: 2.36,
+  ndCost: 2.744,
+  ndSell: 2.96,
+  cfCost: 2.8,
+  cfSell: 3.02,
+  ssPremium: 1.45,
+};
+
 const DEFAULT_PR = {
   primary: 1.71,
   secondary: 0.88,
-  hss: 2.05,
+  hss: 2.0,
   angle: 1.04,
   opening: 1.2,
   plate: 1.2,
-  sheet: 1.3,
-  ss: 1.7,
+  sheet: 1.2,
+  ss: 1.5,
   freight: 0.13,
   truck: 40000,
   acc: 0.1,
   delta: 0.1,
+  ...DEFAULT_ITEM_RATES,
   pec: 5.5,
   pes: 8.5,
   pmc: 5.75,
@@ -165,11 +188,19 @@ const buildPricingRates = (rulesDoc) => {
     .map(toCustomRule)
     .filter((r) => r && r.match && String(r.match).trim())
 
+  const itemRates = rulesDoc.itemRates || {}
+  Object.keys(DEFAULT_ITEM_RATES).forEach((key) => {
+    if (itemRates[key] != null && Number.isFinite(Number(itemRates[key]))) {
+      pr[key] = Number(itemRates[key]);
+    }
+  })
+
   return { pr, customTabRules }
 }
 
 module.exports = {
   DEFAULT_PR,
+  DEFAULT_ITEM_RATES,
   buildPricingRates,
   toCustomRule,
   mapCategoryKey,

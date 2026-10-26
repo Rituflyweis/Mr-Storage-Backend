@@ -57,6 +57,8 @@ const EstimateQuoteSchema = new mongoose.Schema(
     salesTax: { type: mongoose.Schema.Types.Mixed, default: null },
     cogsOverride: { type: mongoose.Schema.Types.Mixed, default: null },
     marginOverride: { type: mongoose.Schema.Types.Mixed, default: null },
+    pembAddOns: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    quoteControls: { type: mongoose.Schema.Types.Mixed, default: null },
     contractDetails: { type: mongoose.Schema.Types.Mixed, default: null },
     drawingAttachments: { type: [mongoose.Schema.Types.Mixed], default: [] },
     additionalInfo: { type: String, default: '' },

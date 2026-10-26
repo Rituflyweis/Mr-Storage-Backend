@@ -5,6 +5,7 @@ const { computeConcreteAddon, computeInsulationAddon } = require('./addonPricing
 const { previewCogsOverride, applyCogsOverride } = require('./cogsOverride')
 const { previewMarginOverride, applyMarginOverride } = require('./marginOverride')
 const { computePembSalesTax } = require('./salesTaxLookup')
+const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
 
 const computeFullPembQuote = (basePricing, options = {}) => {
   let pricing = { ...basePricing }
@@ -22,16 +23,24 @@ const computeFullPembQuote = (basePricing, options = {}) => {
   const insulation = computeInsulationAddon(options.insulation, sf)
   const salesTax = computePembSalesTax(pricing, insulation, options.salesTax || {})
 
+  const pembAddOns = normalizePembAddOns(options.pembAddOns || [])
+  const pembAddOnTotals = sumPembAddOnTotals(pembAddOns)
+  const scopeKey = String(pricing.scope || options.scope || 'both').toLowerCase()
+  const addOnSell = scopeKey === 'install' ? 0 : pembAddOnTotals.sell
+
   const buildingSubtotal = pricing.totSell || 0
   const grandTotal = Math.round(
     buildingSubtotal +
+      addOnSell +
       (concrete.include ? concrete.appliedSell : 0) +
       (insulation.include ? insulation.appliedSell : 0) +
       salesTax.amount
   )
 
   const addonProfit =
-    (concrete.include ? concrete.profit : 0) + (insulation.include ? insulation.profit : 0)
+    (concrete.include ? concrete.profit : 0) +
+    (insulation.include ? insulation.profit : 0) +
+    (scopeKey === 'install' ? 0 : pembAddOnTotals.profit)
   const totalProfit = Math.round((pricing.profit || 0) + addonProfit)
   const grandMargin = grandTotal > 0 ? ((totalProfit / grandTotal) * 100).toFixed(1) : '0'
 
@@ -54,6 +63,8 @@ const computeFullPembQuote = (basePricing, options = {}) => {
     grandMargin: Number(grandMargin),
     cogsPreview,
     marginPreview,
+    pembAddOns,
+    pembAddOnTotals,
   }
 }
 

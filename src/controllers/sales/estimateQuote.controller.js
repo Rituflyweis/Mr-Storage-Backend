@@ -52,6 +52,39 @@ const isPlainObject = (value) =>
 const normalizeQuoteOptions = (body = {}) => {
   const scopeRaw = String(body.scope || 'both').toLowerCase()
   const scope = ['supply', 'install', 'both'].includes(scopeRaw) ? scopeRaw : 'both'
+  const controls = body.quoteControls || {}
+  const steelFinishRaw = String(
+    body.steelFinish || controls.steelFinish || 'red-iron',
+  ).toLowerCase()
+  const steelFinish =
+    steelFinishRaw === 'galvanized' || steelFinishRaw === 'galv'
+      ? 'galvanized'
+      : 'red-iron'
+
+  let matMuOverride = null
+  if (body.matMuOverride != null && body.matMuOverride !== '') {
+    matMuOverride = Number(body.matMuOverride)
+  } else if (body.matMuPct != null && body.matMuPct !== '') {
+    matMuOverride = 1 + Number(body.matMuPct) / 100
+  } else if (controls.matMuOverride != null) {
+    matMuOverride = Number(controls.matMuOverride)
+  }
+
+  const freightRaw =
+    body.freightOverride !== undefined
+      ? body.freightOverride
+      : controls.freightOverride
+  const freightOverride =
+    freightRaw !== undefined && freightRaw !== null && freightRaw !== ''
+      ? Number(freightRaw)
+      : null
+
+  const deletedRowKeys = Array.isArray(body.deletedRowKeys)
+    ? body.deletedRowKeys
+    : Array.isArray(controls.deletedRowKeys)
+      ? controls.deletedRowKeys
+      : []
+
   return {
     jobType: body.jobType || 'PEMB',
     scope,
@@ -61,6 +94,14 @@ const normalizeQuoteOptions = (body = {}) => {
     blendPct: body.blendPct !== undefined ? Number(body.blendPct) : 50,
     installCostPerSf: body.installCostPerSf !== undefined ? Number(body.installCostPerSf) : undefined,
     sellPerSf: body.sellPerSf !== undefined ? Number(body.sellPerSf) : undefined,
+    matMuOverride,
+    steelFinish,
+    freightOverride,
+    pembDrawings: Number(body.pembDrawings ?? controls.pembDrawings ?? 0) || 0,
+    pembIncludeErection: Boolean(
+      body.pembIncludeErection ?? controls.pembIncludeErection ?? false,
+    ),
+    deletedRowKeys,
   }
 }
 
@@ -72,12 +113,14 @@ const toStoredScope = (value) => {
   return 'Both'
 }
 
-const normalizeFullQuoteExtras = (body = {}) => ({
+const normalizeFullQuoteExtras = (body = {}, options = {}) => ({
   concrete: body.concrete || body.concreteAddon || undefined,
   insulation: body.insulation || body.insulationAddon || undefined,
   salesTax: body.salesTax || undefined,
   cogsOverride: body.cogsOverride || undefined,
   marginOverride: body.marginOverride || undefined,
+  pembAddOns: body.pembAddOns || body.quoteControls?.pembAddOns || undefined,
+  scope: options.scope,
 })
 
 const extractFirstNumber = (value) => {
@@ -118,18 +161,24 @@ const buildPricingPayload = async (userId, { categories, options, fullExtras }) 
     extras.insulation ||
     extras.salesTax ||
     extras.cogsOverride?.applied ||
-    extras.marginOverride?.applied
+    extras.marginOverride?.applied ||
+    (extras.pembAddOns && extras.pembAddOns.length > 0)
 
   let fullQuote = null
   let pricing
 
-  if (hasExtras) {
-    fullQuote = buildAndComputeFullPembQuote(categories, engineOptions, extras)
+  const fullExtrasWithScope = { ...extras, scope: engineOptions.scope }
+
+  if (hasExtras || (extras.pembAddOns && extras.pembAddOns.length)) {
+    fullQuote = buildAndComputeFullPembQuote(categories, engineOptions, fullExtrasWithScope)
     pricing = fullQuote.pricing
   } else {
     const { priceJob } = require('../../services/quoting/pricingEngine')
     pricing = priceJob(categories, engineOptions)
-    fullQuote = computeFullPembQuote(pricing, { ...extras, sf: engineOptions.sf })
+    fullQuote = computeFullPembQuote(pricing, {
+      ...fullExtrasWithScope,
+      sf: engineOptions.sf,
+    })
   }
 
   const weightByCategory = categoriesToWeightByCategory(categories, pr)
@@ -163,9 +212,11 @@ const estimateToDocumentPayload = (estimate) => {
     concrete: estimate.concreteAddon,
     insulation: estimate.insulationAddon,
     salesTax: estimate.salesTax,
+    pembAddOns: estimate.pembAddOns,
     grandTotal,
     pricePerSf: estimate.pricePerSf,
   },
+  pembAddOns: estimate.pembAddOns,
   concrete: estimate.concreteAddon,
   insulation: estimate.insulationAddon,
   salesTax: estimate.salesTax,
@@ -214,6 +265,8 @@ const resolveEstimateGrandTotal = (estimate = {}) => {
         salesTax: estimate.salesTax,
         cogsOverride: estimate.cogsOverride,
         marginOverride: estimate.marginOverride,
+        pembAddOns: estimate.pembAddOns,
+        scope: estimate.scope,
         sf: toNumber(estimate.squareFootage),
       })
       return Math.round(
@@ -337,6 +390,8 @@ const applyEstimateTotals = (estimate, payload) => {
       salesTax: estimate.salesTax,
       cogsOverride: estimate.cogsOverride,
       marginOverride: estimate.marginOverride,
+      pembAddOns: estimate.pembAddOns,
+      scope: estimate.scope,
       sf: estimate.squareFootage,
     })
 
@@ -381,11 +436,16 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
   if (!buffer?.length) return badRequest(res, 'fileBase64 required')
 
   const options = normalizeQuoteOptions(req.body)
-  const fullExtras = normalizeFullQuoteExtras(req.body)
+  const fullExtras = normalizeFullQuoteExtras(req.body, options)
   const rulesDoc = await getOrCreatePricingRules(req.user._id)
-  const { customTabRules } = buildPricingRates(rulesDoc)
+  const { pr, customTabRules } = buildPricingRates(rulesDoc)
 
-  const parsed = parseShipperBuffer(buffer, { sf: options.sf, customTabRules })
+  const parsed = parseShipperBuffer(buffer, {
+    sf: options.sf,
+    customTabRules,
+    PR: pr,
+    steelFinish: options.steelFinish,
+  })
   const cover = parseShipperCoverSheet(parsed.workbook)
   const coverSqft = deriveCoverSquareFootage(cover)
 
@@ -437,6 +497,7 @@ exports.extractStorageCog = asyncHandler(async (req, res) => {
   const buffer = decodeBase64File(req.body.fileBase64)
   if (!buffer?.length) return badRequest(res, 'fileBase64 required')
 
+  const options = normalizeQuoteOptions(req.body)
   const data = parseStorageCogBuffer(buffer)
   const storagePricing = computeStoragePricing(
     {
@@ -447,7 +508,7 @@ exports.extractStorageCog = asyncHandler(async (req, res) => {
       installSellPerSf: req.body.installSellPerSf ?? 3.25,
       installCostPerSf: req.body.installCostPerSf ?? 2.5,
     },
-    normalizeFullQuoteExtras(req.body)
+    normalizeFullQuoteExtras(req.body, options)
   )
 
   return success(res, {
@@ -467,7 +528,7 @@ exports.computeQuote = asyncHandler(async (req, res) => {
   if (!cats) return badRequest(res, 'parsedCategories required')
 
   const options = normalizeQuoteOptions(req.body)
-  const fullExtras = normalizeFullQuoteExtras(req.body)
+  const fullExtras = normalizeFullQuoteExtras(req.body, options)
   const payload = await buildPricingPayload(req.user._id, {
     categories: cats,
     options,
@@ -478,6 +539,7 @@ exports.computeQuote = asyncHandler(async (req, res) => {
     weightByCategory: payload.weightByCategory,
     pricing: payload.pricing,
     fullQuote: payload.fullQuote,
+    parsedCategories: payload.parsedCategories,
   })
 })
 
@@ -487,7 +549,8 @@ exports.computeStorageQuote = asyncHandler(async (req, res) => {
     return badRequest(res, 'storageData.buildings required')
   }
 
-  const fullExtras = normalizeFullQuoteExtras(req.body)
+  const options = normalizeQuoteOptions(req.body)
+  const fullExtras = normalizeFullQuoteExtras(req.body, options)
   const storagePricing = computeStoragePricing(storageData, {
     ...fullExtras,
     shipping: req.body.shipping ?? storageData.shipping,
@@ -585,7 +648,7 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
 
   const options = normalizeQuoteOptions(req.body)
-  const fullExtras = normalizeFullQuoteExtras(req.body)
+  const fullExtras = normalizeFullQuoteExtras(req.body, options)
   let pricing = req.body.pricingResult || null
   let weightByCategory = req.body.weightByCategory || []
   let parsedCategories = req.body.parsedCategories || null
@@ -638,6 +701,15 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
     salesTax: fullQuote?.salesTax || req.body.salesTax || null,
     cogsOverride: req.body.cogsOverride || null,
     marginOverride: req.body.marginOverride || null,
+    pembAddOns: req.body.pembAddOns || [],
+    quoteControls: req.body.quoteControls || {
+      steelFinish: options.steelFinish,
+      matMuOverride: options.matMuOverride,
+      freightOverride: options.freightOverride,
+      pembDrawings: options.pembDrawings,
+      pembIncludeErection: options.pembIncludeErection,
+      deletedRowKeys: options.deletedRowKeys,
+    },
     contractDetails: req.body.contractDetails || req.body.contract || null,
     drawingAttachments: req.body.drawingAttachments || req.body.drawings || [],
     additionalInfo: req.body.additionalInfo || '',
@@ -684,7 +756,7 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
   if (estimate.status !== 'draft') return badRequest(res, 'Only draft estimates can be edited')
 
   const options = normalizeQuoteOptions({ ...estimate.toObject(), ...req.body })
-  const fullExtras = normalizeFullQuoteExtras(req.body)
+  const fullExtras = normalizeFullQuoteExtras(req.body, options)
 
   const EDITABLE = [
     'jobType', 'scope', 'roofType', 'installLevel', 'blendPct', 'leadCompanyName', 'customerEmail',
@@ -692,6 +764,7 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     'installCostPerSf', 'sellPerSf', 'sourceFileName', 'extractedDrawingFields', 'parsedCategories',
     'tabSummary', 'breakdownRows', 'pricingResult', 'storageData', 'storagePricingResult',
     'concreteAddon', 'insulationAddon', 'salesTax', 'cogsOverride', 'marginOverride',
+    'pembAddOns', 'quoteControls',
     'contractDetails', 'drawingAttachments', 'additionalInfo', 'fullQuoteResult',
     'statementOfWork', 'exclusions', 'status',
   ]

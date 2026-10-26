@@ -22,24 +22,32 @@ async function main() {
   console.log('extracted:', JSON.stringify(pdf.extracted, null, 2))
   console.log('note:', pdf.note)
 
-  console.log('\n=== Shipper parse ===')
+  console.log('\n=== Shipper parse (v6: built-in rules + PR) ===')
   const xBuf = fs.readFileSync(XLSX)
-  const parsed = parseShipperBuffer(xBuf, { sf: 0, customTabRules: [] })
+  const { pr, customTabRules } = buildPricingRates(null)
+  const parsed = parseShipperBuffer(xBuf, {
+    sf: 0,
+    customTabRules,
+    PR: pr,
+    steelFinish: 'red-iron',
+  })
   console.log('tabs:', parsed.sheetCount, '| total weight:', Math.round(parsed.totalWeightLbs), 'lbs')
   parsed.tabSummary.forEach((t) => {
     if (!t.skipped) console.log(`  ${t.sheetName} → ${t.category}: ${t.weightLbs} lbs`)
   })
 
   const sf = parsed.totalWeightLbs > 0 ? Math.round(parsed.totalWeightLbs / 9) : 5000
-  const { pr } = buildPricingRates(null)
+  const customItems = parsed.categories.customItems?.length || 0
+  console.log('Built-in/custom item hits:', customItems)
   const pricing = priceJob(parsed.categories, {
     jobType: 'PEMB',
-    scope: 'Both',
+    scope: 'both',
     roof: 'screw-down',
     install: 'medium',
     sf,
     blendPct: 50,
     PR: pr,
+    steelFinish: 'red-iron',
   })
 
   console.log('\n=== Pricing (PEMB, Both, sf=' + sf + ') ===')

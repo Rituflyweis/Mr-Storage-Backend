@@ -88,11 +88,13 @@ const buildQuoteContext = (payload = {}) => {
     }
   }
 
-  const full = payload.fullQuote || {}
+  const full = payload.fullQuote || payload.fullQuoteResult || {}
   const res = full.pricing || payload.pricingResult || payload.pricing || {}
   const concrete = full.concrete || payload.concrete || {}
   const insulation = full.insulation || payload.insulation || {}
   const salesTax = full.salesTax || payload.salesTax || {}
+  const pembAddOns = full.pembAddOns || payload.pembAddOns || []
+  const pembAddOnTotals = full.pembAddOnTotals || null
   const grandTotal = full.grandTotal ?? payload.grandTotal ?? payload.totalSell ?? res.totSell ?? 0
   const sf = res.sf || payload.squareFootage || 0
   const grandSF = sf > 0 ? (grandTotal / sf).toFixed(2) : res.sfPrice
@@ -113,6 +115,8 @@ const buildQuoteContext = (payload = {}) => {
     grandSF,
     sf,
     additionalInfo: payload.additionalInfo || '',
+    pembAddOns,
+    pembAddOnTotals,
     isStorage: false,
   }
 }
@@ -246,7 +250,17 @@ const generateQuoteHtml = (payload = {}) => {
         <div class="q-breakdown"><table>
           <tr class="q-sub-row"><td>Material (Sell, includes freight)</td><td style="text-align:right">${fmtMoney(res.matSell)}</td></tr>
           ${String(res.scope || '').toLowerCase() !== 'supply' ? `<tr class="q-sub-row"><td>Installation Sell</td><td style="text-align:right">${fmtMoney(res.instSell)}</td></tr>` : ''}
-          <tr class="q-sub-row" style="font-weight:600;"><td>Building Subtotal (Sell)</td><td style="text-align:right">${fmtMoney(res.totSell)}</td></tr>
+          <tr class="q-sub-row" style="font-weight:600;"><td>Building Subtotal (Sell)</td><td style="text-align:right">${fmtMoney(res.totSell - (res.pembDrawings || 0))}</td></tr>
+          ${res.pembDrawings > 0 ? `<tr class="q-sub-row"><td>Engineering Drawings</td><td style="text-align:right">${fmtMoney(res.pembDrawings)}</td></tr>` : ''}
+          ${(ctx.pembAddOnTotals?.sell || 0) > 0
+            ? `<tr class="q-sub-row"><td>Options &amp; Add-ons</td><td style="text-align:right">${fmtMoney(ctx.pembAddOnTotals.sell)}</td></tr>`
+            : (ctx.pembAddOns || [])
+                .filter((x) => x.inQuote !== false && (x.sell || x.cost))
+                .map(
+                  (x) =>
+                    `<tr class="q-sub-row"><td>${x.item || 'Add-on'}</td><td style="text-align:right">${fmtMoney(x.sell)}</td></tr>`,
+                )
+                .join('')}
           ${concInclude ? `<tr class="q-sub-row"><td>Concrete (${concrete.thickness}" · ${concrete.psi} PSI · ${Number(sf).toLocaleString()} SF)</td><td style="text-align:right">${fmtMoney(concrete.appliedSell)}</td></tr>` : ''}
           ${insulInclude ? `<tr class="q-sub-row"><td>Insulation (${insulation.rRoof} roof / ${insulation.rWall} wall · ${Number(sf).toLocaleString()} SF)</td><td style="text-align:right">${fmtMoney(insulation.appliedSell)}</td></tr>` : ''}
           ${salesTax.amount > 0 ? `<tr class="q-sub-row" style="color:#b45309;"><td>Sales Tax (${salesTax.rate}% on materials &amp; insulation — labor not taxed)</td><td style="text-align:right">${fmtMoney(salesTax.amount)}</td></tr>` : ''}

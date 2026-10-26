@@ -1,4 +1,5 @@
 const XLSX = require("xlsx");
+const { applyBuiltInItemRules } = require("./shipperBuiltInRules");
 
 const normalizeTabName = (name) =>
   String(name || "")
@@ -127,6 +128,35 @@ const getTabCat = (name, customTabRules = []) => {
       return r.cat || "trim";
     }
   }
+
+  if (n === "studs & top channel" || n.includes("stud")) return "primary";
+  if (n === "door jambs & headers") return "opening";
+  if (
+    n === "purlin-s & girts" ||
+    n === "purlin's & girts" ||
+    n === "purlins & girts"
+  )
+    return "secondary";
+  if (n === "roof & wall sheeting") return "sheeting";
+  if (n === "connection plates") return "plate";
+  if (n === "angles") return "angle";
+  if (n === "trim") return "trim";
+  if (n === "diagonal bracing & sealant") return "misc";
+  if (n === "accessories") return "accessories";
+  if (n === "fasteners") return "fasteners";
+  if (n.includes("b-deck") || n === "b-deck" || n === "b deck" || n === "b")
+    return "bdeck";
+  if (n.includes("n-deck") || n === "n-deck" || n === "n deck" || n === "n")
+    return "ndeck";
+  if (
+    n.includes("2.0cf") ||
+    n.includes("2.0 cf") ||
+    n.includes("cf-deck") ||
+    n.includes("cf deck") ||
+    n.includes("composite")
+  )
+    return "cfdeck";
+  if (n.includes("decking") || n === "deck") return "bdeck";
 
   if (
     n === "columns & rafters" ||
@@ -401,6 +431,33 @@ const applyItemRules = (data, sheetName, sf, customTabRules = []) => {
   return matched;
 };
 
+const extractDeckingSF = (data) => {
+  if (!data || data.length < 2) return 0;
+  for (let r = 0; r < Math.min(data.length, 6); r++) {
+    const row = data[r];
+    let sqCol = -1;
+    let sfCol = -1;
+    for (let c = 0; c < row.length; c++) {
+      const h = String(row[c] || "")
+        .trim()
+        .toLowerCase();
+      if (h === "squares" || h === "sq" || h === "square") sqCol = c;
+      if (h === "square feet" || h === "sq ft" || h === "sf") sfCol = c;
+    }
+    if (sqCol >= 0 || sfCol >= 0) {
+      let totalSF = 0;
+      for (let dr = r + 1; dr < data.length; dr++) {
+        const drow = data[dr];
+        const col = sqCol >= 0 ? sqCol : sfCol;
+        const val = parseFloat(String(drow[col] || "").replace(/,/g, ""));
+        if (!isNaN(val) && val > 0) totalSF += sqCol >= 0 ? val * 100 : val;
+      }
+      if (totalSF > 0) return totalSF;
+    }
+  }
+  return 0;
+};
+
 const emptyCategories = () => ({
   primary: { label: "Rigid Frames & Endwalls", weight: 0, tag: "cat-primary" },
   hss: { label: "HSS Beams", weight: 0, tag: "cat-primary" },
@@ -417,10 +474,21 @@ const emptyCategories = () => ({
   misc: { label: "Cables, Bracing & Sealant", weight: 0, tag: "cat-misc" },
   accessories: { label: "Accessories", weight: 0, tag: "cat-misc" },
   fasteners: { label: "Fasteners", weight: 0, tag: "cat-fastener" },
+  bdeck: { label: "B-Deck", weight: 0, sqft: 0, tag: "cat-sheeting" },
+  ndeck: { label: "N-Deck", weight: 0, sqft: 0, tag: "cat-sheeting" },
+  cfdeck: {
+    label: "2.0CF Composite Deck",
+    weight: 0,
+    sqft: 0,
+    tag: "cat-sheeting",
+  },
   customItems: [],
 });
 
-const parseShipperWorkbook = (wb, { sf = 0, customTabRules = [] } = {}) => {
+const parseShipperWorkbook = (
+  wb,
+  { sf = 0, customTabRules = [], PR = null, steelFinish = "red-iron" } = {},
+) => {
   const cats = emptyCategories();
   const tabSummary = [];
   const unmappedTabs = [];
@@ -443,7 +511,26 @@ const parseShipperWorkbook = (wb, { sf = 0, customTabRules = [] } = {}) => {
       return;
     }
 
-    const itemHits = applyItemRules(data, sn, sf || 0, customTabRules);
+    if (cat === "bdeck" || cat === "ndeck" || cat === "cfdeck") {
+      const deckSF = extractDeckingSF(data);
+      const lbsPerSF = cat === "bdeck" ? 1.95 : cat === "ndeck" ? 2.45 : 2.5;
+      if (deckSF > 0) {
+        cats[cat].sqft += deckSF;
+        cats[cat].weight += w || Math.round(deckSF * lbsPerSF);
+      } else if (w > 0) {
+        const estSF = Math.round(w / lbsPerSF);
+        cats[cat].sqft += estSF;
+        cats[cat].weight += w;
+      }
+      tabSummary.push({ sheetName: sn, category: cat, weightLbs: w, deckSqft: cats[cat].sqft });
+      return;
+    }
+
+    const builtInHits = PR
+      ? applyBuiltInItemRules(data, sn, sf || 0, { PR, steelFinish })
+      : [];
+    const customHits = applyItemRules(data, sn, sf || 0, customTabRules);
+    const itemHits = builtInHits.concat(customHits);
 
     if (itemHits.length > 0) {
       const claimedWt = itemHits.reduce((a, h) => a + (h.weight || 0), 0);
@@ -575,6 +662,7 @@ module.exports = {
   parseShipperWorkbook,
   parseShipperCoverSheet,
   extractWeight,
+  extractDeckingSF,
   getTabCat,
   applyItemRules,
   parseLengthFt,

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Storage Materials — AI Quoting System (API)</title>
+    <title>Storage Materials — AI Quoting System (API · v6 Backend)</title>
     <style>
       * {
         box-sizing: border-box;
@@ -641,7 +641,7 @@
       <span class="status-dot" id="auth-status"></span>
       <span id="auth-label" style="color: var(--muted)">Not connected</span>
       <span style="margin-left: auto; color: var(--hint)"
-        >Uses /api/sales/estimates + /api/sales/pricing-rules</span
+        >v6 backend · Sidebar → API Reference for frontend handoff</span
       >
     </div>
 
@@ -649,7 +649,7 @@
       <aside class="sidebar no-print">
         <div class="logo-area">
           <div class="logo-name">STORAGE MATERIALS</div>
-          <div class="logo-sub">AI Quoting System · API Backend</div>
+          <div class="logo-sub">AI Quoting · v6 engine via REST</div>
         </div>
         <nav class="nav">
           <div class="nav-section">Quoting</div>
@@ -687,6 +687,13 @@
             onclick="showPage('pricing', this)"
           >
             Pricing Rules
+          </div>
+          <div
+            class="nav-item"
+            data-page="api-ref"
+            onclick="showPage('api-ref', this)"
+          >
+            API Reference
           </div>
         </nav>
         <div class="sidebar-bottom">
@@ -731,7 +738,101 @@
           <select class="sb-sel" id="sb-roof" onchange="onControlChange()">
             <option value="screw-down">Screw-down</option>
             <option value="standing-seam">Standing seam</option>
+            <option value="no-roof">No roof (walls only)</option>
           </select>
+          <div class="sbl" style="margin-top: 8px">Structural finish</div>
+          <div class="job-row">
+            <button
+              type="button"
+              class="jt-btn active"
+              id="finish-red-iron"
+              onclick="setSteelFinish('red-iron')"
+            >
+              Red iron
+            </button>
+            <button
+              type="button"
+              class="jt-btn"
+              id="finish-galvanized"
+              onclick="setSteelFinish('galvanized')"
+            >
+              Galv
+            </button>
+          </div>
+          <div class="sbl" style="margin-top: 8px">Material markup override</div>
+          <input
+            type="range"
+            id="mat-mu-slider"
+            min="0"
+            max="80"
+            step="0.5"
+            value="30"
+            style="width: 100%"
+            oninput="updateMatMuSlider(this.value)"
+          />
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              font-size: 11px;
+              color: rgba(255, 255, 255, 0.65);
+            "
+          >
+            <span id="mat-mu-val">30% (default rules)</span>
+            <button
+              type="button"
+              style="
+                background: none;
+                border: none;
+                color: #93c5fd;
+                cursor: pointer;
+                font-size: 10px;
+              "
+              onclick="resetMatMuSlider()"
+            >
+              Reset
+            </button>
+          </div>
+          <div class="sbl" style="margin-top: 8px">Freight override $</div>
+          <input
+            type="number"
+            id="pemb-freight-override"
+            placeholder="auto (weight × rate)"
+            step="500"
+            min="0"
+            class="sb-sel"
+            style="margin-bottom: 4px"
+            oninput="syncPembExtraControls()"
+          />
+          <div class="sbl">Engineering drawings $</div>
+          <input
+            type="number"
+            id="pemb-drawings-val"
+            value="0"
+            step="500"
+            min="0"
+            class="sb-sel"
+            style="margin-bottom: 4px"
+            oninput="syncPembExtraControls()"
+          />
+          <label
+            style="
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              font-size: 11px;
+              color: rgba(255, 255, 255, 0.75);
+              margin-top: 4px;
+              cursor: pointer;
+            "
+          >
+            <input
+              type="checkbox"
+              id="pemb-include-erection"
+              onchange="syncPembExtraControls()"
+            />
+            Include erection on supply scope
+          </label>
           <div class="sbl">Install Difficulty</div>
           <select class="sb-sel" id="sb-install" onchange="onControlChange()">
             <option value="easy" selected>Easy</option>
@@ -799,7 +900,7 @@
               type="range"
               id="sb-sell"
               min="7.5"
-              max="15"
+              max="50"
               step="0.25"
               value="8.5"
               style="flex: 1"
@@ -841,8 +942,8 @@
                 ></span>
               </div>
               <div class="page-sub">
-                Upload shipper → backend parses & prices → live recompute via
-                API
+                v6 shipper rules (decking, built-in rows, steel finish) ·
+                POST /extract-shipper &amp; /compute
               </div>
             </div>
             <div class="btn-row" style="margin: 0">
@@ -861,6 +962,12 @@
             </div>
           </div>
           <div id="global-alert"></div>
+          <div class="alert alert-info no-print" style="margin-bottom: 14px">
+            Frontend devs: use sidebar controls (steel finish, mat MU, freight,
+            drawings, line add-ons) — each change hits
+            <strong>POST /compute</strong>. Full field list under
+            <strong>API Reference</strong> in the nav.
+          </div>
 
           <div class="card no-print">
             <div class="card-hdr">
@@ -1044,6 +1151,9 @@
             <button class="tab-btn" onclick="showTab('addons-tab', this)">
               Concrete / Insulation
             </button>
+            <button class="tab-btn" onclick="showTab('line-items-tab', this)">
+              Line Add-ons
+            </button>
             <button class="tab-btn" onclick="showTab('contract-tab', this)">
               Contract
             </button>
@@ -1164,7 +1274,7 @@
                     type="range"
                     id="live-sell"
                     min="7.5"
-                    max="15"
+                    max="50"
                     step="0.25"
                     value="8.5"
                     oninput="syncInstallSliders('sell', this.value)"
@@ -1723,6 +1833,41 @@
               </div>
             </div>
           </div>
+
+          <div class="tab-content" id="tab-line-items-tab">
+            <div class="card">
+              <div class="card-hdr">
+                <div>
+                  <div class="card-title">Manual line add-ons</div>
+                  <div class="card-sub">
+                    Sent as <code>pembAddOns</code> on /compute and saved on
+                    estimates — included in <code>fullQuote.grandTotal</code>
+                  </div>
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="pembAddLineItem()">
+                  + Add line
+                </button>
+              </div>
+              <div class="table-wrap" style="padding: 0 14px 14px">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th class="td-r">Cost</th>
+                      <th class="td-r">Markup %</th>
+                      <th class="td-r">Sell</th>
+                      <th>Note</th>
+                      <th>In quote</th>
+                      <th>In SOW</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="pemb-addons-tbody"></tbody>
+                  <tfoot id="pemb-addons-tfoot"></tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- ========== STORAGE COG PAGE ========== -->
@@ -2041,6 +2186,82 @@
           <div id="history-list"></div>
         </div>
 
+        <!-- ========== API REFERENCE (for frontend devs) ========== -->
+        <div id="page-api-ref" style="display: none">
+          <div class="page-hdr">
+            <div>
+              <div class="page-title">API Reference</div>
+              <div class="page-sub">
+                Matches SM-QuotingTool v6 + backend · Auth: Bearer JWT on all
+                routes below
+              </div>
+            </div>
+          </div>
+          <div class="alert alert-info">
+            Base path: <strong id="api-ref-base">/api/sales/estimates</strong>.
+            Open DevTools → Network while using this page to see live request
+            bodies. PEMB compute payload is built by
+            <code>computeBody()</code> in page source.
+          </div>
+          <div class="card" style="margin-bottom: 14px">
+            <div class="card-hdr">
+              <div class="card-title">PEMB — Shipper &amp; pricing</div>
+            </div>
+            <div style="padding: 14px; font-size: 13px; line-height: 1.65">
+              <p><strong>POST /extract-shipper</strong> — multipart-style JSON: <code>fileBase64</code>, <code>fileName</code>, plus same options as compute (scope, roof, blendPct, steelFinish, …). Returns <code>parsedCategories</code>, <code>pricing</code>, <code>fullQuote</code>, <code>squareFootageMeta</code>.</p>
+              <p><strong>POST /compute</strong> — requires <code>parsedCategories</code>. v6 fields:</p>
+              <ul class="q-list">
+                <li><code>steelFinish</code>: <code>"red-iron"</code> | <code>"galvanized"</code></li>
+                <li><code>matMuOverride</code>: number multiplier (e.g. 1.35) or send <code>matMuPct</code> (35 → 1.35)</li>
+                <li><code>freightOverride</code>: number | null (blank = auto from weight)</li>
+                <li><code>pembDrawings</code>, <code>pembIncludeErection</code>, <code>deletedRowKeys[]</code></li>
+                <li><code>pembAddOns[]</code>: { item, cost, markup, sell?, note, inQuote, inSOW }</li>
+                <li><code>concrete</code>, <code>insulation</code>, <code>salesTax</code>, <code>cogsOverride</code>, <code>marginOverride</code></li>
+                <li><code>roof</code>: <code>screw-down</code> | <code>standing-seam</code> | <code>no-roof</code></li>
+              </ul>
+              <p><strong>POST /extract-drawing</strong>, <strong>POST /documents/preview</strong>, <strong>POST /documents/pdf</strong> — pass saved estimate fields or inline <code>pricingResult</code> + <code>fullQuote</code> + <code>pembAddOns</code>.</p>
+              <p><strong>POST /margin/preview</strong>, <strong>POST /cogs/preview</strong> — optional overrides before apply-on-compute.</p>
+              <p><strong>GET /tax-lookup/:zip</strong> — PEMB tax base = material sell + insulation sell.</p>
+            </div>
+          </div>
+          <div class="card" style="margin-bottom: 14px">
+            <div class="card-hdr">
+              <div class="card-title">Storage COG</div>
+            </div>
+            <div style="padding: 14px; font-size: 13px; line-height: 1.65">
+              <p><strong>POST /extract-storage-cog</strong> — <code>fileBase64</code>, optional install $/SF, returns <code>storageData</code> + initial <code>storagePricing</code>.</p>
+              <p><strong>POST /compute-storage</strong> — <code>storageData</code>, <code>shipping</code>, <code>drawings</code>, <code>installSellPerSf</code>, <code>installCostPerSf</code>, <code>salesTax</code>, <code>concrete</code>, <code>insulation</code>.</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr">
+              <div class="card-title">Estimates CRUD</div>
+            </div>
+            <div style="padding: 14px; font-size: 13px; line-height: 1.65">
+              <p><strong>POST /</strong> create · <strong>PUT /:id</strong> update draft · <strong>GET /:id</strong> load · <strong>GET /</strong> list.</p>
+              <p>Persist v6 UI state with <code>quoteControls</code> (steelFinish, matMuOverride, freightOverride, pembDrawings, pembIncludeErection, deletedRowKeys) and <code>pembAddOns</code>.</p>
+              <p><strong>GET/PUT /api/sales/pricing-rules</strong> — <code>itemRates</code> object for v6 flat rates (bdSell, redIron, galvSteel, door8x7, …).</p>
+            </div>
+          </div>
+          <div class="card" style="margin-top: 14px">
+            <div class="card-hdr">
+              <div class="card-title">Last compute payload (debug)</div>
+              <button class="btn btn-sm" onclick="copyComputeBody()">Copy JSON</button>
+            </div>
+            <pre
+              id="api-ref-last-body"
+              style="
+                margin: 0;
+                padding: 14px;
+                font-size: 11px;
+                overflow: auto;
+                max-height: 320px;
+                background: #f8f9fb;
+              "
+            >Run compute or upload shipper to populate.</pre>
+          </div>
+        </div>
+
         <!-- ========== PRICING RULES PAGE ========== -->
         <div id="page-pricing" style="display: none">
           <div class="page-hdr">
@@ -2128,6 +2349,13 @@
         storageShipping: 0,
         storageDrawingsFee: 0,
         pricingRules: null,
+        steelFinish: "red-iron",
+        matMuOverride: null,
+        freightOverride: null,
+        pembDrawings: 0,
+        pembIncludeErection: false,
+        deletedRowKeys: [],
+        pembAddOns: [],
       };
 
       let computeTimer = null;
@@ -2272,8 +2500,19 @@
         );
       }
 
-      function computeBody() {
+      function buildQuoteControls() {
         return {
+          steelFinish: state.steelFinish || "red-iron",
+          matMuOverride: state.matMuOverride,
+          freightOverride: state.freightOverride,
+          pembDrawings: state.pembDrawings || 0,
+          pembIncludeErection: !!state.pembIncludeErection,
+          deletedRowKeys: state.deletedRowKeys || [],
+        };
+      }
+
+      function computeBody() {
+        const body = {
           parsedCategories: state.parsedCategories,
           jobType: state.jobType,
           scope: state.scope,
@@ -2285,6 +2524,13 @@
           blendPct: state.blendPct,
           installCostPerSf: state.installCostPerSf,
           sellPerSf: state.sellPerSf,
+          steelFinish: state.steelFinish || "red-iron",
+          freightOverride: state.freightOverride,
+          pembDrawings: state.pembDrawings || 0,
+          pembIncludeErection: !!state.pembIncludeErection,
+          deletedRowKeys: state.deletedRowKeys || [],
+          pembAddOns: state.pembAddOns || [],
+          quoteControls: buildQuoteControls(),
           concrete: state.concrete,
           insulation: state.insulation,
           salesTax: state.salesTax,
@@ -2293,6 +2539,188 @@
             ? state.marginOverride
             : null,
         };
+        if (state.matMuOverride != null) body.matMuOverride = state.matMuOverride;
+        return body;
+      }
+
+      function extractShipperBody(fileBase64, fileName) {
+        const b = computeBody();
+        delete b.parsedCategories;
+        return {
+          fileBase64,
+          fileName,
+          ...b,
+          squareFootage: 0,
+          sf: 0,
+        };
+      }
+
+      function refreshApiRefDebug() {
+        const pre = document.getElementById("api-ref-last-body");
+        if (pre) pre.textContent = JSON.stringify(computeBody(), null, 2);
+        const baseEl = document.getElementById("api-ref-base");
+        if (baseEl) baseEl.textContent = API.base + API.estimates;
+      }
+
+      function copyComputeBody() {
+        const text = JSON.stringify(computeBody(), null, 2);
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(text);
+          toast("Compute JSON copied", "success");
+        } else toast("Copy not available in this browser", "warn");
+      }
+
+      function setSteelFinish(finish) {
+        state.steelFinish = finish;
+        document
+          .getElementById("finish-red-iron")
+          ?.classList.toggle("active", finish === "red-iron");
+        document
+          .getElementById("finish-galvanized")
+          ?.classList.toggle("active", finish === "galvanized");
+        debouncedCompute();
+      }
+
+      function updateMatMuSlider(pct) {
+        const p = parseFloat(pct);
+        state.matMuOverride = 1 + p / 100;
+        const el = document.getElementById("mat-mu-val");
+        if (el) el.textContent = p.toFixed(1) + "% markup on cost";
+        debouncedCompute();
+      }
+
+      function resetMatMuSlider() {
+        state.matMuOverride = null;
+        const sl = document.getElementById("mat-mu-slider");
+        if (sl) sl.value = 30;
+        const el = document.getElementById("mat-mu-val");
+        if (el) el.textContent = "30% (default rules)";
+        debouncedCompute();
+      }
+
+      function readPembExtraControls() {
+        const fr = document.getElementById("pemb-freight-override");
+        const raw = fr?.value;
+        state.freightOverride =
+          raw !== undefined && raw !== "" && raw !== null
+            ? parseFloat(raw)
+            : null;
+        state.pembDrawings =
+          parseFloat(document.getElementById("pemb-drawings-val")?.value) || 0;
+        state.pembIncludeErection = !!document.getElementById(
+          "pemb-include-erection",
+        )?.checked;
+      }
+
+      function syncPembExtraControls() {
+        readPembExtraControls();
+        debouncedCompute();
+      }
+
+      function applyQuoteControlsToUi(qc) {
+        if (!qc) return;
+        if (qc.steelFinish) {
+          state.steelFinish = qc.steelFinish;
+          document
+            .getElementById("finish-red-iron")
+            ?.classList.toggle("active", qc.steelFinish === "red-iron");
+          document
+            .getElementById("finish-galvanized")
+            ?.classList.toggle("active", qc.steelFinish === "galvanized");
+        }
+        if (qc.pembDrawings != null) {
+          state.pembDrawings = qc.pembDrawings;
+          const dr = document.getElementById("pemb-drawings-val");
+          if (dr) dr.value = qc.pembDrawings;
+        }
+        if (qc.freightOverride != null) {
+          state.freightOverride = qc.freightOverride;
+          const fr = document.getElementById("pemb-freight-override");
+          if (fr) fr.value = qc.freightOverride;
+        } else state.freightOverride = null;
+        if (qc.pembIncludeErection != null) {
+          state.pembIncludeErection = qc.pembIncludeErection;
+          const er = document.getElementById("pemb-include-erection");
+          if (er) er.checked = qc.pembIncludeErection;
+        }
+        if (qc.deletedRowKeys) state.deletedRowKeys = qc.deletedRowKeys.slice();
+        if (qc.matMuOverride != null) {
+          state.matMuOverride = qc.matMuOverride;
+          const pct = Math.round((qc.matMuOverride - 1) * 1000) / 10;
+          const sl = document.getElementById("mat-mu-slider");
+          if (sl) sl.value = pct;
+          const el = document.getElementById("mat-mu-val");
+          if (el) el.textContent = pct.toFixed(1) + "% markup on cost";
+        }
+      }
+
+      function pembRecalcAddOnSell(x) {
+        const cost = Number(x.cost) || 0;
+        const markup = Number(x.markup ?? 25);
+        x.sell = Math.round(cost * (1 + markup / 100));
+        return x;
+      }
+
+      function pembAddLineItem() {
+        state.pembAddOns = state.pembAddOns || [];
+        state.pembAddOns.push({
+          item: "",
+          cost: 0,
+          markup: 25,
+          sell: 0,
+          note: "",
+          inQuote: true,
+          inSOW: true,
+        });
+        pembRenderAddOns();
+      }
+
+      function pembRenderAddOns() {
+        const tbody = document.getElementById("pemb-addons-tbody");
+        const tfoot = document.getElementById("pemb-addons-tfoot");
+        if (!tbody) return;
+        const rows = state.pembAddOns || [];
+        tbody.innerHTML = rows
+          .map((x, xi) => {
+            pembRecalcAddOnSell(x);
+            return (
+              `<tr>` +
+              `<td><input value="${(x.item || "").replace(/"/g, "&quot;")}" style="width:100%;padding:4px 6px" oninput="state.pembAddOns[${xi}].item=this.value"></td>` +
+              `<td class="td-r"><input type="number" value="${x.cost}" style="width:90px;padding:4px 6px;text-align:right" onchange="state.pembAddOns[${xi}].cost=+this.value;pembRenderAddOns();debouncedCompute()"></td>` +
+              `<td class="td-r"><input type="number" value="${x.markup}" style="width:55px;padding:4px 6px;text-align:right" onchange="state.pembAddOns[${xi}].markup=+this.value;pembRenderAddOns();debouncedCompute()"></td>` +
+              `<td class="td-r">${fmt(x.sell)}</td>` +
+              `<td><input value="${(x.note || "").replace(/"/g, "&quot;")}" style="width:100%;padding:4px 6px;font-size:12px" oninput="state.pembAddOns[${xi}].note=this.value"></td>` +
+              `<td style="text-align:center"><input type="checkbox" ${x.inQuote !== false ? "checked" : ""} onchange="state.pembAddOns[${xi}].inQuote=this.checked;debouncedCompute()"></td>` +
+              `<td style="text-align:center"><input type="checkbox" ${x.inSOW !== false ? "checked" : ""} onchange="state.pembAddOns[${xi}].inSOW=this.checked"></td>` +
+              `<td><button type="button" class="btn btn-sm" style="color:var(--red);border:none;background:none" onclick="state.pembAddOns.splice(${xi},1);pembRenderAddOns();debouncedCompute()">✕</button></td>` +
+              `</tr>`
+            );
+          })
+          .join("");
+        let sell = 0,
+          cost = 0;
+        rows.forEach((x) => {
+          if (x.inQuote !== false) {
+            pembRecalcAddOnSell(x);
+            sell += x.sell || 0;
+            cost += x.cost || 0;
+          }
+        });
+        if (tfoot) {
+          tfoot.innerHTML =
+            rows.length > 0
+              ? `<tr class="total-row"><td colspan="3">Add-ons in quote</td><td class="td-r">${fmt(sell)}</td><td colspan="4" style="font-size:11px;color:var(--muted)">Cost ${fmt(cost)} · Profit ${fmt(sell - cost)}</td></tr>`
+              : "";
+        }
+      }
+
+      function deleteBreakdownRow(rowId) {
+        if (!rowId) return;
+        state.deletedRowKeys = state.deletedRowKeys || [];
+        if (!state.deletedRowKeys.includes(rowId))
+          state.deletedRowKeys.push(String(rowId));
+        debouncedCompute();
+        toast("Row excluded — recompute sent deletedRowKeys", "info");
       }
 
       function debouncedCompute() {
@@ -2316,6 +2744,8 @@
           updateLaborMarginDisplay();
           updateCogsSummary();
           updateMarginSummary();
+          pembRenderAddOns();
+          refreshApiRefDebug();
           debouncedLoadPreview();
         } catch (e) {
           toast("Compute failed: " + e.message, "error");
@@ -2340,22 +2770,11 @@
           document.getElementById("live-sf").value = "";
           hideSfChoiceBanner();
           const fileBase64 = await fileToBase64(file);
+          readPembExtraControls();
           const data = await apiFetch(
             "POST",
             API.estimates + "/extract-shipper",
-            {
-              fileBase64,
-              fileName: file.name,
-              jobType: state.jobType,
-              scope: state.scope,
-              roof: state.roof,
-              install: state.install,
-              blendPct: state.blendPct,
-              installCostPerSf: state.installCostPerSf,
-              sellPerSf: state.sellPerSf,
-              squareFootage: 0,
-              sf: 0,
-            },
+            extractShipperBody(fileBase64, file.name),
           );
           state.parsedCategories = data.parsedCategories;
           state.tabSummary = data.tabSummary;
@@ -2393,6 +2812,7 @@
             toast(msg, "info");
           }
           showSfChoiceBanner();
+          refreshApiRefDebug();
           toast("Shipper parsed successfully", "success");
         } catch (e) {
           toast("Shipper upload failed: " + e.message, "error");
@@ -2794,6 +3214,8 @@
     <div class="metric good"><div class="metric-label">Profit</div><div class="metric-val">${fmt(profit)}</div><div class="metric-sub">${fmtPct(margin)} gross margin</div></div>
     <div class="metric"><div class="metric-label">Material Sell</div><div class="metric-val">${fmt(p.matSell)}</div><div class="metric-sub">${p.blendLabel || ""}</div></div>
     ${fq?.salesTax?.amount ? `<div class="metric"><div class="metric-label">Sales Tax</div><div class="metric-val">${fmt(fq.salesTax.amount)}</div><div class="metric-sub">${fq.salesTax.rate}%</div></div>` : ""}
+    ${(fq?.pembAddOnTotals?.sell || 0) > 0 ? `<div class="metric"><div class="metric-label">Line add-ons</div><div class="metric-val">${fmt(fq.pembAddOnTotals.sell)}</div><div class="metric-sub">${(state.pembAddOns || []).filter((x) => x.inQuote !== false).length} item(s)</div></div>` : ""}
+    ${p.pembDrawings > 0 ? `<div class="metric"><div class="metric-label">Drawings fee</div><div class="metric-val">${fmt(p.pembDrawings)}</div></div>` : ""}
   `;
       }
 
@@ -2836,9 +3258,12 @@
             " lbs";
         }
         let html =
-          '<table><thead><tr><th>Category</th><th class="td-r">Weight (lbs)</th><th>Rate</th><th class="td-r">Price</th><th>Notes</th></tr></thead><tbody>';
+          '<table><thead><tr><th>Category</th><th class="td-r">Weight (lbs)</th><th>Rate</th><th class="td-r">Price</th><th>Notes</th><th class="no-print"></th></tr></thead><tbody>';
         p.rows.forEach((r) => {
-          html += `<tr><td><span class="cat-tag cat-${tagClass(r.tag)}">${r.label}</span></td><td class="td-r">${fmtLbs(r.wt || 0)}</td><td>${r.rate}</td><td class="td-r">${fmt(r.price)}</td><td style="font-size:11px;color:var(--muted)">${r.notes || ""}</td></tr>`;
+          const rowId =
+            r._rowId ||
+            `${String(r.label || "").replace(/[^a-zA-Z0-9]/g, "_")}_${Math.round(r.price || 0)}`;
+          html += `<tr><td><span class="cat-tag cat-${tagClass(r.tag)}">${r.label}</span></td><td class="td-r">${fmtLbs(r.wt || 0)}</td><td>${r.rate}</td><td class="td-r">${fmt(r.price)}</td><td style="font-size:11px;color:var(--muted)">${r.notes || ""}${r.isStructuralFinish ? " · finish priced" : ""}</td><td class="no-print"><button type="button" class="btn btn-sm" title="Exclude row (deletedRowKeys)" onclick="deleteBreakdownRow('${String(rowId).replace(/'/g, "\\'")}')">✕</button></td></tr>`;
         });
         html += `<tr><td style="color:var(--muted)">Category subtotal (before blend)</td><td></td><td></td><td class="td-r">${fmt(rowTotal)}</td><td style="font-size:11px;color:var(--muted)">Sum of visible category prices</td></tr>`;
         html += `<tr><td style="color:var(--muted)">Vendor blend adjustment</td><td></td><td>${p.blendLabel || ""}</td><td class="td-r">${fmt(blendAdjustment)}</td><td style="font-size:11px;color:var(--muted)">Quicken/Central blended cost delta</td></tr>`;
@@ -2849,7 +3274,15 @@
           html += `<tr class="total-row"><td>Total cost</td><td></td><td></td><td class="td-r">${fmt(p.totCost)}</td><td></td></tr>`;
           html += `<tr><td style="color:var(--green-light)">Installation sell</td><td></td><td></td><td class="td-r" style="color:var(--green-light)">${fmt(p.instSell)}</td><td></td></tr>`;
         }
-        html += `<tr class="total-row" style="font-size:15px"><td style="color:var(--blue-light)">Building subtotal (sell)</td><td></td><td></td><td class="td-r" style="color:var(--blue-light)">${fmt(p.totSell)}</td><td style="color:var(--muted);font-size:11px">${fmt(p.sfPrice)}/SF</td></tr>`;
+        if (p.pembDrawings > 0) {
+          html += `<tr><td style="color:var(--muted)">Engineering drawings (pass-through)</td><td></td><td></td><td class="td-r">${fmt(p.pembDrawings)}</td><td></td><td></td></tr>`;
+        }
+        html += `<tr class="total-row" style="font-size:15px"><td style="color:var(--blue-light)">Building subtotal (sell)</td><td></td><td></td><td class="td-r" style="color:var(--blue-light)">${fmt(p.totSell)}</td><td style="color:var(--muted);font-size:11px">${fmt(p.sfPrice)}/SF · ${p.steelFinish || state.steelFinish || ""}</td><td></td></tr>`;
+
+        const addOnT = fq.pembAddOnTotals || {};
+        if (addOnT.sell > 0) {
+          html += `<tr><td style="color:var(--green-light)">Manual line add-ons</td><td></td><td></td><td class="td-r" style="color:var(--green-light)">${fmt(addOnT.sell)}</td><td style="font-size:11px;color:var(--muted)">pembAddOns</td><td></td></tr>`;
+        }
 
         const concrete = fq.concrete || {};
         const insulation = fq.insulation || {};
@@ -3091,6 +3524,7 @@
             ?.classList.add("active");
         if (page === "history") loadHistory();
         if (page === "pricing") loadPricingRules();
+        if (page === "api-ref") refreshApiRefDebug();
       }
 
       function showTab(id, btn) {
@@ -3107,6 +3541,7 @@
           updateMarginSummary();
           previewMargin();
         }
+        if (id === "line-items-tab") pembRenderAddOns();
         if (id === "quote-tab" || id === "sow-tab" || id === "contract-tab") {
           debouncedLoadPreview();
         }
@@ -3551,6 +3986,8 @@
           ...base,
           pricingResult: state.pricing,
           fullQuote: state.fullQuote,
+          pembAddOns: state.pembAddOns || [],
+          quoteControls: buildQuoteControls(),
         };
       }
 
@@ -3631,6 +4068,15 @@
           additionalInfo: state.additionalInfo,
           cogsOverride: state.cogsOverride,
           marginOverride: state.marginOverride,
+          pembAddOns: state.pembAddOns || [],
+          quoteControls: buildQuoteControls(),
+          roof: state.roof,
+          roofType: state.roof,
+          install: state.install,
+          installLevel: state.install,
+          blendPct: state.blendPct,
+          installCostPerSf: state.installCostPerSf,
+          sellPerSf: state.sellPerSf,
           status: "draft",
         };
         try {
@@ -3746,9 +4192,17 @@
           state.concrete = e.concreteAddon || state.concrete;
           state.insulation = e.insulationAddon || state.insulation;
           state.additionalInfo = e.additionalInfo || "";
+          state.pembAddOns = e.pembAddOns || [];
+          applyQuoteControlsToUi(e.quoteControls || {});
+          if (e.roofType) {
+            state.roof = e.roofType;
+            const roofSel = document.getElementById("sb-roof");
+            if (roofSel) roofSel.value = e.roofType;
+          }
           state.storageData = e.storageData;
           state.storagePricing = e.storagePricingResult;
           setScope(state.scope);
+          pembRenderAddOns();
           document.getElementById("f-company").value = state.leadCompanyName;
           document.getElementById("f-email").value = state.customerEmail;
           document.getElementById("f-street").value = state.streetAddress;
@@ -3842,8 +4296,17 @@
           const fields = [
             ["steelRatesPerLb.primaryFrames", "Primary $/lb"],
             ["steelRatesPerLb.secondarySteel", "Secondary $/lb"],
-            ["sheetingRatesPerSf.standardScrewDown", "Sheeting $/SF"],
-            ["sheetingRatesPerSf.standingSeam", "Standing seam $/SF"],
+            ["sheetingRatesPerSf.standardScrewDown", "Sheeting $/lb (v6)"],
+            ["sheetingRatesPerSf.standingSeam", "Standing seam $/lb (v6)"],
+            ["itemRates.redIron", "Red iron $/lb"],
+            ["itemRates.galvSteel", "Galvanized $/lb"],
+            ["itemRates.bdSell", "B-Deck sell $/SF"],
+            ["itemRates.ndSell", "N-Deck sell $/SF"],
+            ["itemRates.cfSell", "CF deck sell $/SF"],
+            ["itemRates.door8x7", "8×7 door $/ea"],
+            ["itemRates.mandoor", "Man door $/ea"],
+            ["itemRates.gutterLF", "Gutter $/LF"],
+            ["itemRates.screwEach", "Screw $/ea"],
             ["freight.ratePerLb", "Freight $/lb"],
             ["markup.pembMultiplier", "PEMB markup"],
             ["markup.storageMultiplier", "Storage markup"],
@@ -3857,9 +4320,14 @@
           ];
           let html = '<div class="grid-3" style="padding:14px">';
           fields.forEach(([path, label]) => {
-            const val = path.split(".").reduce((o, k) => o?.[k], rules) ?? "";
+            const parts = path.split(".");
+            let val = rules;
+            for (const k of parts) val = val?.[k];
+            if (val === undefined || val === null) val = "";
             html += `<div class="field"><label>${label}</label><input data-path="${path}" value="${val}" type="number" step="0.01"></div>`;
           });
+          if (!rules.itemRates) rules.itemRates = {};
+          state.pricingRules = rules;
           html += "</div>";
           document.getElementById("pricing-editor").innerHTML = html;
         } catch (e) {
@@ -3946,6 +4414,8 @@
       // ─── Init ───────────────────────────────────────────────────────
       updateAuthStatus();
       updateLaborMarginDisplay();
+      pembRenderAddOns();
+      refreshApiRefDebug();
     </script>
   </body>
 </html>
