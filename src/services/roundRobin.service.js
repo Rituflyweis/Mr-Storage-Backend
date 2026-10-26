@@ -35,7 +35,12 @@ const rebuildTracker = async () => {
  * Assigns the next sales employee in round-robin order to a lead.
  * Returns the assigned employeeId, or null if no active sales employees.
  */
-const assignNextSales = async (leadId, customerId) => {
+/**
+ * @param {object} [options]
+ * @param {boolean} [options.silent] — skip per-lead socket toasts (bulk import)
+ */
+const assignNextSales = async (leadId, customerId, options = {}) => {
+  const silent = options.silent === true
   // Ensure tracker exists before the atomic increment
   let tracker = await RoundRobinTracker.findOne()
   if (!tracker) tracker = await rebuildTracker()
@@ -86,14 +91,15 @@ const assignNextSales = async (leadId, customerId) => {
     .populate('assignedSales')
     .lean()
 
-  // Notify the assigned employee with full lead context
-  if (global.io) {
-    global.io.of('/admin').to(`user:${employeeId}`).emit('lead_assigned', {
-      leadId,
-      lead: fullLead,
-    })
+  if (!silent) {
+    if (global.io) {
+      global.io.of('/admin').to(`user:${employeeId}`).emit('lead_assigned', {
+        leadId,
+        lead: fullLead,
+      })
+    }
+    await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'assigned' })
   }
-  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'assigned' })
 
   return employeeId
 }

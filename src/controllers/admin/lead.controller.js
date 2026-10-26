@@ -35,8 +35,6 @@ const {
   buildLeadCreatePayload,
   applyLeadUpdateFromBody,
 } = require('../../utils/leadPayload')
-const { parse } = require('csv-parse/sync')
-const bcrypt = require('bcryptjs')
 const { startOfDay, endOfDay } = require('date-fns')
 const {
   buildAdminLeadFilter,
@@ -463,40 +461,28 @@ exports.createLead = asyncHandler(async (req, res) => {
 })
 
 exports.importLeads = asyncHandler(async (req, res) => {
-  const leadImport = require('../../services/leadExcelImport.service')
+  const { runLeadImport } = require('../../utils/runLeadImport')
   const ctx = {
     createdByUserId: req.user._id,
+    useRoundRobin: true,
     defaultBusinessUnit: req.body.businessUnit,
   }
 
-  if (req.file?.buffer) {
-    try {
-      const results = await leadImport.importFromExcelBuffer(req.file.buffer, ctx)
-      return success(
-        res,
-        results,
-        `Import complete: ${results.created} created, ${results.skipped} skipped (${results.totalRows} rows)`
-      )
-    } catch (err) {
-      return badRequest(res, err.message || 'Invalid Excel file')
-    }
-  }
-
-  if (!req.body.csv) {
-    return badRequest(res, 'Upload an Excel file (multipart field "file") or send CSV in body.csv')
-  }
-
   try {
-    const results = await leadImport.importFromCsvText(req.body.csv, ctx)
-    return success(
-      res,
-      results,
-      `Import complete: ${results.created} created, ${results.skipped} skipped`
-    )
-  } catch {
-    return badRequest(res, 'Invalid CSV format')
+    const out = await runLeadImport(req, ctx, { panel: 'admin' })
+    return res.status(out.httpStatus || 200).json({
+      success: true,
+      message: out.message || 'Success',
+      data: out.payload,
+    })
+  } catch (err) {
+    if (err.code === 'LEAD_IMPORT_NO_PAYLOAD') return badRequest(res, err.message)
+    return badRequest(res, err.message || 'Invalid import file')
   }
 })
+
+const { getLeadImportJobStatus } = require('../../utils/leadImportJob.controller')
+exports.getLeadImportJobStatus = getLeadImportJobStatus(false)
 
 exports.editLead = asyncHandler(async (req, res) => {
   const { leadId } = req.params

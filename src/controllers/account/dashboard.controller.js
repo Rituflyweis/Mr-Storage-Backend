@@ -10,15 +10,6 @@ exports.getOverview = asyncHandler(async (req, res) => {
   return success(res, data)
 })
 
-exports.exportOverview = asyncHandler(async (req, res) => {
-  const { generateAccountDashboardExcel } = require('../../utils/exportAccountDashboard')
-  const data = await dashboardService.computeDashboardOverview(req.query)
-  const buffer = await generateAccountDashboardExcel(data)
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-  res.setHeader('Content-Disposition', 'attachment; filename="account-dashboard-export.xlsx"')
-  return res.send(buffer)
-})
-
 exports.getStats = asyncHandler(async (req, res) => {
   const data = await dashboardService.computeFinancialOverview(req.query)
   return success(res, data)

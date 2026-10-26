@@ -1,15 +1,16 @@
 const Lead = require('../models/Lead')
 const Customer = require('../models/Customer')
 const Invoice = require('../models/Invoice')
+const Expense = require('../models/Expense')
 const ProjectBudget = require('../models/ProjectBudget')
-const { aggregateProjectExpensesForLead } = require('../utils/projectExpenseAggregate.util')
+const Delivery = require('../models/Delivery')
+const FreightBid = require('../models/FreightBid')
 const WIPProfit = require('../models/WIPProfit')
 const { SALES_LIFECYCLE_STAGES } = require('../config/constants')
 const { findLatestContractDocument } = require('../utils/leadAgreement')
 const { formatLifecycleStatusLabel } = require('../utils/employeeProfile.util')
 const { isInvoiceOverdue } = require('../utils/invoiceScope')
 const { withProjectIdFields } = require('../utils/leadProjectId')
-const { resolveLeadByProjectRef } = require('../utils/projectRef')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -30,9 +31,13 @@ const formatPhone = (phone) => {
 }
 
 exports.resolveProject = async (projectIdOrJobId) => {
-  const lead = await resolveLeadByProjectRef(projectIdOrJobId)
-  if (!lead) return null
-  return Lead.findById(lead._id)
+  if (!projectIdOrJobId) return null
+  let lead = await Lead.findById(projectIdOrJobId)
+    .populate('customerId')
+    .populate('assignedSales', 'name email role')
+    .lean()
+  if (lead) return lead
+  return Lead.findOne({ jobId: projectIdOrJobId })
     .populate('customerId')
     .populate('assignedSales', 'name email role')
     .lean()
@@ -98,27 +103,22 @@ const buildSalesProgressStep = (lead) => {
 }
 
 const computeProfitabilityOverview = async (leadId, quoteValue) => {
-  const Expense = require('../models/Expense')
-  const {
-    sumCustomLineBudget,
-    buildCustomProfitabilityRows,
-  } = require('../utils/budgetVsActual.util')
-
-  const [budget, expenseRollup, invoices, expenseByCategory] = await Promise.all([
+  const [budget, expenses, deliveries] = await Promise.all([
     ProjectBudget.findOne({ leadId }).lean(),
-    aggregateProjectExpensesForLead(leadId),
-    Invoice.find({
+    Expense.find({ leadId, isActive: true }).select('amount category').lean(),
+    Delivery.find({ leadId }).select('_id').lean(),
+  ])
+
+  const deliveryIds = deliveries.map((d) => d._id)
+  const freightBids = deliveryIds.length
+    ? await FreightBid.find({ deliveryId: { $in: deliveryIds }, status: 'selected' }).select('quotedAmount').lean()
+    : []
+
+  const invoices = await Invoice.find({
     leadId,
     invoiceType: { $nin: ['vendor', 'freight_carrier'] },
-      status: { $ne: 'cancelled' },
-    })
-      .select('status totalAmount')
-      .lean(),
-    Expense.aggregate([
-      { $match: { leadId, isActive: true } },
-      { $group: { _id: '$category', total: { $sum: '$amount' } } },
-    ]),
-  ])
+    status: { $ne: 'cancelled' },
+  }).select('status totalAmount').lean()
 
   let actualRevenue = 0
   for (const inv of invoices) {
@@ -146,24 +146,39 @@ const computeProfitabilityOverview = async (leadId, quoteValue) => {
     expected.logisticsCost +
     expected.manpowerCost +
     expected.siteCost +
-    expected.miscellaneous +
-    sumCustomLineBudget(budget)
+    expected.miscellaneous
   expected.profit = expected.revenue - expected.totalCost
   expected.marginPct = expected.revenue > 0 ? round2((expected.profit / expected.revenue) * 100) : 0
 
-  const cats = expenseRollup.categories || {}
   const actual = {
     revenue: actualRevenue,
-    materialCost: cats.materialCost || 0,
-    freightCost: expenseRollup.freightFromBids || 0,
-    logisticsCost: cats.logisticsCost || 0,
-    manpowerCost: cats.manpowerCost || 0,
-    siteCost: cats.siteCost || 0,
-    miscellaneous: (cats.miscellaneous || 0) + (cats.administrativeCost || 0),
-    totalCost: expenseRollup.totalExpense || 0,
+    materialCost: 0,
+    freightCost: freightBids.reduce((s, b) => s + (b.quotedAmount || 0), 0),
+    logisticsCost: 0,
+    manpowerCost: 0,
+    siteCost: 0,
+    miscellaneous: 0,
+    totalCost: 0,
     profit: 0,
     marginPct: 0,
   }
+
+  for (const e of expenses) {
+    const cat = String(e.category || '').toLowerCase()
+    if (cat === 'materials') actual.materialCost += e.amount
+    else if (cat === 'labour') actual.manpowerCost += e.amount
+    else if (['transport', 'logistics'].includes(cat)) actual.logisticsCost += e.amount
+    else if (['subcontractor', 'permits'].includes(cat)) actual.siteCost += e.amount
+    else actual.miscellaneous += e.amount
+  }
+
+  actual.totalCost =
+    actual.materialCost +
+    actual.freightCost +
+    actual.logisticsCost +
+    actual.manpowerCost +
+    actual.siteCost +
+    actual.miscellaneous
   actual.profit = actual.revenue - actual.totalCost
   actual.marginPct = actual.revenue > 0 ? round2((actual.profit / actual.revenue) * 100) : 0
 
@@ -175,8 +190,6 @@ const computeProfitabilityOverview = async (leadId, quoteValue) => {
     variance: round2(actual[key] - expected[key]),
   })
 
-  const customRows = buildCustomProfitabilityRows(budget, expenseByCategory)
-
   return {
     rows: [
       row('revenue', 'Revenue'),
@@ -186,7 +199,6 @@ const computeProfitabilityOverview = async (leadId, quoteValue) => {
       row('manpowerCost', 'Manpower Cost'),
       row('siteCost', 'Site Cost'),
       row('miscellaneous', 'Miscellaneous'),
-      ...customRows,
       row('totalCost', 'Total Cost'),
       row('profit', 'Profit'),
       {
@@ -293,10 +305,14 @@ exports.getProjectDetail = async (projectIdOrJobId) => {
     financialSummary,
     progressStep,
     profitabilityOverview: profitabilityOverview.rows,
-    actionLinks: (() => {
-      const { buildActionLinks } = require('./accountProjectSubpages.service')
-      return buildActionLinks(lead)
-    })(),
+    actionLinks: {
+      invoices: `/api/account/invoices?leadId=${lead._id}`,
+      projectInvoicesBreakdown: `/api/account/invoices/project/${lead._id}/breakdown`,
+      payments: `/api/account/payments/orders/${lead._id}`,
+      agreement: `/api/admin/customers/${customer?._id || customer}/projects/${lead._id}/agreement`,
+      quotation: `/api/sales/leads/${lead._id}`,
+      bom: `/api/plant/bom/projects/${lead._id}`,
+    },
     lead: withProjectIdFields(lead, lead.jobId),
   }
 }

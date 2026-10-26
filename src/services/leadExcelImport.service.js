@@ -6,10 +6,13 @@ const Lead = require('../models/Lead')
 const Customer = require('../models/Customer')
 const generateCustomerId = require('../utils/generateCustomerId')
 const { normalizeBusinessUnit } = require('../utils/businessUnit')
-const { normalizeStructuredAddress } = require('../models/schemas/structuredAddress')
 const { syncLeadBuildings } = require('./leadBuilding.service')
+const roundRobinService = require('./roundRobin.service')
+const leadListSocket = require('./leadListSocket.service')
 
 const IMPORT_EMAIL_DOMAIN = 'imports.mrstorage.internal'
+
+const EMPTY_CELL_VALUES = new Set(['none', 'null', 'n/a', 'na', '-', '—'])
 
 const normalizeHeader = (h) =>
   String(h ?? '')
@@ -18,11 +21,13 @@ const normalizeHeader = (h) =>
     .replace(/\s+/g, ' ')
     .replace(/[^\w\s/%()-]/g, '')
 
-/** Map normalized header → canonical field key */
+/** Map normalized header → canonical field key (TractIQ export + legacy CSV templates). */
 const HEADER_ALIASES = {
   project: 'projectName',
   'project name': 'projectName',
   projectname: 'projectName',
+  'new this week': 'newThisWeek',
+  added: 'addedDate',
   name: 'customerName',
   'customer name': 'customerName',
   customername: 'customerName',
@@ -74,6 +79,12 @@ const HEADER_ALIASES = {
   'owner / llc': 'ownerLlc',
   latitude: 'latitude',
   longitude: 'longitude',
+  'developer (researched)': 'developerResearched',
+  'people (business role)': 'peopleBusinessRole',
+  'contractor / architect': 'contractorArchitect',
+  'parcel owner': 'parcelOwner',
+  'project status': 'projectStatus',
+  website: 'website',
 }
 
 const cellToString = (value) => {
@@ -81,10 +92,12 @@ const cellToString = (value) => {
   if (value instanceof Date) return value.toISOString().slice(0, 10)
   if (typeof value === 'object' && value.text) return String(value.text).trim()
   if (typeof value === 'object' && value.result != null) return String(value.result).trim()
-  return String(value).trim()
+  const s = String(value).trim()
+  if (EMPTY_CELL_VALUES.has(s.toLowerCase())) return ''
+  return s
 }
 
-const findHeaderRowIndex = (sheet, maxScan = 25) => {
+const findHeaderRowIndex = (sheet, maxScan = 30) => {
   for (let r = 1; r <= Math.min(maxScan, sheet.rowCount); r++) {
     const row = sheet.getRow(r)
     const texts = []
@@ -92,19 +105,25 @@ const findHeaderRowIndex = (sheet, maxScan = 25) => {
       texts.push(normalizeHeader(cellToString(cell.value)))
     })
     const hasProject = texts.some((t) => t === 'project' || t === 'project name' || t === 'projectname')
-    const hasContact = texts.some((t) =>
+    const tractiqHeader = hasProject && texts.some((t) => t === 'added' || t === 'new this week')
+    const legacyHeader = hasProject && texts.some((t) =>
       ['email', 'customer email', 'address', 'city'].includes(t)
     )
-    if (hasProject && texts.length >= 5) return r
-    if (hasProject && hasContact) return r
+    if (tractiqHeader || (hasProject && texts.length >= 5) || (hasProject && legacyHeader)) return r
   }
   return 1
+}
+
+const pickWorksheet = (workbook) => {
+  const named = workbook.getWorksheet('Leads')
+  if (named) return named
+  return workbook.worksheets[0]
 }
 
 const parseExcelToRecords = async (buffer) => {
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
-  const sheet = workbook.worksheets[0]
+  const sheet = pickWorksheet(workbook)
   if (!sheet) throw new Error('Excel file has no worksheets')
 
   const headerRowIndex = findHeaderRowIndex(sheet)
@@ -128,6 +147,7 @@ const parseExcelToRecords = async (buffer) => {
       record[key] = val
     })
     if (nonEmpty === 0) continue
+    if (!record.projectName && !record.project) continue
     records.push(record)
   }
   return { records, headerRowIndex, sheetName: sheet.name }
@@ -152,6 +172,7 @@ const pickCustomerIdentity = (row) => {
   const emailRaw =
     row.customerEmail ||
     row.customerEmailAlt ||
+    row.website?.match(/[\w.+-]+@[\w.-]+\.\w+/)?.[0] ||
     row.businessContact?.match(/[\w.+-]+@[\w.-]+\.\w+/)?.[0] ||
     ''
   const phoneRaw =
@@ -166,6 +187,8 @@ const pickCustomerIdentity = (row) => {
   const name =
     row.customerName ||
     row.developerOwner ||
+    row.developerResearched ||
+    row.parcelOwner ||
     row.ownerLlc ||
     (row.projectName ? row.projectName.split(' ').slice(0, 2).join(' ') : '') ||
     'Import Contact'
@@ -193,15 +216,27 @@ const buildImportNotes = (row) => {
   }
   push('Description', row.description)
   push('Stage', row.stage)
-  push('Status', row.status)
+  push('Lead status', row.status)
+  push('Project status', row.projectStatus)
   push('Market', row.market)
   push('Source', row.sourceLabel)
+  push('Added', row.addedDate)
+  push('New this week', row.newThisWeek)
   push('County', row.county)
   push('Owner/LLC', row.ownerLlc)
+  push('Developer (researched)', row.developerResearched)
+  push('Parcel owner', row.parcelOwner)
+  push('Contractor/architect', row.contractorArchitect)
+  push('People (business role)', row.peopleBusinessRole)
   push('Link', row.link)
+  push('Website', row.website)
   push('Map', row.mapLink)
   push('Street View', row.streetView)
   push('Lat/Lng', row.latitude && row.longitude ? `${row.latitude}, ${row.longitude}` : '')
+  push('How real', row.how_real)
+  push('Why', row.why)
+  push('TractIQ status', row.tractiq_status)
+  push('Due diligence notes', row['due-diligence_notes'])
   push('Notes', row.notes)
   if (row.businessContact) push('Business contact', row.businessContact)
   return chunks.join('\n').slice(0, 8000)
@@ -215,6 +250,14 @@ const inferBuildingType = (row) => {
   return 'Commercial'
 }
 
+const buildDuplicateKey = (projectName, city, state, postalCode) =>
+  [
+    (projectName || '').trim().toLowerCase(),
+    (city || '').trim().toLowerCase(),
+    (state || '').trim().toUpperCase().slice(0, 2),
+    String(postalCode || '').trim(),
+  ].join('|')
+
 const resolveDuplicateLead = async (projectName, city, state, postalCode) => {
   if (!projectName) return null
   const filter = {
@@ -227,6 +270,8 @@ const resolveDuplicateLead = async (projectName, city, state, postalCode) => {
   return Lead.findOne(filter).select('_id projectName').lean()
 }
 
+exports.buildDuplicateKey = buildDuplicateKey
+
 const importOneRow = async (row, ctx) => {
   const projectName = (row.projectName || row.project || '').trim()
   if (!projectName) {
@@ -236,14 +281,28 @@ const importOneRow = async (row, ctx) => {
   const city = (row.city || '').trim()
   const state = (row.state || '').trim().toUpperCase().slice(0, 2)
   const postalCode = String(row.postalCode || row.zip || row.pincode || '').trim()
+  const dupKey = buildDuplicateKey(projectName, city, state, postalCode)
+  if (!ctx.duplicateKeys) ctx.duplicateKeys = new Set()
+  if (ctx.duplicateKeys.has(dupKey)) {
+    return { status: 'skipped', reason: 'duplicate project' }
+  }
   const dup = await resolveDuplicateLead(projectName, city, state, postalCode)
-  if (dup) return { status: 'skipped', reason: 'duplicate project', leadId: dup._id }
+  if (dup) {
+    ctx.duplicateKeys.add(dupKey)
+    return { status: 'skipped', reason: 'duplicate project', leadId: dup._id }
+  }
+  ctx.duplicateKeys.add(dupKey)
 
   const { email, phone, name } = pickCustomerIdentity(row)
-  let customer = await Customer.findOne({ email })
+  if (!ctx.customerCache) ctx.customerCache = new Map()
+  let customer = ctx.customerCache.get(email)
   if (!customer) {
-    const existingPhone = await Customer.findOne({ 'phone.number': phone })
-    if (existingPhone) customer = existingPhone
+    customer = await Customer.findOne({ email })
+    if (!customer) {
+      const existingPhone = await Customer.findOne({ 'phone.number': phone })
+      if (existingPhone) customer = existingPhone
+    }
+    if (customer) ctx.customerCache.set(email, customer)
   }
   if (!customer) {
     const custId = await generateCustomerId()
@@ -260,26 +319,16 @@ const importOneRow = async (row, ctx) => {
       company: row.ownerLlc || row.developerOwner || '',
       location: buildLocationString(row),
     })
+    ctx.customerCache.set(email, customer)
   }
 
-  const installAddress = normalizeStructuredAddress({
-    line1: row.addressLine1 || '',
-    city,
-    state,
-    postalCode,
-    country: 'US',
-    companyName: row.ownerLlc || '',
-  })
-
-  const unitInput = row.businessUnit ?? ctx.defaultBusinessUnit
-  const unit = unitInput != null ? normalizeBusinessUnit(unitInput) : { skip: true }
+  const useRoundRobin = ctx.useRoundRobin !== false
 
   const leadPayload = {
     customerId: customer._id,
     projectName,
     buildingType: inferBuildingType(row),
     location: buildLocationString(row),
-    installAddress,
     city,
     state,
     pincode: postalCode,
@@ -288,18 +337,21 @@ const importOneRow = async (row, ctx) => {
     notes: buildImportNotes(row),
     source: 'import',
     lifecycleStatus: 'initial_contact',
-    assignedSales: ctx.assignSalesUserId || null,
-    isHandedToSales: Boolean(ctx.assignSalesUserId),
+    assignedSales: useRoundRobin ? null : ctx.assignSalesUserId || null,
+    isHandedToSales: useRoundRobin ? false : Boolean(ctx.assignSalesUserId),
   }
 
-  if (!unit.skip && !unit.error) leadPayload.businessUnit = unit.value
   if (row.width) leadPayload.width = parseNumber(row.width)
   if (row.length) leadPayload.length = parseNumber(row.length)
   if (row.height) leadPayload.height = parseNumber(row.height)
   if (row.roofStyle) leadPayload.roofStyle = row.roofStyle
   if (row.roofPitch) leadPayload.roofPitch = row.roofPitch
 
-  if (ctx.assignSalesUserId) {
+  const unitInput = row.businessUnit ?? ctx.defaultBusinessUnit
+  const unit = unitInput != null ? normalizeBusinessUnit(unitInput) : { skip: true }
+  if (!unit.skip && !unit.error) leadPayload.businessUnit = unit.value
+
+  if (!useRoundRobin && ctx.assignSalesUserId) {
     leadPayload.assigningHistory = [{
       employeeId: ctx.assignSalesUserId,
       method: 'manual',
@@ -308,37 +360,96 @@ const importOneRow = async (row, ctx) => {
     }]
   }
 
-  const lead = await Lead.create(leadPayload)
-  await syncLeadBuildings(lead, { createdBy: ctx.createdByUserId })
+  let lead
+  try {
+    lead = await Lead.create(leadPayload)
+    await syncLeadBuildings(lead, { createdBy: ctx.createdByUserId })
+    if (useRoundRobin) {
+      const silent = ctx.bulkImport === true
+      const employeeId = await roundRobinService.assignNextSales(lead._id, customer._id, { silent })
+      if (employeeId && silent) {
+        if (!ctx.assignCountByUser) ctx.assignCountByUser = new Map()
+        const key = String(employeeId)
+        ctx.assignCountByUser.set(key, (ctx.assignCountByUser.get(key) || 0) + 1)
+      }
+    }
+  } catch (err) {
+    ctx.duplicateKeys.delete(dupKey)
+    throw err
+  }
+
   return { status: 'created', leadId: lead._id, jobId: lead.jobId }
 }
 
 exports.parseExcelToRecords = parseExcelToRecords
 exports.parseCsvToRecords = parseCsvToRecords
 
+const applyRowOutcome = (results, rowIndex, outcome, maxErrors) => {
+  if (outcome.status === 'created') results.created++
+  else results.skipped++
+  if (outcome.reason && outcome.status === 'skipped' && results.errors.length < maxErrors) {
+    results.errors.push({ row: rowIndex + 1, reason: outcome.reason, leadId: outcome.leadId })
+  }
+}
+
 /**
  * @param {object[]} records - normalized row objects
- * @param {object} ctx - { createdByUserId, assignSalesUserId?, defaultBusinessUnit? }
+ * @param {object} ctx - { createdByUserId, useRoundRobin?, assignSalesUserId?, duplicateKeys?, customerCache? }
+ * @param {object} opts - { concurrency?, onProgress?, maxErrors? }
  */
-exports.importLeadRecords = async (records, ctx = {}) => {
+exports.importLeadRecords = async (records, ctx = {}, opts = {}) => {
+  const concurrency = Math.min(Math.max(opts.concurrency || 1, 1), 12)
+  const maxErrors = opts.maxErrors ?? 150
+  const onProgress = opts.onProgress
+
+  ctx.duplicateKeys = ctx.duplicateKeys || new Set()
+  ctx.customerCache = ctx.customerCache || new Map()
+
   const results = {
     created: 0,
     skipped: 0,
     errors: [],
     totalRows: records.length,
+    processedRows: 0,
   }
 
-  for (let i = 0; i < records.length; i++) {
-    try {
-      const outcome = await importOneRow(records[i], ctx)
-      if (outcome.status === 'created') results.created++
-      else results.skipped++
-      if (outcome.reason && outcome.status === 'skipped') {
-        results.errors.push({ row: i + 1, reason: outcome.reason, leadId: outcome.leadId })
+  for (let start = 0; start < records.length; start += concurrency) {
+    const batch = records.slice(start, start + concurrency)
+    const batchOutcomes = await Promise.all(
+      batch.map(async (row, offset) => {
+        const i = start + offset
+        try {
+          const outcome = await importOneRow(row, ctx)
+          return { i, outcome, err: null }
+        } catch (err) {
+          return { i, outcome: null, err }
+        }
+      })
+    )
+
+    for (const { i, outcome, err } of batchOutcomes) {
+      if (err) {
+        if (results.errors.length < maxErrors) {
+          results.errors.push({ row: i + 1, reason: err.message })
+        }
+        results.skipped++
+      } else {
+        applyRowOutcome(results, i, outcome, maxErrors)
       }
-    } catch (err) {
-      results.errors.push({ row: i + 1, reason: err.message })
+      results.processedRows++
     }
+
+    if (onProgress) await onProgress({ ...results })
+  }
+
+  if (onProgress) await onProgress({ ...results })
+
+  if (ctx.bulkImport && results.created > 0) {
+    await leadListSocket.emitBulkLeadImportComplete({
+      totalCreated: results.created,
+      assignmentCounts: ctx.assignCountByUser || new Map(),
+      initiatedByUserId: ctx.createdByUserId,
+    })
   }
 
   return results

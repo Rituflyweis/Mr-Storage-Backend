@@ -22,6 +22,12 @@ const io = new Server(server, {
 initSocket(io);
 
 connectDB().then(async () => {
+  try {
+    const { markStaleJobsFailed } = require('./src/services/leadImportJob.service')
+    await markStaleJobsFailed()
+  } catch (e) {
+    console.warn('[LeadImportJob] stale job cleanup skipped:', e.message)
+  }
   await initFollowUpScheduler(); // pending followups schedule
   initDbBackupScheduler();
   startAutomationRunner();

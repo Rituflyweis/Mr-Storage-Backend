@@ -3,7 +3,6 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { success, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
-const { applyBusinessUnitFilter } = require('../../utils/businessUnit')
 const accountProjectService = require('../../services/accountProject.service')
 
 exports.getProjects = asyncHandler(async (req, res) => {
@@ -20,7 +19,6 @@ exports.getProjects = asyncHandler(async (req, res) => {
     const regex = { $regex: search.trim(), $options: 'i' }
     filter.$or = [{ projectName: regex }, { jobId: regex }]
   }
-  applyBusinessUnitFilter(filter, req.query.businessUnit)
 
   const projects = await Lead.find(filter)
     .populate('customerId')

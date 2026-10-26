@@ -202,7 +202,47 @@ const emitLeadListUpdated = async (leadId, options = {}) => {
     }
   }
 }
+/** One notification after bulk import instead of per-lead `lead_assigned`. */
+const emitBulkLeadImportComplete = async ({
+  totalCreated = 0,
+  assignmentCounts = new Map(),
+  initiatedByUserId = null,
+}) => {
+  const io = getIo()
+  if (!io || totalCreated <= 0) return
+
+  const byUser = {}
+  for (const [userId, count] of assignmentCounts.entries()) {
+    if (count > 0) byUser[String(userId)] = count
+  }
+
+  const summary = {
+    totalCreated,
+    assignmentCounts: byUser,
+    meta: { action: 'bulk_import', trigger: 'import' },
+  }
+
+  io.to('admin_room').emit('lead_import_completed', summary)
+
+  for (const [employeeId, count] of assignmentCounts.entries()) {
+    if (count <= 0) continue
+    io.to(`user:${employeeId}`).emit('lead_import_completed', {
+      ...summary,
+      assignedToYou: count,
+      message: `${count} new lead${count === 1 ? '' : 's'} assigned to you from import`,
+    })
+  }
+
+  if (initiatedByUserId) {
+    io.to(`user:${initiatedByUserId}`).emit('lead_import_completed', {
+      ...summary,
+      message: `Import finished: ${totalCreated} lead${totalCreated === 1 ? '' : 's'} created`,
+    })
+  }
+}
+
 module.exports = {
   emitLeadListCreated,
   emitLeadListUpdated,
+  emitBulkLeadImportComplete,
 }

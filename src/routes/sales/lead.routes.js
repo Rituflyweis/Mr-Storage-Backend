@@ -1,32 +1,17 @@
 const router = require('express').Router()
-const multer = require('multer')
 const { body, query } = require('express-validator')
-
-const leadImportUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const ok =
-      file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-      file.originalname?.toLowerCase().endsWith('.xlsx')
-    cb(ok ? null : new Error('Only .xlsx Excel files are supported'), ok)
-  },
-})
+const leadImportUpload = require('../../middleware/leadImportUpload')
 const { LEAD_TEMPERATURES } = require('../../config/constants')
 const ctrl = require('../../controllers/sales/lead.controller')
 const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
 const agreementCtrl = require('../../controllers/common/agreement.controller')
 const validate = require('../../middleware/validate')
 const { leadCreateFieldValidators, leadEditFieldValidators } = require('../../utils/leadCreateValidators')
-const { businessUnitQueryValidator } = require('../../utils/businessUnit')
-
-const businessUnitQuery = [businessUnitQueryValidator(), validate]
 
 // ── Static routes BEFORE /:leadId ─────────────────────────────────────────────
 router.get('/stats', ctrl.getLeadsStats)
 router.get('/by-score',
   [
-    businessUnitQueryValidator(),
     query('startDate').optional().isISO8601(),
     query('endDate').optional().isISO8601(),
     query('temperature').optional().isIn(LEAD_TEMPERATURES),
@@ -38,12 +23,10 @@ router.get('/by-score',
   validate,
   ctrl.getLeadsByScore
 )
-router.get('/scored', businessUnitQuery, ctrl.getScoredLeads)
+router.get('/scored', ctrl.getScoredLeads)
 router.get('/escalated', ctrl.getEscalatedLeads)
-router.get('/archived', businessUnitQuery, ctrl.getArchivedLeads)
 router.get('/with-po',
   [
-    businessUnitQueryValidator(),
     query('poStatus').optional().isIn(['pending', 'approved', 'rejected']),
     query('search').optional().trim(),
     query('page').optional().isInt({ min: 1 }),
@@ -54,12 +37,13 @@ router.get('/with-po',
   validate,
   ctrl.getLeadsWithPo
 )
-router.get('/export', businessUnitQuery, ctrl.exportLeads)
-router.get('/export/excel', businessUnitQuery, ctrl.exportLeadsExcel)
+router.get('/export', ctrl.exportLeads)
+router.get('/export/excel', ctrl.exportLeadsExcel)
 
-router.post('/import', leadImportUpload.single('file'), ctrl.importLeads)
+router.post('/import', leadImportUpload, ctrl.importLeads)
+router.get('/import/jobs/:jobId', ctrl.getLeadImportJobStatus)
 
-router.get('/', businessUnitQuery, ctrl.getLeads)
+router.get('/', ctrl.getLeads)
 
 router.post('/',
   [
@@ -79,35 +63,12 @@ router.put('/:leadId/chat/reopen', chatCtrl.reopenChat)
 
 router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
 router.get('/:leadId/detail', ctrl.getLeadDetail)
-const mediaCtrl = require('../../controllers/common/leadMedia.controller')
-router.get('/:leadId/media',
-  [query('type').optional().isIn(['photo', 'video'])],
-  validate,
-  mediaCtrl.getLeadMedia
-)
-router.post('/:leadId/media',
-  [
-    body('url').notEmpty(),
-    body('name').notEmpty(),
-    body('type').isIn(['photo', 'video']),
-  ],
-  validate,
-  mediaCtrl.uploadLeadMedia
-)
 router.get('/:leadId/notes', ctrl.getLeadNotes)
 router.post('/:leadId/notes',
   [body('note').notEmpty().trim()],
   validate,
   ctrl.createLeadNote
 )
-router.put('/:leadId/notes/:noteId',
-  [body('note').notEmpty().trim()],
-  validate,
-  ctrl.updateLeadNote
-)
-router.delete('/:leadId/notes/:noteId', ctrl.deleteLeadNote)
-router.get('/:leadId/documents', ctrl.getLeadDocuments)
-router.use('/:leadId/structural-drawing', require('../common/structuralDrawing.routes'))
 router.get('/:leadId/buildings', ctrl.getBuildings)
 
 router.put('/:leadId/lifecycle',
@@ -121,14 +82,6 @@ router.put('/:leadId/temperature',
   validate,
   ctrl.updateLeadTemperature
 )
-
-router.put('/:leadId/archive',
-  [body('reason').optional().trim()],
-  validate,
-  ctrl.archiveLead
-)
-
-router.put('/:leadId/unarchive', ctrl.unarchiveLead)
 
 router.put('/:leadId', leadEditFieldValidators, validate, ctrl.editLead)
 

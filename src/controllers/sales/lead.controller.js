@@ -12,7 +12,6 @@ const Building = require('../../models/Building')
 const ProjectBudget = require('../../models/ProjectBudget')
 const auditService = require('../../services/audit.service')
 const { syncLeadBuildings } = require('../../services/leadBuilding.service')
-const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
@@ -40,8 +39,6 @@ const User = require('../../models/User')
 const { formatLeadNotes, appendLeadNote, updateLeadNote, deleteLeadNote } = require('../../services/leadNotes.service')
 const leadListSocket = require('../../services/leadListSocket.service')
 const { buildArchivedLeadListFilter } = require('../../utils/leadArchive')
-const { parse } = require('csv-parse/sync')
-const bcrypt = require('bcryptjs')
 
 const guardLead = async (leadId, salesId) => {
   const lead = await Lead.findById(leadId)
@@ -236,45 +233,28 @@ exports.createLead = asyncHandler(async (req, res) => {
 })
 
 exports.importLeads = asyncHandler(async (req, res) => {
-  const leadImport = require('../../services/leadExcelImport.service')
+  const { runLeadImport } = require('../../utils/runLeadImport')
   const ctx = {
     createdByUserId: req.user._id,
-    assignSalesUserId: req.user._id,
+    useRoundRobin: true,
     defaultBusinessUnit: req.body.businessUnit,
   }
 
-  if (req.file?.buffer) {
-    try {
-      const results = await leadImport.importFromExcelBuffer(req.file.buffer, ctx)
-      return success(res, {
-        imported: results.created,
-        skipped: results.skipped,
-        errors: results.errors,
-        totalRows: results.totalRows,
-        headerRowIndex: results.headerRowIndex,
-        sheetName: results.sheetName,
-      })
-    } catch (err) {
-      return badRequest(res, err.message || 'Invalid Excel file')
-    }
-  }
-
-  if (!req.body.csv) {
-    return badRequest(res, 'Upload an Excel file (multipart field "file") or send CSV in body.csv')
-  }
-
   try {
-    const results = await leadImport.importFromCsvText(req.body.csv, ctx)
-    return success(res, {
-      imported: results.created,
-      skipped: results.skipped,
-      errors: results.errors,
-      totalRows: results.totalRows,
+    const out = await runLeadImport(req, ctx, { salesResponseShape: true, panel: 'sales' })
+    return res.status(out.httpStatus || 200).json({
+      success: true,
+      message: out.message || 'Success',
+      data: out.payload,
     })
-  } catch {
-    return badRequest(res, 'Invalid CSV format')
+  } catch (err) {
+    if (err.code === 'LEAD_IMPORT_NO_PAYLOAD') return badRequest(res, err.message)
+    return badRequest(res, err.message || 'Invalid import file')
   }
 })
+
+const { getLeadImportJobStatus } = require('../../utils/leadImportJob.controller')
+exports.getLeadImportJobStatus = getLeadImportJobStatus(true)
 
 exports.exportLeads = asyncHandler(async (req, res) => {
   const filter = await buildSalesLeadFilter(req.query, req.user._id)
