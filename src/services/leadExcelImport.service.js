@@ -167,6 +167,26 @@ const buildLocationString = (row) => {
   return parts.join(', ')
 }
 
+const formatLeadAddress = (lead) => {
+  if (lead?.location?.trim()) return lead.location.trim()
+  const parts = [lead?.city, lead?.state, lead?.pincode].filter(Boolean)
+  return parts.join(', ')
+}
+
+const duplicateSkipOutcome = (projectName, location, { leadId = null, withinFile = false } = {}) => {
+  const name = (projectName || '').trim() || 'Unknown project'
+  const loc = (location || '').trim()
+  const locDisplay = loc || '—'
+  const suffix = withinFile ? ' (duplicate row in this file)' : ''
+  return {
+    status: 'skipped',
+    reason: `Duplicate project: ${name} — ${locDisplay}${suffix}`,
+    projectName: name,
+    location: loc,
+    ...(leadId ? { leadId } : {}),
+  }
+}
+
 const pickCustomerIdentity = (row) => {
   const emailRaw =
     row.customerEmail ||
@@ -266,7 +286,7 @@ const resolveDuplicateLead = async (projectName, city, state, postalCode) => {
   if (city) filter.city = new RegExp(`^${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
   if (state) filter.state = state
   if (postalCode) filter.pincode = postalCode
-  return Lead.findOne(filter).select('_id projectName').lean()
+  return Lead.findOne(filter).select('_id projectName location city state pincode').lean()
 }
 
 exports.buildDuplicateKey = buildDuplicateKey
@@ -282,13 +302,18 @@ const importOneRow = async (row, ctx) => {
   const postalCode = String(row.postalCode || row.zip || row.pincode || '').trim()
   const dupKey = buildDuplicateKey(projectName, city, state, postalCode)
   if (!ctx.duplicateKeys) ctx.duplicateKeys = new Set()
+  const rowLocation = buildLocationString(row)
   if (ctx.duplicateKeys.has(dupKey)) {
-    return { status: 'skipped', reason: 'duplicate project' }
+    return duplicateSkipOutcome(projectName, rowLocation, { withinFile: true })
   }
   const dup = await resolveDuplicateLead(projectName, city, state, postalCode)
   if (dup) {
     ctx.duplicateKeys.add(dupKey)
-    return { status: 'skipped', reason: 'duplicate project', leadId: dup._id }
+    return duplicateSkipOutcome(
+      dup.projectName || projectName,
+      formatLeadAddress(dup) || rowLocation,
+      { leadId: dup._id }
+    )
   }
   ctx.duplicateKeys.add(dupKey)
 
@@ -383,7 +408,14 @@ const applyRowOutcome = (results, rowIndex, outcome, maxErrors) => {
   if (outcome.status === 'created') results.created++
   else results.skipped++
   if (outcome.reason && outcome.status === 'skipped' && results.errors.length < maxErrors) {
-    results.errors.push({ row: rowIndex + 1, reason: outcome.reason, leadId: outcome.leadId })
+    const entry = {
+      row: rowIndex + 1,
+      reason: outcome.reason,
+      projectName: outcome.projectName || '',
+      location: outcome.location || '',
+    }
+    if (outcome.leadId) entry.leadId = outcome.leadId
+    results.errors.push(entry)
   }
 }
 

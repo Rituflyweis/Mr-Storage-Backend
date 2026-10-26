@@ -21,6 +21,8 @@ const LeadImportJobSchema = new mongoose.Schema(
       {
         row: Number,
         reason: String,
+        projectName: { type: String, default: '' },
+        location: { type: String, default: '' },
         leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null },
       },
     ],

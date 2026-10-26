@@ -138,7 +138,13 @@ No `async` / `jobId` fields.
     "skipped": 3,
     "totalRows": 15,
     "errors": [
-      { "row": 4, "reason": "duplicate project", "leadId": "671a2b3c4d5e6f7a8b9c0d1e" }
+      {
+        "row": 4,
+        "reason": "Duplicate project: Sunset Self Storage — Austin, TX 78701",
+        "projectName": "Sunset Self Storage",
+        "location": "Austin, TX 78701",
+        "leadId": "671a2b3c4d5e6f7a8b9c0d1e"
+      }
     ],
     "headerRowIndex": 4,
     "sheetName": "Leads"
@@ -254,7 +260,14 @@ Same fields as async POST `data`. While running, `processedRows`, `created`, `sk
     "created": 18,
     "skipped": 42,
     "progressPct": 60,
-    "errors": [{ "row": 2, "reason": "duplicate project", "leadId": "..." }],
+    "errors": [
+      {
+        "row": 2,
+        "reason": "Duplicate project: Example Storage — Dallas, TX 75201",
+        "projectName": "Example Storage",
+        "location": "Dallas, TX 75201"
+      }
+    ],
     "headerRowIndex": 4,
     "sheetName": "Leads",
     "sourceFileName": "leads.xlsx",
@@ -382,10 +395,19 @@ async function importLeadsFile({ apiBase, panel, token, file }) {
 
 Row-level issues are **not** HTTP errors — they appear in `data.errors[]` (max **~150** entries stored).
 
-| `errors[].reason` | Meaning |
-|-------------------|---------|
-| `duplicate project` | Lead already exists (same project + city + state + ZIP) |
-| `missing projectName` | Empty row |
+| Field | Meaning |
+|-------|---------|
+| `errors[].reason` | Human-readable line (safe to show in **Reason** column) |
+| `errors[].projectName` | Existing / duplicate project name |
+| `errors[].location` | Address string (city, state, ZIP or full location) |
+| `errors[].leadId` | Optional — existing lead id (hide in UI unless you add “View lead”) |
+
+Duplicate `reason` examples:
+
+- `Duplicate project: {name} — {address}` — already in CRM  
+- Same + ` (duplicate row in this file)` — repeated within the upload  
+
+Other reasons: `missing projectName`, parse errors (message in `reason` only).
 
 ---
 
@@ -409,7 +431,7 @@ Row-level issues are **not** HTTP errors — they appear in `data.errors[]` (max
 - [ ] Admin UI binds **`created`**; Sales UI binds **`imported`**  
 - [ ] On `completed`, refresh leads list / stats  
 - [ ] **Socket:** bulk import does **not** emit per-lead `lead_assigned`. Listen once for `lead_import_completed` (see §10)  
-- [ ] Show `skipped` and first N `errors` (expandable table)  
+- [ ] Show `skipped` and first N `errors` (expandable table); display **`reason`** or **`projectName` + `location`** — do **not** show raw `leadId` to users  
 - [ ] Disable submit while job is `queued` or `processing`  
 - [ ] Optional: persist `jobId` in sessionStorage to survive refresh during long imports  
 
