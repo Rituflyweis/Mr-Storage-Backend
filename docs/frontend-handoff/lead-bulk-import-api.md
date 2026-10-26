@@ -416,7 +416,7 @@ Other reasons: `missing projectName`, parse errors (message in `reason` only).
 - **Required column:** **Project** (TractIQ header row is auto-detected; often row 4).
 - **No customer email/phone in sheet:** backend creates placeholder customers; leads still import.
 - **Duplicates:** skipped, not updated.
-- **Assignment:** new leads are assigned to sales staff in **round-robin** (`assignedSales`, `isHandedToSales: true`).
+- **Assignment:** **Admin** import → **round-robin** across sales (`assignedSales`, `isHandedToSales: true`). **Sales** import → all new leads go to the **logged-in sales user** only (`assignedSales` = importer, `isHandedToSales: true`).
 - **Source:** `import`; extra TractIQ columns go into lead **notes**.
 - **Re-upload same file:** expect high `skipped` (duplicates).
 

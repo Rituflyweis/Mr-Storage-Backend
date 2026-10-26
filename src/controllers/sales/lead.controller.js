@@ -225,7 +225,11 @@ exports.createLead = asyncHandler(async (req, res) => {
 
 exports.importLeads = asyncHandler(async (req, res) => {
   const { runLeadImport } = require('../../utils/runLeadImport')
-  const ctx = { createdByUserId: req.user._id, useRoundRobin: true }
+  const ctx = {
+    createdByUserId: req.user._id,
+    useRoundRobin: false,
+    assignSalesUserId: req.user._id,
+  }
 
   try {
     const out = await runLeadImport(req, ctx, { salesResponseShape: true, panel: 'sales' })
