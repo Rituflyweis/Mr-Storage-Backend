@@ -136,6 +136,24 @@ const parseDashboardFilters = (query) => {
   }
 }
 
+/** Delivery/freight window: explicit from/to → range; otherwise all scoped deliveries (not calendar today). */
+const resolveDeliveryScopeForDashboard = (parsed, now = new Date()) => {
+  const todayStart = startOfDay(now)
+  const todayEnd = endOfDay(now)
+  const hasExplicitRange = Boolean(parsed.fromDate || parsed.toDate)
+  if (!hasExplicitRange) {
+    return { scope: 'all', fromDate: null, toDate: null, deliveryDateFilter: null }
+  }
+  const fromDate = parsed.fromDate ? startOfDay(parsed.fromDate) : todayStart
+  const toDate = parsed.toDate ? endOfDay(parsed.toDate) : todayEnd
+  return {
+    scope: 'range',
+    fromDate,
+    toDate,
+    deliveryDateFilter: { deliveryDate: { $gte: fromDate, $lte: toDate } },
+  }
+}
+
 const buildOverallTimeline = (leads) => {
   const now = Date.now()
   return OVERALL_TIMELINE_PHASES.map((phase) => {
@@ -204,10 +222,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const todayStart = startOfDay(now)
   const todayEnd = endOfDay(now)
   const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-
-  // Delivery date window: explicit filter, else "today" for overview + freight (Figma).
-  const deliveryRangeStart = parsed.fromDate ? startOfDay(parsed.fromDate) : todayStart
-  const deliveryRangeEnd = parsed.toDate ? endOfDay(parsed.toDate) : todayEnd
+  const deliveryScope = resolveDeliveryScopeForDashboard(parsed, now)
 
   if (!leadIds.length) {
     return success(res, {
@@ -234,9 +249,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         completionRateLabel: 'Average Completion',
       },
       deliveryOverview: {
-        scope: parsed.fromDate || parsed.toDate ? 'range' : 'today',
-        fromDate: deliveryRangeStart,
-        toDate: deliveryRangeEnd,
+        scope: deliveryScope.scope,
+        fromDate: deliveryScope.fromDate,
+        toDate: deliveryScope.toDate,
         delivered: 0,
         inTransit: 0,
         outForDelivery: 0,
@@ -305,7 +320,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     Delivery.find({
       leadId: { $in: leadIds },
       status: { $nin: ['draft', 'cancelled'] },
-      deliveryDate: { $gte: deliveryRangeStart, $lte: deliveryRangeEnd },
+      ...(deliveryScope.deliveryDateFilter || {}),
     })
       .select('status deliveryDate leadId selectedCarrierBidId deliveryNumber')
       .populate('leadId', 'projectName jobId location')
@@ -350,9 +365,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   ])
 
   const deliveryOverview = {
-    scope: parsed.fromDate || parsed.toDate ? 'range' : 'today',
-    fromDate: deliveryRangeStart,
-    toDate: deliveryRangeEnd,
+    scope: deliveryScope.scope,
+    fromDate: deliveryScope.fromDate,
+    toDate: deliveryScope.toDate,
     delivered: deliveriesInRange.filter((d) => d.status === 'delivered' || d.status === 'received').length,
     inTransit: deliveriesInRange.filter((d) => IN_TRANSIT_ROLLUP_STATUSES.has(d.status)).length,
     outForDelivery: deliveriesInRange.filter((d) => OUT_FOR_DELIVERY_STATUSES.has(d.status)).length,
@@ -413,7 +428,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
 
   const projectTimelineOverall = buildOverallTimeline(leads)
 
-  // Freight carriers — loads in delivery range (default today), on-time vs delayed.
+  // Freight carriers — loads in delivery scope (all scoped deliveries unless date range set).
   const bidIds = deliveriesInRange.map((d) => d.selectedCarrierBidId).filter(Boolean)
   const bids = bidIds.length
     ? await FreightBid.find({ _id: { $in: bidIds } })
@@ -554,11 +569,11 @@ const emptyConstructionProjectStats = () => ({
   completionRateLabel: 'Average Completion',
 })
 
-const buildDeliveryOverviewForExport = (deliveriesInRange, parsed, deliveryRangeStart, deliveryRangeEnd) => {
+const buildDeliveryOverviewForExport = (deliveriesInRange, deliveryScope) => {
   const deliveryOverview = {
-    scope: parsed.fromDate || parsed.toDate ? 'range' : 'today',
-    fromDate: deliveryRangeStart,
-    toDate: deliveryRangeEnd,
+    scope: deliveryScope.scope,
+    fromDate: deliveryScope.fromDate,
+    toDate: deliveryScope.toDate,
     delivered: deliveriesInRange.filter((d) => d.status === 'delivered' || d.status === 'received').length,
     inTransit: deliveriesInRange.filter((d) => IN_TRANSIT_ROLLUP_STATUSES.has(d.status)).length,
     outForDelivery: deliveriesInRange.filter((d) => OUT_FOR_DELIVERY_STATUSES.has(d.status)).length,
@@ -646,12 +661,11 @@ exports.exportDashboard = asyncHandler(async (req, res) => {
   const now = new Date()
   const todayStart = startOfDay(now)
   const todayEnd = endOfDay(now)
-  const deliveryRangeStart = parsed.fromDate ? startOfDay(parsed.fromDate) : todayStart
-  const deliveryRangeEnd = parsed.toDate ? endOfDay(parsed.toDate) : todayEnd
+  const deliveryScope = resolveDeliveryScopeForDashboard(parsed, now)
 
   let projectStats = emptyConstructionProjectStats()
   let projects = []
-  let deliveryOverview = buildDeliveryOverviewForExport([], parsed, deliveryRangeStart, deliveryRangeEnd)
+  let deliveryOverview = buildDeliveryOverviewForExport([], deliveryScope)
   let materialRequestOverview = buildMaterialRequestOverviewForExport([])
   let activeSites = []
   let upcomingDeadlines = []
@@ -677,19 +691,14 @@ exports.exportDashboard = asyncHandler(async (req, res) => {
       Delivery.find({
         leadId: { $in: leadIds },
         status: { $nin: ['draft', 'cancelled'] },
-        deliveryDate: { $gte: deliveryRangeStart, $lte: deliveryRangeEnd },
+        ...(deliveryScope.deliveryDateFilter || {}),
       })
         .select('status deliveryDate selectedCarrierBidId')
         .lean(),
       MaterialRequest.find({ leadId: { $in: leadIds } }).select('status priority').lean(),
     ])
 
-    deliveryOverview = buildDeliveryOverviewForExport(
-      deliveriesInRange,
-      parsed,
-      deliveryRangeStart,
-      deliveryRangeEnd
-    )
+    deliveryOverview = buildDeliveryOverviewForExport(deliveriesInRange, deliveryScope)
     materialRequestOverview = buildMaterialRequestOverviewForExport(materialRequests)
     freightCarriers = await buildFreightCarriersForExport(deliveriesInRange)
   }

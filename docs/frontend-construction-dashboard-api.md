@@ -45,7 +45,7 @@ Authorization: Bearer <token>
 | `fromDate` | `dateFrom` | ISO date — delivery/freight window start |
 | `toDate` | `dateTo` | ISO date — delivery/freight window end |
 
-**Default delivery scope:** if no `fromDate`/`toDate`, delivery overview + freight carriers use **today**.
+**Default delivery scope:** if no `fromDate`/`toDate`, delivery overview + freight carriers include **all non-draft deliveries** for the current dashboard scope (project/building/status/business unit). Pass `fromDate`/`toDate` to limit by `deliveryDate`.
 
 ### Example
 
@@ -96,7 +96,7 @@ curl -s "https://mr-storage-backend-025k.onrender.com/api/construction/dashboard
 | Sheet | Dashboard source |
 |--------|-------------------|
 | `Summary` | `projectStats` + applied filters |
-| `Delivery Overview` | `deliveryOverview` (today or date range) |
+| `Delivery Overview` | `deliveryOverview` (`scope`: `all` or date `range`) |
 | `Material Requests` | `materialRequestOverview` |
 | `Projects` | All scoped projects (progress / health) — not paginated |
 | `Active Sites` | All `activeSites` rows (JSON dashboard caps at 20) |
@@ -113,7 +113,7 @@ curl -s "https://mr-storage-backend-025k.onrender.com/api/construction/dashboard
 | On Track / Delayed / Completed (+ %) | `projectStats.onTrack`, `.delayed`, `.completed` + `onTrackPct`, `delayedPct`, `completedPct` |
 | Completion Rate | `projectStats.completionRate`, `completionRateLabel` |
 | Upcoming Deadlines (count) | `projectStats.upcomingDeadlines` |
-| Delivery Overview donut | `deliveryOverview` (`total`, statuses + `*Pct`; `scope` = `today` \| `range`) |
+| Delivery Overview donut | `deliveryOverview` (`total`, statuses + `*Pct`; `scope` = `all` \| `range`) |
 | Material Request Overview | `materialRequestOverview` (`pendingApproval`, `approved`, `rejected`, `urgent`, pcts) |
 | Active Construction Sites | `activeSites[]` |
 | Upcoming Project Deadlines list | `upcomingDeadlines[]` |
@@ -153,9 +153,9 @@ curl -s "https://mr-storage-backend-025k.onrender.com/api/construction/dashboard
 
 ```json
 {
-  "scope": "today",
-  "fromDate": "...",
-  "toDate": "...",
+  "scope": "all",
+  "fromDate": null,
+  "toDate": null,
   "delivered": 11,
   "inTransit": 10,
   "outForDelivery": 4,
@@ -260,7 +260,7 @@ Five phases: **Planning → Design → Procurement → Execution → Handover**
 - [ ] Load filters once → `GET .../dashboard/filters`
 - [ ] Dashboard call with optional `projectId`, `buildingId`, `status`, date range
 - [ ] KPI cards from `projectStats` (use `*Pct` and `totalChangePctVsYesterday`)
-- [ ] Delivery donut from `deliveryOverview` (default = today)
+- [ ] Delivery donut from `deliveryOverview` (default `scope`: `all`; use date params for `range`)
 - [ ] Material donut from `materialRequestOverview` (+ `urgent`)
 - [ ] Sites table from `activeSites`
 - [ ] Deadlines list from `upcomingDeadlines`

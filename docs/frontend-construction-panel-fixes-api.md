@@ -176,7 +176,7 @@ Authorization: Bearer <accessToken>
 | `fromDate` | `dateFrom` | ISO date — delivery/freight window start |
 | `toDate` | `dateTo` | ISO date — delivery/freight window end |
 
-**Default:** if `fromDate` / `toDate` omitted, **delivery overview + freight** use **today**.
+**Default:** if `fromDate` / `toDate` omitted, **delivery overview + freight** include **all scoped deliveries** (`deliveryOverview.scope` = `all`). Add dates to filter by `deliveryDate` (`scope` = `range`).
 
 ### Example with filters
 
@@ -213,7 +213,7 @@ Authorization: Bearer <accessToken>
       "completionRateLabel": "Average Completion"
     },
     "deliveryOverview": {
-      "scope": "today",
+      "scope": "all",
       "fromDate": "2026-09-24T18:30:00.000Z",
       "toDate": "2026-09-25T18:29:59.999Z",
       "delivered": 11,
