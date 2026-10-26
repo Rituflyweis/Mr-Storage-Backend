@@ -1,23 +1,11 @@
-/** Mongo aggregation expressions for Tax filing records (legacy + Avalara sync). */
+/** Mongo aggregation expressions for Tax filing records (Avalara sync + Returns). */
 
 const taxCollectedExpr = {
-  $sum: {
-    $cond: [
-      { $gt: [{ $ifNull: ['$taxCollected', 0] }, 0] },
-      '$taxCollected',
-      { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] },
-    ],
-  },
+  $sum: { $ifNull: ['$taxCollected', 0] },
 }
 
 const taxableSalesExpr = {
-  $sum: {
-    $cond: [
-      { $gt: [{ $ifNull: ['$taxableSales', 0] }, 0] },
-      '$taxableSales',
-      '$amount',
-    ],
-  },
+  $sum: { $ifNull: ['$taxableSales', 0] },
 }
 
 const paidFiledExpr = {
@@ -25,7 +13,7 @@ const paidFiledExpr = {
     $cond: [
       { $gt: [{ $ifNull: ['$paidFiled', 0] }, 0] },
       '$paidFiled',
-      { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] },
+      { $cond: [{ $eq: ['$status', 'paid'] }, { $ifNull: ['$taxDue', '$amount'] }, 0] },
     ],
   },
 }
@@ -35,19 +23,23 @@ const payableExpr = {
     $cond: [
       { $gte: [{ $ifNull: ['$payable', -1] }, 0] },
       '$payable',
-      { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] },
+      {
+        $max: [
+          0,
+          {
+            $subtract: [
+              { $ifNull: ['$taxDue', '$amount'] },
+              { $ifNull: ['$paidFiled', 0] },
+            ],
+          },
+        ],
+      },
     ],
   },
 }
 
 const taxDueExpr = {
-  $sum: {
-    $cond: [
-      { $gt: [{ $ifNull: ['$taxDue', 0] }, 0] },
-      '$taxDue',
-      '$amount',
-    ],
-  },
+  $sum: { $ifNull: ['$taxDue', { $ifNull: ['$amount', 0] }] },
 }
 
 const taxRollupFields = {
@@ -68,6 +60,13 @@ const stateWiseGroupStage = {
   },
 }
 
+/** State overview: Avalara/sync filing rows only (not manual seed / per-project duplicates). */
+const stateOverviewTaxMatch = (extra = {}) => ({
+  leadId: null,
+  source: { $in: ['sync', 'avalara'] },
+  ...extra,
+})
+
 module.exports = {
   stateWiseGroupStage,
   taxRollupFields,
@@ -76,4 +75,5 @@ module.exports = {
   paidFiledExpr,
   payableExpr,
   taxDueExpr,
+  stateOverviewTaxMatch,
 }

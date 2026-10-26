@@ -10,6 +10,56 @@ const round2 = (n) => Math.round(Number(n || 0) * 100) / 100
 
 const salesRateForRow = (taxCollected, taxableSales) => computeSalesTaxRate(taxCollected, taxableSales)
 
+const CUSTOMER_INVOICE_MATCH = {
+  invoiceType: { $nin: ['vendor', 'freight_carrier'] },
+  status: { $in: ['sent', 'paid'] },
+  'avalara.documentStatus': 'Committed',
+}
+
+/** Copy AvaTax totals onto invoice when commit saved avalara but omitted split fields. */
+const backfillInvoiceAvalaraTaxFields = async () => {
+  const cursor = Invoice.find({
+    'avalara.documentStatus': 'Committed',
+    'avalara.totalTaxable': { $gt: 0 },
+  }).select('_id tax taxableSales taxCollected avalara')
+
+  let updated = 0
+  for await (const inv of cursor) {
+    const taxable = round2(inv.avalara?.totalTaxable)
+    const tax = round2(inv.avalara?.totalTax ?? inv.tax)
+    if (taxable <= 0 && tax <= 0) continue
+    await Invoice.updateOne(
+      { _id: inv._id },
+      {
+        $set: {
+          taxableSales: taxable > 0 ? taxable : inv.taxableSales,
+          taxCollected: tax > 0 ? tax : inv.taxCollected,
+          tax: tax > 0 ? tax : inv.tax,
+        },
+      }
+    )
+    updated += 1
+  }
+  return updated
+}
+
+/** Avalara-first rollup amounts for state / project sync. */
+const resolveInvoiceTaxRollup = (inv) => {
+  const a = inv.avalara || {}
+  if (a.documentStatus !== 'Committed') return null
+
+  const taxableSales = round2(a.totalTaxable ?? inv.taxableSales ?? 0)
+  const taxCollected = round2(a.totalTax ?? inv.taxCollected ?? inv.tax ?? 0)
+  const taxDue = taxCollected
+
+  if (taxableSales <= 0 && taxCollected <= 0) return null
+  if (taxableSales > 0 && taxCollected > taxableSales) {
+    return null
+  }
+
+  return { taxableSales, taxCollected, taxDue }
+}
+
 const resolveSyncActorId = async () => {
   const admin = await User.findOne({ role: 'admin' }).select('_id').lean()
   return admin?._id || null
@@ -20,17 +70,17 @@ const syncFromCommittedInvoices = async () => {
   const actorId = await resolveSyncActorId()
   if (!actorId) throw new Error('No admin user found to attribute synced tax records')
 
-  const invoices = await Invoice.find({
-    invoiceType: 'customer',
-    status: { $in: ['sent', 'paid'] },
-    'avalara.documentStatus': 'Committed',
-  })
+  const backfilled = await backfillInvoiceAvalaraTaxFields()
+
+  const invoices = await Invoice.find(CUSTOMER_INVOICE_MATCH)
     .select('leadId tax taxableSales taxCollected shipToAddress avalara')
     .populate('leadId', 'state installAddress city pincode location')
     .lean()
 
   const byState = new Map()
   for (const inv of invoices) {
+    const amounts = resolveInvoiceTaxRollup(inv)
+    if (!amounts) continue
     const region =
       inv.shipToAddress?.state ||
       inv.leadId?.state ||
@@ -44,9 +94,9 @@ const syncFromCommittedInvoices = async () => {
       taxableSales: 0,
       taxDue: 0,
     }
-    bucket.taxCollected += round2(inv.taxCollected ?? inv.tax ?? 0)
-    bucket.taxableSales += round2(inv.taxableSales ?? inv.avalara?.totalTaxable ?? 0)
-    bucket.taxDue += round2(inv.tax ?? 0)
+    bucket.taxCollected += amounts.taxCollected
+    bucket.taxableSales += amounts.taxableSales
+    bucket.taxDue += amounts.taxDue
     byState.set(key, bucket)
   }
 
@@ -55,6 +105,8 @@ const syncFromCommittedInvoices = async () => {
 
   const byLead = new Map()
   for (const inv of invoices) {
+    const amounts = resolveInvoiceTaxRollup(inv)
+    if (!amounts) continue
     const leadRef = inv.leadId
     const leadId = leadRef?._id || leadRef
     if (!leadId) continue
@@ -71,14 +123,14 @@ const syncFromCommittedInvoices = async () => {
       taxableSales: 0,
       taxDue: 0,
     }
-    bucket.taxCollected += round2(inv.taxCollected ?? inv.tax ?? 0)
-    bucket.taxableSales += round2(inv.taxableSales ?? inv.avalara?.totalTaxable ?? 0)
-    bucket.taxDue += round2(inv.tax ?? 0)
+    bucket.taxCollected += amounts.taxCollected
+    bucket.taxableSales += amounts.taxableSales
+    bucket.taxDue += amounts.taxDue
     byLead.set(key, bucket)
   }
 
   for (const row of byState.values()) {
-    const payable = Math.max(0, row.taxDue - row.taxCollected)
+    const payable = Math.max(0, row.taxDue)
     await Tax.findOneAndUpdate(
       { state: row.state, source: 'sync', leadId: null, periodKey: 'rolling' },
       {
@@ -105,7 +157,7 @@ const syncFromCommittedInvoices = async () => {
   }
 
   for (const row of byLead.values()) {
-    const payable = Math.max(0, row.taxDue - row.taxCollected)
+    const payable = Math.max(0, row.taxDue)
     await Tax.findOneAndUpdate(
       { source: 'sync', leadId: row.leadId, periodKey: 'rolling' },
       {
@@ -150,6 +202,7 @@ const syncFromCommittedInvoices = async () => {
     regions: byState.size,
     projects: byLead.size,
     provider: getActiveTaxProvider(),
+    invoicesBackfilled: backfilled,
   }
 }
 
@@ -241,6 +294,8 @@ exports.syncTaxData = async () => {
   if (provider === 'legacy') {
     return { syncedAt: new Date(), message: 'TAX_ENGINE=legacy — sync no-op' }
   }
+
+  await backfillInvoiceAvalaraTaxFields()
 
   try {
     const fromReturns = await syncFromAvalaraReturns()

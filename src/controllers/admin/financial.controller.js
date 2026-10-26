@@ -504,18 +504,22 @@ exports.completeFiling = asyncHandler(async (req, res) => {
 // ── State Wise Tax ─────────────────────────────────────────────────────────────
 
 // Shared by getStateWiseTax, getStateWiseTaxStats, exportStateWiseTax, getUpcomingFilingDeadlines.
+const { stateWiseGroupStage, taxRollupFields, stateOverviewTaxMatch } = require('../../utils/taxAggregate.util')
+
 const buildStateWiseFilter = ({ projectId, startDate, endDate }) => {
-  const filter = {}
-  if (projectId) filter.leadId = new mongoose.Types.ObjectId(projectId)
+  const filter = projectId
+    ? {
+        leadId: new mongoose.Types.ObjectId(projectId),
+        source: { $in: ['sync', 'avalara'] },
+      }
+    : stateOverviewTaxMatch()
   if (startDate || endDate) {
     filter.dueDate = {}
     if (startDate) filter.dueDate.$gte = new Date(startDate)
-    if (endDate)   filter.dueDate.$lte = new Date(endDate)
+    if (endDate) filter.dueDate.$lte = new Date(endDate)
   }
   return filter
 }
-
-const { stateWiseGroupStage, taxRollupFields } = require('../../utils/taxAggregate.util')
 const taxOrchestrator = require('../../services/tax/taxOrchestrator.service')
 const taxSync = require('../../services/tax/taxSync.service')
 
@@ -550,7 +554,12 @@ exports.getStateWiseTax = asyncHandler(async (req, res) => {
   const { mapStateOverviewRow } = require('../../utils/taxFilingPresentation.util')
   const stateOverview = await Promise.all(
     stateStats.map(async (row) => {
-      const rec = await Tax.findOne({ state: row._id, status: 'pending' })
+      const rec = await Tax.findOne({
+        state: row._id,
+        status: 'pending',
+        leadId: null,
+        source: { $in: ['sync', 'avalara'] },
+      })
         .sort({ dueDate: 1 })
         .select('_id')
         .lean()
@@ -577,11 +586,7 @@ exports.getStateWiseTaxStats = asyncHandler(async (req, res) => {
   const monthAgg = async (rangeStart, rangeEnd) => {
     const agg = await Tax.aggregate([
       { $match: { ...filter, createdAt: { $gte: rangeStart, $lt: rangeEnd } } },
-      { $group: {
-        _id: null,
-        taxCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-        payable: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
-      }}
+      { $group: { _id: null, ...taxRollupFields } },
     ])
     return agg[0] || { taxCollected: 0, payable: 0 }
   }
@@ -802,11 +807,7 @@ exports.getProjectWiseTaxStats = asyncHandler(async (req, res) => {
   const monthAgg = async (rangeStart, rangeEnd) => {
     const agg = await Tax.aggregate([
       { $match: { ...filter, createdAt: { $gte: rangeStart, $lt: rangeEnd } } },
-      { $group: {
-        _id: null,
-        taxCollected: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-        payable: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
-      }}
+      { $group: { _id: null, ...taxRollupFields } },
     ])
     return agg[0] || { taxCollected: 0, payable: 0 }
   }
