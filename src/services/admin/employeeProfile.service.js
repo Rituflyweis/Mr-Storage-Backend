@@ -14,6 +14,7 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { businessUnitFields } = require('../../utils/businessUnit')
 const { buildDeliveryCard } = require('../../controllers/construction/delivery.controller')
+const { FINANCIAL_TRACKING_LIFECYCLE_STAGES } = require('../../utils/financialProjectScope')
 const {
   formatLifecycleStatusLabel,
   buildPermissionTags,
@@ -251,7 +252,14 @@ const buildSalesPerformance = async (employeeId, query = {}) => {
   const revenueDateRange = buildRevenueDateRange(query)
 
   const leadBase = { assignedSales: employeeId, ...leadDateFilter }
-  const revenueMatch = { 'lead.assignedSales': employeeId, status: 'paid' }
+  const revenueMatch = {
+    'lead.assignedSales': employeeId,
+    status: 'paid',
+    $or: [
+      { 'lead.isRaisedToPO': true },
+      { 'lead.lifecycleStatus': { $in: FINANCIAL_TRACKING_LIFECYCLE_STAGES } },
+    ],
+  }
   if (revenueDateRange) revenueMatch.paidAt = revenueDateRange
 
   const [

@@ -4,17 +4,16 @@ const { success, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const accountProjectService = require('../../services/accountProject.service')
+const { buildFinancialLeadMatch } = require('../../utils/financialProjectScope')
 
 exports.getProjects = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
   const { status, search } = req.query
 
-  // Default scope stays "financially relevant" projects (payment done / delivered) — an
-  // explicit `status` widens/narrows that instead of it being permanently hardcoded.
-  const filter = {
-    lifecycleStatus: status ? status : { $in: ['payment_done', 'delivered'] },
-    ...dateFilter,
-  }
+  // Default: PO / plant projects only; optional `status` narrows lifecycle within that scope.
+  const filter = status
+    ? { $and: [buildFinancialLeadMatch(), { lifecycleStatus: status }], ...dateFilter }
+    : { ...buildFinancialLeadMatch(), ...dateFilter }
   if (search?.trim()) {
     const regex = { $regex: search.trim(), $options: 'i' }
     filter.$or = [{ projectName: regex }, { jobId: regex }]

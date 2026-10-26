@@ -11,6 +11,10 @@ const {
   pctChange,
   marginPct,
 } = require('../utils/profitLossPeriod.util')
+const {
+  buildFinancialLeadMatch,
+  distinctFinancialLeadIds,
+} = require('../utils/financialProjectScope')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -22,8 +26,10 @@ const buildProjectFilter = async (query = {}) => {
   }
   const bu = buildBusinessUnitFilter(query.businessUnit || query.company)
   if (bu) {
-    const leadIds = await Lead.find({ ...bu, isTerminated: { $ne: true } }).distinct('_id')
+    const leadIds = await Lead.find({ ...buildFinancialLeadMatch(bu) }).distinct('_id')
     filter.leadId = { $in: leadIds }
+  } else {
+    filter.leadId = { $in: await distinctFinancialLeadIds() }
   }
   return filter
 }
@@ -38,7 +44,7 @@ const resolveEffectiveDates = (query) => {
 
 exports.getMarginFilters = async () => {
   const [projects, businessUnits] = await Promise.all([
-    Lead.find({ isTerminated: { $ne: true }, isArchived: { $ne: true } })
+    Lead.find(buildFinancialLeadMatch())
       .select('projectName jobId businessUnit')
       .sort({ projectName: 1 })
       .limit(500)
@@ -247,14 +253,15 @@ exports.getProfitLossSummaryTable = async (query = {}) => {
   const skip = (Math.max(parseInt(page, 10), 1) - 1) * parseInt(limit, 10)
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100)
 
-  const leadFilter = { quoteValue: { $gt: 0 }, isTerminated: { $ne: true } }
+  const leadParts = [buildFinancialLeadMatch({ quoteValue: { $gt: 0 } })]
   const bu = buildBusinessUnitFilter(query.businessUnit || query.company)
-  if (bu) Object.assign(leadFilter, bu)
-  if (query.projectId || query.leadId) leadFilter._id = query.projectId || query.leadId
+  if (bu) leadParts.push(bu)
+  if (query.projectId || query.leadId) leadParts.push({ _id: query.projectId || query.leadId })
   if (search?.trim()) {
     const regex = new RegExp(search.trim(), 'i')
-    leadFilter.$or = [{ projectName: regex }, { jobId: regex }]
+    leadParts.push({ $or: [{ projectName: regex }, { jobId: regex }] })
   }
+  const leadFilter = leadParts.length === 1 ? leadParts[0] : { $and: leadParts }
 
   const [leads, total] = await Promise.all([
     Lead.find(leadFilter)

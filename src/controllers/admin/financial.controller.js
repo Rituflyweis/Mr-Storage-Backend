@@ -29,15 +29,32 @@ const {
   sumExpenseCategories,
   buildCostHeadRows,
 } = require('../../utils/budgetVsActual.util')
+const {
+  buildFinancialLeadMatch,
+  applyFinancialLeadScopeToProjectFilter,
+  distinctFinancialLeadIds,
+  isLeadInFinancialScope,
+} = require('../../utils/financialProjectScope')
 
 exports.getOverview = asyncHandler(async (req, res) => {
   const base = buildDateFilter(req.query)
+  const financialLeadIds = await distinctFinancialLeadIds()
+  const invoiceBase = await applyFinancialLeadScopeToProjectFilter(base)
 
   const [quotedAgg, invoicedAgg, paidAgg, budgetAgg] = await Promise.all([
-    Lead.aggregate([{ $match: base }, { $group: { _id: null, total: { $sum: '$quoteValue' } } }]),
-    Invoice.aggregate([{ $match: base }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.aggregate([{ $match: { ...base, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    ProjectBudget.aggregate([{ $match: base }, { $group: { _id: null, material: { $sum: '$materialBudget' }, logistics: { $sum: '$logisticBudget' } } }]),
+    Lead.aggregate([
+      { $match: { ...base, ...buildFinancialLeadMatch() } },
+      { $group: { _id: null, total: { $sum: '$quoteValue' } } },
+    ]),
+    Invoice.aggregate([{ $match: invoiceBase }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    Invoice.aggregate([
+      { $match: { ...invoiceBase, status: 'paid' } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+    ]),
+    ProjectBudget.aggregate([
+      { $match: { ...base, leadId: { $in: financialLeadIds } } },
+      { $group: { _id: null, material: { $sum: '$materialBudget' }, logistics: { $sum: '$logisticBudget' } } },
+    ]),
   ])
 
   const totalQuoted = quotedAgg[0]?.total || 0
@@ -54,7 +71,7 @@ exports.getPerProject = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20 } = req.query
   const base = buildDateFilter(req.query)
 
-  const leads = await Lead.find({ ...base, quoteValue: { $gt: 0 } })
+  const leads = await Lead.find({ ...base, ...buildFinancialLeadMatch({ quoteValue: { $gt: 0 } }) })
     .populate('customerId', 'firstName lastName')
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit).limit(Number(limit)).lean()
@@ -88,7 +105,7 @@ exports.getPerProject = asyncHandler(async (req, res) => {
     }, lead.jobId)
   }))
 
-  const total = await Lead.countDocuments({ ...base, quoteValue: { $gt: 0 } })
+  const total = await Lead.countDocuments({ ...base, ...buildFinancialLeadMatch({ quoteValue: { $gt: 0 } }) })
   return success(res, { projects, total, page: Number(page), limit: Number(limit) })
 })
 
@@ -1103,19 +1120,15 @@ const WIPProfit = require('../../models/WIPProfit')
 exports.getFinancialOverview = asyncHandler(async (req, res) => {
   const { projectId } = req.query
   const dateFilter = buildDateFilter(req.query, 'date')
-  const projectFilter = projectId ? { leadId: projectId } : {}
+  const projectFilter = await applyFinancialLeadScopeToProjectFilter(
+    projectId ? { leadId: projectId } : {}
+  )
   const now = new Date()
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
-  const [revenueAgg, grossProfitAgg, expenseAgg, revenueTrend, topCustomers, expenseTrend, expenseByCategory] = await Promise.all([
+  const [revenueAgg, expenseAgg, revenueTrend, topCustomers, expenseTrend, expenseByCategory] = await Promise.all([
     Invoice.aggregate([{ $match: { ...dateFilter, ...projectFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.aggregate([
-      { $match: { ...dateFilter, ...projectFilter, status: 'paid' } },
-      { $lookup: { from: 'leads', localField: 'leadId', foreignField: '_id', as: 'lead' } },
-      { $unwind: '$lead' },
-      { $group: { _id: null, revenue: { $sum: '$totalAmount' }, cost: { $sum: '$lead.quoteValue' } } },
-    ]),
-    Expense.aggregate([{ $match: { ...dateFilter, ...projectFilter } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    Expense.aggregate([{ $match: { ...dateFilter, ...projectFilter, isActive: true } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
     Invoice.aggregate([
       { $match: { ...projectFilter, status: 'paid', date: { $gte: sixMonthsAgo } } },
       { $group: { _id: { year: { $year: '$date' }, month: { $month: '$date' } }, revenue: { $sum: '$totalAmount' } } },
@@ -1190,11 +1203,13 @@ exports.getFinancialOverview = asyncHandler(async (req, res) => {
 exports.exportFinancialOverview = asyncHandler(async (req, res) => {
   const { projectId } = req.query
   const dateFilter = buildDateFilter(req.query, 'date')
-  const projectFilter = projectId ? { leadId: projectId } : {}
+  const projectFilter = await applyFinancialLeadScopeToProjectFilter(
+    projectId ? { leadId: projectId } : {}
+  )
 
   const [revenueAgg, expenseAgg, invoices] = await Promise.all([
     Invoice.aggregate([{ $match: { ...dateFilter, ...projectFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Expense.aggregate([{ $match: { ...dateFilter, ...projectFilter } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    Expense.aggregate([{ $match: { ...dateFilter, ...projectFilter, isActive: true } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
     Invoice.find({ ...dateFilter, ...projectFilter, status: 'paid' })
       .populate('leadId', 'projectName jobId')
       .populate('customerId', 'firstName lastName')
@@ -1222,8 +1237,9 @@ exports.exportFinancialOverview = asyncHandler(async (req, res) => {
 
 exports.getWIPProfits = asyncHandler(async (req, res) => {
   const { clientId, page = 1, limit = 20 } = req.query
-  const filter = {}
-  if (clientId) filter.leadId = clientId
+  const filter = await applyFinancialLeadScopeToProjectFilter(
+    clientId ? { leadId: clientId } : {}
+  )
 
   const [wips, total, statsAgg] = await Promise.all([
     WIPProfit.find(filter)
@@ -1234,6 +1250,7 @@ exports.getWIPProfits = asyncHandler(async (req, res) => {
       .lean(),
     WIPProfit.countDocuments(filter),
     WIPProfit.aggregate([
+      { $match: filter },
       { $group: {
         _id: null,
         totalOrderValue: { $sum: '$orderValue' },
@@ -1255,6 +1272,10 @@ exports.getWIPProfits = asyncHandler(async (req, res) => {
 
 exports.createWIPEntry = asyncHandler(async (req, res) => {
   const { leadId, orderValue, currentCost, depositPaid, progressPaid, finalPaid, status, notes } = req.body
+
+  if (!(await isLeadInFinancialScope(leadId))) {
+    return badRequest(res, 'WIP profit can only be tracked for projects that have reached PO or plant stage')
+  }
 
   const exists = await WIPProfit.findOne({ leadId })
   if (exists) {
@@ -1315,8 +1336,9 @@ exports.addWIPPayment = asyncHandler(async (req, res) => {
 // GET /wip-profits/export — "Export" button on WIP & Project Profitability screen
 exports.exportWIPProfits = asyncHandler(async (req, res) => {
   const { clientId } = req.query
-  const filter = {}
-  if (clientId) filter.leadId = clientId
+  const filter = await applyFinancialLeadScopeToProjectFilter(
+    clientId ? { leadId: clientId } : {}
+  )
 
   const wips = await WIPProfit.find(filter)
     .populate({ path: 'leadId', select: 'projectName jobId location customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
@@ -1686,7 +1708,9 @@ exports.getProfitLoss = asyncHandler(async (req, res) => {
   const effectiveEndDate = endDate || resolvedPeriod?.end.toISOString()
 
   const dateFilter = buildDateFilter({ startDate: effectiveStartDate, endDate: effectiveEndDate }, 'date')
-  const filter = projectId ? { leadId: projectId } : {}
+  const filter = await applyFinancialLeadScopeToProjectFilter(
+    projectId ? { leadId: projectId } : {}
+  )
 
   // "Last Period" = same-length window immediately before startDate/endDate. Defaults to the
   // preceding calendar month when no explicit range is given.
@@ -1763,7 +1787,9 @@ exports.exportProfitLoss = asyncHandler(async (req, res) => {
   const effectiveEndDate = endDate || resolvedPeriod?.end.toISOString()
 
   const dateFilter = buildDateFilter({ startDate: effectiveStartDate, endDate: effectiveEndDate }, 'date')
-  const filter = projectId ? { leadId: projectId } : {}
+  const filter = await applyFinancialLeadScopeToProjectFilter(
+    projectId ? { leadId: projectId } : {}
+  )
   const period = await buildPeriodPL(filter, dateFilter)
 
   const workbook = new (require('exceljs')).Workbook()

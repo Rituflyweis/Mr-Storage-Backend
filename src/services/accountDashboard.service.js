@@ -8,6 +8,10 @@ const Tax = require('../models/Tax')
 const Vendor = require('../models/Vendor')
 const { buildDateFilter } = require('../utils/dateRange')
 const { computeInvoiceDueDate } = require('../utils/invoiceDueDate')
+const {
+  applyFinancialLeadScopeToProjectFilter,
+  distinctFinancialLeadIds,
+} = require('../utils/financialProjectScope')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -44,10 +48,11 @@ const alertPriority = (daysUntil) => {
 }
 
 exports.computeFinancialOverview = async (query = {}) => {
-  const invFilter = customerInvoiceFilter(query)
+  const invFilter = await applyFinancialLeadScopeToProjectFilter(customerInvoiceFilter(query))
+  const expFilter = await applyFinancialLeadScopeToProjectFilter(expenseDateFilter(query))
   const [invoices, expenses] = await Promise.all([
     Invoice.find(invFilter).select('status totalAmount').lean(),
-    Expense.find(expenseDateFilter(query)).select('amount').lean(),
+    Expense.find(expFilter).select('amount').lean(),
   ])
 
   const totalRevenue = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + i.totalAmount, 0)
@@ -67,7 +72,8 @@ exports.computeFinancialOverview = async (query = {}) => {
 }
 
 exports.computeInvoiceReport = async (query = {}) => {
-  const invoices = await Invoice.find(customerInvoiceFilter(query)).select('status totalAmount').lean()
+  const invFilter = await applyFinancialLeadScopeToProjectFilter(customerInvoiceFilter(query))
+  const invoices = await Invoice.find(invFilter).select('status totalAmount').lean()
 
   const paid = invoices.filter((i) => i.status === 'paid')
   const overdue = invoices.filter((i) => i.status === 'overdue')
@@ -122,9 +128,11 @@ exports.computeDeliveryFinance = async (query = {}) => {
 }
 
 exports.computeOrderVsPlantCosts = async (query = {}) => {
+  const invFilter = await applyFinancialLeadScopeToProjectFilter(customerInvoiceFilter(query))
+  const expFilter = await applyFinancialLeadScopeToProjectFilter(expenseDateFilter(query))
   const [invoices, expenses] = await Promise.all([
-    Invoice.find(customerInvoiceFilter(query)).select('totalAmount').lean(),
-    Expense.find(expenseDateFilter(query)).select('amount').lean(),
+    Invoice.find(invFilter).select('totalAmount').lean(),
+    Expense.find(expFilter).select('amount').lean(),
   ])
 
   const totalOrderValue = invoices.reduce((s, i) => s + i.totalAmount, 0)
@@ -142,14 +150,23 @@ exports.computeRecentTransactions = async (query = {}, limit = 10) => {
   const invDateFilter = buildDateFilter(query, 'paidAt')
   const expDateFilter = buildDateFilter(query, 'date')
 
+  const invMatch = await applyFinancialLeadScopeToProjectFilter({
+    invoiceType: { $nin: ['vendor', 'freight_carrier'] },
+    status: 'paid',
+    ...invDateFilter,
+  })
+  const expMatch = await applyFinancialLeadScopeToProjectFilter({
+    ...expenseDateFilter(query),
+    ...expDateFilter,
+  })
   const [invoices, expenses] = await Promise.all([
-    Invoice.find({ invoiceType: { $nin: ['vendor', 'freight_carrier'] }, status: 'paid', ...invDateFilter })
+    Invoice.find(invMatch)
       .sort({ paidAt: -1 })
       .limit(cap)
       .populate('leadId', 'projectName')
       .populate('customerId', 'firstName lastName company')
       .lean(),
-    Expense.find({ ...expenseDateFilter(query), ...expDateFilter })
+    Expense.find(expMatch)
       .sort({ date: -1 })
       .limit(cap)
       .populate('leadId', 'projectName')
@@ -199,10 +216,11 @@ exports.computeUpcomingPayments = async (query = {}) => {
   const now = new Date()
   const horizon = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000)
 
-  const invoices = await Invoice.find({
+  const upcomingInvFilter = await applyFinancialLeadScopeToProjectFilter({
     invoiceType: { $nin: ['vendor', 'freight_carrier'] },
     status: { $in: ['sent', 'draft', 'overdue'] },
   })
+  const invoices = await Invoice.find(upcomingInvFilter)
     .populate({
       path: 'leadId',
       select: 'projectName assignedSales',
@@ -241,11 +259,12 @@ exports.computeFinancialAlerts = async (query = {}) => {
   const now = new Date()
   const alerts = []
 
+  const alertInvFilter = await applyFinancialLeadScopeToProjectFilter({
+    invoiceType: { $nin: ['vendor', 'freight_carrier'] },
+    status: { $in: ['overdue', 'sent'] },
+  })
   const [overdueInvoices, pendingTaxes, disputedPayments] = await Promise.all([
-    Invoice.find({
-      invoiceType: { $nin: ['vendor', 'freight_carrier'] },
-      status: { $in: ['overdue', 'sent'] },
-    })
+    Invoice.find(alertInvFilter)
       .populate('customerId', 'company firstName lastName')
       .populate('leadId', 'projectName')
       .sort({ dueDate: 1 })
@@ -372,7 +391,8 @@ exports.computeTopVendors = async (query = {}, limit = 5) => {
 
 exports.computeProjectBudgetVsActual = async (query = {}, limit = 10) => {
   const cap = Math.min(Number(limit) || 10, 50)
-  const budgets = await ProjectBudget.find()
+  const financialLeadIds = await distinctFinancialLeadIds()
+  const budgets = await ProjectBudget.find({ leadId: { $in: financialLeadIds } })
     .populate('leadId', 'projectName jobId updatedAt')
     .sort({ updatedAt: -1 })
     .limit(cap)

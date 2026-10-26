@@ -12,6 +12,7 @@ const DrawingDocument = require('../../models/DrawingDocument')
 const BOMJob = require('../../models/BOMJob')
 const Building = require('../../models/Building')
 const { buildDeliveryCard } = require('../construction/delivery.controller')
+const { FINANCIAL_TRACKING_LIFECYCLE_STAGES } = require('../../utils/financialProjectScope')
 
 // Shared by plant + construction detail — table shape for the "Assigned Projects" tab.
 const buildAssignedProjectsTable = async (leadIds) => {
@@ -135,7 +136,16 @@ exports.getPerformance = asyncHandler(async (req, res) => {
         Invoice.aggregate([
           { $lookup: { from: 'leads', localField: 'leadId', foreignField: '_id', as: 'lead' } },
           { $unwind: '$lead' },
-          { $match: { 'lead.assignedSales': emp._id, status: 'paid' } },
+          {
+            $match: {
+              'lead.assignedSales': emp._id,
+              status: 'paid',
+              $or: [
+                { 'lead.isRaisedToPO': true },
+                { 'lead.lifecycleStatus': { $in: FINANCIAL_TRACKING_LIFECYCLE_STAGES } },
+              ],
+            },
+          },
           { $group: { _id: null, total: { $sum: '$totalAmount' } } },
         ]),
       ])
@@ -315,7 +325,16 @@ const getSalesDetail = async (employee) => {
       Invoice.aggregate([
         { $lookup: { from: 'leads', localField: 'leadId', foreignField: '_id', as: 'lead' } },
         { $unwind: '$lead' },
-        { $match: { 'lead.assignedSales': employee._id, status: 'paid' } },
+        {
+          $match: {
+            'lead.assignedSales': employee._id,
+            status: 'paid',
+            $or: [
+              { 'lead.isRaisedToPO': true },
+              { 'lead.lifecycleStatus': { $in: FINANCIAL_TRACKING_LIFECYCLE_STAGES } },
+            ],
+          },
+        },
         { $group: { _id: null, total: { $sum: '$totalAmount' } } },
       ]),
     ])

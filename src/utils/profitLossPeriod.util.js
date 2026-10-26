@@ -3,6 +3,7 @@ const Expense = require('../models/Expense')
 const Tax = require('../models/Tax')
 const Lead = require('../models/Lead')
 const { aggregateEmailBidExpenses } = require('./projectExpenseAggregate.util')
+const { buildFinancialLeadMatch } = require('./financialProjectScope')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -11,7 +12,7 @@ const resolveLeadIdsFromFilter = async (filter = {}) => {
     if (filter.leadId.$in) return filter.leadId.$in
     return [filter.leadId]
   }
-  return Lead.find({ isTerminated: { $ne: true }, isArchived: { $ne: true } }).distinct('_id')
+  return Lead.find(buildFinancialLeadMatch()).distinct('_id')
 }
 
 const COGS_CATEGORY_NAMES = ['Vendor/Freight', 'materials', 'labour', 'Materials', 'Labour']

@@ -5,6 +5,10 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const dashboardService = require('../../services/accountDashboard.service')
+const {
+  buildFinancialLeadMatch,
+  applyFinancialLeadScopeToProjectFilter,
+} = require('../../utils/financialProjectScope')
 exports.getOverview = asyncHandler(async (req, res) => {
   const data = await dashboardService.computeDashboardOverview(req.query)
   return success(res, data)
@@ -120,10 +124,11 @@ exports.getUpcomingPayments = asyncHandler(async (req, res) => {
 
 exports.getPaymentDistribution = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query, 'createdAt')
-  const invoices = await Invoice.find({
+  const invFilter = await applyFinancialLeadScopeToProjectFilter({
     invoiceType: { $nin: ['vendor', 'freight_carrier'] },
     ...dateFilter,
-  }).select('status totalAmount').lean()
+  })
+  const invoices = await Invoice.find(invFilter).select('status totalAmount').lean()
 
   const totalAmount = invoices.reduce((s, i) => s + i.totalAmount, 0)
   const totalCount  = invoices.length
@@ -150,13 +155,18 @@ exports.getPaymentDistribution = asyncHandler(async (req, res) => {
 exports.getRevenueTrend = asyncHandler(async (req, res) => {
   const now = new Date()
   const points = []
+  const scopedBase = await applyFinancialLeadScopeToProjectFilter({})
 
   for (let m = 11; m >= 0; m--) {
     const start = new Date(now.getFullYear(), now.getMonth() - m, 1)
     const end   = new Date(now.getFullYear(), now.getMonth() - m + 1, 0, 23, 59, 59, 999)
     const month = start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 
-    const invoices = await Invoice.find({ status: 'paid', paidAt: { $gte: start, $lte: end } }).select('totalAmount').lean()
+    const invoices = await Invoice.find({
+      ...scopedBase,
+      status: 'paid',
+      paidAt: { $gte: start, $lte: end },
+    }).select('totalAmount').lean()
     points.push({ month, amount: invoices.reduce((s, i) => s + i.totalAmount, 0) })
   }
 
@@ -166,13 +176,17 @@ exports.getRevenueTrend = asyncHandler(async (req, res) => {
 exports.getExpenseTrend = asyncHandler(async (req, res) => {
   const now = new Date()
   const points = []
+  const scopedBase = await applyFinancialLeadScopeToProjectFilter({ isActive: true })
 
   for (let m = 11; m >= 0; m--) {
     const start = new Date(now.getFullYear(), now.getMonth() - m, 1)
     const end   = new Date(now.getFullYear(), now.getMonth() - m + 1, 0, 23, 59, 59, 999)
     const month = start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 
-    const expenses = await Expense.find({ isActive: true, date: { $gte: start, $lte: end } }).select('amount').lean()
+    const expenses = await Expense.find({
+      ...scopedBase,
+      date: { $gte: start, $lte: end },
+    }).select('amount').lean()
     points.push({ month, amount: expenses.reduce((s, e) => s + e.amount, 0) })
   }
 
@@ -181,7 +195,8 @@ exports.getExpenseTrend = asyncHandler(async (req, res) => {
 
 exports.getCostBreakdown = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query, 'date')
-  const expenses = await Expense.find({ isActive: true, ...dateFilter }).select('amount category').lean()
+  const expFilter = await applyFinancialLeadScopeToProjectFilter({ isActive: true, ...dateFilter })
+  const expenses = await Expense.find(expFilter).select('amount category').lean()
 
   const breakdown = { material: 0, labour: 0, logistics: 0, other: 0 }
   for (const e of expenses) {
@@ -196,10 +211,11 @@ exports.getCostBreakdown = asyncHandler(async (req, res) => {
 })
 
 exports.getWipProjects = asyncHandler(async (req, res) => {
-  const leads = await Lead.find({
-    lifecycleStatus: { $in: ['po_received', 'in_production', 'dispatched'] },
-    isTerminated: { $ne: true },
-  }).select('_id projectName jobId lifecycleStatus').limit(10).lean()
+  const leads = await Lead.find(buildFinancialLeadMatch())
+    .select('_id projectName jobId lifecycleStatus')
+    .sort({ updatedAt: -1 })
+    .limit(10)
+    .lean()
 
   const leadIds = leads.map((l) => l._id)
   const [invoices, expenses] = await Promise.all([

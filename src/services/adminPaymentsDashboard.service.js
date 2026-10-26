@@ -1,6 +1,7 @@
 const Invoice = require('../models/Invoice')
 const PaymentSchedule = require('../models/PaymentSchedule')
 const { buildDateFilter } = require('../utils/dateRange')
+const { distinctFinancialLeadIds } = require('../utils/financialProjectScope')
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -114,7 +115,8 @@ const computePaymentsDashboard = async (query = {}) => {
   const base = buildDateFilter(query)
   const now = new Date()
   const yearStart = new Date(now.getFullYear(), 0, 1)
-  const customerBase = buildCustomerInvoiceMatch(base)
+  const financialLeadIds = await distinctFinancialLeadIds()
+  const customerBase = { ...buildCustomerInvoiceMatch(base), leadId: { $in: financialLeadIds } }
   const customerRecorded = {
     ...customerBase,
     status: { $nin: ['draft', 'cancelled'] },

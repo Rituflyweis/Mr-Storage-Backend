@@ -7,6 +7,7 @@ const {
   aggregateProjectExpensesByLeadMap,
   round2,
 } = require('../utils/projectExpenseAggregate.util')
+const { buildFinancialLeadMatch } = require('../utils/financialProjectScope')
 
 const CUSTOMER_INVOICE_MATCH = {
   invoiceType: { $nin: ['vendor', 'freight_carrier'] },
@@ -14,12 +15,10 @@ const CUSTOMER_INVOICE_MATCH = {
 }
 
 const leadListFilter = (query = {}) => {
-  const filter = { isTerminated: { $ne: true }, isArchived: { $ne: true } }
-  if (query.search && String(query.search).trim()) {
-    const regex = new RegExp(String(query.search).trim(), 'i')
-    filter.$or = [{ projectName: regex }, { jobId: regex }]
-  }
-  return filter
+  const base = buildFinancialLeadMatch()
+  if (!query.search?.trim()) return base
+  const regex = new RegExp(String(query.search).trim(), 'i')
+  return { $and: [base, { $or: [{ projectName: regex }, { jobId: regex }] }] }
 }
 
 const categoryCardsFromRollup = (rollup) => {

@@ -4,6 +4,11 @@ const Customer = require('../models/Customer')
 const Expense = require('../models/Expense')
 const { buildPeriodDateFilter } = require('../utils/dateRange')
 const { WIP_STATUSES } = require('../models/WIPProfit')
+const {
+  buildFinancialLeadMatch,
+  distinctFinancialLeadIds,
+  isLeadInFinancialScope,
+} = require('../utils/financialProjectScope')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -112,7 +117,10 @@ exports.mapOrderDetail = (wip) => {
 
 exports.computePaymentStats = async (query = {}) => {
   const dateFilter = buildPeriodDateFilter(query, 'createdAt')
-  const match = Object.keys(dateFilter).length ? [{ $match: dateFilter }] : []
+  const financialLeadIds = await distinctFinancialLeadIds()
+  const match = [
+    { $match: { leadId: { $in: financialLeadIds }, ...dateFilter } },
+  ]
 
   const agg = await WIPProfit.aggregate([
     ...match,
@@ -141,7 +149,8 @@ exports.computePaymentStats = async (query = {}) => {
 exports.listOrders = async (query = {}) => {
   const { page = 1, limit = 20, search, status } = query
   const dateFilter = buildPeriodDateFilter(query, 'createdAt')
-  const filter = { ...dateFilter }
+  const financialLeadIds = await distinctFinancialLeadIds()
+  const filter = { leadId: { $in: financialLeadIds }, ...dateFilter }
 
   const statusCode = normalizeStatusFilter(status)
   if (statusCode) filter.status = statusCode
@@ -236,33 +245,12 @@ exports.resolveWip = async (idOrLeadId) => {
     .lean()
 }
 
-/** Leads eligible for the Add Order Payment quote/order dropdown */
-const ORDER_OPTION_LIFECYCLE = [
-  'deal_closed',
-  'payment_done',
-  'converted_to_po',
-  'sent_to_admin',
-  'released_to_plant',
-  'drawings_received',
-  'bom_received',
-  'bom_review',
-  'material_check',
-  'production_planning',
-  'fabrication_started',
-  'quality_inspection',
-  'packing_bundling',
-  'shipper_prepared',
-  'ready_for_delivery',
-  'dispatched',
-  'delivered',
-]
-
 exports.listOrderOptions = async (query = {}) => {
   const { search, limit = 50, excludeWithWip } = query
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200)
 
   const filter = {
-    lifecycleStatus: { $in: ORDER_OPTION_LIFECYCLE },
+    ...buildFinancialLeadMatch(),
     jobId: { $exists: true, $nin: [null, ''] },
   }
 
@@ -359,6 +347,9 @@ exports.upsertOrder = async (payload, userId) => {
 
   const lead = await exports.resolveLeadForOrder(quoteOrderId, leadId)
   if (!lead) return { error: 'Project / quote not found' }
+  if (!(await isLeadInFinancialScope(lead._id))) {
+    return { error: 'Payments can only be tracked for projects that have reached PO or plant stage' }
+  }
 
   let cost = currentCost
   if (cost == null || cost === '') {

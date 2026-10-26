@@ -6,10 +6,12 @@ const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { startOfMonth, endOfMonth } = require('date-fns')
+const { distinctFinancialLeadIds } = require('../../utils/financialProjectScope')
 
 exports.getLeadStats = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query)
 
+  const financialLeadIds = await distinctFinancialLeadIds()
   const [total, quoteReady, quoteValueAgg, paidInvoicesAgg, unread] = await Promise.all([
     Lead.countDocuments(dateFilter),
     Lead.countDocuments({ ...dateFilter, isQuoteReady: true }),
@@ -20,6 +22,7 @@ exports.getLeadStats = asyncHandler(async (req, res) => {
     Invoice.aggregate([
       {
         $match: {
+          leadId: { $in: financialLeadIds },
           status: 'paid',
           paidAt: {
             $gte: startOfMonth(new Date()),

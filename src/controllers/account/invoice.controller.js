@@ -5,6 +5,7 @@ const Customer = require('../../models/Customer')
 const mailer = require('../../services/email/mailer')
 const auditService = require('../../services/audit.service')
 const { buildDateFilter } = require('../../utils/dateRange')
+const { applyFinancialLeadScopeToProjectFilter } = require('../../utils/financialProjectScope')
 const { success, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS } = require('../../config/constants')
@@ -111,7 +112,8 @@ exports.followUpInvoice = asyncHandler(async (req, res) => {
 
 exports.getAnalytics = asyncHandler(async (req, res) => {
   const dateFilter = buildDateFilter(req.query, 'createdAt')
-  const invoices = await Invoice.find({ status: 'paid', ...dateFilter })
+  const invFilter = await applyFinancialLeadScopeToProjectFilter({ status: 'paid', ...dateFilter })
+  const invoices = await Invoice.find(invFilter)
     .select('totalAmount sentAt paidAt daysToPay')
     .lean()
 

@@ -2,7 +2,9 @@
 
 Backend port of `SM-QuotingTool-v5 (31).html`. Same shipper parsing, pricing engine, tax lookup, and document generation as the standalone HTML tool.
 
-**Last updated:** August 2026 · Deploy branch: `shubham-changes-13-aug`
+**Last updated:** October 2026 · Deploy branch: `shubham-changes-13-aug`
+
+**Frontend handoff (shorter integration guide):** [`docs/frontend-handoff/pemb-quoting-extraction-api.md`](frontend-handoff/pemb-quoting-extraction-api.md)
 
 ---
 

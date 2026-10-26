@@ -3,6 +3,7 @@ const Invoice = require('../../models/Invoice')
 const { success, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { CLOSED_STAGES, LIFECYCLE_STAGES } = require('../../config/constants')
+const { appendFinancialLeadScope } = require('../../utils/financialProjectScope')
 const { endOfMonth, format, startOfMonth, subMonths } = require('date-fns')
 
 const roundRate = (conversions, leads) => {
@@ -43,7 +44,7 @@ const countConversions = (leadFilter, start, end) =>
   })
 
 const sumRevenue = async (leadFilter, start, end) => {
-  const leadIds = await Lead.find(leadFilter).distinct('_id')
+  const leadIds = await Lead.find(appendFinancialLeadScope(leadFilter)).distinct('_id')
   if (!leadIds.length) return 0
 
   const agg = await Invoice.aggregate([

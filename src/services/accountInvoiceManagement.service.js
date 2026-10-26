@@ -9,6 +9,7 @@ const { aggregateProjectExpensesForLead } = require('../utils/projectExpenseAggr
 const { marginPct } = require('../utils/profitLossPeriod.util')
 const { resolveCustomerInvoiceDocuments } = require('../utils/customerInvoiceDocument.util')
 const { pickBillingFieldsForListRow } = require('../utils/invoiceBilling.util')
+const { distinctFinancialLeadIds } = require('../utils/financialProjectScope')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 const LOW_MARGIN_PCT = 15
@@ -490,7 +491,8 @@ const buildQuotationRow = async (q, dateFilterOnExpenses = {}) => {
 
 exports.getQuotationProfitSummary = async (query = {}) => {
   const dateFilter = buildDateFilter(query, 'proposalDate')
-  const match = { ...dateFilter }
+  const financialLeadIds = await distinctFinancialLeadIds()
+  const match = { ...dateFilter, leadId: { $in: financialLeadIds } }
 
   const quotations = await Quotation.find(match).select('leadId finalPrice basePrice profitAnalysis').lean()
   let quotedRevenue = 0
@@ -524,7 +526,8 @@ exports.getQuotationProfitSummary = async (query = {}) => {
 exports.listQuotationProfitRecords = async (query = {}) => {
   const { page, limit, skip } = paginate(query)
   const dateFilter = buildDateFilter(query, 'proposalDate')
-  const filter = { ...dateFilter }
+  const financialLeadIds = await distinctFinancialLeadIds()
+  const filter = { ...dateFilter, leadId: { $in: financialLeadIds } }
 
   if (query.projectId || query.leadId) filter.leadId = query.projectId || query.leadId
   if (query.search?.trim()) {

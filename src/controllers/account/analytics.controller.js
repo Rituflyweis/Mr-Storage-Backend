@@ -6,12 +6,12 @@ const { buildDateFilter } = require('../../utils/dateRange')
 const { success } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
+const { buildFinancialLeadMatch } = require('../../utils/financialProjectScope')
 
 exports.getWipProfit = asyncHandler(async (req, res) => {
-  const leads = await Lead.find({
-    lifecycleStatus: { $in: ['po_received', 'in_production', 'dispatched', 'delivered', 'payment_done'] },
-    isTerminated: { $ne: true },
-  }).select('_id projectName jobId lifecycleStatus').lean()
+  const leads = await Lead.find(buildFinancialLeadMatch())
+    .select('_id projectName jobId lifecycleStatus')
+    .lean()
 
   const leadIds = leads.map((l) => l._id)
 

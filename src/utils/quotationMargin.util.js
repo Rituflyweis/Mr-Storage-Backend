@@ -108,24 +108,23 @@ const loadEstimatesForQuotations = async (quotationByLead) => {
   return new Map(rows.map((e) => [String(e._id), e]))
 }
 
+const { buildFinancialLeadMatch } = require('./financialProjectScope')
+
 const buildLeadFilter = async (query = {}) => {
-  const filter = { isTerminated: { $ne: true }, isArchived: { $ne: true } }
+  const parts = [buildFinancialLeadMatch()]
   const bu = buildBusinessUnitFilter(query.businessUnit || query.company)
-  if (bu) Object.assign(filter, bu)
+  if (bu) parts.push(bu)
   if (query.projectId || query.leadId) {
-    filter._id = new mongoose.Types.ObjectId(query.projectId || query.leadId)
+    parts.push({ _id: new mongoose.Types.ObjectId(query.projectId || query.leadId) })
   }
   if (query.search?.trim()) {
     const regex = new RegExp(query.search.trim(), 'i')
-    filter.$or = [{ projectName: regex }, { jobId: regex }]
+    parts.push({ $or: [{ projectName: regex }, { jobId: regex }] })
   }
-  return filter
+  return parts.length === 1 ? parts[0] : { $and: parts }
 }
 
 const resolveLeadIds = async (query) => {
-  if (query.projectId || query.leadId) {
-    return [new mongoose.Types.ObjectId(query.projectId || query.leadId)]
-  }
   const filter = await buildLeadFilter(query)
   return Lead.find(filter).distinct('_id')
 }

@@ -11,14 +11,16 @@ const {
   aggregateProjectExpensesByLeadMap,
   aggregateEmailBidExpenses,
 } = require('../../utils/projectExpenseAggregate.util')
+const { applyFinancialLeadScopeToProjectFilter } = require('../../utils/financialProjectScope')
 
 exports.getProfitLoss = asyncHandler(async (req, res) => {
   const { leadId, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query, 'createdAt')
   const skip = (Number(page) - 1) * Number(limit)
 
-  const invoiceFilter = { ...dateFilter }
-  if (leadId) invoiceFilter.leadId = leadId
+  const invoiceFilter = await applyFinancialLeadScopeToProjectFilter(
+    leadId ? { ...dateFilter, leadId } : { ...dateFilter }
+  )
 
   const [invoices, total] = await Promise.all([
     Invoice.find(invoiceFilter)
