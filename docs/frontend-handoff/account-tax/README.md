@@ -10,9 +10,11 @@ Share this **folder** with frontend for the Account panel taxation section (Figm
 
 | # | File | Use |
 |---|------|-----|
+| **Share one file** | [`../frontend-avalara-tax-complete-handoff.md`](../frontend-avalara-tax-complete-handoff.md) | **Give frontend dev this only** — full doc in one place |
+| 0 | [`frontend-avalara-compatibility-complete-handoff.md`](./frontend-avalara-compatibility-complete-handoff.md) | Short index + themes (superseded by single file above) |
 | 1 | [`frontend-account-tax-filing-figma-integration-handoff-2026-10-19.md`](./frontend-account-tax-filing-figma-integration-handoff-2026-10-19.md) | Figma screen → API map, actions, checklist |
 | 2 | [`frontend-account-tax-full-api-handoff-2026-10-19.md`](./frontend-account-tax-full-api-handoff-2026-10-19.md) | Every endpoint, req/res examples, errors |
-| 3 | [`frontend-gap-changes-tax-address-avalara-2026-10-19.md`](./frontend-gap-changes-tax-address-avalara-2026-10-19.md) | Migration: legacy routes, sync, pay vs approve, addresses |
+| 3 | [`frontend-gap-changes-tax-address-avalara-2026-10-19.md`](./frontend-gap-changes-tax-address-avalara-2026-10-19.md) | Short migration checklist (addresses + tax UI + sync) |
 
 **Prod API:** `https://mr-storage-backend-025k.onrender.com`
 

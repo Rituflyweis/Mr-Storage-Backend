@@ -463,55 +463,39 @@ exports.createLead = asyncHandler(async (req, res) => {
 })
 
 exports.importLeads = asyncHandler(async (req, res) => {
-  if (!req.body.csv) return badRequest(res, 'CSV data required in body.csv')
-
-  let records
-  try {
-    records = parse(req.body.csv, { columns: true, skip_empty_lines: true, trim: true })
-  } catch {
-    return badRequest(res, 'Invalid CSV format')
+  const leadImport = require('../../services/leadExcelImport.service')
+  const ctx = {
+    createdByUserId: req.user._id,
+    defaultBusinessUnit: req.body.businessUnit,
   }
 
-  const results = { created: 0, skipped: 0, errors: [] }
-
-  for (const row of records) {
+  if (req.file?.buffer) {
     try {
-      const { name, email, phone, projectType, businessUnit } = row
-      if (!email || !phone) { results.skipped++; continue }
-
-      const normalized = email.toLowerCase().trim()
-      let customer = await Customer.findOne({
-        $or: [{ email: normalized }, { 'phone.number': phone.trim() }],
-      })
-
-      if (!customer) {
-        const custId = await generateCustomerId()
-        const hashed = await bcrypt.hash(phone.trim(), 12)
-        customer = await Customer.create({
-          customerId: custId,
-          firstName: name?.trim() || 'Unknown',
-          email: normalized,
-          phone: { number: phone.trim(), countryCode: '' },
-          password: hashed,
-          source: 'import',
-        })
-      }
-
-      const unit = normalizeBusinessUnit(businessUnit)
-      const lead = await Lead.create({
-        customerId: customer._id,
-        buildingType: projectType || '',
-        source: 'import',
-        businessUnit: unit.value || null,
-      })
-      await syncLeadBuildings(lead, { createdBy: req.user._id })
-      results.created++
+      const results = await leadImport.importFromExcelBuffer(req.file.buffer, ctx)
+      return success(
+        res,
+        results,
+        `Import complete: ${results.created} created, ${results.skipped} skipped (${results.totalRows} rows)`
+      )
     } catch (err) {
-      results.errors.push({ row, error: err.message })
+      return badRequest(res, err.message || 'Invalid Excel file')
     }
   }
 
-  return success(res, results, `Import complete: ${results.created} created, ${results.skipped} skipped`)
+  if (!req.body.csv) {
+    return badRequest(res, 'Upload an Excel file (multipart field "file") or send CSV in body.csv')
+  }
+
+  try {
+    const results = await leadImport.importFromCsvText(req.body.csv, ctx)
+    return success(
+      res,
+      results,
+      `Import complete: ${results.created} created, ${results.skipped} skipped`
+    )
+  } catch {
+    return badRequest(res, 'Invalid CSV format')
+  }
 })
 
 exports.editLead = asyncHandler(async (req, res) => {

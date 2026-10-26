@@ -1,5 +1,17 @@
 const router = require('express').Router()
+const multer = require('multer')
 const { body, query } = require('express-validator')
+
+const leadImportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok =
+      file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.originalname?.toLowerCase().endsWith('.xlsx')
+    cb(ok ? null : new Error('Only .xlsx Excel files are supported'), ok)
+  },
+})
 const { LEAD_TEMPERATURES } = require('../../config/constants')
 const ctrl = require('../../controllers/sales/lead.controller')
 const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
@@ -45,11 +57,7 @@ router.get('/with-po',
 router.get('/export', businessUnitQuery, ctrl.exportLeads)
 router.get('/export/excel', businessUnitQuery, ctrl.exportLeadsExcel)
 
-router.post('/import',
-  [body('csv').notEmpty().withMessage('csv is required')],
-  validate,
-  ctrl.importLeads
-)
+router.post('/import', leadImportUpload.single('file'), ctrl.importLeads)
 
 router.get('/', businessUnitQuery, ctrl.getLeads)
 

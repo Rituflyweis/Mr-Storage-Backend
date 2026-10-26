@@ -6,6 +6,8 @@
 
 **Prod:** `https://mr-storage-backend-025k.onrender.com`
 
+**Single file to share with frontend:** [`../frontend-avalara-tax-complete-handoff.md`](../frontend-avalara-tax-complete-handoff.md)
+
 ---
 
 ## Summary (read this first)
@@ -470,10 +472,24 @@ POST   /api/customer/projects          → sets installAddress
 ### Staff (invoice tax lifecycle)
 
 ```
-POST   /api/leads/:leadId/invoices
+POST   /api/leads/:leadId/invoices          (alias: /api/common/leads/:leadId/invoices)
+GET    /api/invoices/:invoiceId             (alias: /api/common/invoices/:invoiceId)
 PUT    /api/invoices/:invoiceId
 POST   /api/invoices/:invoiceId/mark-sent
 POST   /api/invoices/:invoiceId/send
+PUT    /api/invoices/:invoiceId/mark-paid
+POST   /api/invoices/:invoiceId/tax-preview
+POST   /api/invoices/:invoiceId/tax-adjust
+GET    /api/invoices/:invoiceId/tax
+GET    /api/invoices/billing-defaults       (alias: /api/common/invoices/billing-defaults)
+GET    /api/account/invoices/billing-defaults
+```
+
+### Account / Admin tax (also on Admin prefix)
+
+```
+GET/PUT /api/account/financial-extra/tax-filing/notification-settings
+        (/api/admin/financial-extra/…)
 ```
 
 ### Lead (address)
@@ -492,6 +508,9 @@ POST/PUT  lead create/update routes     → installAddress, city, state, pincode
 | [`frontend-account-tax-filing-figma-integration-handoff-2026-10-19.md`](./frontend-account-tax-filing-figma-integration-handoff-2026-10-19.md) | Figma screen → route map |
 | [`frontend-account-tax-full-api-handoff-2026-10-19.md`](./frontend-account-tax-full-api-handoff-2026-10-19.md) | Extra copy-paste examples per endpoint |
 
-**Give frontend this file first:** `frontend-gap-changes-tax-address-avalara-2026-10-19.md`
+**Give frontend this file for a short checklist.** For **what changed besides address** + **complete endpoint list**, use  
+[`frontend-avalara-compatibility-complete-handoff.md`](./frontend-avalara-compatibility-complete-handoff.md).
 
 **Complete before/after + req/res (all APIs):** [`avalara-full-changes-master-handoff-2026-10-19.md`](../../avalara-full-changes-master-handoff-2026-10-19.md)
+
+**Every tax endpoint JSON example:** [`frontend-account-tax-full-api-handoff-2026-10-19.md`](./frontend-account-tax-full-api-handoff-2026-10-19.md)

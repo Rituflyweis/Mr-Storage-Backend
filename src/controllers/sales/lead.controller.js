@@ -236,65 +236,44 @@ exports.createLead = asyncHandler(async (req, res) => {
 })
 
 exports.importLeads = asyncHandler(async (req, res) => {
-  if (!req.body.csv) return badRequest(res, 'CSV data required in body.csv')
-
-  let records
-  try {
-    records = parse(req.body.csv, { columns: true, skip_empty_lines: true, trim: true })
-  } catch {
-    return badRequest(res, 'Invalid CSV format')
+  const leadImport = require('../../services/leadExcelImport.service')
+  const ctx = {
+    createdByUserId: req.user._id,
+    assignSalesUserId: req.user._id,
+    defaultBusinessUnit: req.body.businessUnit,
   }
 
-  const results = { imported: 0, skipped: 0, errors: [] }
-
-  for (let i = 0; i < records.length; i++) {
-    const row = records[i]
+  if (req.file?.buffer) {
     try {
-      const { projectName, customerName, customerEmail, customerPhone, buildingType, location, roofStyle, roofPitch, width, length, height, businessUnit } = row
-      if (!projectName || !customerEmail || !buildingType || !location) {
-        results.skipped++
-        continue
-      }
-
-      let customer = await Customer.findOne({ email: customerEmail.toLowerCase().trim() })
-      if (!customer) {
-        if (!customerName || !customerPhone) { results.skipped++; continue }
-        const custId = await generateCustomerId()
-        const hashed = await bcrypt.hash(customerPhone.trim(), 12)
-        customer = await Customer.create({
-          customerId: custId,
-          firstName: customerName.trim(),
-          email: customerEmail.toLowerCase().trim(),
-          phone: { number: customerPhone.trim(), countryCode: '' },
-          password: hashed,
-          source: 'import',
-        })
-      }
-
-      const lead = await Lead.create({
-        customerId: customer._id,
-        projectName,
-        buildingType,
-        location,
-        roofStyle: roofStyle || '',
-        roofPitch: roofPitch ? String(roofPitch).trim() : '',
-        width: width ? Number(width) : null,
-        length: length ? Number(length) : null,
-        height: height ? Number(height) : null,
-        businessUnit: normalizeBusinessUnit(businessUnit).value || null,
-        source: 'import',
-        assignedSales: req.user._id,
-        isHandedToSales: true,
-        assigningHistory: [{ employeeId: req.user._id, method: 'manual', assignedBy: req.user._id, assignedAt: new Date() }],
+      const results = await leadImport.importFromExcelBuffer(req.file.buffer, ctx)
+      return success(res, {
+        imported: results.created,
+        skipped: results.skipped,
+        errors: results.errors,
+        totalRows: results.totalRows,
+        headerRowIndex: results.headerRowIndex,
+        sheetName: results.sheetName,
       })
-      await syncLeadBuildings(lead, { createdBy: req.user._id })
-      results.imported++
     } catch (err) {
-      results.errors.push({ row: i + 2, reason: err.message })
+      return badRequest(res, err.message || 'Invalid Excel file')
     }
   }
 
-  return success(res, results)
+  if (!req.body.csv) {
+    return badRequest(res, 'Upload an Excel file (multipart field "file") or send CSV in body.csv')
+  }
+
+  try {
+    const results = await leadImport.importFromCsvText(req.body.csv, ctx)
+    return success(res, {
+      imported: results.created,
+      skipped: results.skipped,
+      errors: results.errors,
+      totalRows: results.totalRows,
+    })
+  } catch {
+    return badRequest(res, 'Invalid CSV format')
+  }
 })
 
 exports.exportLeads = asyncHandler(async (req, res) => {
