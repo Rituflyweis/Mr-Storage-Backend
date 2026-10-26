@@ -13,6 +13,7 @@ const resolveUploadFileName = (req) =>
   ''
 
 const runLeadImport = async (req, ctx, { salesResponseShape = false, panel = 'admin' } = {}) => {
+  ctx.bulkImport = true
   const leadImport = require('../services/leadExcelImport.service')
   const excelBuffer = resolveLeadImportExcelBuffer(req)
   const fileName = resolveUploadFileName(req)

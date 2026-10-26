@@ -7,6 +7,7 @@ const Customer = require('../models/Customer')
 const generateCustomerId = require('../utils/generateCustomerId')
 const { syncLeadBuildings } = require('./leadBuilding.service')
 const roundRobinService = require('./roundRobin.service')
+const leadListSocket = require('./leadListSocket.service')
 
 const IMPORT_EMAIL_DOMAIN = 'imports.mrstorage.internal'
 
@@ -359,7 +360,13 @@ const importOneRow = async (row, ctx) => {
     lead = await Lead.create(leadPayload)
     await syncLeadBuildings(lead, { createdBy: ctx.createdByUserId })
     if (useRoundRobin) {
-      await roundRobinService.assignNextSales(lead._id, customer._id)
+      const silent = ctx.bulkImport === true
+      const employeeId = await roundRobinService.assignNextSales(lead._id, customer._id, { silent })
+      if (employeeId && silent) {
+        if (!ctx.assignCountByUser) ctx.assignCountByUser = new Map()
+        const key = String(employeeId)
+        ctx.assignCountByUser.set(key, (ctx.assignCountByUser.get(key) || 0) + 1)
+      }
     }
   } catch (err) {
     ctx.duplicateKeys.delete(dupKey)
@@ -431,6 +438,15 @@ exports.importLeadRecords = async (records, ctx = {}, opts = {}) => {
   }
 
   if (onProgress) await onProgress({ ...results })
+
+  if (ctx.bulkImport && results.created > 0) {
+    await leadListSocket.emitBulkLeadImportComplete({
+      totalCreated: results.created,
+      assignmentCounts: ctx.assignCountByUser || new Map(),
+      initiatedByUserId: ctx.createdByUserId,
+    })
+  }
+
   return results
 }
 
