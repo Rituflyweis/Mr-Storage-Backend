@@ -1,5 +1,6 @@
 const router = require('express').Router()
 const { body, query } = require('express-validator')
+const leadImportUpload = require('../../middleware/leadImportUpload')
 const { LEAD_TEMPERATURES, LIFECYCLE_STAGES } = require('../../config/constants')
 const ctrl = require('../../controllers/admin/lead.controller')
 const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
@@ -26,7 +27,8 @@ router.get('/by-score',
   validate,
   ctrl.getLeadsByScore
 )
-router.post('/import', ctrl.importLeads)
+router.post('/import', leadImportUpload, ctrl.importLeads)
+router.get('/import/jobs/:jobId', ctrl.getLeadImportJobStatus)
 router.get('/export/excel', ctrl.exportLeadsExcel)
 
 router.get('/', ctrl.getAllLeads)

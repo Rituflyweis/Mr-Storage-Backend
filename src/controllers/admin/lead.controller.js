@@ -12,7 +12,6 @@ const ProjectBudget = require('../../models/ProjectBudget')
 const FollowUp = require('../../models/FollowUp')
 const auditService = require('../../services/audit.service')
 const { syncLeadBuildings } = require('../../services/leadBuilding.service')
-const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
@@ -29,8 +28,6 @@ const {
   buildLeadCreatePayload,
   applyLeadUpdateFromBody,
 } = require('../../utils/leadPayload')
-const { parse } = require('csv-parse/sync')
-const bcrypt = require('bcryptjs')
 const { startOfDay, endOfDay } = require('date-fns')
 const {
   buildAdminLeadFilter,
@@ -331,50 +328,24 @@ exports.createLead = asyncHandler(async (req, res) => {
 })
 
 exports.importLeads = asyncHandler(async (req, res) => {
-  if (!req.body.csv) return badRequest(res, 'CSV data required in body.csv')
+  const { runLeadImport } = require('../../utils/runLeadImport')
+  const ctx = { createdByUserId: req.user._id, useRoundRobin: true }
 
-  let records
   try {
-    records = parse(req.body.csv, { columns: true, skip_empty_lines: true, trim: true })
-  } catch {
-    return badRequest(res, 'Invalid CSV format')
+    const out = await runLeadImport(req, ctx, { panel: 'admin' })
+    return res.status(out.httpStatus || 200).json({
+      success: true,
+      message: out.message || 'Success',
+      data: out.payload,
+    })
+  } catch (err) {
+    if (err.code === 'LEAD_IMPORT_NO_PAYLOAD') return badRequest(res, err.message)
+    return badRequest(res, err.message || 'Invalid import file')
   }
-
-  const results = { created: 0, skipped: 0, errors: [] }
-
-  for (const row of records) {
-    try {
-      const { name, email, phone, projectType } = row
-      if (!email || !phone) { results.skipped++; continue }
-
-      const normalized = email.toLowerCase().trim()
-      let customer = await Customer.findOne({
-        $or: [{ email: normalized }, { 'phone.number': phone.trim() }],
-      })
-
-      if (!customer) {
-        const custId = await generateCustomerId()
-        const hashed = await bcrypt.hash(phone.trim(), 12)
-        customer = await Customer.create({
-          customerId: custId,
-          firstName: name?.trim() || 'Unknown',
-          email: normalized,
-          phone: { number: phone.trim(), countryCode: '' },
-          password: hashed,
-          source: 'import',
-        })
-      }
-
-      const lead = await Lead.create({ customerId: customer._id, buildingType: projectType || '', source: 'import' })
-      await syncLeadBuildings(lead, { createdBy: req.user._id })
-      results.created++
-    } catch (err) {
-      results.errors.push({ row, error: err.message })
-    }
-  }
-
-  return success(res, results, `Import complete: ${results.created} created, ${results.skipped} skipped`)
 })
+
+const { getLeadImportJobStatus } = require('../../utils/leadImportJob.controller')
+exports.getLeadImportJobStatus = getLeadImportJobStatus(false)
 
 exports.editLead = asyncHandler(async (req, res) => {
   const { leadId } = req.params

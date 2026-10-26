@@ -1,5 +1,6 @@
 const router = require('express').Router()
 const { body, query } = require('express-validator')
+const leadImportUpload = require('../../middleware/leadImportUpload')
 const { LEAD_TEMPERATURES } = require('../../config/constants')
 const ctrl = require('../../controllers/sales/lead.controller')
 const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
@@ -39,11 +40,8 @@ router.get('/with-po',
 router.get('/export', ctrl.exportLeads)
 router.get('/export/excel', ctrl.exportLeadsExcel)
 
-router.post('/import',
-  [body('csv').notEmpty().withMessage('csv is required')],
-  validate,
-  ctrl.importLeads
-)
+router.post('/import', leadImportUpload, ctrl.importLeads)
+router.get('/import/jobs/:jobId', ctrl.getLeadImportJobStatus)
 
 router.get('/', ctrl.getLeads)
 

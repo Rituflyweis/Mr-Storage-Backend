@@ -12,7 +12,6 @@ const Building = require('../../models/Building')
 const ProjectBudget = require('../../models/ProjectBudget')
 const auditService = require('../../services/audit.service')
 const { syncLeadBuildings } = require('../../services/leadBuilding.service')
-const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
@@ -33,8 +32,6 @@ const {
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const leadListSocket = require('../../services/leadListSocket.service')
-const { parse } = require('csv-parse/sync')
-const bcrypt = require('bcryptjs')
 
 const guardLead = async (leadId, salesId) => {
   const lead = await Lead.findById(leadId)
@@ -227,65 +224,24 @@ exports.createLead = asyncHandler(async (req, res) => {
 })
 
 exports.importLeads = asyncHandler(async (req, res) => {
-  if (!req.body.csv) return badRequest(res, 'CSV data required in body.csv')
+  const { runLeadImport } = require('../../utils/runLeadImport')
+  const ctx = { createdByUserId: req.user._id, useRoundRobin: true }
 
-  let records
   try {
-    records = parse(req.body.csv, { columns: true, skip_empty_lines: true, trim: true })
-  } catch {
-    return badRequest(res, 'Invalid CSV format')
+    const out = await runLeadImport(req, ctx, { salesResponseShape: true, panel: 'sales' })
+    return res.status(out.httpStatus || 200).json({
+      success: true,
+      message: out.message || 'Success',
+      data: out.payload,
+    })
+  } catch (err) {
+    if (err.code === 'LEAD_IMPORT_NO_PAYLOAD') return badRequest(res, err.message)
+    return badRequest(res, err.message || 'Invalid import file')
   }
-
-  const results = { imported: 0, skipped: 0, errors: [] }
-
-  for (let i = 0; i < records.length; i++) {
-    const row = records[i]
-    try {
-      const { projectName, customerName, customerEmail, customerPhone, buildingType, location, roofStyle, roofPitch, width, length, height } = row
-      if (!projectName || !customerEmail || !buildingType || !location) {
-        results.skipped++
-        continue
-      }
-
-      let customer = await Customer.findOne({ email: customerEmail.toLowerCase().trim() })
-      if (!customer) {
-        if (!customerName || !customerPhone) { results.skipped++; continue }
-        const custId = await generateCustomerId()
-        const hashed = await bcrypt.hash(customerPhone.trim(), 12)
-        customer = await Customer.create({
-          customerId: custId,
-          firstName: customerName.trim(),
-          email: customerEmail.toLowerCase().trim(),
-          phone: { number: customerPhone.trim(), countryCode: '' },
-          password: hashed,
-          source: 'import',
-        })
-      }
-
-      const lead = await Lead.create({
-        customerId: customer._id,
-        projectName,
-        buildingType,
-        location,
-        roofStyle: roofStyle || '',
-        roofPitch: roofPitch ? String(roofPitch).trim() : '',
-        width: width ? Number(width) : null,
-        length: length ? Number(length) : null,
-        height: height ? Number(height) : null,
-        source: 'import',
-        assignedSales: req.user._id,
-        isHandedToSales: true,
-        assigningHistory: [{ employeeId: req.user._id, method: 'manual', assignedBy: req.user._id, assignedAt: new Date() }],
-      })
-      await syncLeadBuildings(lead, { createdBy: req.user._id })
-      results.imported++
-    } catch (err) {
-      results.errors.push({ row: i + 2, reason: err.message })
-    }
-  }
-
-  return success(res, results)
 })
+
+const { getLeadImportJobStatus } = require('../../utils/leadImportJob.controller')
+exports.getLeadImportJobStatus = getLeadImportJobStatus(true)
 
 exports.exportLeads = asyncHandler(async (req, res) => {
   const filter = await buildSalesLeadFilter(req.query, req.user._id)
