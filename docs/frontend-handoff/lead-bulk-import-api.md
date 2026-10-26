@@ -393,7 +393,7 @@ async function importLeadsFile({ apiBase, panel, token, file }) {
 | **202** | (success) Import started | Start polling |
 | **200** | Sync done or import in progress | Show results or poll |
 
-Row-level issues are **not** HTTP errors — they appear in `data.errors[]` (max **~150** entries stored).
+Row-level issues are **not** HTTP errors — they appear in `data.errors[]` (one entry per skipped row; length should match **`skipped`** when every skip has a reason).
 
 | Field | Meaning |
 |-------|---------|
@@ -431,7 +431,7 @@ Other reasons: `missing projectName`, parse errors (message in `reason` only).
 - [ ] Admin UI binds **`created`**; Sales UI binds **`imported`**  
 - [ ] On `completed`, refresh leads list / stats  
 - [ ] **Socket:** bulk import does **not** emit per-lead `lead_assigned`. Listen once for `lead_import_completed` (see §10)  
-- [ ] Show `skipped` and first N `errors` (expandable table); display **`reason`** or **`projectName` + `location`** — do **not** show raw `leadId` to users  
+- [ ] Show `skipped` and full `errors` list (expandable table); **`errors.length`** should align with **`skipped`**; display **`reason`** or **`projectName` + `location`** — do **not** show raw `leadId` to users  
 - [ ] Disable submit while job is `queued` or `processing`  
 - [ ] Optional: persist `jobId` in sessionStorage to survive refresh during long imports  
 

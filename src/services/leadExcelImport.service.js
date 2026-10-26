@@ -404,10 +404,10 @@ const importOneRow = async (row, ctx) => {
 exports.parseExcelToRecords = parseExcelToRecords
 exports.parseCsvToRecords = parseCsvToRecords
 
-const applyRowOutcome = (results, rowIndex, outcome, maxErrors) => {
+const applyRowOutcome = (results, rowIndex, outcome) => {
   if (outcome.status === 'created') results.created++
   else results.skipped++
-  if (outcome.reason && outcome.status === 'skipped' && results.errors.length < maxErrors) {
+  if (outcome.reason && outcome.status === 'skipped') {
     const entry = {
       row: rowIndex + 1,
       reason: outcome.reason,
@@ -422,11 +422,10 @@ const applyRowOutcome = (results, rowIndex, outcome, maxErrors) => {
 /**
  * @param {object[]} records - normalized row objects
  * @param {object} ctx - { createdByUserId, useRoundRobin?, assignSalesUserId?, duplicateKeys?, customerCache? }
- * @param {object} opts - { concurrency?, onProgress?, maxErrors? }
+ * @param {object} opts - { concurrency?, onProgress? }
  */
 exports.importLeadRecords = async (records, ctx = {}, opts = {}) => {
   const concurrency = Math.min(Math.max(opts.concurrency || 1, 1), 12)
-  const maxErrors = opts.maxErrors ?? 150
   const onProgress = opts.onProgress
 
   ctx.duplicateKeys = ctx.duplicateKeys || new Set()
@@ -456,12 +455,10 @@ exports.importLeadRecords = async (records, ctx = {}, opts = {}) => {
 
     for (const { i, outcome, err } of batchOutcomes) {
       if (err) {
-        if (results.errors.length < maxErrors) {
-          results.errors.push({ row: i + 1, reason: err.message })
-        }
+        results.errors.push({ row: i + 1, reason: err.message })
         results.skipped++
       } else {
-        applyRowOutcome(results, i, outcome, maxErrors)
+        applyRowOutcome(results, i, outcome)
       }
       results.processedRows++
     }

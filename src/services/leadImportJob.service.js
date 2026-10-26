@@ -54,7 +54,6 @@ const processJob = async (jobId, records, ctx) => {
   try {
     const results = await importLeadRecords(records, ctx, {
       concurrency: 6,
-      maxErrors: 150,
       onProgress: async ({ processedRows, created, skipped, errors }) => {
         if (Date.now() - lastPersist < 2000 && processedRows < records.length) return
         lastPersist = Date.now()
