@@ -6,6 +6,7 @@ const { previewCogsOverride, applyCogsOverride } = require('./cogsOverride')
 const { previewMarginOverride, applyMarginOverride } = require('./marginOverride')
 const { computePembSalesTax } = require('./salesTaxLookup')
 const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
+const { computeStaircase } = require('./staircase')
 
 const computeFullPembQuote = (basePricing, options = {}) => {
   let pricing = { ...basePricing }
@@ -28,10 +29,16 @@ const computeFullPembQuote = (basePricing, options = {}) => {
   const scopeKey = String(pricing.scope || options.scope || 'both').toLowerCase()
   const addOnSell = scopeKey === 'install' ? 0 : pembAddOnTotals.sell
 
+  // Multi-story fabricated staircases (v7). Sell adds to the building subtotal;
+  // cost defaults to the sell (profit 0) unless an explicit unit cost is given.
+  const staircase = computeStaircase(options.staircase || {})
+  const staircaseSell = staircase.include && scopeKey !== 'install' ? staircase.staircaseSell : 0
+
   const buildingSubtotal = pricing.totSell || 0
   const grandTotal = Math.round(
     buildingSubtotal +
       addOnSell +
+      staircaseSell +
       (concrete.include ? concrete.appliedSell : 0) +
       (insulation.include ? insulation.appliedSell : 0) +
       salesTax.amount
@@ -65,6 +72,7 @@ const computeFullPembQuote = (basePricing, options = {}) => {
     marginPreview,
     pembAddOns,
     pembAddOnTotals,
+    staircase,
   }
 }
 

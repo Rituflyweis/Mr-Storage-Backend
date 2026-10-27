@@ -64,6 +64,16 @@ const EstimateQuoteSchema = new mongoose.Schema(
     additionalInfo: { type: String, default: '' },
     fullQuoteResult: { type: mongoose.Schema.Types.Mixed, default: null },
 
+    // v7 additions
+    depositTerms: { type: mongoose.Schema.Types.Mixed, default: null }, // { pct, flat, deposit, balance, note }
+    milestoneSchedule: { type: [mongoose.Schema.Types.Mixed], default: [] }, // [{ label, type, amount }]
+    milestoneNote: { type: String, default: '' },
+    multiStory: { type: mongoose.Schema.Types.Mixed, default: null }, // { stories, staircaseCount, staircaseUnitCost, staircaseSell }
+    companyBrand: { type: String, default: 'SM' },
+    companyLogoUrl: { type: String, default: '' },
+    employeeName: { type: String, default: '' },
+    employeeRole: { type: String, default: '' },
+
     weightByCategory: { type: [WeightByCategorySchema], default: [] },
     totalWeightLbs:   { type: Number, default: 0 },
     trucksRequired:   { type: Number, default: 0 },

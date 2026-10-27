@@ -120,6 +120,7 @@ const normalizeFullQuoteExtras = (body = {}, options = {}) => ({
   cogsOverride: body.cogsOverride || undefined,
   marginOverride: body.marginOverride || undefined,
   pembAddOns: body.pembAddOns || body.quoteControls?.pembAddOns || undefined,
+  staircase: body.staircase || body.multiStory || body.quoteControls?.staircase || undefined,
   scope: options.scope,
 })
 
@@ -718,6 +719,23 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
     statementOfWork: req.body.statementOfWork || [],
     exclusions: req.body.exclusions || [],
     status: req.body.status || 'draft',
+    depositTerms: req.body.depositTerms || null,
+    milestoneSchedule: req.body.milestoneSchedule || req.body.milestones || [],
+    milestoneNote: req.body.milestoneNote || '',
+    multiStory:
+      req.body.multiStory ||
+      (fullQuote?.staircase?.include
+        ? {
+            stories: fullQuote.staircase.stories,
+            staircaseCount: fullQuote.staircase.count,
+            staircaseUnitCost: fullQuote.staircase.unitCost,
+            staircaseSell: fullQuote.staircase.staircaseSell,
+          }
+        : null),
+    companyBrand: req.body.companyBrand || req.body.company || 'SM',
+    companyLogoUrl: req.body.companyLogoUrl || '',
+    employeeName: req.user.name || '',
+    employeeRole: req.user.role || '',
   }
 
   const estimate = await EstimateQuote.create(estimateData)
@@ -767,6 +785,8 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     'pembAddOns', 'quoteControls',
     'contractDetails', 'drawingAttachments', 'additionalInfo', 'fullQuoteResult',
     'statementOfWork', 'exclusions', 'status',
+    'depositTerms', 'milestoneSchedule', 'milestoneNote', 'multiStory',
+    'companyBrand', 'companyLogoUrl',
   ]
   EDITABLE.forEach((k) => {
     if (k === 'scope') return

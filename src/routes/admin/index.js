@@ -31,6 +31,9 @@ router.use("/construction", require("./construction.routes"));
 router.use("/project-drawings", require("../common/mergedDrawings.routes"));
 router.use("/chat", require("./chat.routes"));
 router.use("/estimates", require("../sales/estimateQuote.routes"));
+router.use("/change-orders", require("../sales/changeOrder.routes"));
+router.use("/custom-quotes", require("../sales/customQuote.routes"));
+router.use("/quotes-store", require("../sales/quotesStore.routes"));
 router.use("/pricing-rules", require("../common/pricingRules.routes"));
 
 module.exports = router;
