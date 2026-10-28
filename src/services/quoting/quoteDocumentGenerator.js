@@ -3,6 +3,21 @@
 const CONTRACT_TEXT = require('./contractText')
 const { getStoragePricingSummaryLines } = require('./storagePricingEngine')
 const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
+const { computeStaircase } = require('./staircase')
+
+/** Resolve staircase from fullQuote / multiStory / top-level body (FE field aliases). */
+const resolveStaircase = (full = {}, payload = {}) => {
+  const raw =
+    full.staircase ||
+    payload.staircase ||
+    payload.multiStory ||
+    payload.quoteControls?.staircase ||
+    null
+  if (!raw || typeof raw !== 'object') {
+    return { count: 0, unitCost: 35000, staircaseSell: 0, stories: null, include: false }
+  }
+  return computeStaircase(raw)
+}
 
 const QUOTE_STYLES = `
 .quote-output{background:#fff;color:#111;border-radius:8px;padding:32px;margin-bottom:14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
@@ -124,16 +139,21 @@ const buildQuoteContext = (payload = {}) => {
   const addOnSell = Number(pembAddOnTotals?.sell) || 0
   const buildingSell = Number(res.totSell) || 0
   const drawings = Number(res.pembDrawings) || 0
+  const scopeKey = String(res.scope || payload.scope || 'both').toLowerCase()
+  const staircase = resolveStaircase(full, payload)
+  const stairSell =
+    scopeKey === 'install' ? 0 : staircase.include ? Number(staircase.staircaseSell) || 0 : 0
 
   let grandTotal = full.grandTotal ?? payload.grandTotal ?? payload.totalSell ?? null
-  const recomputed =
-    Math.round(buildingSell + drawings + concSell + insulSell + taxAmt + addOnSell)
-  // If caller omitted add-ons from grandTotal (common on live preview before save), fold them in.
+  const recomputed = Math.round(
+    buildingSell + drawings + concSell + insulSell + taxAmt + addOnSell + stairSell,
+  )
+  // If caller omitted add-ons / stairs from grandTotal (common on live preview), fold them in.
   if (grandTotal == null || !Number.isFinite(Number(grandTotal))) {
     grandTotal = recomputed || buildingSell
   } else {
     grandTotal = Math.round(Number(grandTotal))
-    if (addOnSell > 0 && grandTotal + 1 < recomputed) {
+    if ((addOnSell > 0 || stairSell > 0) && grandTotal + 1 < recomputed) {
       grandTotal = recomputed
     }
   }
@@ -159,6 +179,8 @@ const buildQuoteContext = (payload = {}) => {
     additionalInfo: payload.additionalInfo || '',
     pembAddOns,
     pembAddOnTotals,
+    staircase,
+    stairSell,
     isStorage: false,
   }
 }
@@ -303,6 +325,9 @@ const generateQuoteHtml = (payload = {}) => {
                     `<tr class="q-sub-row"><td>${x.item || 'Add-on'}</td><td style="text-align:right">${fmtMoney(x.sell)}</td></tr>`,
                 )
                 .join('')}
+          ${(ctx.stairSell || 0) > 0
+            ? `<tr class="q-sub-row"><td>Staircases (${ctx.staircase.count} × ${fmtMoney(ctx.staircase.unitCost)})</td><td style="text-align:right">${fmtMoney(ctx.stairSell)}</td></tr>`
+            : ''}
           ${concInclude ? `<tr class="q-sub-row"><td>Concrete (${concrete.thickness}" · ${concrete.psi} PSI · ${Number(sf).toLocaleString()} SF)</td><td style="text-align:right">${fmtMoney(concrete.appliedSell)}</td></tr>` : ''}
           ${insulInclude ? `<tr class="q-sub-row"><td>Insulation (${insulation.rRoof} roof / ${insulation.rWall} wall · ${Number(sf).toLocaleString()} SF)</td><td style="text-align:right">${fmtMoney(insulation.appliedSell)}</td></tr>` : ''}
           ${salesTax.amount > 0 ? `<tr class="q-sub-row" style="color:#b45309;"><td>Sales Tax (${salesTax.rate}% on materials &amp; insulation — labor not taxed)</td><td style="text-align:right">${fmtMoney(salesTax.amount)}</td></tr>` : ''}
@@ -320,6 +345,9 @@ const generateQuoteHtml = (payload = {}) => {
           ${String(res.scope || '').toLowerCase() !== 'supply' ? '<li>Labor &amp; installation</li><li>Equipment &amp; supervision</li>' : ''}
           ${concInclude ? `<li>Concrete foundation &amp; ${concrete.thickness}" ${concrete.psi} PSI slab</li>` : ''}
           ${insulInclude ? `<li>Insulation — ${insulation.rRoof} roof / ${insulation.rWall} walls</li>` : ''}
+          ${(ctx.stairSell || 0) > 0
+            ? `<li>${ctx.staircase.count} prefabricated staircase(s) @ ${fmtMoney(ctx.staircase.unitCost)} each</li>`
+            : ''}
         </ul>
       </div>
     </div>

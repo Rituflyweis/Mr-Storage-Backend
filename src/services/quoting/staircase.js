@@ -11,12 +11,21 @@ const num = (v, fallback = 0) => {
 /**
  * @param {object} input
  * @param {number} input.count    Number of fabricated staircases
+ * @param {number} [input.staircaseCount] Alias used by multiStory / FE payloads
  * @param {number} [input.unitCost=35000] Sell per staircase
+ * @param {number} [input.staircaseUnitCost] Alias used by multiStory / FE payloads
  * @param {number} [input.stories] Building story count (metadata for multi-story SOW)
  */
 const computeStaircase = (input = {}) => {
-  const count = Math.max(0, Math.round(num(input.count)));
-  const unitCost = num(input.unitCost, 35000) || 35000;
+  const count = Math.max(
+    0,
+    Math.round(num(input.count != null ? input.count : input.staircaseCount)),
+  );
+  const unitCost =
+    num(
+      input.unitCost != null ? input.unitCost : input.staircaseUnitCost,
+      35000,
+    ) || 35000;
   const staircaseSell = count * unitCost;
   return {
     count,

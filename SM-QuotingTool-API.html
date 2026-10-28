@@ -1174,7 +1174,7 @@ input.ri{background:var(--surface3);border:1px solid var(--border2);color:var(--
           <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700;color:#92400e;">
               <input type="checkbox" id="multistory-toggle" style="width:17px;height:17px;accent-color:#b45309;cursor:pointer;"
-                onchange="isMultiStory=this.checked;sowManuallyEdited=false;var sr=document.getElementById('staircase-row');if(sr)sr.style.display=this.checked?'flex':'none';if(currentData)renderSOW(currentData.res);">
+                onchange="isMultiStory=this.checked;sowManuallyEdited=false;var sr=document.getElementById('staircase-row');if(sr)sr.style.display=this.checked?'flex':'none';updateStaircaseCost();if(currentData&&!sowManuallyEdited)renderSOW(currentData.res);">
               🏢 Multi-Story / Decking Project
             </label>
             <span style="font-size:11px;color:#b45309;">Switches SOW to multi-story boilerplate with decking, purlins, partition panels &amp; hallway system language</span>
@@ -4628,7 +4628,14 @@ function renderQuote(res){
   var _dInsul   = insulInclude                       ? Math.round(insulSell)    : 0;
   var _dAO      = (_aoTotals && _aoTotals.sell > 0) ? Math.round(_aoTotals.sell) : 0;
   var _dTax     = pembSalesTax;
-  var _dStair   = (typeof staircaseSell!=='undefined' && staircaseSell>0) ? Math.round(staircaseSell) : 0;
+  // Same rule as pembGrandTotal: only when multi-story is on AND count > 0
+  var _dStair   = (!_isInstallOnly && typeof isMultiStory!=='undefined' && isMultiStory)
+    ? Math.round(
+        (parseInt((document.getElementById('staircase-count')||{value:0}).value)||0) *
+        (parseFloat((document.getElementById('staircase-unit-cost')||{value:35000}).value)||35000)
+      )
+    : 0;
+  if(typeof staircaseSell!=='undefined') staircaseSell = _dStair;
   // Grand total = sum of all displayed rounded values — no rounding gaps anywhere
   const grandTotal = _dBldSub + _dDraw + _dConc + _dInsul + _dAO + _dTax + _dStair;
   const _gtLock = (marginOverride && marginOverride.applied && marginOverride._lockedGrandTotal);
@@ -8225,13 +8232,19 @@ var isMultiStory = false; // toggled by the multi-story checkbox
 var staircaseSell = 0;    // total staircase cost added to quote
 
 function updateStaircaseCost() {
-  var count = parseInt(document.getElementById('staircase-count').value)||0;
-  var unit  = parseFloat(document.getElementById('staircase-unit-cost').value)||35000;
-  staircaseSell = count * unit;
+  var count = parseInt((document.getElementById('staircase-count')||{value:0}).value)||0;
+  var unit  = parseFloat((document.getElementById('staircase-unit-cost')||{value:35000}).value)||35000;
+  // Only bill staircases when multi-story is enabled (toggle off → $0 on quote)
+  staircaseSell = (typeof isMultiStory!=='undefined' && isMultiStory) ? (count * unit) : 0;
   var el = document.getElementById('staircase-total');
-  if(el) el.textContent = '= $' + staircaseSell.toLocaleString();
-  // Trigger quote re-render so the staircase line appears in the price box
-  if(currentData) { renderQuote(currentData.res); updateSOWPriceBox(currentData.res); }
+  if(el) el.textContent = '= $' + (count * unit).toLocaleString();
+  // Trigger quote re-render so the staircase line appears in Pricing Summary
+  if(currentData) {
+    renderQuote(currentData.res);
+    updateSOWPriceBox(currentData.res);
+    if(!sowManuallyEdited) renderSOW(currentData.res);
+    if(typeof renderAssembled === 'function') renderAssembled();
+  }
 }
 var sSowManuallyEdited = false;
 var sSowLockedHTML = null; // stores manually-edited SOW HTML so it survives re-renders

@@ -120,7 +120,25 @@ const normalizeFullQuoteExtras = (body = {}, options = {}) => ({
   cogsOverride: body.cogsOverride || undefined,
   marginOverride: body.marginOverride || undefined,
   pembAddOns: body.pembAddOns || body.quoteControls?.pembAddOns || undefined,
-  staircase: body.staircase || body.multiStory || body.quoteControls?.staircase || undefined,
+  staircase: (() => {
+    const s = body.staircase || body.quoteControls?.staircase || null
+    const m = body.multiStory || null
+    if (s && typeof s === 'object') {
+      return {
+        count: s.count != null ? s.count : s.staircaseCount,
+        unitCost: s.unitCost != null ? s.unitCost : s.staircaseUnitCost,
+        stories: s.stories,
+      }
+    }
+    if (m && typeof m === 'object') {
+      return {
+        count: m.staircaseCount != null ? m.staircaseCount : m.count,
+        unitCost: m.staircaseUnitCost != null ? m.staircaseUnitCost : m.unitCost,
+        stories: m.stories,
+      }
+    }
+    return undefined
+  })(),
   scope: options.scope,
 })
 
@@ -226,6 +244,8 @@ const estimateToDocumentPayload = (estimate) => {
     pembAddOnTotals: full?.pembAddOnTotals,
   },
   pembAddOns,
+  multiStory: estimate.multiStory || null,
+  staircase: full?.staircase || estimate.multiStory || null,
   concrete: estimate.concreteAddon,
   insulation: estimate.insulationAddon,
   salesTax: estimate.salesTax,
