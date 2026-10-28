@@ -70,11 +70,12 @@ Omit the field, or send `"materialSellOverride": null` / `"cogsOverride": { "app
 
 ## Quote preview after Recompute
 
-`POST /api/sales/estimates/documents/preview` now:
+`POST /api/sales/estimates/documents/preview` **and** `documents/pdf` now:
 
-1. **Merges** live `pricingResult` / `fullQuote` / `grandTotal` over a saved `estimateId` (previously `estimateId` alone discarded live recompute).
+1. **Merges** live `pricingResult` / `fullQuote` over a saved `estimateId` (live pricing wins; a stale body `grandTotal` is ignored when fresh `pricingResult` is present).
 2. Prefers top-level `pricingResult` over nested stale `fullQuote.pricing`.
-3. Can rebuild in one call when you send `parsedCategories` + `materialSellOverride` (or `recompute: true`).
+3. Can rebuild in one call when you send `parsedCategories` + overrides / live controls / `recompute: true`.
+4. PDF uses the **same** live rebuild path as HTML (no more “only updates after save”).
 
 **Recommended FE flow**
 
