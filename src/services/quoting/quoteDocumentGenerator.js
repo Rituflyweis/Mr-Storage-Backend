@@ -179,16 +179,32 @@ const buildQuoteContext = (payload = {}) => {
     topPricing &&
     fullPricing &&
     Math.abs(Number(topPricing.totSell || 0) - Number(fullPricing.totSell || 0)) > 1
+  const bodyGrand =
+    payload.grandTotal != null && Number.isFinite(Number(payload.grandTotal))
+      ? Math.round(Number(payload.grandTotal))
+      : null
+  const fullGrand =
+    full.grandTotal != null && Number.isFinite(Number(full.grandTotal))
+      ? Math.round(Number(full.grandTotal))
+      : null
 
   let grandTotal
-  if (pricingDrift) {
-    // Live pricingResult won over stale fullQuote.pricing — rebuild total from live building sell.
+  if (topPricing && recomputed) {
+    // Live Recompute: never freeze on a stale body.grandTotal (common when estimateId is also sent).
+    // Only keep body/full grand when it still matches the live building math.
+    if (bodyGrand != null && Math.abs(bodyGrand - recomputed) <= 1) {
+      grandTotal = bodyGrand
+    } else if (fullGrand != null && Math.abs(fullGrand - recomputed) <= 1) {
+      grandTotal = fullGrand
+    } else {
+      grandTotal = recomputed
+    }
+  } else if (pricingDrift) {
     grandTotal = recomputed || buildingSell
-  } else if (payload.grandTotal != null && Number.isFinite(Number(payload.grandTotal))) {
-    // Explicit contract total (milestones modal / compute.fullQuote.grandTotal) wins.
-    grandTotal = Math.round(Number(payload.grandTotal))
-  } else if (full.grandTotal != null && Number.isFinite(Number(full.grandTotal))) {
-    grandTotal = Math.round(Number(full.grandTotal))
+  } else if (bodyGrand != null) {
+    grandTotal = bodyGrand
+  } else if (fullGrand != null) {
+    grandTotal = fullGrand
     if ((addOnSell > 0 || stairSell > 0) && grandTotal + 1 < recomputed) {
       grandTotal = recomputed
     }

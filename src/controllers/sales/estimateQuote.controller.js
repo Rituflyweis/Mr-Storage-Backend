@@ -816,10 +816,17 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
     pricing: livePricing || body.pricing || savedPayload.pricingResult,
     fullQuote: mergedFull,
     fullQuoteResult: mergedFull,
-    grandTotal:
-      body.grandTotal ??
-      liveFull?.grandTotal ??
-      savedPayload.grandTotal,
+    // Live pricing must not keep a stale body.grandTotal (that froze preview until save).
+    grandTotal: (() => {
+      if (liveFull?.grandTotal != null && Number.isFinite(Number(liveFull.grandTotal))) {
+        return Math.round(Number(liveFull.grandTotal))
+      }
+      if (livePricing) return undefined
+      if (body.grandTotal != null && Number.isFinite(Number(body.grandTotal))) {
+        return Math.round(Number(body.grandTotal))
+      }
+      return savedPayload.grandTotal
+    })(),
     storagePricingResult: liveStorage || savedPayload.storagePricingResult,
     storagePricing: liveStorage || savedPayload.storagePricing,
     pembAddOns: body.pembAddOns || savedPayload.pembAddOns,
@@ -885,28 +892,16 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
   }
 }
 
-exports.previewDocuments = asyncHandler(async (req, res) => {
-  let payload = req.body
-  const estimateId = resolveEstimateIdFromReq(req)
-
-  if (estimateId) {
-    const estimate = await EstimateQuote.findById(estimateId).lean()
-    if (!estimate) return notFound(res, 'Estimate not found')
-    const access = assertEstimateAccess(estimate, req.user)
-    if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-    const saved = estimateToDocumentPayload(estimate)
-    // History often sends only { estimateId }; hydrate full quote + milestones from DB.
-    // Live recompute fields in body still win when present.
-    payload = mergeLiveDocumentPayload(saved, { ...req.body, estimateId })
-  }
-
-  // Rebuild / patch so Engineering Drawings $ and finish type show on quote preview.
-  // Options prefer merged payload so estimateId-only history calls keep saved drawings/finish.
-  const cats = req.body.parsedCategories || req.body.categories || payload.parsedCategories
-  const options = normalizeQuoteOptions({ ...payload, ...req.body })
+/**
+ * Apply live Recompute / drawings / finish onto a document payload.
+ * Shared by HTML preview and PDF so both stay in sync before save.
+ */
+const applyLiveDocumentRebuild = async (userId, payload, body = {}) => {
+  const cats = body.parsedCategories || body.categories || payload.parsedCategories
+  const options = normalizeQuoteOptions({ ...payload, ...body })
   const livePricing = payload.pricingResult || payload.pricing || payload.fullQuote?.pricing
-  const explicitDrawings = bodyHasExplicitDrawings(req.body)
-  const explicitFinish = bodyHasExplicitFinish(req.body)
+  const explicitDrawings = bodyHasExplicitDrawings(body)
+  const explicitFinish = bodyHasExplicitFinish(body)
   const drawingsChanged =
     explicitDrawings &&
     options.pembDrawings !== (Number(livePricing?.pembDrawings) || 0)
@@ -914,27 +909,41 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     explicitFinish &&
     Boolean(livePricing?.steelFinish) &&
     options.steelFinish !== livePricing.steelFinish
+  const liveControlsTouched =
+    body.installCostPerSf != null ||
+    body.sellPerSf != null ||
+    body.install != null ||
+    body.installLevel != null ||
+    body.scope != null ||
+    body.roof != null ||
+    body.roofType != null ||
+    body.blendPct != null ||
+    body.matMuOverride != null ||
+    body.matMuPct != null ||
+    body.freightOverride != null
   const wantsRecompute =
-    req.body.recompute === true ||
-    req.body.recompute === 'true' ||
-    req.body.materialSellOverride != null ||
-    req.body.matSellOverride != null ||
-    req.body.cogsOverride?.applied ||
-    req.body.cogsOverride?.materialSellOverride != null ||
-    req.body.cogsOverride?.sellDollar != null ||
+    body.recompute === true ||
+    body.recompute === 'true' ||
+    body.materialSellOverride != null ||
+    body.matSellOverride != null ||
+    body.cogsOverride?.applied ||
+    body.cogsOverride?.materialSellOverride != null ||
+    body.cogsOverride?.sellDollar != null ||
     drawingsChanged ||
     finishChanged ||
-    (explicitDrawings && pickPembDrawings(req.body, req.body.quoteControls || {}) > 0) ||
+    liveControlsTouched ||
+    (explicitDrawings && pickPembDrawings(body, body.quoteControls || {}) > 0) ||
     explicitFinish
 
+  let next = payload
   if (cats && wantsRecompute) {
-    const fullExtras = normalizeFullQuoteExtras({ ...payload, ...req.body }, options)
-    const built = await buildPricingPayload(req.user._id, {
+    const fullExtras = normalizeFullQuoteExtras({ ...payload, ...body }, options)
+    const built = await buildPricingPayload(userId, {
       categories: cats,
       options,
       fullExtras,
     })
-    payload = {
+    next = {
       ...payload,
       pricingResult: built.pricing,
       pricing: built.pricing,
@@ -947,7 +956,6 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
       pembDrawings: options.pembDrawings,
     }
   } else if (livePricing && (drawingsChanged || finishChanged)) {
-    // No categories on the request — still sync drawings $ / finish onto pricing for HTML.
     const patched = applyPembDrawingsToPricing(
       livePricing,
       explicitDrawings
@@ -965,7 +973,7 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
           deltaGrand,
       ),
     }
-    payload = {
+    next = {
       ...payload,
       pricingResult: patched,
       pricing: patched,
@@ -976,6 +984,25 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
       pembDrawings: Number(patched.pembDrawings) || options.pembDrawings,
     }
   }
+  return next
+}
+
+exports.previewDocuments = asyncHandler(async (req, res) => {
+  let payload = req.body
+  const estimateId = resolveEstimateIdFromReq(req)
+
+  if (estimateId) {
+    const estimate = await EstimateQuote.findById(estimateId).lean()
+    if (!estimate) return notFound(res, 'Estimate not found')
+    const access = assertEstimateAccess(estimate, req.user)
+    if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+    const saved = estimateToDocumentPayload(estimate)
+    // History often sends only { estimateId }; hydrate full quote + milestones from DB.
+    // Live recompute fields in body still win when present.
+    payload = mergeLiveDocumentPayload(saved, { ...req.body, estimateId })
+  }
+
+  payload = await applyLiveDocumentRebuild(req.user._id, payload, req.body)
 
   if (!hasDocumentPricing(payload)) {
     return badRequest(res, 'pricingResult, storagePricingResult, fullQuote, or estimateId required')
@@ -1018,6 +1045,9 @@ exports.generateQuotePdf = asyncHandler(async (req, res) => {
       estimateId,
     })
   }
+
+  // Same live rebuild as HTML preview — PDF must not lag until save.
+  payload = await applyLiveDocumentRebuild(req.user._id, payload, req.body)
 
   if (!hasDocumentPricing(payload)) {
     return badRequest(res, 'pricingResult, storagePricingResult, or estimateId required')
