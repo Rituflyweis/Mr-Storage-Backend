@@ -20,8 +20,9 @@ router.get('/savings/export',
   ctrl.exportSavings
 )
 
-// Freight Loads
+// Freight Loads + Awarded Loads filter dropdowns (same option set)
 router.get('/freight-loads/filters', ctrl.getFreightLoadFilters)
+router.get('/awarded-loads/filters', ctrl.getFreightLoadFilters)
 
 router.get('/freight-loads',
   [

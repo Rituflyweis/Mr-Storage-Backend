@@ -105,11 +105,15 @@ exports.computeCustomerStats = async (query = {}) => {
 
 exports.listCustomers = async (query = {}) => {
   const dateFilter = buildPeriodDateFilter(query, 'createdAt')
-  const { page = 1, limit = 20, search } = query
+  const { page = 1, limit = 20, search, source, imported } = query
 
   const filter = { ...dateFilter }
   const searchFilter = buildCustomerSearchFilter(search)
   if (searchFilter) Object.assign(filter, searchFilter)
+
+  const importedFlag = ['true', '1', 'yes'].includes(String(imported || '').toLowerCase())
+  if (importedFlag) filter.source = 'import'
+  else if (source?.trim()) filter.source = source.trim()
 
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100)
@@ -117,7 +121,7 @@ exports.listCustomers = async (query = {}) => {
 
   const [customers, total] = await Promise.all([
     Customer.find(filter)
-      .select('_id customerId firstName lastName email phone isActive createdAt company location')
+      .select('_id customerId firstName lastName email phone isActive createdAt company location source')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -139,6 +143,8 @@ exports.listCustomers = async (query = {}) => {
     phone: formatPhone(c.phone),
     email: c.email,
     status: c.isActive ? 'Active' : 'Inactive',
+    source: c.source || null,
+    isImported: c.source === 'import',
     totalProjects: countMap.get(String(c._id)) || 0,
     joinedDate: c.createdAt,
   }))

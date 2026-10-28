@@ -412,12 +412,13 @@ const formatLinkedTo = (a, delivery) => {
 }
 
 const buildAccountPaymentApprovalFilter = async (query) => {
-  const { status, payeeType, paymentStatus, search, project, startDate, endDate } = query
+  const { status, payeeType, paymentStatus, search, project, startDate, endDate, category } = query
   const filter = {}
   if (status) filter.status = status
   const typeFilter = payeeType || paymentStatus
   if (typeFilter) filter.payeeType = typeFilter
   if (project) filter.leadId = project
+  if (category) filter.category = category
 
   if (startDate || endDate) {
     filter.dueDate = {}
@@ -869,7 +870,12 @@ exports.getMasterDataDeliveryCompanies = asyncHandler(async (req, res) => {
 })
 
 exports.getPaymentApprovalFilters = asyncHandler(async (req, res) => {
-  const { PAYEE_TYPES, APPROVAL_STATUSES } = require('../../models/PaymentApproval')
+  const {
+    PAYEE_TYPES,
+    APPROVAL_STATUSES,
+    PAYMENT_CATEGORIES,
+  } = require('../../models/PaymentApproval')
+  const { CATEGORY_LABELS } = require('../../utils/paymentApprovalPresentation.util')
   const leadIds = await PaymentApproval.distinct('leadId', { leadId: { $ne: null } })
   const projects = leadIds.length
     ? await Lead.find({ _id: { $in: leadIds } })
@@ -889,6 +895,12 @@ exports.getPaymentApprovalFilters = asyncHandler(async (req, res) => {
       code: t,
       label: INVOICE_TYPE_LABELS[t] || t,
     })),
+    // Icon mapping for Payment Approval Category column (Figma).
+    categories: PAYMENT_CATEGORIES.map((code) => ({
+      code,
+      label: CATEGORY_LABELS[code] || code,
+    })),
+    categoryEnum: PAYMENT_CATEGORIES,
     statuses: APPROVAL_STATUSES,
     workflowStages: ['pending', 'under_review', 'approved', 'paid', 'disputed'],
   })

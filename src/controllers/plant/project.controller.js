@@ -121,7 +121,7 @@ const formatClientName = (customer) => {
   return [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim()
 }
 
-const buildPlantProjectFilter = (leadIds, query) => {
+const buildPlantProjectFilter = (leadIds, query, matchingCustomerIds = []) => {
   const { projectId, customerId, buildingType, search } = query
   let scopedLeadIds = leadIds
 
@@ -139,7 +139,11 @@ const buildPlantProjectFilter = (leadIds, query) => {
   applyBusinessUnitFilter(filter, query.businessUnit)
   if (search?.trim()) {
     const regex = { $regex: search.trim(), $options: 'i' }
-    filter.$or = [{ projectName: regex }, { jobId: regex }]
+    const or = [{ projectName: regex }, { jobId: regex }]
+    if (matchingCustomerIds.length) {
+      or.push({ customerId: { $in: matchingCustomerIds } })
+    }
+    filter.$or = or
   }
 
   return filter
@@ -221,7 +225,21 @@ exports.getProjects = asyncHandler(async (req, res) => {
     return success(res, { projects: [], total: 0, page: parsedPage, limit: parsedLimit })
   }
 
-  const filter = buildPlantProjectFilter(leadIds, req.query)
+  let matchingCustomerIds = []
+  if (req.query.search?.trim()) {
+    const Customer = require('../../models/Customer')
+    const regex = { $regex: req.query.search.trim(), $options: 'i' }
+    matchingCustomerIds = await Customer.find({
+      $or: [
+        { firstName: regex },
+        { lastName: regex },
+        { email: regex },
+        { company: regex },
+      ],
+    }).distinct('_id')
+  }
+
+  const filter = buildPlantProjectFilter(leadIds, req.query, matchingCustomerIds)
 
   const leads = await Lead.find(filter)
     .populate('customerId', 'firstName lastName')

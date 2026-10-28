@@ -275,6 +275,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       taskOverview: { total: 0, todo: 0, inProgress: 0, done: 0, overdue: 0 },
       activeSites: [],
       upcomingDeadlines: [],
+      upcomingSchedule: [],
       projectTimelineOverall: buildOverallTimeline([]),
       freightCarriers: {
         rows: [],
@@ -547,6 +548,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     taskOverview,
     activeSites,
     upcomingDeadlines,
+    upcomingSchedule: upcomingDeadlines,
     projectTimelineOverall,
     freightCarriers,
     recentActivity: recentActivity.slice(0, 15),

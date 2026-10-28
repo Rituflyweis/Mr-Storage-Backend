@@ -68,6 +68,24 @@ const scopeDesc = (scope) => {
   return 'Pre-Engineered Metal Building Supply, Delivery & Installation'
 }
 
+const finishLabel = (steelFinish, payload = {}) => {
+  const raw = String(
+    steelFinish ||
+      payload.steelFinish ||
+      payload.finishType ||
+      payload.finish ||
+      payload.quoteControls?.steelFinish ||
+      'red-iron',
+  ).toLowerCase()
+  if (raw.includes('galv') || raw === 'z' || raw === 'zinc') return 'galvanized'
+  return 'red iron (red oxide primer)'
+}
+
+const finishShortLabel = (steelFinish, payload = {}) => {
+  const full = finishLabel(steelFinish, payload)
+  return full.startsWith('galvanized') ? 'Galvanized' : 'Red Iron'
+}
+
 const isStoragePayload = (payload = {}) =>
   payload.jobType === 'Storage' ||
   payload.storagePricingResult ||
@@ -105,18 +123,22 @@ const buildQuoteContext = (payload = {}) => {
   }
 
   const full = payload.fullQuote || payload.fullQuoteResult || {}
-  const res = full.pricing || payload.pricingResult || payload.pricing || {}
-  const concrete = full.concrete || payload.concreteAddon || payload.concrete || {}
-  const insulation = full.insulation || payload.insulationAddon || payload.insulation || {}
-  const salesTax = full.salesTax || payload.salesTax || {}
+  // Live recompute fields (top-level) must win over nested fullQuote — FE often keeps a
+  // stale fullQuote while sending a fresh pricingResult after Recompute.
+  const topPricing = payload.pricingResult || payload.pricing || null
+  const fullPricing = full.pricing || null
+  const res = topPricing || fullPricing || {}
+  const concrete = payload.concrete || payload.concreteAddon || full.concrete || {}
+  const insulation = payload.insulation || payload.insulationAddon || full.insulation || {}
+  const salesTax = payload.salesTax || full.salesTax || {}
 
   // Prefer non-empty add-on lists — empty [] on fullQuote used to shadow payload.pembAddOns
   // (which is why Options & Add-ons only appeared after save when fullQuote was recomputed).
   const rawAddOns =
-    Array.isArray(full.pembAddOns) && full.pembAddOns.length
-      ? full.pembAddOns
-      : Array.isArray(payload.pembAddOns) && payload.pembAddOns.length
-        ? payload.pembAddOns
+    Array.isArray(payload.pembAddOns) && payload.pembAddOns.length
+      ? payload.pembAddOns
+      : Array.isArray(full.pembAddOns) && full.pembAddOns.length
+        ? full.pembAddOns
         : Array.isArray(payload.quoteControls?.pembAddOns)
           ? payload.quoteControls.pembAddOns
           : []
@@ -138,28 +160,38 @@ const buildQuoteContext = (payload = {}) => {
   const taxAmt = Number(salesTax?.amount) || 0
   const addOnSell = Number(pembAddOnTotals?.sell) || 0
   const buildingSell = Number(res.totSell) || 0
-  const drawings = Number(res.pembDrawings) || 0
+  // totSell already includes pembDrawings — do not add drawings again.
   const scopeKey = String(res.scope || payload.scope || 'both').toLowerCase()
   const staircase = resolveStaircase(full, payload)
   const stairSell =
     scopeKey === 'install' ? 0 : staircase.include ? Number(staircase.staircaseSell) || 0 : 0
 
-  let grandTotal = full.grandTotal ?? payload.grandTotal ?? payload.totalSell ?? null
+  // Prefer top-level grandTotal (latest compute) over nested fullQuote.grandTotal (often stale).
+  let grandTotal = payload.grandTotal ?? full.grandTotal ?? payload.totalSell ?? null
   const recomputed = Math.round(
-    buildingSell + drawings + concSell + insulSell + taxAmt + addOnSell + stairSell,
+    buildingSell + concSell + insulSell + taxAmt + addOnSell + stairSell,
   )
-  // If caller omitted add-ons / stairs from grandTotal (common on live preview), fold them in.
   if (grandTotal == null || !Number.isFinite(Number(grandTotal))) {
     grandTotal = recomputed || buildingSell
   } else {
     grandTotal = Math.round(Number(grandTotal))
-    if ((addOnSell > 0 || stairSell > 0) && grandTotal + 1 < recomputed) {
+    const pricingDrift =
+      topPricing &&
+      fullPricing &&
+      Math.abs(Number(topPricing.totSell || 0) - Number(fullPricing.totSell || 0)) > 1
+    const missingExtras =
+      (addOnSell > 0 || stairSell > 0) && grandTotal + 1 < recomputed
+    // After Recompute, live pricing + stale cached grandTotal must refresh the preview total.
+    const staleGrand =
+      Boolean(topPricing) && Math.abs(grandTotal - recomputed) > 1
+    if (pricingDrift || missingExtras || staleGrand) {
       grandTotal = recomputed
     }
   }
 
   const sf = res.sf || payload.squareFootage || 0
   const grandSF = sf > 0 ? (grandTotal / sf).toFixed(2) : res.sfPrice
+  const steelFinish = res.steelFinish || payload.steelFinish || payload.finishType || 'red-iron'
 
   return {
     cust: customer.name || payload.leadCompanyName || 'Customer',
@@ -169,13 +201,16 @@ const buildQuoteContext = (payload = {}) => {
     size: payload.buildingSize || `${Number(sf).toLocaleString()} SF`,
     today: fmtDate(payload.quoteDate ? new Date(payload.quoteDate) : new Date()),
     exp: fmtDate(new Date(Date.now() + 15 * 864e5)),
-    res,
+    res: { ...res, steelFinish, pembDrawings: Number(res.pembDrawings) || 0 },
     concrete,
     insulation,
     salesTax,
     grandTotal,
     grandSF,
     sf,
+    steelFinish,
+    finishLabel: finishLabel(steelFinish, payload),
+    finishShort: finishShortLabel(steelFinish, payload),
     additionalInfo: payload.additionalInfo || '',
     pembAddOns,
     pembAddOnTotals,
@@ -301,12 +336,13 @@ const generateQuoteHtml = (payload = {}) => {
       <div class="q-field"><label>Building</label><p>${ctx.size} ${res.jobType || 'PEMB'}</p></div>
       <div class="q-field"><label>Scope</label><p>${scope}${concInclude ? ' + Concrete' : ''}${insulInclude ? ' + Insulation' : ''}</p></div>
       <div class="q-field"><label>Roof System</label><p>${res.isSS ? 'Standing Seam Metal Roof' : '26 GA Galvalume (R-Panel, screw-down)'}</p></div>
+      <div class="q-field"><label>Finish Type</label><p>${ctx.finishShort || finishShortLabel(res.steelFinish, {})}</p></div>
       <div class="q-field"><label>Total Weight</label><p>${Math.round(res.totWt || 0).toLocaleString()} lbs · ${res.trucks || 0} truck${res.trucks !== 1 ? 's' : ''}</p></div>
     </div>
     <div class="q-price-box">
       <div class="q-price-label">Total Project Investment</div>
       <div class="q-price-val">${fmtMoney(grandTotal)}</div>
-      <div class="q-price-sf">$${grandSF}/SF · ${Number(sf).toLocaleString()} SF · Freight included${concInclude ? ' · Concrete included' : ''}${insulInclude ? ' · Insulation included' : ''}</div>
+      <div class="q-price-sf">$${grandSF}/SF · ${Number(sf).toLocaleString()} SF · Freight included${concInclude ? ' · Concrete included' : ''}${insulInclude ? ' · Insulation included' : ''}${(res.pembDrawings || 0) > 0 ? ' · Eng. drawings included' : ''}</div>
     </div>
     <div class="q-two-col">
       <div class="q-section">
@@ -315,7 +351,7 @@ const generateQuoteHtml = (payload = {}) => {
           <tr class="q-sub-row"><td>Material (Sell, includes freight)</td><td style="text-align:right">${fmtMoney(res.matSell)}</td></tr>
           ${String(res.scope || '').toLowerCase() !== 'supply' ? `<tr class="q-sub-row"><td>Installation Sell</td><td style="text-align:right">${fmtMoney(res.instSell)}</td></tr>` : ''}
           <tr class="q-sub-row" style="font-weight:600;"><td>Building Subtotal (Sell)</td><td style="text-align:right">${fmtMoney(res.totSell - (res.pembDrawings || 0))}</td></tr>
-          ${res.pembDrawings > 0 ? `<tr class="q-sub-row"><td>Engineering Drawings</td><td style="text-align:right">${fmtMoney(res.pembDrawings)}</td></tr>` : ''}
+          ${(Number(res.pembDrawings) || 0) > 0 ? `<tr class="q-sub-row"><td>Engineering Drawings</td><td style="text-align:right">${fmtMoney(res.pembDrawings)}</td></tr>` : ''}
           ${(ctx.pembAddOnTotals?.sell || 0) > 0
             ? `<tr class="q-sub-row"><td>Options &amp; Add-ons</td><td style="text-align:right">${fmtMoney(ctx.pembAddOnTotals.sell)}</td></tr>`
             : (ctx.pembAddOns || [])
@@ -435,12 +471,15 @@ const generateSowHtml = (payload = {}) => {
         <li>Roof system: ${res.isSS ? 'Standing Seam Metal Roof' : '26 GA Galvalume (R-Panel, screw-down)'}</li>
         <li>Wall system: 26 GA panel (color TBD / SMP system)</li>
       </ul>
+      <p style="font-size:11px;color:#374151;margin:8px 0 0;font-style:italic;"><strong>Finish:</strong> All secondary framing furnished with <strong id="sow-finish-label">${ctx.finishLabel || finishLabel(res.steelFinish, {})}</strong> finish unless otherwise noted on drawings.</p>
+      ${(Number(res.pembDrawings) || 0) > 0 ? `<p style="font-size:11px;color:#374151;margin:6px 0 0;"><strong>Engineering Drawings:</strong> ${fmtMoney(res.pembDrawings)} included in this quote.</p>` : ''}
     </div>
     <div class="q-section"><div class="q-section-title">2. Scope of Work — Inclusions</div>
       <ul class="q-list">
-        <li>Rigid frames, purlins, girts, eave struts, bracing</li>
+        <li>Rigid frames, purlins, girts, eave struts, bracing (${ctx.finishShort || 'Red Iron'} finish on applicable secondary members)</li>
         <li>Roof &amp; wall panels, trim, fasteners, sealants</li>
         <li>Freight to jobsite</li>
+        ${(Number(res.pembDrawings) || 0) > 0 ? '<li>Engineering drawings package</li>' : ''}
         ${!isSupply ? '<li>Full erection crew, lifts, and supervision</li>' : ''}
       </ul>
     </div>

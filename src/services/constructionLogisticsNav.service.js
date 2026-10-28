@@ -3,6 +3,7 @@ const PackingList = require('../models/PackingList')
 const PackingListPlan = require('../models/PackingListPlan')
 const Bundle = require('../models/Bundle')
 const { getConstructionLeadIds } = require('../utils/constructionProjectScope')
+const { PACKING_LIST_STATUSES } = require('../config/constants')
 
 const projectSelect = 'projectName jobId location lifecycleStatus updatedAt'
 
@@ -103,48 +104,116 @@ const assertLeadInConstructionScope = async (leadId) => {
   return Lead.findById(leadId).select(projectSelect).lean()
 }
 
+const LOAD_SORT_FIELDS = {
+  updatedAt: 'updatedAt',
+  packingListNo: 'packingListNo',
+  status: 'status',
+  totalBundles: 'totalBundles',
+  totalWeight: 'totalWeight',
+}
+
 /** Step 2 — loads (packing lists) for one project. */
 exports.listLoadsForProject = async (leadId, query = {}) => {
   const lead = await assertLeadInConstructionScope(leadId)
   if (!lead) return { error: 'not_found' }
 
-  const { page = 1, limit = 50, status } = query
+  const { page = 1, limit = 50, status, search, sortBy = 'updatedAt', sortOrder = 'desc' } = query
   const filter = { leadId, status: { $ne: 'cancelled' } }
-  if (status) filter.status = status
+  if (status && status !== 'all') filter.status = status
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [
+      { packingListNo: regex },
+      { truckLabel: regex },
+      { truckType: regex },
+    ]
+  }
 
-  const skip = (Math.max(1, parseInt(page, 10) || 1) - 1) * Math.min(200, Math.max(1, parseInt(limit, 10) || 50))
+  const sortField = LOAD_SORT_FIELDS[sortBy] || 'updatedAt'
+  const sortDir = String(sortOrder).toLowerCase() === 'asc' ? 1 : -1
+
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1)
   const parsedLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 50))
+  const skip = (parsedPage - 1) * parsedLimit
 
-  const [loads, total] = await Promise.all([
+  const baseMatch = { leadId, status: { $ne: 'cancelled' } }
+
+  const [loads, total, statusAgg, mismatchAgg] = await Promise.all([
     PackingList.find(filter)
       .select(
         'packingListNo truckType truckLabel totalBundles totalWeight maxLengthFeet status updatedAt bundleIds'
       )
-      .sort({ updatedAt: -1 })
+      .sort({ [sortField]: sortDir })
       .skip(skip)
       .limit(parsedLimit)
       .lean(),
     PackingList.countDocuments(filter),
+    PackingList.aggregate([
+      { $match: baseMatch },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]),
+    Bundle.aggregate([
+      {
+        $match: {
+          leadId: lead._id,
+          status: { $nin: ['cancelled'] },
+          $or: [
+            { mismatchReportedAt: { $ne: null } },
+            { 'mismatchItems.0': { $exists: true } },
+            { mismatchNotes: { $nin: ['', null] } },
+          ],
+        },
+      },
+      { $group: { _id: '$packingListId', count: { $sum: 1 } } },
+    ]),
   ])
 
-  const rows = loads.map((pl) => ({
-    packingListId: pl._id,
-    packingListNo: pl.packingListNo,
-    truckLabel: pl.truckLabel || pl.packingListNo,
-    truckType: pl.truckType,
-    status: pl.status,
-    totalBundles: pl.totalBundles || (pl.bundleIds || []).length,
-    totalWeight: pl.totalWeight,
-    maxLengthFeet: pl.maxLengthFeet,
-    updatedAt: pl.updatedAt,
-  }))
+  const statusMap = Object.fromEntries(statusAgg.map((r) => [r._id, r.count]))
+  const mismatchByLoad = Object.fromEntries(mismatchAgg.map((r) => [String(r._id), r.count]))
+  const totalLoads = statusAgg.reduce((s, r) => s + r.count, 0)
+
+  const rows = loads.map((pl) => {
+    const mismatchCount = mismatchByLoad[String(pl._id)] || 0
+    return {
+      packingListId: pl._id,
+      packingListNo: pl.packingListNo,
+      truckLabel: pl.truckLabel || pl.packingListNo,
+      truckType: pl.truckType,
+      status: pl.status,
+      totalBundles: pl.totalBundles || (pl.bundleIds || []).length,
+      totalWeight: pl.totalWeight,
+      maxLengthFeet: pl.maxLengthFeet,
+      mismatchCount,
+      hasMismatch: mismatchCount > 0,
+      updatedAt: pl.updatedAt,
+    }
+  })
 
   return {
     project: mapProjectRow(lead),
     loads: rows,
     total,
-    page: Math.max(1, parseInt(page, 10) || 1),
+    page: parsedPage,
     limit: parsedLimit,
+    stats: {
+      totalLoads,
+      byStatus: PACKING_LIST_STATUSES.filter((s) => s !== 'cancelled').map((s) => ({
+        status: s,
+        count: statusMap[s] || 0,
+      })),
+      draft: statusMap.draft || 0,
+      confirmed: statusMap.confirmed || 0,
+      ready: statusMap.ready || 0,
+      loading: statusMap.loading || 0,
+      deliveryCreated: statusMap.delivery_created || 0,
+      dispatched: statusMap.dispatched || 0,
+      delivered: statusMap.delivered || 0,
+      withMismatch: mismatchAgg.length,
+    },
+    filters: {
+      statuses: PACKING_LIST_STATUSES.filter((s) => s !== 'cancelled'),
+      sortBy: Object.keys(LOAD_SORT_FIELDS),
+    },
   }
 }
 
@@ -162,13 +231,53 @@ exports.listBundlesForLoad = async (packingListId, query = {}) => {
   if (query.labelPending === 'true' || query.labelPending === '1') {
     filter.$or = [{ labelPrinted: { $ne: true } }, { labelPrinted: null }]
   }
+  if (query.status && query.status !== 'all') {
+    filter.status = query.status
+  }
+  if (query.mismatch === 'true' || query.mismatch === '1') {
+    filter.$and = [
+      ...(filter.$and || []),
+      {
+        $or: [
+          { mismatchReportedAt: { $ne: null } },
+          { 'mismatchItems.0': { $exists: true } },
+          { mismatchNotes: { $nin: ['', null] } },
+        ],
+      },
+    ]
+  }
 
   const bundles = await Bundle.find(filter)
     .select(
-      'bundleNo bundleType title totalWeight maxLengthFeet status labelPrinted labelPrintedAt verified packingListId updatedAt'
+      'bundleNo bundleType title totalWeight maxLengthFeet status labelPrinted labelPrintedAt verified packingListId updatedAt mismatchNotes mismatchReportedAt mismatchItems'
     )
     .sort({ bundleNo: 1 })
     .lean()
+
+  const mapped = bundles.map((b) => {
+    const mismatchItems = b.mismatchItems || []
+    const hasMismatch =
+      Boolean(b.mismatchReportedAt) ||
+      mismatchItems.length > 0 ||
+      Boolean(b.mismatchNotes && String(b.mismatchNotes).trim())
+    return {
+      bundleId: b._id,
+      bundleNo: b.bundleNo,
+      bundleType: b.bundleType,
+      title: b.title,
+      totalWeight: b.totalWeight,
+      maxLengthFeet: b.maxLengthFeet,
+      status: b.status,
+      labelPrinted: Boolean(b.labelPrinted),
+      labelPrintedAt: b.labelPrintedAt || null,
+      verified: Boolean(b.verified),
+      hasMismatch,
+      mismatchNotes: b.mismatchNotes || '',
+      mismatchReportedAt: b.mismatchReportedAt || null,
+      mismatchItemCount: mismatchItems.length,
+      updatedAt: b.updatedAt,
+    }
+  })
 
   return {
     project: mapProjectRow(lead),
@@ -180,20 +289,14 @@ exports.listBundlesForLoad = async (packingListId, query = {}) => {
       totalBundles: pl.totalBundles || bundles.length,
       totalWeight: pl.totalWeight,
     },
-    bundles: bundles.map((b) => ({
-      bundleId: b._id,
-      bundleNo: b.bundleNo,
-      bundleType: b.bundleType,
-      title: b.title,
-      totalWeight: b.totalWeight,
-      maxLengthFeet: b.maxLengthFeet,
-      status: b.status,
-      labelPrinted: Boolean(b.labelPrinted),
-      labelPrintedAt: b.labelPrintedAt || null,
-      verified: Boolean(b.verified),
-      updatedAt: b.updatedAt,
-    })),
-    total: bundles.length,
+    bundles: mapped,
+    total: mapped.length,
+    stats: {
+      total: mapped.length,
+      withMismatch: mapped.filter((b) => b.hasMismatch).length,
+      verified: mapped.filter((b) => b.verified).length,
+      labelPending: mapped.filter((b) => !b.labelPrinted).length,
+    },
   }
 }
 

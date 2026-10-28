@@ -20,7 +20,7 @@ const quotationReadGuard = [
 const lookupGuard = [verifyToken, roleGuard(["admin", "sales", "plant"])];
 const uploadGuard = [
   verifyToken,
-  roleGuard(["admin", "sales", "plant", "construction"]),
+  roleGuard(["admin", "sales", "account", "plant", "construction"]),
 ];
 const smdtGuard = [verifyToken, roleGuard(["admin", "plant"])];
 
@@ -88,6 +88,13 @@ router.get(
   ...quotationReadGuard,
   invoiceCtrl.getInvoiceBillingDefaults,
 );
+// Account-readable invoice detail. Non-ObjectId segments (stats/export/…) fall through to the sub-router.
+router.get("/invoices/:invoiceId", ...quotationReadGuard, (req, res, next) => {
+  if (!/^[0-9a-fA-F]{24}$/.test(String(req.params.invoiceId || ""))) {
+    return next("route");
+  }
+  return invoiceCtrl.getInvoice(req, res, next);
+});
 router.use("/invoices", ...guard, require("./invoice.routes"));
 router.use("/email-send-jobs", ...guard, require("./emailSendJob.routes"));
 router.use("/payment-schedules", ...guard, require("./payment.routes"));

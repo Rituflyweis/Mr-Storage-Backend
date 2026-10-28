@@ -11,7 +11,10 @@ const { extractDrawingPdfBuffer } = require('../../services/quoting/drawingPdfEx
 const { parseStorageCogBuffer } = require('../../services/quoting/storageCogParser')
 const { buildAndComputeFullPembQuote, computeFullPembQuote } = require('../../services/quoting/quotePricingOrchestrator')
 const { computeStoragePricing } = require('../../services/quoting/storagePricingEngine')
-const { previewCogsOverride } = require('../../services/quoting/cogsOverride')
+const {
+  previewCogsOverride,
+  normalizeCogsOverrideInput,
+} = require('../../services/quoting/cogsOverride')
 const { previewMarginOverride } = require('../../services/quoting/marginOverride')
 const { lookupSalesTaxByZip } = require('../../services/quoting/salesTaxLookup')
 const { syncLinkedQuotationFromUpdatedEstimate } = require('../common/quotation.controller')
@@ -49,17 +52,81 @@ const toNumber = (value, fallback = 0) => {
 const isPlainObject = (value) =>
   value != null && typeof value === 'object' && !Array.isArray(value)
 
+const firstDefined = (...vals) => {
+  for (const v of vals) {
+    if (v !== undefined && v !== null && v !== '') return v
+  }
+  return undefined
+}
+
+/** Engineering Drawings $ — UI field; many FE aliases. Numeric `drawings` only (array = attachments). */
+const pickPembDrawings = (body = {}, controls = {}) => {
+  const drawingsAsAmount =
+    typeof body.drawings === 'number' ||
+    (typeof body.drawings === 'string' && body.drawings.trim() !== '' && !Number.isNaN(Number(body.drawings)))
+      ? body.drawings
+      : undefined
+  const raw = firstDefined(
+    body.pembDrawings,
+    body.drawingsOverride,
+    body.engineeringDrawings,
+    body.engineeringDrawing,
+    body.engineeringDrawingsCost,
+    body.drawingCost,
+    body.drawingsCost,
+    body.drawingFee,
+    drawingsAsAmount,
+    controls.pembDrawings,
+    controls.drawingsOverride,
+    controls.engineeringDrawings,
+    controls.engineeringDrawing,
+    controls.drawings,
+  )
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+/** Finish type — Red Iron / Galvanized. */
+const pickSteelFinish = (body = {}, controls = {}) => {
+  if (body.galvanized === true || body.galvanized === 'true' || body.galvanized === 1) {
+    return 'galvanized'
+  }
+  if (body.galvanized === false || body.galvanized === 'false' || body.galvanized === 0) {
+    return 'red-iron'
+  }
+  const raw = String(
+    firstDefined(
+      body.steelFinish,
+      body.finishType,
+      body.finish,
+      body.steel_finish,
+      body.framingFinish,
+      body.secondaryFinish,
+      controls.steelFinish,
+      controls.finishType,
+      controls.finish,
+      'red-iron',
+    ),
+  )
+    .toLowerCase()
+    .trim()
+  if (
+    raw === 'galvanized' ||
+    raw === 'galv' ||
+    raw.includes('galvan') ||
+    raw === 'z' ||
+    raw === 'zinc'
+  ) {
+    return 'galvanized'
+  }
+  return 'red-iron'
+}
+
 const normalizeQuoteOptions = (body = {}) => {
   const scopeRaw = String(body.scope || 'both').toLowerCase()
   const scope = ['supply', 'install', 'both'].includes(scopeRaw) ? scopeRaw : 'both'
   const controls = body.quoteControls || {}
-  const steelFinishRaw = String(
-    body.steelFinish || controls.steelFinish || 'red-iron',
-  ).toLowerCase()
-  const steelFinish =
-    steelFinishRaw === 'galvanized' || steelFinishRaw === 'galv'
-      ? 'galvanized'
-      : 'red-iron'
+  const steelFinish = pickSteelFinish(body, controls)
 
   let matMuOverride = null
   if (body.matMuOverride != null && body.matMuOverride !== '') {
@@ -97,12 +164,32 @@ const normalizeQuoteOptions = (body = {}) => {
     matMuOverride,
     steelFinish,
     freightOverride,
-    pembDrawings: Number(body.pembDrawings ?? controls.pembDrawings ?? 0) || 0,
+    // Engineering Drawings $ — canonical pembDrawings (aliases via pickPembDrawings).
+    pembDrawings: pickPembDrawings(body, controls),
     pembIncludeErection: Boolean(
       body.pembIncludeErection ?? controls.pembIncludeErection ?? false,
     ),
     deletedRowKeys,
   }
+}
+
+/** Patch drawings $ onto an existing pricing blob when full category recompute is unavailable. */
+const applyPembDrawingsToPricing = (pricing, pembDrawings, steelFinish) => {
+  if (!pricing || typeof pricing !== 'object') return pricing
+  const old = Number(pricing.pembDrawings) || 0
+  const neu = Number(pembDrawings) || 0
+  const next = { ...pricing }
+  if (steelFinish) next.steelFinish = steelFinish
+  if (old === neu) return next
+  const delta = neu - old
+  next.pembDrawings = neu
+  next.totSell = (Number(next.totSell) || 0) + delta
+  next.totCost = (Number(next.totCost) || 0) + delta
+  next.profit = (Number(next.totSell) || 0) - (Number(next.totCost) || 0)
+  next.profPct =
+    next.totSell > 0 ? ((next.profit / next.totSell) * 100).toFixed(1) : next.profPct
+  if (Number(next.sf) > 0) next.sfPrice = (next.totSell / next.sf).toFixed(2)
+  return next
 }
 
 // Mongo enum is Supply / Install / Both; pricing + FE often send lowercase.
@@ -117,7 +204,8 @@ const normalizeFullQuoteExtras = (body = {}, options = {}) => ({
   concrete: body.concrete || body.concreteAddon || undefined,
   insulation: body.insulation || body.insulationAddon || undefined,
   salesTax: body.salesTax || undefined,
-  cogsOverride: body.cogsOverride || undefined,
+  // Material Sell Override (ex-freight) → cogsOverride.materialSellOverride; auto-applies.
+  cogsOverride: normalizeCogsOverrideInput(body.cogsOverride, body) || undefined,
   marginOverride: body.marginOverride || undefined,
   pembAddOns: body.pembAddOns || body.quoteControls?.pembAddOns || undefined,
   staircase: (() => {
@@ -180,6 +268,8 @@ const buildPricingPayload = async (userId, { categories, options, fullExtras }) 
     extras.insulation ||
     extras.salesTax ||
     extras.cogsOverride?.applied ||
+    extras.cogsOverride?.materialSellOverride ||
+    extras.cogsOverride?.sellDollar ||
     extras.marginOverride?.applied ||
     (extras.pembAddOns && extras.pembAddOns.length > 0)
 
@@ -596,8 +686,12 @@ exports.previewCogsOverride = asyncHandler(async (req, res) => {
   const pricing = req.body.pricingResult || req.body.pricing
   if (!pricing) return badRequest(res, 'pricingResult required')
 
-  const preview = previewCogsOverride(pricing, req.body.cogsOverride || req.body)
-  return success(res, { preview })
+  const override = normalizeCogsOverrideInput(
+    req.body.cogsOverride || req.body,
+    req.body
+  )
+  const preview = previewCogsOverride(pricing, override || {})
+  return success(res, { preview, cogsOverride: override })
 })
 
 exports.previewMarginOverride = asyncHandler(async (req, res) => {
@@ -616,6 +710,71 @@ exports.lookupTaxRate = asyncHandler(async (req, res) => {
   return success(res, result)
 })
 
+/** Merge saved estimate with live Recompute body so quote preview reflects latest pricing. */
+const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
+  const livePricing = body.pricingResult || body.pricing || null
+  const liveFull = body.fullQuote || body.fullQuoteResult || null
+  const liveStorage = body.storagePricingResult || body.storagePricing || null
+
+  const mergedFull = liveFull
+    ? {
+        ...(savedPayload.fullQuote || {}),
+        ...liveFull,
+        pricing: liveFull.pricing || livePricing || savedPayload.fullQuote?.pricing,
+      }
+    : livePricing
+      ? {
+          ...(savedPayload.fullQuote || {}),
+          pricing: livePricing,
+          grandTotal:
+            body.grandTotal ??
+            liveFull?.grandTotal ??
+            savedPayload.fullQuote?.grandTotal,
+        }
+      : savedPayload.fullQuote
+
+  return {
+    ...savedPayload,
+    ...body,
+    estimateId: body.estimateId || savedPayload.estimateId,
+    // Live recompute wins; fall back to saved estimate fields.
+    pricingResult: livePricing || savedPayload.pricingResult,
+    pricing: livePricing || body.pricing || savedPayload.pricingResult,
+    fullQuote: mergedFull,
+    fullQuoteResult: mergedFull,
+    grandTotal:
+      body.grandTotal ??
+      liveFull?.grandTotal ??
+      savedPayload.grandTotal,
+    storagePricingResult: liveStorage || savedPayload.storagePricingResult,
+    storagePricing: liveStorage || savedPayload.storagePricing,
+    pembAddOns: body.pembAddOns || savedPayload.pembAddOns,
+    concrete: body.concrete || body.concreteAddon || savedPayload.concrete,
+    insulation: body.insulation || body.insulationAddon || savedPayload.insulation,
+    salesTax: body.salesTax || savedPayload.salesTax,
+    staircase: body.staircase || body.multiStory || savedPayload.staircase,
+    multiStory: body.multiStory || savedPayload.multiStory,
+    cogsOverride: body.cogsOverride || savedPayload.cogsOverride,
+    materialSellOverride:
+      body.materialSellOverride ?? body.matSellOverride ?? savedPayload.materialSellOverride,
+    pembDrawings: firstDefined(
+      body.pembDrawings,
+      body.engineeringDrawings,
+      body.drawingsOverride,
+      typeof body.drawings === 'number' ? body.drawings : undefined,
+      savedPayload.pembDrawings,
+    ),
+    steelFinish: firstDefined(
+      body.steelFinish,
+      body.finishType,
+      body.finish,
+      savedPayload.steelFinish,
+    ),
+    contract: body.contract || body.contractDetails || savedPayload.contract,
+    sections: undefined,
+  }
+}
+
 exports.previewDocuments = asyncHandler(async (req, res) => {
   let payload = req.body
 
@@ -624,7 +783,101 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     if (!estimate) return notFound(res, 'Estimate not found')
     const access = assertEstimateAccess(estimate, req.user)
     if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-    payload = estimateToDocumentPayload(estimate)
+    const saved = estimateToDocumentPayload(estimate)
+    // Recompute / live edits must not be discarded when estimateId is also sent.
+    payload = mergeLiveDocumentPayload(saved, req.body)
+  }
+
+  // Rebuild / patch so Engineering Drawings $ and finish type show on quote preview.
+  const cats = req.body.parsedCategories || req.body.categories || payload.parsedCategories
+  const options = normalizeQuoteOptions(req.body)
+  const livePricing = payload.pricingResult || payload.pricing || payload.fullQuote?.pricing
+  const drawingsChanged =
+    options.pembDrawings !== (Number(livePricing?.pembDrawings) || 0)
+  const finishChanged =
+    Boolean(livePricing?.steelFinish) &&
+    options.steelFinish !== livePricing.steelFinish
+  const wantsRecompute =
+    req.body.recompute === true ||
+    req.body.recompute === 'true' ||
+    req.body.materialSellOverride != null ||
+    req.body.matSellOverride != null ||
+    req.body.cogsOverride?.applied ||
+    req.body.cogsOverride?.materialSellOverride != null ||
+    req.body.cogsOverride?.sellDollar != null ||
+    drawingsChanged ||
+    finishChanged ||
+    pickPembDrawings(req.body, req.body.quoteControls || {}) > 0 ||
+    Boolean(
+      firstDefined(
+        req.body.steelFinish,
+        req.body.finishType,
+        req.body.finish,
+        req.body.galvanized,
+      ),
+    )
+
+  if (cats && wantsRecompute) {
+    const fullExtras = normalizeFullQuoteExtras(req.body, options)
+    const built = await buildPricingPayload(req.user._id, {
+      categories: cats,
+      options,
+      fullExtras,
+    })
+    payload = {
+      ...payload,
+      pricingResult: built.pricing,
+      pricing: built.pricing,
+      fullQuote: built.fullQuote,
+      fullQuoteResult: built.fullQuote,
+      grandTotal: built.fullQuote?.grandTotal,
+      weightByCategory: built.weightByCategory,
+      parsedCategories: built.parsedCategories,
+      steelFinish: options.steelFinish,
+      pembDrawings: options.pembDrawings,
+    }
+  } else if (
+    livePricing &&
+    (drawingsChanged ||
+      finishChanged ||
+      firstDefined(
+        req.body.pembDrawings,
+        req.body.drawingsOverride,
+        req.body.engineeringDrawings,
+        req.body.engineeringDrawing,
+        typeof req.body.drawings === 'number' ? req.body.drawings : undefined,
+        req.body.steelFinish,
+        req.body.finishType,
+        req.body.finish,
+        req.body.galvanized,
+      ) !== undefined)
+  ) {
+    // No categories on the request — still sync drawings $ / finish onto pricing for HTML.
+    const patched = applyPembDrawingsToPricing(
+      livePricing,
+      options.pembDrawings || Number(livePricing.pembDrawings) || 0,
+      options.steelFinish,
+    )
+    const deltaGrand =
+      (Number(patched.totSell) || 0) - (Number(livePricing.totSell) || 0)
+    const nextFull = {
+      ...(payload.fullQuote || {}),
+      pricing: patched,
+      grandTotal: Math.round(
+        (Number(payload.grandTotal ?? payload.fullQuote?.grandTotal ?? livePricing.totSell) || 0) +
+          deltaGrand,
+      ),
+    }
+    payload = {
+      ...payload,
+      pricingResult: patched,
+      pricing: patched,
+      fullQuote: nextFull,
+      fullQuoteResult: nextFull,
+      grandTotal: nextFull.grandTotal,
+      steelFinish: options.steelFinish,
+      pembDrawings: options.pembDrawings,
+    }
   }
 
   if (!hasDocumentPricing(payload)) {
@@ -637,6 +890,9 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     sowHtml: sections.includes('sow') ? generateSowHtml(payload) : null,
     contractHtml: sections.includes('contract') ? generateContractHtml(payload) : null,
     assembledHtml: generateAssembledHtml({ ...payload, sections }),
+    pricing: payload.pricingResult || payload.pricing || payload.fullQuote?.pricing || null,
+    fullQuote: payload.fullQuote || null,
+    grandTotal: payload.grandTotal ?? payload.fullQuote?.grandTotal ?? null,
   })
 })
 
@@ -648,7 +904,7 @@ exports.generateQuotePdf = asyncHandler(async (req, res) => {
     if (!estimate) return notFound(res, 'Estimate not found')
     const access = assertEstimateAccess(estimate, req.user)
     if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-    payload = estimateToDocumentPayload(estimate)
+    payload = mergeLiveDocumentPayload(estimateToDocumentPayload(estimate), req.body)
   }
 
   if (!hasDocumentPricing(payload)) {

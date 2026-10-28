@@ -11,6 +11,7 @@ router.get('/',                          ctrl.getInvoices)
 router.get('/analytics',                 ctrl.getAnalytics)
 router.get('/project/:leadId/breakdown', ctrl.getProjectBreakdown)
 router.get('/:invoiceId/pdf',            invoiceIdParam, validate, ctrl.downloadInvoicePdf)
+router.get('/:invoiceId',                invoiceIdParam, validate, commonInvoiceCtrl.getInvoice)
 router.put('/:invoiceId/mark-paid',      invoiceIdParam, validate, ctrl.markAsPaid)
 router.post(
   '/:invoiceId/follow-up',

@@ -164,6 +164,13 @@ exports.getOverview = asyncHandler(async (req, res) => {
       total:       (taskMap['todo'] || 0) + (taskMap['in_progress'] || 0) + (taskMap['done'] || 0),
     },
     upcomingDeadlines,
+    // Alias for Figma "Upcoming Schedule" widget (same rows as upcomingDeadlines).
+    upcomingSchedule: upcomingDeadlines.map((d) => ({
+      projectName: d.projectName,
+      location: d.location || '',
+      endDate: d.expectedCloseDate,
+      expectedCloseDate: d.expectedCloseDate,
+    })),
     liveSiteConstruction,
     liveSiteActivity: {
       activeSites: activeLeads.length,
@@ -184,6 +191,43 @@ exports.getOverview = asyncHandler(async (req, res) => {
 
 const SALES_STAGES = ['initial_contact', 'requirements_gathered', 'proposal_sent', 'negotiation']
 const UPCOMING_STAGES = ['deal_closed', 'payment_done', 'converted_to_po', 'sent_to_admin']
+
+/** GET /overview/filters — dropdown options for Admin Construction Overview. */
+exports.getOverviewFilters = asyncHandler(async (req, res) => {
+  const { LIFECYCLE_STAGES } = require('../../config/constants')
+  const { BUSINESS_UNITS, getBusinessUnitLabel } = require('../../utils/businessUnit')
+
+  const [projects, buildingLabels] = await Promise.all([
+    Lead.find({ isTerminated: { $ne: true } })
+      .select('projectName jobId businessUnit lifecycleStatus location')
+      .sort({ projectName: 1 })
+      .lean(),
+    Building.distinct('buildingNumber', {}),
+  ])
+
+  return success(res, {
+    projects: projects.map((p) => ({
+      leadId: p._id,
+      projectId: p._id,
+      projectName: p.projectName || '',
+      jobId: p.jobId || '',
+      ...businessUnitFields(p),
+      lifecycleStatus: p.lifecycleStatus,
+      location: p.location || '',
+    })),
+    statuses: LIFECYCLE_STAGES,
+    buildings: buildingLabels
+      .filter((n) => n != null && n !== '')
+      .map((n) => ({
+        buildingLabel: typeof n === 'number' ? `Building ${n}` : String(n),
+        buildingNumber: n,
+      })),
+    businessUnits: BUSINESS_UNITS.map((value) => ({
+      value,
+      label: getBusinessUnitLabel(value),
+    })),
+  })
+})
 
 exports.getProjectsCalendar = asyncHandler(async (req, res) => {
   const { month, year, projectId } = req.query

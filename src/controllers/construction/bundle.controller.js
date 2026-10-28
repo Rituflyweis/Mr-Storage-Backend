@@ -442,6 +442,12 @@ exports.getBundleDetail = asyncHandler(async (req, res) => {
       labelPrinted: bundle.labelPrinted || false,
       verified: bundle.verified || false,
       mismatchNotes: bundle.mismatchNotes || '',
+      mismatchReportedAt: bundle.mismatchReportedAt || null,
+      mismatchItems: bundle.mismatchItems || [],
+      hasMismatch:
+        Boolean(bundle.mismatchReportedAt) ||
+        (bundle.mismatchItems || []).length > 0 ||
+        Boolean(bundle.mismatchNotes && String(bundle.mismatchNotes).trim()),
       project: bundle.bundlePlanId?.leadId
         ? {
             leadId: bundle.bundlePlanId.leadId._id,

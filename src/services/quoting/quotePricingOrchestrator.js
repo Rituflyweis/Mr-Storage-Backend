@@ -2,7 +2,11 @@
 
 const { priceJob } = require('./pricingEngine')
 const { computeConcreteAddon, computeInsulationAddon } = require('./addonPricing')
-const { previewCogsOverride, applyCogsOverride } = require('./cogsOverride')
+const {
+  previewCogsOverride,
+  applyCogsOverride,
+  normalizeCogsOverrideInput,
+} = require('./cogsOverride')
 const { previewMarginOverride, applyMarginOverride } = require('./marginOverride')
 const { computePembSalesTax } = require('./salesTaxLookup')
 const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
@@ -11,8 +15,9 @@ const { computeStaircase } = require('./staircase')
 const computeFullPembQuote = (basePricing, options = {}) => {
   let pricing = { ...basePricing }
 
-  if (options.cogsOverride?.applied) {
-    pricing = applyCogsOverride(pricing, options.cogsOverride)
+  const cogsOverride = normalizeCogsOverrideInput(options.cogsOverride, options)
+  if (cogsOverride?.applied) {
+    pricing = applyCogsOverride(pricing, cogsOverride)
   }
 
   if (options.marginOverride?.applied) {
@@ -51,8 +56,8 @@ const computeFullPembQuote = (basePricing, options = {}) => {
   const totalProfit = Math.round((pricing.profit || 0) + addonProfit)
   const grandMargin = grandTotal > 0 ? ((totalProfit / grandTotal) * 100).toFixed(1) : '0'
 
-  const cogsPreview = options.cogsOverride
-    ? previewCogsOverride(basePricing, options.cogsOverride)
+  const cogsPreview = cogsOverride
+    ? previewCogsOverride(basePricing, cogsOverride)
     : null
   const marginPreview = options.marginOverride
     ? previewMarginOverride(basePricing, options.marginOverride)
@@ -70,6 +75,7 @@ const computeFullPembQuote = (basePricing, options = {}) => {
     grandMargin: Number(grandMargin),
     cogsPreview,
     marginPreview,
+    cogsOverride: cogsOverride || null,
     pembAddOns,
     pembAddOnTotals,
     staircase,

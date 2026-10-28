@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body } = require('express-validator')
+const { body, query } = require('express-validator')
 const ctrl = require('../../controllers/common/upload.controller')
 const validate = require('../../middleware/validate')
 
@@ -8,6 +8,26 @@ router.post('/presigned-url',
   [body('fileName').notEmpty(), body('fileType').notEmpty()],
   validate,
   ctrl.getPresignedUrl
+)
+
+// Short-lived GetObject URL for private S3 objects (shipper files / drawings AccessDenied fix)
+router.post('/download-presigned-url',
+  [
+    body('key').optional().trim().notEmpty(),
+    body('fileUrl').optional().trim().notEmpty(),
+    body('url').optional().trim().notEmpty(),
+  ],
+  validate,
+  ctrl.getDownloadPresignedUrl
+)
+router.get('/download-presigned-url',
+  [
+    query('key').optional().trim().notEmpty(),
+    query('fileUrl').optional().trim().notEmpty(),
+    query('url').optional().trim().notEmpty(),
+  ],
+  validate,
+  ctrl.getDownloadPresignedUrl
 )
 
 // Save document URL to lead after S3 upload completes

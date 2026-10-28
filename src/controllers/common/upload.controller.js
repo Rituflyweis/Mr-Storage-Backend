@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3')
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3')
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner')
 const { v4: uuidv4 } = require('uuid')
 const Lead = require('../../models/Lead')
@@ -16,6 +16,28 @@ const s3 = new S3Client({
   },
 })
 
+const expiresIn = () => Number(env.AWS_S3_PRESIGNED_URL_EXPIRES) || 3600
+
+const parseS3KeyFromUrl = (fileUrl) => {
+  if (!fileUrl || typeof fileUrl !== 'string') return null
+  try {
+    const u = new URL(fileUrl)
+    const host = u.hostname || ''
+    // Virtual-hosted–style: bucket.s3.region.amazonaws.com/key
+    // Path-style: s3.region.amazonaws.com/bucket/key
+    let pathname = decodeURIComponent(u.pathname.replace(/^\//, ''))
+    if (host.startsWith('s3.') || host.startsWith('s3-')) {
+      const parts = pathname.split('/')
+      if (parts.length >= 2 && parts[0] === env.AWS_S3_BUCKET) {
+        pathname = parts.slice(1).join('/')
+      }
+    }
+    return pathname || null
+  } catch {
+    return null
+  }
+}
+
 exports.getPresignedUrl = asyncHandler(async (req, res) => {
   const { fileName, fileType, folder = 'documents' } = req.body
   if (!fileName || !fileType) return badRequest(res, 'fileName and fileType are required')
@@ -29,10 +51,34 @@ exports.getPresignedUrl = asyncHandler(async (req, res) => {
     ContentType: fileType,
   })
 
-  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: env.AWS_S3_PRESIGNED_URL_EXPIRES })
+  const ttl = expiresIn()
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: ttl })
   const fileUrl = `https://${env.AWS_S3_BUCKET}.s3.${env.AWS_REGION}.amazonaws.com/${key}`
 
-  return success(res, { uploadUrl, fileUrl, key })
+  return success(res, { uploadUrl, fileUrl, key, expiresIn: ttl })
+})
+
+/** GET/POST download — short-lived GetObject URL for private bucket objects (drawings, shipper files). */
+exports.getDownloadPresignedUrl = asyncHandler(async (req, res) => {
+  const keyInput = req.body?.key || req.query?.key
+  const fileUrl = req.body?.fileUrl || req.body?.url || req.query?.fileUrl || req.query?.url
+  const objectKey = (keyInput && String(keyInput).trim()) || parseS3KeyFromUrl(fileUrl)
+  if (!objectKey) {
+    return badRequest(res, 'key or fileUrl is required')
+  }
+
+  const ttl = expiresIn()
+  const command = new GetObjectCommand({
+    Bucket: env.AWS_S3_BUCKET,
+    Key: objectKey,
+  })
+  const downloadUrl = await getSignedUrl(s3, command, { expiresIn: ttl })
+
+  return success(res, {
+    downloadUrl,
+    key: objectKey,
+    expiresIn: ttl,
+  })
 })
 
 exports.addDocument = asyncHandler(async (req, res) => {

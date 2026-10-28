@@ -4,6 +4,7 @@ const ctrl = require('../../controllers/admin/construction.controller')
 const validate = require('../../middleware/validate')
 
 router.get('/overview',              ctrl.getOverview)
+router.get('/overview/filters',      ctrl.getOverviewFilters)
 router.get('/projects-calendar',     ctrl.getProjectsCalendar)
 router.post('/projects-calendar/deliveries', [body('leadId').isMongoId(), body('deliveryDate').notEmpty()], validate, ctrl.createCalendarDelivery)
 
