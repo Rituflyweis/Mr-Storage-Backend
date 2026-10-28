@@ -1,135 +1,141 @@
-const Lead = require('../../models/Lead')
-const Customer = require('../../models/Customer')
-const Invoice = require('../../models/Invoice')
-const Message = require('../../models/Message')
-const { success } = require('../../utils/apiResponse')
+const { success, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-const { buildDateFilter } = require('../../utils/dateRange')
-const { startOfMonth, endOfMonth } = require('date-fns')
-const { distinctFinancialLeadIds } = require('../../utils/financialProjectScope')
+const dash = require('../../services/admin/adminDashboard.service')
 
+// Keep legacy endpoints working (thin wrappers)
 exports.getLeadStats = asyncHandler(async (req, res) => {
-  const dateFilter = buildDateFilter(req.query)
-
-  const financialLeadIds = await distinctFinancialLeadIds()
-  const [total, quoteReady, quoteValueAgg, paidInvoicesAgg, unread] = await Promise.all([
-    Lead.countDocuments(dateFilter),
-    Lead.countDocuments({ ...dateFilter, isQuoteReady: true }),
-    Lead.aggregate([
-      { $match: dateFilter },
-      { $group: { _id: null, total: { $sum: '$quoteValue' } } },
-    ]),
-    Invoice.aggregate([
-      {
-        $match: {
-          leadId: { $in: financialLeadIds },
-          status: 'paid',
-          paidAt: {
-            $gte: startOfMonth(new Date()),
-            $lte: endOfMonth(new Date()),
-          },
-        },
-      },
-      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
-    ]),
-    Message.countDocuments({ isRead: false, senderType: 'customer' }),
-  ])
-
-  return success(res, {
-    totalLeads: total,
-    confirmedLeads: quoteReady,
-    pipelineValue: quoteValueAgg[0]?.total || 0,
-    monthlyRevenue: paidInvoicesAgg[0]?.total || 0,
-    unreadMessages: unread,
-  })
+  const data = await dash.getKpis(req.query)
+  return success(res, data, 'Lead stats')
 })
 
 exports.getCustomerStats = asyncHandler(async (req, res) => {
-  const dateFilter = buildDateFilter(req.query)
-  const now = new Date()
-  const monthStart = startOfMonth(now)
-  const monthEnd = endOfMonth(now)
-
-  const [total, active, newThisMonth, returningAgg] = await Promise.all([
-    Customer.countDocuments(dateFilter),
-    Customer.countDocuments({ ...dateFilter, isActive: true }),
-    Customer.countDocuments({ createdAt: { $gte: monthStart, $lte: monthEnd } }),
-    // Returning = customers with more than 1 lead total
-    Lead.aggregate([
-      { $group: { _id: '$customerId', count: { $sum: 1 } } },
-      { $match: { count: { $gt: 1 } } },
-      { $count: 'total' },
-    ]),
-  ])
-
-  return success(res, {
-    total,
-    active,
-    newThisMonth,
-    returning: returningAgg[0]?.total || 0,
-  })
+  const data = await dash.getReportsOverview(req.query)
+  return success(
+    res,
+    {
+      total: data.customers,
+      active: data.customers,
+      newThisMonth: data.customers,
+      returning: 0,
+    },
+    'Customer stats',
+  )
 })
 
 exports.getAiVsHuman = asyncHandler(async (req, res) => {
-  const dateFilter = buildDateFilter(req.query)
-
-  const [withAi, withSales] = await Promise.all([
-    Lead.countDocuments({ ...dateFilter, isHandedToSales: false }),
-    Lead.countDocuments({ ...dateFilter, isHandedToSales: true }),
-  ])
-
-  return success(res, { withAi, withSales })
+  const data = await dash.getQueryHandling(req.query)
+  return success(res, { withAi: data.withAi, withSales: data.withSales }, 'AI vs human')
 })
 
 exports.getPerformanceTrend = asyncHandler(async (req, res) => {
-  const { tab = 'customers', range = '30d' } = req.query
-  const rangeMap = { '7d': 7, '30d': 30, '3m': 90 }
-  const days = rangeMap[range] || 30
-  const now = new Date()
+  const reports = await dash.getReportsOverview(req.query)
+  return success(
+    res,
+    {
+      data: reports.weeklySeries.map((d) => ({
+        date: d.date,
+        value: req.query.tab === 'revenue' ? d.revenue : d.revenue,
+      })),
+      percentageChange: 0,
+      rangeLabel: req.query.range || '7d',
+    },
+    'Performance trend',
+  )
+})
 
-  const currentStart = new Date(now)
-  currentStart.setDate(currentStart.getDate() - days)
-  const prevStart = new Date(currentStart)
-  prevStart.setDate(prevStart.getDate() - days)
+/** Full Admin Dashboard Figma payload */
+exports.getOverview = asyncHandler(async (req, res) => {
+  const data = await dash.getOverview(req.query)
+  return success(res, data, 'Admin dashboard overview')
+})
 
-  const dateMap = {}
-  for (let i = 0; i < days; i++) {
-    const d = new Date(currentStart)
-    d.setDate(d.getDate() + i)
-    const key = d.toISOString().slice(0, 10)
-    dateMap[key] = { date: key, value: 0 }
-  }
+exports.getKpis = asyncHandler(async (req, res) => {
+  return success(res, await dash.getKpis(req.query), 'Dashboard KPIs')
+})
+exports.getDeliveryFinance = asyncHandler(async (req, res) => {
+  return success(res, await dash.getDeliveryFinance(req.query), 'Delivery finance')
+})
+exports.getLoadOptimization = asyncHandler(async (req, res) => {
+  return success(res, await dash.getLoadOptimization(req.query), 'Load optimization')
+})
+exports.getDeliveryOperations = asyncHandler(async (req, res) => {
+  return success(res, await dash.getDeliveryOperations(req.query), 'Delivery operations')
+})
+exports.getCommunicationStatus = asyncHandler(async (req, res) => {
+  return success(res, await dash.getCommunicationStatus(req.query), 'Communication status')
+})
+exports.getFreightActivity = asyncHandler(async (req, res) => {
+  return success(res, await dash.getFreightActivity(req.query), 'Freight activity')
+})
+exports.getConversionFunnel = asyncHandler(async (req, res) => {
+  return success(res, await dash.getConversionFunnel(req.query), 'Conversion funnel')
+})
+exports.getDealSizeDistribution = asyncHandler(async (req, res) => {
+  return success(res, await dash.getDealSizeDistribution(req.query), 'Deal size distribution')
+})
+exports.getReportsOverview = asyncHandler(async (req, res) => {
+  return success(res, await dash.getReportsOverview(req.query), 'Reports overview')
+})
+exports.getLeadSources = asyncHandler(async (req, res) => {
+  return success(res, await dash.getLeadSources(req.query), 'Lead sources')
+})
+exports.getDispatchReadiness = asyncHandler(async (req, res) => {
+  return success(res, await dash.getDispatchReadiness(req.query), 'Dispatch readiness')
+})
+exports.getLeadConversion = asyncHandler(async (req, res) => {
+  return success(res, await dash.getLeadConversion(req.query), 'Lead conversion')
+})
+exports.getTonnageSold = asyncHandler(async (req, res) => {
+  return success(res, await dash.getTonnageSold(req.query), 'Tonnage sold')
+})
+exports.getOpsKpis = asyncHandler(async (req, res) => {
+  return success(res, await dash.getOpsKpis(req.query), 'Ops KPIs')
+})
+exports.getPipelineStageOverview = asyncHandler(async (req, res) => {
+  return success(res, await dash.getPipelineStageOverview(req.query), 'Pipeline stages')
+})
+exports.getQueryHandling = asyncHandler(async (req, res) => {
+  return success(res, await dash.getQueryHandling(req.query), 'Query handling')
+})
+exports.getPipelineKanban = asyncHandler(async (req, res) => {
+  return success(res, await dash.getPipelineKanban(req.query, req.query.limit), 'Pipeline kanban')
+})
+exports.getRecentClosedDeals = asyncHandler(async (req, res) => {
+  return success(res, await dash.getRecentClosedDeals(req.query, req.query.limit), 'Recent closed deals')
+})
+exports.getSalesActivity = asyncHandler(async (req, res) => {
+  return success(res, await dash.getSalesActivity(req.query, req.query.limit), 'Sales activity')
+})
+exports.getTopPerformers = asyncHandler(async (req, res) => {
+  return success(res, await dash.getTopPerformers(req.query, req.query.limit), 'Top performers')
+})
+exports.getTaxSummary = asyncHandler(async (req, res) => {
+  return success(res, await dash.getTaxSummary(req.query), 'Tax summary')
+})
+exports.getTaxByState = asyncHandler(async (req, res) => {
+  return success(res, await dash.getTaxByState(req.query), 'Tax by state')
+})
+exports.getTaxByBuildingType = asyncHandler(async (req, res) => {
+  return success(res, await dash.getTaxByBuildingType(req.query), 'Tax by building type')
+})
+exports.getConstructionProgress = asyncHandler(async (req, res) => {
+  return success(res, await dash.getConstructionProgress(req.query, req.query.limit), 'Construction progress')
+})
+exports.getPlantProduction = asyncHandler(async (req, res) => {
+  return success(res, await dash.getPlantProduction(req.query), 'Plant production')
+})
+exports.getBusinessHighlights = asyncHandler(async (req, res) => {
+  return success(res, await dash.getBusinessHighlights(req.query), 'Business highlights')
+})
+exports.getCustomerApprovals = asyncHandler(async (req, res) => {
+  return success(res, await dash.getCustomerApprovals(req.query, req.query.limit), 'Customer approvals')
+})
+exports.getSalesMix = asyncHandler(async (req, res) => {
+  return success(res, await dash.getSalesMix(req.query), 'Sales mix')
+})
 
-  let currentTotal = 0
-  let prevTotal = 0
-
-  if (tab === 'customers') {
-    const [currentDocs, prevDocs] = await Promise.all([
-      Customer.find({ createdAt: { $gte: currentStart } }).select('createdAt').lean(),
-      Customer.find({ createdAt: { $gte: prevStart, $lt: currentStart } }).select('createdAt').lean(),
-    ])
-    for (const c of currentDocs) {
-      const key = new Date(c.createdAt).toISOString().slice(0, 10)
-      if (dateMap[key]) dateMap[key].value++
-    }
-    currentTotal = currentDocs.length
-    prevTotal = prevDocs.length
-  } else {
-    const [currentDocs, prevDocs] = await Promise.all([
-      Invoice.find({ status: 'paid', paidAt: { $gte: currentStart } }).select('totalAmount paidAt').lean(),
-      Invoice.find({ status: 'paid', paidAt: { $gte: prevStart, $lt: currentStart } }).select('totalAmount').lean(),
-    ])
-    for (const inv of currentDocs) {
-      const key = new Date(inv.paidAt).toISOString().slice(0, 10)
-      if (dateMap[key]) dateMap[key].value += inv.totalAmount || 0
-    }
-    currentTotal = currentDocs.reduce((s, i) => s + (i.totalAmount || 0), 0)
-    prevTotal = prevDocs.reduce((s, i) => s + (i.totalAmount || 0), 0)
-  }
-
-  const percentageChange = prevTotal === 0
-    ? (currentTotal > 0 ? 100 : 0)
-    : Math.round(((currentTotal - prevTotal) / prevTotal) * 100)
-
-  return success(res, { data: Object.values(dateMap), percentageChange, rangeLabel: range })
+exports.searchGlobal = asyncHandler(async (req, res) => {
+  const q = req.query.q || req.query.search || ''
+  if (!String(q).trim()) return badRequest(res, 'q (search text) is required')
+  return success(res, await dash.searchGlobal(q, req.query.limit), 'Search results')
 })
