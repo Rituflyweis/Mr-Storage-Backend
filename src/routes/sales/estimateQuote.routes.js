@@ -24,7 +24,14 @@ router.post('/documents/preview', ctrl.previewDocuments)
 router.post('/documents/pdf', ctrl.generateQuotePdf)
 router.post('/documents/deposit-receipt/pdf', extras.depositReceiptPdf)
 router.post('/documents/milestones/pdf', extras.milestonesPdf)
+// History page: path id only — backend loads full estimate (pricing + milestones).
+router.get('/:estimateId/documents/preview', ctrl.previewDocuments)
+router.post('/:estimateId/documents/preview', ctrl.previewDocuments)
 router.post('/:estimateId/documents/pdf', ctrl.generateQuotePdf)
+router.get('/:estimateId/milestones/preview', extras.previewMilestones)
+router.post('/:estimateId/milestones/preview', extras.previewMilestones)
+router.get('/:estimateId/deposit/preview', extras.previewDeposit)
+router.post('/:estimateId/deposit/preview', extras.previewDeposit)
 
 router.get('/history/summary', ctrl.getQuoteHistorySummary)
 

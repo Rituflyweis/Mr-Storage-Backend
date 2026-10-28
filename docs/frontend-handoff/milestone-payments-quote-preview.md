@@ -1,18 +1,66 @@
 # Milestone Payments — where they live + quote preview
 
+## History page (only `estimateId` available)
+
+History does **not** need to send pricing, `grand`, or `milestoneSchedule`. Backend loads the full estimate.
+
+### Quote preview (includes Milestone Payment Schedule in HTML)
+
+```http
+POST /api/sales/estimates/documents/preview
+{ "estimateId": "<id>" }
+```
+
+or
+
+```http
+GET|POST /api/sales/estimates/:estimateId/documents/preview
+```
+
+Response includes `quoteHtml` / `assembledHtml` with the schedule (when saved), plus:
+
+- `grandTotal`
+- `milestoneSchedule` / `milestones`
+- `milestoneNote`
+- `depositTerms`
+- `pricing` / `fullQuote`
+
+### Milestone modal re-open from history
+
+```http
+POST /api/sales/estimates/milestones/preview
+{ "estimateId": "<id>" }
+```
+
+or `GET|POST /api/sales/estimates/:estimateId/milestones/preview`
+
+Backend fills `grand` from the estimate total and `rows` from saved `milestoneSchedule`. Optional body fields still override when present.
+
+### Load raw estimate
+
+```http
+GET /api/sales/estimates/:estimateId
+```
+
+→ `milestoneSchedule`, `milestoneNote`, `depositTerms`, full pricing.
+
+---
+
 ## Where milestones are available
 
 | Purpose | Method | Path |
 |--------|--------|------|
 | Live calc (modal) | `POST` | `/api/sales/estimates/milestones/preview` |
+| History calc (id only) | `GET\|POST` | `/api/sales/estimates/:estimateId/milestones/preview` |
 | Save on estimate | `PUT` | `/api/sales/estimates/:estimateId/milestones` |
-| Load with estimate | `GET` | `/api/sales/estimates/:estimateId` → `milestoneSchedule`, `milestoneNote` |
+| Load with estimate | `GET` | `/api/sales/estimates/:estimateId` |
 | Standalone schedule PDF/HTML | `POST` | `/api/sales/estimates/documents/milestones/pdf` |
 | **On main quote preview** | `POST` | `/api/sales/estimates/documents/preview` |
+| History quote preview | `GET\|POST` | `/api/sales/estimates/:estimateId/documents/preview` |
 
 Stored on `EstimateQuote`: `milestoneSchedule[]`, `milestoneNote`.
 
-## Preview calc body (matches modal)
+## Live calc body (editor modal — full data on hand)
 
 ```json
 {
@@ -41,34 +89,30 @@ PUT /api/sales/estimates/:estimateId/milestones
 }
 ```
 
-## Show on quote preview — yes
+If `grand` is omitted, backend uses the estimate’s saved grand total.
 
-Pass milestones into `documents/preview` (or load via `estimateId` after save):
+## Show on quote preview
+
+**Prefer estimateId** (especially from history):
 
 ```json
-{
-  "estimateId": optional,
-  "pricingResult": {},
-  "fullQuote": {},
-  "milestoneSchedule": [
-    { "label": "Deposit", "type": "pct", "pct": 30 }
-  ],
-  "milestoneNote": "",
-  "sections": ["quote", "sow", "contract"]
-}
+{ "estimateId": "<id>", "sections": ["quote", "sow", "contract"] }
 ```
 
-`quoteHtml` / `assembledHtml` include a **Milestone Payment Schedule** block (amount due, running total, unscheduled balance).
+Optional live overrides (editor) can still send `milestoneSchedule` / pricing; empty arrays do **not** wipe saved milestones.
 
 Standalone pretty schedule (print from modal):
 
 ```http
 POST /api/sales/estimates/documents/milestones/pdf
-{ "estimateId"?, "grand", "rows", "note", "format": "html" | omit for PDF }
+{ "estimateId": "<id>", "format": "html" }
 ```
+
+`grand` / `rows` optional when `estimateId` is set.
 
 ## FE checklist
 
-1. Modal “Save & Create Schedule” → `PUT …/milestones` (and/or keep rows in client state).
-2. Quote Preview → `documents/preview` with `milestoneSchedule` (or `estimateId` after save).
-3. Optional print → `documents/milestones/pdf`.
+1. Editor modal “Save & Create Schedule” → `PUT …/milestones`.
+2. **History / quote preview** → `documents/preview` with **only** `{ estimateId }` (or path `/:estimateId/documents/preview`). Do not require client-side schedule/pricing.
+3. History milestone modal → `milestones/preview` with `{ estimateId }` (or path preview).
+4. Optional print → `documents/milestones/pdf` with `{ estimateId }`.

@@ -306,7 +306,10 @@ const estimateToDocumentPayload = (estimate) => {
   const full = estimate.fullQuoteResult || null
   const fullAddOns = Array.isArray(full?.pembAddOns) ? full.pembAddOns : []
   const pembAddOns = fullAddOns.length ? fullAddOns : savedAddOns
+  const pricing = estimate.pricingResult || full?.pricing || null
+  const controls = estimate.quoteControls || {}
   return {
+  estimateId: estimate._id,
   jobType: estimate.jobType,
   leadCompanyName: estimate.leadCompanyName,
   customerEmail: estimate.customerEmail,
@@ -339,6 +342,23 @@ const estimateToDocumentPayload = (estimate) => {
   concrete: estimate.concreteAddon,
   insulation: estimate.insulationAddon,
   salesTax: estimate.salesTax,
+  cogsOverride: estimate.cogsOverride || null,
+  materialSellOverride:
+    estimate.materialSellOverride ??
+    estimate.cogsOverride?.materialSellOverride ??
+    null,
+  pembDrawings: firstDefined(
+    pricing?.pembDrawings,
+    controls.pembDrawings,
+    controls.drawingsOverride,
+    controls.engineeringDrawings,
+  ),
+  steelFinish: firstDefined(
+    pricing?.steelFinish,
+    controls.steelFinish,
+    controls.finishType,
+    controls.finish,
+  ),
   depositTerms: estimate.depositTerms || null,
   milestoneSchedule: estimate.milestoneSchedule || [],
   milestoneNote: estimate.milestoneNote || '',
@@ -352,6 +372,53 @@ const estimateToDocumentPayload = (estimate) => {
     email: estimate.customerEmail,
   },
 }
+}
+
+/** History / sparse clients often send only id — resolve from body, query, or path. */
+const resolveEstimateIdFromReq = (req = {}) =>
+  firstDefined(
+    req.body?.estimateId,
+    req.body?.id,
+    req.query?.estimateId,
+    req.query?.id,
+    req.params?.estimateId,
+  )
+
+const bodyHasExplicitDrawings = (body = {}) =>
+  firstDefined(
+    body.pembDrawings,
+    body.drawingsOverride,
+    body.engineeringDrawings,
+    body.engineeringDrawing,
+    body.engineeringDrawingsCost,
+    body.drawingCost,
+    body.drawingsCost,
+    body.drawingFee,
+    typeof body.drawings === 'number' ? body.drawings : undefined,
+    body.quoteControls?.pembDrawings,
+    body.quoteControls?.drawingsOverride,
+    body.quoteControls?.engineeringDrawings,
+  ) !== undefined
+
+const bodyHasExplicitFinish = (body = {}) =>
+  firstDefined(
+    body.steelFinish,
+    body.finishType,
+    body.finish,
+    body.galvanized,
+    body.steel_finish,
+    body.framingFinish,
+    body.secondaryFinish,
+    body.quoteControls?.steelFinish,
+    body.quoteControls?.finishType,
+    body.quoteControls?.finish,
+  ) !== undefined
+
+const nonEmptyMilestoneRows = (...candidates) => {
+  for (const rows of candidates) {
+    if (Array.isArray(rows) && rows.length) return rows
+  }
+  return []
 }
 
 const hasDocumentPricing = (payload = {}) =>
@@ -774,17 +841,18 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
       body.finish,
       savedPayload.steelFinish,
     ),
-    milestoneSchedule:
-      body.milestoneSchedule ||
-      body.milestones ||
-      savedPayload.milestoneSchedule ||
-      [],
-    milestones:
-      body.milestones ||
-      body.milestoneSchedule ||
-      savedPayload.milestones ||
-      savedPayload.milestoneSchedule ||
-      [],
+    milestoneSchedule: nonEmptyMilestoneRows(
+      body.milestoneSchedule,
+      body.milestones,
+      savedPayload.milestoneSchedule,
+      savedPayload.milestones,
+    ),
+    milestones: nonEmptyMilestoneRows(
+      body.milestones,
+      body.milestoneSchedule,
+      savedPayload.milestones,
+      savedPayload.milestoneSchedule,
+    ),
     milestoneNote: body.milestoneNote ?? savedPayload.milestoneNote ?? '',
     depositTerms: body.depositTerms || savedPayload.depositTerms || null,
     contract: body.contract || body.contractDetails || savedPayload.contract,
@@ -794,24 +862,31 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
 
 exports.previewDocuments = asyncHandler(async (req, res) => {
   let payload = req.body
+  const estimateId = resolveEstimateIdFromReq(req)
 
-  if (req.body.estimateId) {
-    const estimate = await EstimateQuote.findById(req.body.estimateId).lean()
+  if (estimateId) {
+    const estimate = await EstimateQuote.findById(estimateId).lean()
     if (!estimate) return notFound(res, 'Estimate not found')
     const access = assertEstimateAccess(estimate, req.user)
     if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
     const saved = estimateToDocumentPayload(estimate)
-    // Recompute / live edits must not be discarded when estimateId is also sent.
-    payload = mergeLiveDocumentPayload(saved, req.body)
+    // History often sends only { estimateId }; hydrate full quote + milestones from DB.
+    // Live recompute fields in body still win when present.
+    payload = mergeLiveDocumentPayload(saved, { ...req.body, estimateId })
   }
 
   // Rebuild / patch so Engineering Drawings $ and finish type show on quote preview.
+  // Options prefer merged payload so estimateId-only history calls keep saved drawings/finish.
   const cats = req.body.parsedCategories || req.body.categories || payload.parsedCategories
-  const options = normalizeQuoteOptions(req.body)
+  const options = normalizeQuoteOptions({ ...payload, ...req.body })
   const livePricing = payload.pricingResult || payload.pricing || payload.fullQuote?.pricing
+  const explicitDrawings = bodyHasExplicitDrawings(req.body)
+  const explicitFinish = bodyHasExplicitFinish(req.body)
   const drawingsChanged =
+    explicitDrawings &&
     options.pembDrawings !== (Number(livePricing?.pembDrawings) || 0)
   const finishChanged =
+    explicitFinish &&
     Boolean(livePricing?.steelFinish) &&
     options.steelFinish !== livePricing.steelFinish
   const wantsRecompute =
@@ -824,18 +899,11 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     req.body.cogsOverride?.sellDollar != null ||
     drawingsChanged ||
     finishChanged ||
-    pickPembDrawings(req.body, req.body.quoteControls || {}) > 0 ||
-    Boolean(
-      firstDefined(
-        req.body.steelFinish,
-        req.body.finishType,
-        req.body.finish,
-        req.body.galvanized,
-      ),
-    )
+    (explicitDrawings && pickPembDrawings(req.body, req.body.quoteControls || {}) > 0) ||
+    explicitFinish
 
   if (cats && wantsRecompute) {
-    const fullExtras = normalizeFullQuoteExtras(req.body, options)
+    const fullExtras = normalizeFullQuoteExtras({ ...payload, ...req.body }, options)
     const built = await buildPricingPayload(req.user._id, {
       categories: cats,
       options,
@@ -853,27 +921,14 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
       steelFinish: options.steelFinish,
       pembDrawings: options.pembDrawings,
     }
-  } else if (
-    livePricing &&
-    (drawingsChanged ||
-      finishChanged ||
-      firstDefined(
-        req.body.pembDrawings,
-        req.body.drawingsOverride,
-        req.body.engineeringDrawings,
-        req.body.engineeringDrawing,
-        typeof req.body.drawings === 'number' ? req.body.drawings : undefined,
-        req.body.steelFinish,
-        req.body.finishType,
-        req.body.finish,
-        req.body.galvanized,
-      ) !== undefined)
-  ) {
+  } else if (livePricing && (drawingsChanged || finishChanged)) {
     // No categories on the request — still sync drawings $ / finish onto pricing for HTML.
     const patched = applyPembDrawingsToPricing(
       livePricing,
-      options.pembDrawings || Number(livePricing.pembDrawings) || 0,
-      options.steelFinish,
+      explicitDrawings
+        ? options.pembDrawings
+        : Number(livePricing.pembDrawings) || 0,
+      explicitFinish ? options.steelFinish : livePricing.steelFinish,
     )
     const deltaGrand =
       (Number(patched.totSell) || 0) - (Number(livePricing.totSell) || 0)
@@ -892,17 +947,22 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
       fullQuote: nextFull,
       fullQuoteResult: nextFull,
       grandTotal: nextFull.grandTotal,
-      steelFinish: options.steelFinish,
-      pembDrawings: options.pembDrawings,
+      steelFinish: patched.steelFinish || options.steelFinish,
+      pembDrawings: Number(patched.pembDrawings) || options.pembDrawings,
     }
   }
 
   if (!hasDocumentPricing(payload)) {
-    return badRequest(res, 'pricingResult, storagePricingResult, or fullQuote required')
+    return badRequest(res, 'pricingResult, storagePricingResult, fullQuote, or estimateId required')
   }
 
   const sections = req.body.sections || ['quote', 'sow', 'contract', 'drawings']
+  const milestoneSchedule = nonEmptyMilestoneRows(
+    payload.milestoneSchedule,
+    payload.milestones,
+  )
   return success(res, {
+    estimateId: payload.estimateId || estimateId || null,
     quoteHtml: sections.includes('quote') ? generateQuoteHtml(payload) : null,
     sowHtml: sections.includes('sow') ? generateSowHtml(payload) : null,
     contractHtml: sections.includes('contract') ? generateContractHtml(payload) : null,
@@ -910,18 +970,26 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     pricing: payload.pricingResult || payload.pricing || payload.fullQuote?.pricing || null,
     fullQuote: payload.fullQuote || null,
     grandTotal: payload.grandTotal ?? payload.fullQuote?.grandTotal ?? null,
+    milestoneSchedule,
+    milestones: milestoneSchedule,
+    milestoneNote: payload.milestoneNote || '',
+    depositTerms: payload.depositTerms || null,
   })
 })
 
 exports.generateQuotePdf = asyncHandler(async (req, res) => {
   let payload = req.body
+  const estimateId = resolveEstimateIdFromReq(req)
 
-  if (req.body.estimateId) {
-    const estimate = await EstimateQuote.findById(req.body.estimateId).lean()
+  if (estimateId) {
+    const estimate = await EstimateQuote.findById(estimateId).lean()
     if (!estimate) return notFound(res, 'Estimate not found')
     const access = assertEstimateAccess(estimate, req.user)
     if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-    payload = mergeLiveDocumentPayload(estimateToDocumentPayload(estimate), req.body)
+    payload = mergeLiveDocumentPayload(estimateToDocumentPayload(estimate), {
+      ...req.body,
+      estimateId,
+    })
   }
 
   if (!hasDocumentPricing(payload)) {

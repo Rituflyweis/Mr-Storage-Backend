@@ -24,25 +24,117 @@ const quoteInfoOf = (est = {}) => ({
   jobNumber: est.jobNumber || '',
 })
 
+const resolveEstimateId = (req = {}) =>
+  req.body?.estimateId ||
+  req.body?.id ||
+  req.query?.estimateId ||
+  req.query?.id ||
+  req.params?.estimateId ||
+  null
+
+const assertEstimateReadable = (est, user) => {
+  if (!est) return { error: 'Estimate not found', code: 404 }
+  const isOwner = String(est.createdBy) === String(user._id)
+  const isAdmin = user.role === 'admin'
+  if (!isOwner && !isAdmin) return { error: 'Forbidden', code: 403 }
+  return {}
+}
+
 const loadOwnedEstimate = async (req) => {
   const est = await EstimateQuote.findById(req.params.estimateId)
   if (!est) return { error: 'Estimate not found', code: 404 }
-  const isOwner = String(est.createdBy) === String(req.user._id)
-  const isAdmin = req.user.role === 'admin'
-  if (!isOwner && !isAdmin) return { error: 'Forbidden', code: 403 }
+  const access = assertEstimateReadable(est, req.user)
+  if (access.error) return access
   return { est }
 }
 
-// ── Stateless previews ───────────────────────────────────────────────
-exports.previewDeposit = asyncHandler(async (req, res) =>
-  success(res, computeDeposit(req.body), 'Deposit preview'),
-)
-exports.previewMilestones = asyncHandler(async (req, res) =>
-  success(res, computeMilestones(req.body), 'Milestone preview'),
-)
-exports.previewStaircase = asyncHandler(async (req, res) =>
-  success(res, computeStaircase(req.body), 'Staircase preview'),
-)
+/** History page often has only estimateId — load grand + saved rows from DB. */
+const hydrateFromEstimateId = async (req) => {
+  const estimateId = resolveEstimateId(req)
+  if (!estimateId) return { body: req.body }
+  const est = await EstimateQuote.findById(estimateId).lean()
+  const access = assertEstimateReadable(est, req.user)
+  if (access.error) return access
+  return {
+    estimateId,
+    est,
+    body: {
+      ...req.body,
+      estimateId,
+      grand: req.body.grand != null ? Number(req.body.grand) : grandOf(est),
+      rows:
+        (Array.isArray(req.body.rows) && req.body.rows.length
+          ? req.body.rows
+          : null) ||
+        (Array.isArray(req.body.milestones) && req.body.milestones.length
+          ? req.body.milestones
+          : null) ||
+        est.milestoneSchedule ||
+        [],
+      milestones:
+        (Array.isArray(req.body.milestones) && req.body.milestones.length
+          ? req.body.milestones
+          : null) ||
+        (Array.isArray(req.body.rows) && req.body.rows.length
+          ? req.body.rows
+          : null) ||
+        est.milestoneSchedule ||
+        [],
+      pct: req.body.pct != null ? req.body.pct : est.depositTerms?.pct,
+      flat: req.body.flat != null ? req.body.flat : est.depositTerms?.flat,
+      note: req.body.note || req.body.milestoneNote || est.milestoneNote || '',
+      stories: req.body.stories != null ? req.body.stories : est.multiStory?.stories,
+      count:
+        req.body.count != null
+          ? req.body.count
+          : req.body.staircaseCount != null
+            ? req.body.staircaseCount
+            : est.multiStory?.staircaseCount,
+      unitCost:
+        req.body.unitCost != null
+          ? req.body.unitCost
+          : est.multiStory?.staircaseUnitCost,
+    },
+  }
+}
+
+// ── Previews (stateless OR estimateId hydration for history) ─────────
+exports.previewDeposit = asyncHandler(async (req, res) => {
+  const hydrated = await hydrateFromEstimateId(req)
+  if (hydrated.error) {
+    return hydrated.code === 404 ? notFound(res, hydrated.error) : forbidden(res, hydrated.error)
+  }
+  return success(res, computeDeposit(hydrated.body), 'Deposit preview')
+})
+
+exports.previewMilestones = asyncHandler(async (req, res) => {
+  const hydrated = await hydrateFromEstimateId(req)
+  if (hydrated.error) {
+    return hydrated.code === 404 ? notFound(res, hydrated.error) : forbidden(res, hydrated.error)
+  }
+  const computed = computeMilestones({
+    grand: hydrated.body.grand,
+    rows: hydrated.body.rows || hydrated.body.milestones || [],
+  })
+  return success(
+    res,
+    {
+      ...computed,
+      estimateId: hydrated.estimateId || null,
+      milestoneNote: hydrated.body.note || '',
+      milestoneSchedule: computed.rows,
+    },
+    'Milestone preview',
+  )
+})
+
+exports.previewStaircase = asyncHandler(async (req, res) => {
+  const hydrated = await hydrateFromEstimateId(req)
+  if (hydrated.error) {
+    return hydrated.code === 404 ? notFound(res, hydrated.error) : forbidden(res, hydrated.error)
+  }
+  return success(res, computeStaircase(hydrated.body), 'Staircase preview')
+})
 
 // ── Persistence on an estimate ───────────────────────────────────────
 exports.updateEstimateDeposit = asyncHandler(async (req, res) => {
@@ -82,10 +174,14 @@ exports.updateEstimateMultiStory = asyncHandler(async (req, res) => {
 
 // ── Document PDFs ────────────────────────────────────────────────────
 const resolveDocQuote = async (req) => {
-  if (req.body.estimateId) {
-    const est = await EstimateQuote.findById(req.body.estimateId).lean()
+  const estimateId = resolveEstimateId(req)
+  if (estimateId) {
+    const est = await EstimateQuote.findById(estimateId).lean()
     if (!est) return { error: 'Estimate not found' }
+    const access = assertEstimateReadable(est, req.user)
+    if (access.error) return access
     return {
+      estimateId,
       quote: quoteInfoOf(est),
       grand: req.body.grand != null ? Number(req.body.grand) : grandOf(est),
       company: est.companyBrand,
@@ -99,7 +195,9 @@ const resolveDocQuote = async (req) => {
 
 exports.depositReceiptPdf = asyncHandler(async (req, res) => {
   const resolved = await resolveDocQuote(req)
-  if (resolved.error) return notFound(res, resolved.error)
+  if (resolved.error) {
+    return resolved.code === 403 ? forbidden(res, resolved.error) : notFound(res, resolved.error)
+  }
   const html = generateDepositReceiptHtml({
     quote: resolved.quote,
     grand: resolved.grand,
@@ -124,10 +222,14 @@ exports.depositReceiptPdf = asyncHandler(async (req, res) => {
 
 exports.milestonesPdf = asyncHandler(async (req, res) => {
   const resolved = await resolveDocQuote(req)
-  if (resolved.error) return notFound(res, resolved.error)
+  if (resolved.error) {
+    return resolved.code === 403 ? forbidden(res, resolved.error) : notFound(res, resolved.error)
+  }
   const rows =
-    req.body.rows ||
-    req.body.milestones ||
+    (Array.isArray(req.body.rows) && req.body.rows.length ? req.body.rows : null) ||
+    (Array.isArray(req.body.milestones) && req.body.milestones.length
+      ? req.body.milestones
+      : null) ||
     resolved.milestoneSchedule ||
     []
   const html = generateMilestoneScheduleHtml({
