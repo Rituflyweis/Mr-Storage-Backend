@@ -2,6 +2,7 @@
 
 const CONTRACT_TEXT = require('./contractText')
 const { getStoragePricingSummaryLines } = require('./storagePricingEngine')
+const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
 
 const QUOTE_STYLES = `
 .quote-output{background:#fff;color:#111;border-radius:8px;padding:32px;margin-bottom:14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
@@ -90,12 +91,53 @@ const buildQuoteContext = (payload = {}) => {
 
   const full = payload.fullQuote || payload.fullQuoteResult || {}
   const res = full.pricing || payload.pricingResult || payload.pricing || {}
-  const concrete = full.concrete || payload.concrete || {}
-  const insulation = full.insulation || payload.insulation || {}
+  const concrete = full.concrete || payload.concreteAddon || payload.concrete || {}
+  const insulation = full.insulation || payload.insulationAddon || payload.insulation || {}
   const salesTax = full.salesTax || payload.salesTax || {}
-  const pembAddOns = full.pembAddOns || payload.pembAddOns || []
-  const pembAddOnTotals = full.pembAddOnTotals || null
-  const grandTotal = full.grandTotal ?? payload.grandTotal ?? payload.totalSell ?? res.totSell ?? 0
+
+  // Prefer non-empty add-on lists — empty [] on fullQuote used to shadow payload.pembAddOns
+  // (which is why Options & Add-ons only appeared after save when fullQuote was recomputed).
+  const rawAddOns =
+    Array.isArray(full.pembAddOns) && full.pembAddOns.length
+      ? full.pembAddOns
+      : Array.isArray(payload.pembAddOns) && payload.pembAddOns.length
+        ? payload.pembAddOns
+        : Array.isArray(payload.quoteControls?.pembAddOns)
+          ? payload.quoteControls.pembAddOns
+          : []
+  const pembAddOns = normalizePembAddOns(rawAddOns)
+  const fromFullTotals =
+    full.pembAddOnTotals && Number(full.pembAddOnTotals.sell) > 0
+      ? full.pembAddOnTotals
+      : null
+  const pembAddOnTotals = fromFullTotals || sumPembAddOnTotals(pembAddOns)
+
+  const concSell =
+    concrete && concrete.include !== false && Number(concrete.appliedSell) > 0
+      ? Number(concrete.appliedSell)
+      : 0
+  const insulSell =
+    insulation && insulation.include !== false && Number(insulation.appliedSell) > 0
+      ? Number(insulation.appliedSell)
+      : 0
+  const taxAmt = Number(salesTax?.amount) || 0
+  const addOnSell = Number(pembAddOnTotals?.sell) || 0
+  const buildingSell = Number(res.totSell) || 0
+  const drawings = Number(res.pembDrawings) || 0
+
+  let grandTotal = full.grandTotal ?? payload.grandTotal ?? payload.totalSell ?? null
+  const recomputed =
+    Math.round(buildingSell + drawings + concSell + insulSell + taxAmt + addOnSell)
+  // If caller omitted add-ons from grandTotal (common on live preview before save), fold them in.
+  if (grandTotal == null || !Number.isFinite(Number(grandTotal))) {
+    grandTotal = recomputed || buildingSell
+  } else {
+    grandTotal = Math.round(Number(grandTotal))
+    if (addOnSell > 0 && grandTotal + 1 < recomputed) {
+      grandTotal = recomputed
+    }
+  }
+
   const sf = res.sf || payload.squareFootage || 0
   const grandSF = sf > 0 ? (grandTotal / sf).toFixed(2) : res.sfPrice
 

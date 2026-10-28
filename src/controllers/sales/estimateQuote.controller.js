@@ -194,6 +194,10 @@ const buildPricingPayload = async (userId, { categories, options, fullExtras }) 
 
 const estimateToDocumentPayload = (estimate) => {
   const grandTotal = resolveEstimateGrandTotal(estimate)
+  const savedAddOns = Array.isArray(estimate.pembAddOns) ? estimate.pembAddOns : []
+  const full = estimate.fullQuoteResult || null
+  const fullAddOns = Array.isArray(full?.pembAddOns) ? full.pembAddOns : []
+  const pembAddOns = fullAddOns.length ? fullAddOns : savedAddOns
   return {
   jobType: estimate.jobType,
   leadCompanyName: estimate.leadCompanyName,
@@ -208,16 +212,20 @@ const estimateToDocumentPayload = (estimate) => {
   storageData: estimate.storageData,
   storagePricingResult: estimate.storagePricingResult,
   grandTotal,
-  fullQuote: estimate.fullQuoteResult || {
-    pricing: estimate.pricingResult,
-    concrete: estimate.concreteAddon,
-    insulation: estimate.insulationAddon,
-    salesTax: estimate.salesTax,
-    pembAddOns: estimate.pembAddOns,
-    grandTotal,
-    pricePerSf: estimate.pricePerSf,
+  fullQuote: {
+    ...(full || {
+      pricing: estimate.pricingResult,
+      concrete: estimate.concreteAddon,
+      insulation: estimate.insulationAddon,
+      salesTax: estimate.salesTax,
+      grandTotal,
+      pricePerSf: estimate.pricePerSf,
+    }),
+    // Always surface persisted add-ons (fullQuoteResult may have been computed before they were set)
+    pembAddOns,
+    pembAddOnTotals: full?.pembAddOnTotals,
   },
-  pembAddOns: estimate.pembAddOns,
+  pembAddOns,
   concrete: estimate.concreteAddon,
   insulation: estimate.insulationAddon,
   salesTax: estimate.salesTax,

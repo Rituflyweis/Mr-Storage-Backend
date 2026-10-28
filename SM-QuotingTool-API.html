@@ -4387,6 +4387,12 @@ function pembAddLineItem(){
   pembRenderAddOns();
 }
 
+function pembSyncAddOnQuote(){
+  if(!currentData) return;
+  if(typeof reRun === 'function') reRun();
+  else if(typeof renderQuote === 'function') renderQuote(currentData.res);
+}
+
 function pembRenderAddOns(){
   var tbody=document.getElementById('pemb-addons-tbody');
   var tfoot=document.getElementById('pemb-addons-tfoot');
@@ -4397,13 +4403,13 @@ function pembRenderAddOns(){
     if(x.inQuote){ totC+=x.cost; totS+=x.sell; }
     return '<tr style="border-bottom:1px solid var(--border);">'+
       '<td style="padding:7px 6px;"><input value="'+(x.item||'')+'" placeholder="e.g. Stem Wall" style="width:150px;padding:4px 6px;border:1px solid var(--border2);border-radius:3px;font-size:13px;" oninput="pembAddOns['+xi+'].item=this.value;if(currentData&&!sowManuallyEdited)renderSOW(currentData.res);"></td>'+
-      '<td style="padding:7px 6px;text-align:right;">$<input type="number" value="'+x.cost+'" style="width:90px;padding:4px 6px;border:1px solid var(--border2);border-radius:3px;font-size:13px;text-align:right;" oninput="pembAddOns['+xi+'].cost=+this.value" onchange="pembAddOns['+xi+'].cost=+this.value;pembRenderAddOns()"></td>'+
-      '<td style="padding:7px 6px;text-align:right;"><input type="number" value="'+x.markup+'" style="width:55px;padding:4px 6px;border:1px solid var(--border2);border-radius:3px;font-size:13px;text-align:right;" oninput="pembAddOns['+xi+'].markup=+this.value" onchange="pembAddOns['+xi+'].markup=+this.value;pembRenderAddOns()">%</td>'+
+      '<td style="padding:7px 6px;text-align:right;">$<input type="number" value="'+x.cost+'" style="width:90px;padding:4px 6px;border:1px solid var(--border2);border-radius:3px;font-size:13px;text-align:right;" oninput="pembAddOns['+xi+'].cost=+this.value" onchange="pembAddOns['+xi+'].cost=+this.value;pembRenderAddOns();pembSyncAddOnQuote()"></td>'+
+      '<td style="padding:7px 6px;text-align:right;"><input type="number" value="'+x.markup+'" style="width:55px;padding:4px 6px;border:1px solid var(--border2);border-radius:3px;font-size:13px;text-align:right;" oninput="pembAddOns['+xi+'].markup=+this.value" onchange="pembAddOns['+xi+'].markup=+this.value;pembRenderAddOns();pembSyncAddOnQuote()">%</td>'+
       '<td style="padding:7px 6px;text-align:right;font-weight:700;color:#1e3a8a;">$'+x.sell.toLocaleString()+'</td>'+
       '<td style="padding:7px 6px;"><input value="'+(x.note||'')+'" placeholder="note..." style="width:120px;padding:4px 6px;border:1px solid var(--border2);border-radius:3px;font-size:12px;" oninput="pembAddOns['+xi+'].note=this.value"></td>'+
-      '<td style="padding:7px 6px;text-align:center;"><input type="checkbox" '+(x.inQuote?'checked':'')+' style="accent-color:#2176c7;width:15px;height:15px;" onchange="pembAddOns['+xi+'].inQuote=this.checked;pembRenderAddOns();if(currentData)reRun()"></td>'+
+      '<td style="padding:7px 6px;text-align:center;"><input type="checkbox" '+(x.inQuote?'checked':'')+' style="accent-color:#2176c7;width:15px;height:15px;" onchange="pembAddOns['+xi+'].inQuote=this.checked;pembRenderAddOns();pembSyncAddOnQuote()"></td>'+
       '<td style="padding:7px 6px;text-align:center;"><input type="checkbox" '+(x.inSOW?'checked':'')+' style="accent-color:#2176c7;width:15px;height:15px;" onchange="pembAddOns['+xi+'].inSOW=this.checked;pembRenderAddOns();if(currentData&&!sowManuallyEdited)renderSOW(currentData.res);"></td>'+
-      '<td style="text-align:center;padding:7px 6px;"><button onclick="pembAddOns.splice('+xi+',1);pembRenderAddOns();if(currentData)reRun()" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:15px;">✕</button></td>'+
+      '<td style="text-align:center;padding:7px 6px;"><button onclick="pembAddOns.splice('+xi+',1);pembRenderAddOns();pembSyncAddOnQuote()" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:15px;">✕</button></td>'+
     '</tr>';
   }).join('');
   if(tfoot) tfoot.innerHTML = pembAddOns.length>0 ?
