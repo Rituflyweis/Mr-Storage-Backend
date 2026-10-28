@@ -5,6 +5,11 @@ const { getStoragePricingSummaryLines } = require('./storagePricingEngine')
 const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
 const { computeStaircase } = require('./staircase')
 const { computeMilestones } = require('./depositMilestoneEngine')
+const {
+  getCompanyInfo,
+  getLogoHtml,
+  companySubline,
+} = require('./companyInfo')
 
 /** Resolve staircase from fullQuote / multiStory / top-level body (FE field aliases). */
 const resolveStaircase = (full = {}, payload = {}) => {
@@ -55,8 +60,7 @@ const QUOTE_STYLES = `
 @media print{.page-break{page-break-after:always;}}
 `
 
-const getLogoHtml = () =>
-  '<span class="q-logo-sm">STEEL BUILDING</span><span class="q-logo-mat">DEPOT</span>'
+const companyOf = (payload = {}) => getCompanyInfo(payload)
 
 const fmtMoney = (n) => '$' + Math.round(Number(n) || 0).toLocaleString()
 const fmtDate = (d = new Date()) =>
@@ -314,11 +318,12 @@ const generateStorageQuoteHtml = (payload = {}) => {
         `<tr class="q-sub-row"${row.taxStyle ? ' style="color:#b45309;"' : ''}><td>${row.label}</td><td style="text-align:right">${fmtMoney(row.amount)}</td></tr>`
     )
     .join('')
+  const co = companyOf(payload)
 
   return `<div class="quote-output" id="quote-printable">
     <div class="q-logo-bar">
-      <div>${getLogoHtml()}<div class="q-logo-sub">METAL AND DOORS · 1851 Madison Ave Suite 300, Council Bluffs, IA 51503<br>(888) 968-1222 · info@steelbuildingdepot.com · www.steelbuildingdepot.com</div></div>
-      <div class="q-header-right"><div class="q-co-name">ESTIMATE</div><div class="q-co-detail">Date: ${ctx.today}<br>Expiration: ${ctx.exp}<br>Business/Tax #: 99-4515145</div></div>
+      <div>${getLogoHtml(co)}<div class="q-logo-sub">${companySubline(co)}</div></div>
+      <div class="q-header-right"><div class="q-co-name">ESTIMATE</div><div class="q-co-detail">Date: ${ctx.today}<br>Expiration: ${ctx.exp}<br>Business/Tax #: ${co.taxId}</div></div>
     </div>
     <div class="q-doc-info">
       <div class="q-field"><label>Prepared For</label><p>${custFull}</p></div>
@@ -364,10 +369,10 @@ const generateStorageQuoteHtml = (payload = {}) => {
       </div>
     </div>
     <div class="q-sign">
-      <div class="q-sign-block"><strong>Steel Building Depot</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
+      <div class="q-sign-block"><strong>${co.name}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
       <div class="q-sign-block"><strong>${ctx.cust}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
     </div>
-    <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business!!! Reach out with any questions · (888) 968-1222 · info@steelbuildingdepot.com</p>
+    <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business!!! Reach out with any questions · ${co.phone} · ${co.email}</p>
   </div>`
 }
 
@@ -379,6 +384,7 @@ const generateQuoteHtml = (payload = {}) => {
   const concInclude = concrete.include && concrete.appliedSell > 0
   const insulInclude = insulation.include && insulation.appliedSell > 0
   const scope = scopeDesc(res.scope)
+  const co = companyOf(payload)
   const custFull = ctx.addr
     ? `${ctx.cust}<br><span style="font-weight:400;font-size:11px;color:#64748b;">${ctx.addr}<br>${ctx.loc}</span>`
     : ctx.cust
@@ -386,12 +392,12 @@ const generateQuoteHtml = (payload = {}) => {
   return `<div class="quote-output" id="quote-printable">
     <div class="q-logo-bar">
       <div>
-        ${getLogoHtml()}
-        <div class="q-logo-sub">METAL AND DOORS · 1851 Madison Ave Suite 300, Council Bluffs, IA 51503<br>(888) 968-1222 · info@steelbuildingdepot.com · www.steelbuildingdepot.com</div>
+        ${getLogoHtml(co)}
+        <div class="q-logo-sub">${companySubline(co)}</div>
       </div>
       <div class="q-header-right">
         <div class="q-co-name">ESTIMATE</div>
-        <div class="q-co-detail">Date: ${ctx.today}<br>Expiration: ${ctx.exp}<br>Business/Tax #: 99-4515145</div>
+        <div class="q-co-detail">Date: ${ctx.today}<br>Expiration: ${ctx.exp}<br>Business/Tax #: ${co.taxId}</div>
       </div>
     </div>
     <div class="q-doc-info">
@@ -453,17 +459,18 @@ const generateQuoteHtml = (payload = {}) => {
     </div>
     ${renderMilestoneScheduleSection(ctx)}
     <div class="q-sign">
-      <div class="q-sign-block"><strong>Steel Building Depot</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
+      <div class="q-sign-block"><strong>${co.name}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
       <div class="q-sign-block"><strong>${ctx.cust}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
     </div>
     ${ctx.additionalInfo ? `<div style="margin-top:14px;padding:12px;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;"><div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Additional Information</div><p style="font-size:12px;color:#374151;line-height:1.7;white-space:pre-wrap;">${ctx.additionalInfo}</p></div>` : ''}
-    <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business! Reach out with any questions · (888) 968-1222 · info@steelbuildingdepot.com</p>
+    <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business! Reach out with any questions · ${co.phone} · ${co.email}</p>
   </div>`
 }
 
 const generateSowHtml = (payload = {}) => {
   if (isStoragePayload(payload)) {
     const ctx = buildQuoteContext(payload)
+    const co = companyOf(payload)
     const sp = ctx.storagePricing || {}
     const buildings = sp.buildings || ctx.storageData?.buildings || []
     const bldSow = buildings
@@ -477,7 +484,7 @@ const generateSowHtml = (payload = {}) => {
       .join('')
 
     return `<div class="quote-output" id="sow-printable">
-      <div class="q-logo-bar"><div>${getLogoHtml()}<div class="q-logo-sub">METAL AND DOORS · Council Bluffs, IA · (888) 968-1222</div></div>
+      <div class="q-logo-bar"><div>${getLogoHtml(co)}<div class="q-logo-sub">${companySubline(co, { short: true })}</div></div>
       <div class="q-header-right"><div class="q-co-name">STATEMENT OF WORK</div><div class="q-co-detail">Date: ${ctx.today}</div></div></div>
       <div class="q-doc-info">
         <div class="q-field"><label>Project Name</label><p>${ctx.cust} Project</p></div>
@@ -495,6 +502,7 @@ const generateSowHtml = (payload = {}) => {
   }
 
   const ctx = buildQuoteContext(payload)
+  const co = companyOf(payload)
   const { res, concrete, insulation, grandTotal } = ctx
   const isSupply = String(res.scope || '').toLowerCase() === 'supply'
   const scopeTitle = scopeDesc(res.scope)
@@ -518,7 +526,7 @@ const generateSowHtml = (payload = {}) => {
 
   return `<div class="quote-output" id="sow-printable">
     <div class="q-logo-bar">
-      <div>${getLogoHtml()}<div class="q-logo-sub">METAL AND DOORS · 1851 Madison Ave Suite 300, Council Bluffs, IA 51503 · (888) 968-1222</div></div>
+      <div>${getLogoHtml(co)}<div class="q-logo-sub">${co.tagline} · ${co.address} · ${co.phone}</div></div>
       <div class="q-header-right"><div class="q-co-name">STATEMENT OF WORK</div><div class="q-co-detail">Date: ${ctx.today}</div></div>
     </div>
     <div style="text-align:center;margin-bottom:16px;"><div style="font-size:15px;font-weight:700;color:#111;">${scopeTitle}</div></div>
@@ -529,7 +537,7 @@ const generateSowHtml = (payload = {}) => {
       <div class="q-field"><label>Building Size</label><p>${ctx.size} ${res.jobType || 'PEMB'}</p></div>
     </div>
     <div class="q-section"><div class="q-section-title">1. Project Overview</div>
-      <p style="font-size:12px;color:#374151;line-height:1.7;">Steel Building Depot will furnish${isSupply ? ' and deliver' : ' and install'} a complete Pre-Engineered Metal Building (PEMB) package based on preliminary drawings.</p>
+      <p style="font-size:12px;color:#374151;line-height:1.7;">${co.name} will furnish${isSupply ? ' and deliver' : ' and install'} a complete Pre-Engineered Metal Building (PEMB) package based on preliminary drawings.</p>
       <ul class="q-list" style="margin-top:8px;">
         <li>Approx. ${ctx.size} eave height</li>
         <li>Clear span rigid frame structure</li>
@@ -564,7 +572,7 @@ const generateSowHtml = (payload = {}) => {
       <div class="q-price-sf">$${ctx.grandSF}/SF building · ${scopeTitle}${concInclude ? ' + Concrete' : ''}</div>
     </div>
     <div class="q-sign">
-      <div class="q-sign-block"><strong>Steel Building Depot</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
+      <div class="q-sign-block"><strong>${co.name}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
       <div class="q-sign-block"><strong>${ctx.cust}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
     </div>
   </div>`
@@ -619,12 +627,13 @@ const generateContractHtml = (payload = {}) => {
   </div>`
 }
 
-const generateDrawingsHtml = (drawings = []) => {
+const generateDrawingsHtml = (drawings = [], payload = {}) => {
   const included = (drawings || []).filter((d) => d.includeInQuote !== false && d.fileBase64)
   if (!included.length) return ''
+  const co = companyOf(payload)
 
   return `<div class="quote-output" style="margin-bottom:32px;">
-    <div class="q-logo-bar"><div>${getLogoHtml()}<div class="q-logo-sub">1851 Madison Ave Suite 300, Council Bluffs, IA 51503 · (888) 968-1222</div></div></div>
+    <div class="q-logo-bar"><div>${getLogoHtml(co)}<div class="q-logo-sub">${co.address} · ${co.phone}</div></div></div>
     <div style="font-size:16px;font-weight:700;text-align:center;margin:16px 0;color:#1e3a8a;">Building Drawings &amp; Plans</div>
     ${included
       .map(
@@ -646,7 +655,10 @@ const generateAssembledHtml = (payload = {}) => {
   if (sections.includes('sow')) parts.push(`<div class="page-break">${generateSowHtml(payload)}</div>`)
   if (sections.includes('contract')) parts.push(`<div class="page-break">${generateContractHtml(payload)}</div>`)
   if (sections.includes('drawings')) {
-    const drawingsHtml = generateDrawingsHtml(payload.drawingAttachments || payload.drawings)
+    const drawingsHtml = generateDrawingsHtml(
+      payload.drawingAttachments || payload.drawings,
+      payload,
+    )
     if (drawingsHtml) parts.push(drawingsHtml)
   }
 

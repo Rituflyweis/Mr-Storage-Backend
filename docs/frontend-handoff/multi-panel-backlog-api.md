@@ -10,16 +10,18 @@ This document maps every backlog item to the API to use, status, and any new fie
 
 ## 1. Accounts Panel
 
-### 1.1.1 Customers listing (imported leads)
+### 1.1.1 Customers listing (exclude bulk-import lead stubs)
 
 | | |
 |--|--|
 | **Status** | Ready |
-| **API** | `GET /api/account/customers` |
-| **Query** | `search`, `period` / `startDate` / `endDate`, `page`, `limit`, **`source`**, **`imported=true`** |
+| **API** | `GET /api/account/customers` (+ `/stats`) |
+| **Default** | **Real customers only** — excludes `source: "import"` and `@imports.mrstorage.internal` stubs created by lead bulk import |
+| **Query** | `search`, `period` / `startDate` / `endDate`, `page`, `limit` |
+| **Optional** | `imported=true` → only import stubs; `source=` → exact source |
 | **Row fields** | `source`, `isImported` (plus existing name/email/phone/projects) |
 
-Imported customers use `source: "import"`. Filter with `?imported=true` or `?source=import`.
+Bulk Excel import still creates a Customer row so Lead can reference `customerId`, but **Accounts → Customers** does not treat those as customers unless `?imported=true`.
 
 ### 1.1.2 Project invoices — summary / records (was 404)
 
@@ -172,12 +174,18 @@ Do **not** open the raw `fileUrl` in the browser for private buckets — exchang
 | Request Deposit | `POST /api/sales/estimates/deposit/preview`, `PUT /api/sales/estimates/:id/deposit`, deposit PDF |
 | Milestones | `POST /api/sales/estimates/milestones/preview`, `PUT /api/sales/estimates/:id/milestones`, milestones PDF |
 
-### 3.1.4 Quote logo / Business Unit switch
+### 3.1.4 Quote logo — Steel Building vs Storage Materials
 
 | | |
 |--|--|
-| **Status** | Pending product plan — no dedicated logo-switch APIs yet |
-| **Related** | `businessUnit` already exists on leads/quotes; logo branding TBD |
+| **Status** | Ready |
+| **API** | `POST /api/sales/estimates/documents/preview` (and PDF / save estimate) |
+| **Field** | `company` or `companyBrand`: **`SBD`** (Steel Building Depot) \| **`SM`** (Storage Materials) |
+| **Aliases** | `steel` / `steel building` → SBD; `storage` / `storage material(s)` → SM |
+| **Persist** | `companyBrand` on create/update estimate; history preview hydrates from estimate |
+| **Optional** | `companyLogoUrl` / `logoUrl` to override wordmark with an image URL |
+
+FE: add a **logo brand toggle** on the Quote tab (independent of Job Type PEMB/Storage). Pass the selected brand on every preview/recompute call.
 
 ---
 

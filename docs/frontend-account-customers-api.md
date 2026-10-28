@@ -49,6 +49,14 @@ Authorization: Bearer <token>
 | New Cust. (This Month) | `newCustomersThisMonth` (customers **created** in the selected period) |
 | Returning Customers | `returningCustomers` (2+ PO-raised projects; scoped to customers in period when a date filter is active) |
 
+**Scope:** stats and list **exclude bulk-import lead stubs** by default (`source: "import"` / `@imports.mrstorage.internal`). Those are created so imported leads have a `customerId`, not because they are Accounts customers.
+
+| Query | Effect |
+|--------|--------|
+| _(default)_ | Real customers only |
+| `imported=true` | Only import stubs |
+| `source=chat` / `manual` / … | Exact source |
+
 ---
 
 ## 2. Customer list
@@ -61,7 +69,7 @@ Host: mr-storage-backend-025k.onrender.com
 Authorization: Bearer <token>
 ```
 
-Search matches: `customerId`, name, email, phone, company.
+Search matches: `customerId`, name, email, phone, company. Same import-exclusion rules as stats.
 
 ### Response `200`
 

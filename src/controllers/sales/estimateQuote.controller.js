@@ -363,6 +363,9 @@ const estimateToDocumentPayload = (estimate) => {
   milestoneSchedule: estimate.milestoneSchedule || [],
   milestoneNote: estimate.milestoneNote || '',
   milestones: estimate.milestoneSchedule || [],
+  companyBrand: estimate.companyBrand || 'SM',
+  company: estimate.companyBrand || 'SM',
+  companyLogoUrl: estimate.companyLogoUrl || '',
   contract: estimate.contractDetails,
   drawingAttachments: estimate.drawingAttachments,
   customer: {
@@ -855,6 +858,28 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
     ),
     milestoneNote: body.milestoneNote ?? savedPayload.milestoneNote ?? '',
     depositTerms: body.depositTerms || savedPayload.depositTerms || null,
+    companyBrand: firstDefined(
+      body.companyBrand,
+      body.company,
+      body.brand,
+      body.logoBrand,
+      savedPayload.companyBrand,
+      savedPayload.company,
+    ),
+    company: firstDefined(
+      body.company,
+      body.companyBrand,
+      body.brand,
+      body.logoBrand,
+      savedPayload.company,
+      savedPayload.companyBrand,
+    ),
+    companyLogoUrl: firstDefined(
+      body.companyLogoUrl,
+      body.logoUrl,
+      body.logoSrc,
+      savedPayload.companyLogoUrl,
+    ),
     contract: body.contract || body.contractDetails || savedPayload.contract,
     sections: undefined,
   }
@@ -974,6 +999,8 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     milestones: milestoneSchedule,
     milestoneNote: payload.milestoneNote || '',
     depositTerms: payload.depositTerms || null,
+    companyBrand: payload.companyBrand || payload.company || null,
+    company: payload.company || payload.companyBrand || null,
   })
 })
 

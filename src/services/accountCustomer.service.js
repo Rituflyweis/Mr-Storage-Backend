@@ -26,6 +26,34 @@ const resolveCustomer = async (customerIdOrCode) => {
   return Customer.findOne({ customerId: customerIdOrCode }).lean()
 }
 
+const IMPORT_EMAIL_SUFFIX = '@imports.mrstorage.internal'
+
+/** Bulk lead import creates Customer stubs — not real account customers. */
+const isTruthyQueryFlag = (v) => ['true', '1', 'yes'].includes(String(v || '').toLowerCase())
+
+/**
+ * Account Customers default = real customers only (exclude import stubs).
+ * Opt-in: `imported=true` → only stubs; `source=` → exact source (incl. import).
+ */
+const applyCustomerSourceScope = (filter, query = {}) => {
+  const { source, imported } = query
+  if (isTruthyQueryFlag(imported)) {
+    filter.source = 'import'
+    return filter
+  }
+  if (source?.trim()) {
+    filter.source = source.trim()
+    return filter
+  }
+  // Default: hide bulk-import placeholders (source + synthetic email domain).
+  filter.$and = [
+    ...(filter.$and || []),
+    { source: { $ne: 'import' } },
+    { email: { $not: new RegExp(`${IMPORT_EMAIL_SUFFIX.replace(/\./g, '\\.')}$`, 'i') } },
+  ]
+  return filter
+}
+
 const buildCustomerSearchFilter = (search) => {
   if (!search?.trim()) return null
   const regex = new RegExp(search.trim(), 'i')
@@ -68,7 +96,7 @@ exports.resolveCustomer = resolveCustomer
 
 exports.computeCustomerStats = async (query = {}) => {
   const dateFilter = buildPeriodDateFilter(query, 'createdAt')
-  const baseFilter = { ...dateFilter }
+  const baseFilter = applyCustomerSourceScope({ ...dateFilter }, query)
 
   const [totalCustomers, activeCustomers, newInPeriod] = await Promise.all([
     Customer.countDocuments(baseFilter),
@@ -76,24 +104,15 @@ exports.computeCustomerStats = async (query = {}) => {
     Customer.countDocuments(baseFilter),
   ])
 
+  const scopedCustomerIds = await Customer.find(baseFilter).distinct('_id')
+
   const returningAgg = await Lead.aggregate([
-    { $match: PO_PROJECT_MATCH },
+    { $match: { ...PO_PROJECT_MATCH, customerId: { $in: scopedCustomerIds } } },
     { $group: { _id: '$customerId', projectCount: { $sum: 1 } } },
     { $match: { projectCount: { $gte: 2 } } },
     { $count: 'returning' },
   ])
-  let returningCustomers = returningAgg[0]?.returning || 0
-
-  if (Object.keys(dateFilter).length) {
-    const idsInPeriod = await Customer.find(baseFilter).distinct('_id')
-    const returningInSet = await Lead.aggregate([
-      { $match: { ...PO_PROJECT_MATCH, customerId: { $in: idsInPeriod } } },
-      { $group: { _id: '$customerId', projectCount: { $sum: 1 } } },
-      { $match: { projectCount: { $gte: 2 } } },
-      { $count: 'returning' },
-    ])
-    returningCustomers = returningInSet[0]?.returning || 0
-  }
+  const returningCustomers = returningAgg[0]?.returning || 0
 
   return {
     totalCustomers,
@@ -105,15 +124,14 @@ exports.computeCustomerStats = async (query = {}) => {
 
 exports.listCustomers = async (query = {}) => {
   const dateFilter = buildPeriodDateFilter(query, 'createdAt')
-  const { page = 1, limit = 20, search, source, imported } = query
+  const { page = 1, limit = 20, search } = query
 
-  const filter = { ...dateFilter }
+  const filter = applyCustomerSourceScope({ ...dateFilter }, query)
   const searchFilter = buildCustomerSearchFilter(search)
-  if (searchFilter) Object.assign(filter, searchFilter)
-
-  const importedFlag = ['true', '1', 'yes'].includes(String(imported || '').toLowerCase())
-  if (importedFlag) filter.source = 'import'
-  else if (source?.trim()) filter.source = source.trim()
+  if (searchFilter) {
+    // Combine search $or with source-scope $and without clobbering either.
+    filter.$and = [...(filter.$and || []), searchFilter]
+  }
 
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100)
