@@ -339,6 +339,10 @@ const estimateToDocumentPayload = (estimate) => {
   concrete: estimate.concreteAddon,
   insulation: estimate.insulationAddon,
   salesTax: estimate.salesTax,
+  depositTerms: estimate.depositTerms || null,
+  milestoneSchedule: estimate.milestoneSchedule || [],
+  milestoneNote: estimate.milestoneNote || '',
+  milestones: estimate.milestoneSchedule || [],
   contract: estimate.contractDetails,
   drawingAttachments: estimate.drawingAttachments,
   customer: {
@@ -770,6 +774,19 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
       body.finish,
       savedPayload.steelFinish,
     ),
+    milestoneSchedule:
+      body.milestoneSchedule ||
+      body.milestones ||
+      savedPayload.milestoneSchedule ||
+      [],
+    milestones:
+      body.milestones ||
+      body.milestoneSchedule ||
+      savedPayload.milestones ||
+      savedPayload.milestoneSchedule ||
+      [],
+    milestoneNote: body.milestoneNote ?? savedPayload.milestoneNote ?? '',
+    depositTerms: body.depositTerms || savedPayload.depositTerms || null,
     contract: body.contract || body.contractDetails || savedPayload.contract,
     sections: undefined,
   }

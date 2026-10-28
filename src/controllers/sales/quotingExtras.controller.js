@@ -85,7 +85,14 @@ const resolveDocQuote = async (req) => {
   if (req.body.estimateId) {
     const est = await EstimateQuote.findById(req.body.estimateId).lean()
     if (!est) return { error: 'Estimate not found' }
-    return { quote: quoteInfoOf(est), grand: req.body.grand != null ? Number(req.body.grand) : grandOf(est), company: est.companyBrand }
+    return {
+      quote: quoteInfoOf(est),
+      grand: req.body.grand != null ? Number(req.body.grand) : grandOf(est),
+      company: est.companyBrand,
+      milestoneSchedule: est.milestoneSchedule || [],
+      milestoneNote: est.milestoneNote || '',
+      depositTerms: est.depositTerms || null,
+    }
   }
   return { quote: req.body.quote || {}, grand: Number(req.body.grand) || 0, company: req.body.company }
 }
@@ -118,11 +125,16 @@ exports.depositReceiptPdf = asyncHandler(async (req, res) => {
 exports.milestonesPdf = asyncHandler(async (req, res) => {
   const resolved = await resolveDocQuote(req)
   if (resolved.error) return notFound(res, resolved.error)
+  const rows =
+    req.body.rows ||
+    req.body.milestones ||
+    resolved.milestoneSchedule ||
+    []
   const html = generateMilestoneScheduleHtml({
     quote: resolved.quote,
     grand: resolved.grand,
-    rows: req.body.rows || req.body.milestones || [],
-    note: req.body.note || '',
+    rows,
+    note: req.body.note || req.body.milestoneNote || resolved.milestoneNote || '',
     company: req.body.company || resolved.company || 'SM',
   })
   if (req.body.format === 'html') return success(res, { html }, 'Milestone schedule HTML')

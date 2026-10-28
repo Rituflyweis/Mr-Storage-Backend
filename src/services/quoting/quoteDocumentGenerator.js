@@ -4,6 +4,7 @@ const CONTRACT_TEXT = require('./contractText')
 const { getStoragePricingSummaryLines } = require('./storagePricingEngine')
 const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
 const { computeStaircase } = require('./staircase')
+const { computeMilestones } = require('./depositMilestoneEngine')
 
 /** Resolve staircase from fullQuote / multiStory / top-level body (FE field aliases). */
 const resolveStaircase = (full = {}, payload = {}) => {
@@ -166,32 +167,45 @@ const buildQuoteContext = (payload = {}) => {
   const stairSell =
     scopeKey === 'install' ? 0 : staircase.include ? Number(staircase.staircaseSell) || 0 : 0
 
-  // Prefer top-level grandTotal (latest compute) over nested fullQuote.grandTotal (often stale).
-  let grandTotal = payload.grandTotal ?? full.grandTotal ?? payload.totalSell ?? null
+  // totSell already includes drawings; rebuild building+addons when nested fullQuote.pricing is stale.
   const recomputed = Math.round(
     buildingSell + concSell + insulSell + taxAmt + addOnSell + stairSell,
   )
-  if (grandTotal == null || !Number.isFinite(Number(grandTotal))) {
+  const pricingDrift =
+    topPricing &&
+    fullPricing &&
+    Math.abs(Number(topPricing.totSell || 0) - Number(fullPricing.totSell || 0)) > 1
+
+  let grandTotal
+  if (pricingDrift) {
+    // Live pricingResult won over stale fullQuote.pricing — rebuild total from live building sell.
     grandTotal = recomputed || buildingSell
-  } else {
-    grandTotal = Math.round(Number(grandTotal))
-    const pricingDrift =
-      topPricing &&
-      fullPricing &&
-      Math.abs(Number(topPricing.totSell || 0) - Number(fullPricing.totSell || 0)) > 1
-    const missingExtras =
-      (addOnSell > 0 || stairSell > 0) && grandTotal + 1 < recomputed
-    // After Recompute, live pricing + stale cached grandTotal must refresh the preview total.
-    const staleGrand =
-      Boolean(topPricing) && Math.abs(grandTotal - recomputed) > 1
-    if (pricingDrift || missingExtras || staleGrand) {
+  } else if (payload.grandTotal != null && Number.isFinite(Number(payload.grandTotal))) {
+    // Explicit contract total (milestones modal / compute.fullQuote.grandTotal) wins.
+    grandTotal = Math.round(Number(payload.grandTotal))
+  } else if (full.grandTotal != null && Number.isFinite(Number(full.grandTotal))) {
+    grandTotal = Math.round(Number(full.grandTotal))
+    if ((addOnSell > 0 || stairSell > 0) && grandTotal + 1 < recomputed) {
       grandTotal = recomputed
     }
+  } else if (payload.totalSell != null && Number.isFinite(Number(payload.totalSell))) {
+    grandTotal = Math.round(Number(payload.totalSell))
+  } else {
+    grandTotal = recomputed || buildingSell
   }
 
   const sf = res.sf || payload.squareFootage || 0
   const grandSF = sf > 0 ? (grandTotal / sf).toFixed(2) : res.sfPrice
   const steelFinish = res.steelFinish || payload.steelFinish || payload.finishType || 'red-iron'
+
+  const milestoneRows =
+    payload.milestoneSchedule ||
+    payload.milestones ||
+    payload.milestone?.rows ||
+    []
+  const milestones = Array.isArray(milestoneRows) && milestoneRows.length
+    ? computeMilestones({ grand: grandTotal, rows: milestoneRows })
+    : null
 
   return {
     cust: customer.name || payload.leadCompanyName || 'Customer',
@@ -216,8 +230,58 @@ const buildQuoteContext = (payload = {}) => {
     pembAddOnTotals,
     staircase,
     stairSell,
+    milestones,
+    milestoneNote: payload.milestoneNote || '',
     isStorage: false,
   }
+}
+
+const renderMilestoneScheduleSection = (ctx) => {
+  const m = ctx.milestones
+  if (!m || !Array.isArray(m.rows) || !m.rows.length) return ''
+  let running = 0
+  const rows = m.rows
+    .map((r, i) => {
+      running += Number(r.amount) || 0
+      const pctLabel =
+        r.type === 'pct' && r.pct != null ? ` (${r.pct}%)` : ''
+      return `<tr class="q-sub-row">
+        <td style="width:36px;color:#7c3aed;font-weight:700;">${i + 1}</td>
+        <td>${r.label || `Milestone ${i + 1}`}${pctLabel}</td>
+        <td style="text-align:right;font-weight:700;">${fmtMoney(r.amount)}</td>
+        <td style="text-align:right;color:#64748b;">${fmtMoney(running)}</td>
+      </tr>`
+    })
+    .join('')
+  const remainingRow =
+    m.remaining !== 0
+      ? `<tr class="q-sub-row" style="color:#92400e;">
+          <td>—</td>
+          <td style="font-weight:700;">Unscheduled Balance</td>
+          <td style="text-align:right;font-weight:800;">${fmtMoney(m.remaining)}</td>
+          <td style="text-align:right;">${fmtMoney(m.grand)}</td>
+        </tr>`
+      : ''
+  return `
+    <div class="q-section" style="margin-top:18px;">
+      <div class="q-section-title" style="color:#7c3aed;">Milestone Payment Schedule</div>
+      <div class="q-breakdown"><table>
+        <tr style="background:#f5f3ff;">
+          <td style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;">#</td>
+          <td style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;">Description</td>
+          <td style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;text-align:right;">Amount Due</td>
+          <td style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;text-align:right;">Running</td>
+        </tr>
+        ${rows}
+        ${remainingRow}
+        <tr class="q-total-row" style="color:#7c3aed;">
+          <td colspan="2">Total Scheduled (${m.pct}% of contract)</td>
+          <td style="text-align:right;">${fmtMoney(m.scheduled)}</td>
+          <td></td>
+        </tr>
+      </table></div>
+      ${ctx.milestoneNote ? `<p style="font-size:11px;color:#64748b;margin-top:8px;"><strong>Notes:</strong> ${ctx.milestoneNote}</p>` : ''}
+    </div>`
 }
 
 const generateStorageQuoteHtml = (payload = {}) => {
@@ -387,6 +451,7 @@ const generateQuoteHtml = (payload = {}) => {
         </ul>
       </div>
     </div>
+    ${renderMilestoneScheduleSection(ctx)}
     <div class="q-sign">
       <div class="q-sign-block"><strong>Steel Building Depot</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
       <div class="q-sign-block"><strong>${ctx.cust}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
