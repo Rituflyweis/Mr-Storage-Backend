@@ -17,7 +17,10 @@ const {
 } = require('../../services/quoting/cogsOverride')
 const { previewMarginOverride } = require('../../services/quoting/marginOverride')
 const { lookupSalesTaxByZip } = require('../../services/quoting/salesTaxLookup')
-const { syncLinkedQuotationFromUpdatedEstimate } = require('../common/quotation.controller')
+const {
+  syncLinkedQuotationFromUpdatedEstimate,
+  getWorkflowStatus,
+} = require('../common/quotation.controller')
 const {
   generateAssembledHtml,
   generateQuoteHtml,
@@ -554,23 +557,13 @@ const buildEstimateConversionMeta = (quotation) => {
     }
   }
   const approvalStatus = quotation.approval?.status || 'not_submitted'
-  const workflowStatus =
-    quotation.status === 'sent'
-      ? 'sent'
-      : approvalStatus === 'pending_approval'
-        ? 'pending_approval'
-        : approvalStatus === 'approved'
-          ? 'approved'
-          : approvalStatus === 'rejected'
-            ? 'rejected'
-            : 'draft'
   return {
     isConvertedToQuotation: true,
     quotationId: quotation._id,
     quoteNumber: quotation.quoteNumber || null,
     quotationStatus: quotation.status || 'draft',
     approvalStatus,
-    workflowStatus,
+    workflowStatus: getWorkflowStatus(quotation),
     versionNumber: quotation.versionNumber || 1,
     convertedAt: quotation.createdAt || null,
   }
@@ -1407,10 +1400,8 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
       synced: Boolean(quotationSync.synced),
       skippedReason: quotationSync.skippedReason || null,
       quotationStatus: linkedQuotation?.status || null,
-      approvalStatus: linkedQuotation?.approval?.status || null,
-      workflowStatus: linkedQuotation
-        ? buildEstimateConversionMeta(linkedQuotation).workflowStatus
-        : null,
+      approvalStatus: quotationSync.approvalStatus || linkedQuotation?.approval?.status || null,
+      workflowStatus: quotationSync.workflowStatus || null,
       versionNumber: linkedQuotation?.versionNumber || null,
       reopenedFromSent: Boolean(quotationSync.reopenedFromSent),
       requiresSubmitForApproval: Boolean(quotationSync.requiresSubmitForApproval),

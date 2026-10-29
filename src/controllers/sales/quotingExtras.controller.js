@@ -187,13 +187,9 @@ exports.updateEstimateDeposit = asyncHandler(async (req, res) => {
       quotationSync: {
         synced: Boolean(quotationSync.synced),
         requiresSubmitForApproval: Boolean(quotationSync.requiresSubmitForApproval),
-        approvalStatus: quotationSync.quotation?.approval?.status || null,
-        workflowStatus:
-          quotationSync.quotation?.approval?.status === 'pending_approval'
-            ? 'pending_approval'
-            : quotationSync.quotation?.status === 'sent'
-              ? 'sent'
-              : quotationSync.quotation?.approval?.status || 'draft',
+        approvalStatus: quotationSync.approvalStatus || null,
+        workflowStatus: quotationSync.workflowStatus || null,
+        quotationId: quotationSync.quotation?._id || null,
       },
     },
     'Deposit terms saved',
@@ -219,7 +215,8 @@ exports.updateEstimateMilestones = asyncHandler(async (req, res) => {
       quotationSync: {
         synced: Boolean(quotationSync.synced),
         requiresSubmitForApproval: Boolean(quotationSync.requiresSubmitForApproval),
-        approvalStatus: quotationSync.quotation?.approval?.status || null,
+        approvalStatus: quotationSync.approvalStatus || null,
+        workflowStatus: quotationSync.workflowStatus || null,
         quotationId: quotationSync.quotation?._id || null,
       },
     },

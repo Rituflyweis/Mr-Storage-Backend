@@ -1,42 +1,125 @@
-# Quotation — Send for Approval (manual) + Admin inbox
+# Quotation — single status key for Sales + Admin FE
 
-## What was wrong
+**Date:** 29 Oct 2026  
+**Panels:** Sales Quoting + Admin quotation approval  
+**Auth:** `Authorization: Bearer <token>`
 
-After editing milestones/estimate, Sales showed **Pending Approval** + **View Quotation**, but Admin had nothing to approve (or the wrong filter). Submit was auto-fired on create/edit, so there was no clear **Send for Approval** step after edit.
+---
 
-## Backend change (live after deploy)
+## Single key (use globally)
 
-| Event | Approval status | Sales CTA |
-|-------|-----------------|-----------|
-| Create quotation / from estimate (sales) | `not_submitted` | **Send for Approval** |
-| Edit estimate / milestones / deposit / quotation | `not_submitted` (cancels prior pending) | **Send for Approval** again |
-| `POST /api/quotations/:quotationId/submit-approval` | `pending_approval` | Waiting / View |
-| Admin approve | `approved` | Send to customer |
+**Use only: `quotation.workflowStatus`**
 
-Admin inbox:
+Do **not** drive badges / primary CTAs from:
 
-```http
-GET /api/quotations/approval/pending
+- `quotation.status`
+- `quotation.approval.status`
+- `quotation.approvalStatus`
+
+Those still exist on the API for storage / filters; **`workflowStatus` is the UI source of truth**.
+
+---
+
+## Enum (final)
+
+```text
+draft
+pending_approval
+approved
+admin_rejected
+sent
+accepted
+client_rejected
 ```
 
-Now **defaults** to `approval.status=pending_approval` (only waiting items).
+```ts
+type QuotationWorkflowStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'admin_rejected'
+  | 'sent'
+  | 'accepted'
+  | 'client_rejected'
+```
 
-Approve / reject unchanged:
+| Value | Meaning | Typical CTA |
+|-------|---------|-------------|
+| `draft` | Not submitted, or reopened after edit | **Send for Approval** |
+| `pending_approval` | Waiting on admin | View / wait |
+| `approved` | **Admin** approved (OK to send to client) | Send to customer |
+| `admin_rejected` | **Admin** rejected approval | Edit → Send for Approval |
+| `sent` | Sent to customer | Wait for client |
+| `accepted` | **Client** accepted | Next project steps |
+| `client_rejected` | **Client** rejected | Revise / follow up → edit → Send for Approval |
 
-- `PUT /api/quotations/:quotationId/approve`
-- `PUT /api/quotations/:quotationId/reject`
+**Important**
 
-## Sales UI mapping
+- `approved` ≠ `accepted` (admin vs client).
+- `admin_rejected` ≠ `client_rejected` (separate enums — no shared `rejected` on `workflowStatus`).
 
-| `workflowStatus` / `approvalStatus` | Badge | Primary button |
-|-------------------------------------|-------|----------------|
-| `draft` / `not_submitted` | Draft | **Send for Approval** → `POST .../submit-approval` |
-| `pending_approval` | Pending Approval | View Quotation (wait for admin) |
+---
+
+## Example response shape
+
+```json
+{
+  "success": true,
+  "data": {
+    "quotation": {
+      "_id": "…",
+      "quoteNumber": "QUO-0024",
+      "status": "draft",
+      "approval": { "status": "not_submitted" },
+      "approvalStatus": "not_submitted",
+      "workflowStatus": "draft",
+      "versionNumber": 2
+    },
+    "requiresSubmitForApproval": true
+  }
+}
+```
+
+Bind badge + button to **`data.quotation.workflowStatus`**.
+
+---
+
+## End-to-end flow
+
+```text
+draft
+  → POST …/submit-approval
+pending_approval
+  → Admin approve → approved  → send → sent → client accept → accepted
+                                            → client reject → client_rejected
+  → Admin reject  → admin_rejected → edit → draft → submit again
+```
+
+Any **estimate / milestones / deposit / quotation edit** (sales) resets approval → **`workflowStatus: "draft"`** again (must **Send for Approval** manually).
+
+---
+
+## Sales panel APIs
+
+| Action | Method / path |
+|--------|----------------|
+| Create / from estimate | `POST /api/quotations`, `POST /api/quotations/from-estimate/:estimateId` |
+| Get / update | `GET|PUT /api/quotations/:quotationId` |
+| Submit for approval | `POST /api/quotations/:quotationId/submit-approval` |
+| Send / mark sent | `POST …/send`, `POST …/mark-sent` (requires admin **approved**) |
+| Stats | `GET /api/sales/quotations/stats` (or common stats) |
+
+### Sales UI map
+
+| `workflowStatus` | Badge | Primary button |
+|------------------|-------|----------------|
+| `draft` | Draft | **Send for Approval** |
+| `pending_approval` | Pending Approval | View Quotation |
 | `approved` | Approved | Send to customer |
-| `rejected` | Rejected | Edit → then **Send for Approval** |
+| `admin_rejected` | Admin rejected | Edit → Send for Approval |
 | `sent` | Sent | — |
-
-**Replace “View Quotation” with “Send for Approval”** whenever status is `not_submitted` / draft (including after milestone edit).
+| `accepted` | Accepted | Next steps |
+| `client_rejected` | Client rejected | Edit → Send for Approval |
 
 Submit body (optional):
 
@@ -44,31 +127,63 @@ Submit body (optional):
 { "note": "Updated milestones 40/30" }
 ```
 
-Response includes updated `quotation.approval.status = pending_approval`.
-
-After milestones save, response may include:
+### After milestones / deposit / estimate save
 
 ```json
 "quotationSync": {
   "synced": true,
   "requiresSubmitForApproval": true,
   "approvalStatus": "not_submitted",
+  "workflowStatus": "draft",
   "quotationId": "…"
 }
 ```
 
-Use that to show **Send for Approval** immediately.
+`quotationSync.workflowStatus` uses the **same** mapper as `quotation.workflowStatus`.  
+If `requiresSubmitForApproval` or `workflowStatus === "draft"` → show **Send for Approval**.
 
-## Admin UI
+---
 
-1. Call `GET /api/quotations/approval/pending` (no filter) for the approval queue.
-2. Show QUO number, customer, version, submittedAt.
-3. Approve / Reject from that list.
+## Admin panel APIs
 
-## Stuck quotes already showing Pending Approval
+| Action | Method / path |
+|--------|----------------|
+| Approval inbox | `GET /api/quotations/approval/pending` (defaults to waiting items) |
+| Approve | `PUT /api/quotations/:quotationId/approve` |
+| Reject | `PUT /api/quotations/:quotationId/reject` |
 
-If an old quote is stuck `pending_approval` but Admin never saw it:
+Inbox rows: use **`workflowStatus`** when present (`pending_approval` while waiting).
 
-1. Sales: edit anything small **or** Admin list with `?approvalStatus=pending_approval`
-2. Or Sales calls submit again (returns “already pending”)
-3. Preferred: Admin uses default pending inbox after this deploy; Sales re-saves milestones → status becomes `not_submitted` → click **Send for Approval** → appears in Admin.
+After approve → Sales sees `approved`.  
+After reject → Sales sees `admin_rejected`.
+
+---
+
+## Customer (for Sales/Admin badges)
+
+| Action | Resulting `workflowStatus` |
+|--------|----------------------------|
+| Customer accepts quote | `accepted` |
+| Customer rejects quote | `client_rejected` |
+
+---
+
+## Other keys (do not use for global UI)
+
+| Key | What it is |
+|-----|------------|
+| `quotation.status` | Document: `draft` \| `sent` \| `accepted` \| `rejected` |
+| `approval.status` / `approvalStatus` | Admin pipeline: `not_submitted` \| `pending_approval` \| `approved` \| `rejected` |
+
+Backend already maps those → **`workflowStatus`**.
+
+---
+
+## FE checklist (Sales + Admin)
+
+- [ ] One source of truth: **`workflowStatus`**
+- [ ] Full enum including **`admin_rejected`**, **`client_rejected`**, **`accepted`**
+- [ ] Replace “View Quotation” with **Send for Approval** when `draft`
+- [ ] After edit/sync, re-read `workflowStatus` (expect `draft`)
+- [ ] Admin inbox from `GET …/approval/pending`
+- [ ] Do not conflate `approved` with `accepted`

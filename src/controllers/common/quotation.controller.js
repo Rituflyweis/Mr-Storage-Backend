@@ -298,14 +298,30 @@ const advanceLeadToProposalSent = async (leadId, userId) => {
   }
 };
 
+/**
+ * Single FE status for badges/CTAs.
+ * Client outcomes (quotation.status accepted|rejected) win over admin approval,
+ * then sent, then approval pipeline, else draft.
+ * Admin vs client reject are separate enums (admin_rejected | client_rejected).
+ */
 const getWorkflowStatus = (quotation) => {
-  if (quotation.status === "sent") return "sent";
+  if (!quotation) return null;
+  const docStatus = quotation.status || "draft";
+  // Customer portal accept / reject (after send)
+  if (docStatus === "accepted") return "accepted";
+  if (docStatus === "rejected") return "client_rejected";
+  if (docStatus === "sent") return "sent";
+
   const approvalStatus = quotation.approval?.status || "not_submitted";
   if (approvalStatus === "pending_approval") return "pending_approval";
   if (approvalStatus === "approved") return "approved";
-  if (approvalStatus === "rejected") return "rejected";
+  // Admin rejected before send (document usually still draft)
+  if (approvalStatus === "rejected") return "admin_rejected";
   return "draft";
 };
+
+/** Shared by estimate sync / deposit / milestones quotationSync payloads. */
+exports.getWorkflowStatus = getWorkflowStatus;
 
 const toBoolean = (value, fallback = false) => {
   if (value === undefined || value === null) return fallback;
@@ -591,13 +607,23 @@ const applyEstimateMappedFieldsToQuotation = (quotation, estimate, reqUser) => {
 };
 
 exports.syncLinkedQuotationFromUpdatedEstimate = async ({ estimate, user } = {}) => {
-  if (!estimate?._id) return { synced: false, skippedReason: "missing_estimate", quotation: null };
+  const withStatus = (payload) => ({
+    ...payload,
+    approvalStatus: payload.quotation?.approval?.status || null,
+    workflowStatus: getWorkflowStatus(payload.quotation),
+  });
+
+  if (!estimate?._id) {
+    return withStatus({ synced: false, skippedReason: "missing_estimate", quotation: null });
+  }
   const quotation = await Quotation.findOne({ sourceEstimateId: estimate._id }).sort({
     createdAt: -1,
   });
-  if (!quotation) return { synced: false, skippedReason: "not_converted", quotation: null };
+  if (!quotation) {
+    return withStatus({ synced: false, skippedReason: "not_converted", quotation: null });
+  }
   if (!EDITABLE_QUOTATION_STATUSES.includes(quotation.status)) {
-    return { synced: false, skippedReason: "quotation_not_editable", quotation };
+    return withStatus({ synced: false, skippedReason: "quotation_not_editable", quotation });
   }
 
   const prevBasePrice = quotation.basePrice;
@@ -627,7 +653,7 @@ exports.syncLinkedQuotationFromUpdatedEstimate = async ({ estimate, user } = {})
       sourceEstimateId: estimate._id,
     },
   });
-  return { synced: true, skippedReason: null, quotation, ...approvalChange };
+  return withStatus({ synced: true, skippedReason: null, quotation, ...approvalChange });
 };
 
 const resolveLeadForEstimateConversion = async ({
@@ -1386,18 +1412,27 @@ exports.getQuotationStats = asyncHandler(async (req, res) => {
   const stats = {
     total: quotations.length,
     approved: 0,
+    accepted: 0,
     pendingApproval: 0,
-    rejected: 0,
+    adminRejected: 0,
+    clientRejected: 0,
+    rejected: 0, // adminRejected + clientRejected (legacy total)
     sent: 0,
     draft: 0,
   };
 
   for (const quotation of quotations) {
     const workflowStatus = getWorkflowStatus(quotation);
-    if (workflowStatus === "approved") stats.approved += 1;
+    if (workflowStatus === "accepted") stats.accepted += 1;
+    else if (workflowStatus === "approved") stats.approved += 1;
     else if (workflowStatus === "pending_approval") stats.pendingApproval += 1;
-    else if (workflowStatus === "rejected") stats.rejected += 1;
-    else if (workflowStatus === "sent") stats.sent += 1;
+    else if (workflowStatus === "admin_rejected") {
+      stats.adminRejected += 1;
+      stats.rejected += 1;
+    } else if (workflowStatus === "client_rejected") {
+      stats.clientRejected += 1;
+      stats.rejected += 1;
+    } else if (workflowStatus === "sent") stats.sent += 1;
     else stats.draft += 1;
   }
 
