@@ -107,22 +107,29 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
 exports.getCustomerDetail = asyncHandler(async (req, res) => {
   const { customerId } = req.params
+  const {
+    resolveCustomerDoc,
+    buildCustomerDetailFinancials,
+  } = require('../../utils/customerDetailFinancials')
 
-  const ownCustomerIds = await getOwnCustomerIds(req.user._id)
-  const isOwn = ownCustomerIds.some(id => String(id) === customerId)
-  if (!isOwn) return forbidden(res, 'Access denied')
-
-  const customer = await Customer.findById(customerId).select('_id customerId firstName email phone isActive source createdAt').lean()
+  const customer = await resolveCustomerDoc(
+    customerId,
+    '_id customerId firstName lastName email phone location isActive source photo company createdAt'
+  )
   if (!customer) return notFound(res, 'Customer not found')
 
-  const invoices = await Invoice.find({ customerId }).lean()
-  const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.totalAmount || 0), 0)
-  const pendingPayment = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.totalAmount || 0), 0)
-  const revenueGenerated = totalPaid
+  const ownCustomerIds = await getOwnCustomerIds(req.user._id)
+  const isOwn = ownCustomerIds.some((id) => String(id) === String(customer._id))
+  if (!isOwn) return forbidden(res, 'Access denied')
+
+  const financialPayload = await buildCustomerDetailFinancials(customer._id)
 
   return success(res, {
-    customer,
-    financials: { totalPaid, pendingPayment, totalInvoices: invoices.length, revenueGenerated },
+    customer: {
+      ...customer,
+      address: customer.location || '',
+    },
+    ...financialPayload,
   })
 })
 
