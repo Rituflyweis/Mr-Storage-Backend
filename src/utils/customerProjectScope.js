@@ -38,15 +38,22 @@ const getProjectScopeFilter = (scope) => {
   }
 }
 
-const mapCustomerListRow = (customer, totalProjects) => ({
-  _id: customer._id,
-  customerId: customer.customerId,
-  customerName: customer.firstName,
-  email: customer.email,
-  phone: customer.phone,
-  totalProjects,
-  status: customer.isActive ? 'active' : 'inactive',
-})
+const mapCustomerListRow = (customer, totalProjects) => {
+  const isActive = customer.isActive !== false
+  return {
+    _id: customer._id,
+    customerId: customer.customerId,
+    customerName: customer.firstName,
+    email: customer.email,
+    phone: customer.phone,
+    totalProjects,
+    // Boolean for FE badges that check `isActive` (missing field was treated as Inactive).
+    isActive,
+    // Machine + display forms
+    status: isActive ? 'active' : 'inactive',
+    statusLabel: isActive ? 'Active' : 'Inactive',
+  }
+}
 
 const mapProjectListRow = (lead, customer, { includePoRaisedAt = false, poRaisedAt = null } = {}) => {
   const row = {
