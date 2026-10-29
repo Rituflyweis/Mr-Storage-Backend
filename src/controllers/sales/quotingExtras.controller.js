@@ -14,6 +14,9 @@ const {
   generateMilestoneScheduleHtml,
 } = require('../../services/quoting/depositMilestoneDocument')
 const { renderHtmlToPdf } = require('../../services/quoting/htmlPdf')
+const {
+  syncLinkedQuotationFromUpdatedEstimate,
+} = require('../common/quotation.controller')
 
 const grandOf = (est = {}) =>
   est.revisedContractTotal ??
@@ -166,6 +169,10 @@ exports.updateEstimateDeposit = asyncHandler(async (req, res) => {
   if (req.body.note) est.milestoneNote = req.body.note
 
   await est.save()
+  const quotationSync = await syncLinkedQuotationFromUpdatedEstimate({
+    estimate: est,
+    user: req.user,
+  })
   // Keep legacy flat deposit fields (pct/deposit/…) for existing FE; also return milestones.
   return success(
     res,
@@ -177,6 +184,17 @@ exports.updateEstimateDeposit = asyncHandler(async (req, res) => {
       scheduled: m.scheduled,
       remaining: m.remaining,
       fullyScheduled: m.fullyScheduled,
+      quotationSync: {
+        synced: Boolean(quotationSync.synced),
+        requiresSubmitForApproval: Boolean(quotationSync.requiresSubmitForApproval),
+        approvalStatus: quotationSync.quotation?.approval?.status || null,
+        workflowStatus:
+          quotationSync.quotation?.approval?.status === 'pending_approval'
+            ? 'pending_approval'
+            : quotationSync.quotation?.status === 'sent'
+              ? 'sent'
+              : quotationSync.quotation?.approval?.status || 'draft',
+      },
     },
     'Deposit terms saved',
   )
@@ -190,7 +208,23 @@ exports.updateEstimateMilestones = asyncHandler(async (req, res) => {
   est.milestoneSchedule = m.rows
   est.milestoneNote = req.body.note || ''
   await est.save()
-  return success(res, m, 'Milestone schedule saved')
+  const quotationSync = await syncLinkedQuotationFromUpdatedEstimate({
+    estimate: est,
+    user: req.user,
+  })
+  return success(
+    res,
+    {
+      ...m,
+      quotationSync: {
+        synced: Boolean(quotationSync.synced),
+        requiresSubmitForApproval: Boolean(quotationSync.requiresSubmitForApproval),
+        approvalStatus: quotationSync.quotation?.approval?.status || null,
+        quotationId: quotationSync.quotation?._id || null,
+      },
+    },
+    'Milestone schedule saved',
+  )
 })
 
 exports.updateEstimateMultiStory = asyncHandler(async (req, res) => {

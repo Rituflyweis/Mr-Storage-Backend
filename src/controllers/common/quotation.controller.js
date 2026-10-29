@@ -189,6 +189,11 @@ const applyApprovalDecorators = (quotation) => {
 
 const EDITABLE_QUOTATION_STATUSES = ["draft", "sent"];
 
+/**
+ * After sales edits estimate/quotation: cancel any open approval and return to
+ * not_submitted so FE shows "Send for Approval" again (manual submit only).
+ * Aligns with invoice edit → not_submitted + POST submit-approval.
+ */
 const applyVersionedApprovalOnQuotationEdit = (
   quotation,
   user,
@@ -218,30 +223,27 @@ const applyVersionedApprovalOnQuotationEdit = (
 
   if (wasSent) {
     quotation.status = "draft";
-    pushApprovalHistory(quotation, {
-      status: "not_submitted",
-      note: `Quotation reopened as draft after ${sourceLabel} (was sent, version ${prevVersion})`,
-      by: user._id,
-      versionNumber: prevVersion,
-    });
   }
 
-  quotation.approval.status = "pending_approval";
-  quotation.approval.submittedBy = user._id;
-  quotation.approval.submittedAt = new Date();
+  quotation.approval.status = "not_submitted";
+  quotation.approval.submittedBy = null;
+  quotation.approval.submittedAt = null;
   quotation.approval.reviewedBy = null;
   quotation.approval.reviewedAt = null;
   quotation.approval.rejectionReason = "";
   quotation.approval.approvedVersionNumber = null;
   pushApprovalHistory(quotation, {
-    status: "pending_approval",
-    note: `New approval request after ${sourceLabel} (version ${quotation.versionNumber})`,
+    status: "not_submitted",
+    note: wasSent
+      ? `Quotation reopened as draft after ${sourceLabel} — click Send for Approval (version ${quotation.versionNumber})`
+      : `Quotation updated after ${sourceLabel} — click Send for Approval (version ${quotation.versionNumber})`,
     by: user._id,
     versionNumber: quotation.versionNumber,
   });
 
   return {
-    autoSubmittedForApproval: true,
+    autoSubmittedForApproval: false,
+    requiresSubmitForApproval: true,
     replacedPendingApproval: prevApproval === "pending_approval",
     reopenedFromSent: wasSent,
     prevApproval,
@@ -539,13 +541,11 @@ const mapEstimateToQuotationPayload = (estimate = {}, lead, reqUser) => {
     approval:
       reqUser.role === "sales"
         ? {
-            status: "pending_approval",
-            submittedBy: reqUser._id,
-            submittedAt: new Date(),
+            status: "not_submitted",
             history: [
               {
-                status: "pending_approval",
-                note: "Quotation submitted for admin approval on create from estimate",
+                status: "not_submitted",
+                note: "Quotation created from estimate — click Send for Approval",
                 by: reqUser._id,
                 at: new Date(),
                 versionNumber: 1,
@@ -627,26 +627,6 @@ exports.syncLinkedQuotationFromUpdatedEstimate = async ({ estimate, user } = {})
       sourceEstimateId: estimate._id,
     },
   });
-  if (approvalChange.autoSubmittedForApproval) {
-    await auditService.log({
-      type: "quotation",
-      action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
-      leadId: quotation.leadId,
-      customerId: quotation.customerId,
-      performedBy: user._id,
-      metadata: {
-        quotationId: quotation._id,
-        quoteNumber: quotation.quoteNumber,
-        versionNumber: quotation.versionNumber,
-        source: approvalChange.reopenedFromSent
-          ? "edit_sent_quotation_from_estimate"
-          : approvalChange.replacedPendingApproval
-            ? "edit_pending_quotation_from_estimate"
-            : "edit_approved_quotation_from_estimate",
-      },
-    });
-  }
-
   return { synced: true, skippedReason: null, quotation, ...approvalChange };
 };
 
@@ -771,34 +751,19 @@ const findOrCreateQuotationFromEstimate = async ({
     },
   });
 
-  if (!forceNotSubmitted) {
-    if (reqUser.role === "sales") {
-      await auditService.log({
-        type: "quotation",
-        action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
-        leadId: lead._id,
-        customerId: lead.customerId,
-        performedBy: reqUser._id,
-        metadata: {
-          quotationId: quotation._id,
-          quoteNumber: quotation.quoteNumber,
-          source: "estimate_conversion",
-        },
-      });
-    } else {
-      await auditService.log({
-        type: "quotation",
-        action: AUDIT_ACTIONS.QUOTATION_APPROVED,
-        leadId: lead._id,
-        customerId: lead.customerId,
-        performedBy: reqUser._id,
-        metadata: {
-          quotationId: quotation._id,
-          quoteNumber: quotation.quoteNumber,
-          source: "estimate_conversion_admin",
-        },
-      });
-    }
+  if (!forceNotSubmitted && reqUser.role === "admin") {
+    await auditService.log({
+      type: "quotation",
+      action: AUDIT_ACTIONS.QUOTATION_APPROVED,
+      leadId: lead._id,
+      customerId: lead.customerId,
+      performedBy: reqUser._id,
+      metadata: {
+        quotationId: quotation._id,
+        quoteNumber: quotation.quoteNumber,
+        source: "estimate_conversion_admin",
+      },
+    });
   }
 
   return { quotation, estimate, lead, created: true };
@@ -823,13 +788,11 @@ exports.createQuotation = asyncHandler(async (req, res) => {
     approval:
       req.user.role === "sales"
         ? {
-            status: "pending_approval",
-            submittedBy: req.user._id,
-            submittedAt: new Date(),
+            status: "not_submitted",
             history: [
               {
-                status: "pending_approval",
-                note: "Quotation submitted for admin approval on create",
+                status: "not_submitted",
+                note: "Quotation created — click Send for Approval",
                 by: req.user._id,
                 at: new Date(),
                 versionNumber: 1,
@@ -870,16 +833,7 @@ exports.createQuotation = asyncHandler(async (req, res) => {
       approvalStatus: quotation.approval?.status || "not_submitted",
     },
   });
-  if (req.user.role === "sales") {
-    await auditService.log({
-      type: "quotation",
-      action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
-      leadId,
-      customerId: lead.customerId,
-      performedBy: req.user._id,
-      metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, source: "create_quotation" },
-    });
-  } else {
+  if (req.user.role === "admin") {
     await auditService.log({
       type: "quotation",
       action: AUDIT_ACTIONS.QUOTATION_APPROVED,
@@ -896,6 +850,7 @@ exports.createQuotation = asyncHandler(async (req, res) => {
       includeEstimate: true,
       includeDocuments: true,
     }),
+    requiresSubmitForApproval: req.user.role === "sales",
   });
 });
 
@@ -927,6 +882,9 @@ exports.createQuotationFromEstimate = asyncHandler(async (req, res) => {
         status: estimate.status,
         leadId: estimate.leadId,
       },
+      requiresSubmitForApproval:
+        req.user.role === "sales" &&
+        (quotation.approval?.status || "not_submitted") === "not_submitted",
     },
     "Quotation created from estimate"
   );
@@ -1095,31 +1053,12 @@ exports.updateQuotation = asyncHandler(async (req, res) => {
       reopenedFromSent: approvalChange.reopenedFromSent,
     },
   });
-  if (approvalChange.autoSubmittedForApproval) {
-    await auditService.log({
-      type: "quotation",
-      action: AUDIT_ACTIONS.QUOTATION_SUBMITTED_FOR_APPROVAL,
-      leadId: quotation.leadId,
-      customerId: quotation.customerId,
-      performedBy: req.user._id,
-      metadata: {
-        quotationId: quotation._id,
-        quoteNumber: quotation.quoteNumber,
-        versionNumber: quotation.versionNumber,
-        source: approvalChange.reopenedFromSent
-          ? "edit_sent_quotation"
-          : approvalChange.replacedPendingApproval
-            ? "edit_pending_quotation"
-            : "edit_approved_quotation",
-      },
-    });
-  }
-
   return success(res, {
     quotation: await decorateQuotationResponse(quotation.toObject(), {
       includeEstimate: true,
       includeDocuments: true,
     }),
+    requiresSubmitForApproval: Boolean(approvalChange.requiresSubmitForApproval),
   });
 });
 
@@ -1518,6 +1457,11 @@ exports.getPendingQuotationApprovals = asyncHandler(async (req, res) => {
     else if (normalizedStatus === "rejected") filter["approval.status"] = "rejected";
     else if (normalizedStatus === "draft") filter["approval.status"] = "not_submitted";
     else if (["sent", "accepted"].includes(normalizedStatus)) filter.status = normalizedStatus;
+  }
+
+  // Admin inbox default: only quotations waiting for approval (unless filters passed).
+  if (!normalizedApprovalStatus && !normalizedStatus) {
+    filter["approval.status"] = "pending_approval";
   }
 
   const normalizedSort = String(sort || "latest").trim().toLowerCase();

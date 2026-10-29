@@ -1413,6 +1413,8 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
         : null,
       versionNumber: linkedQuotation?.versionNumber || null,
       reopenedFromSent: Boolean(quotationSync.reopenedFromSent),
+      requiresSubmitForApproval: Boolean(quotationSync.requiresSubmitForApproval),
+      quotationId: linkedQuotation?._id || null,
     },
   })
 })
