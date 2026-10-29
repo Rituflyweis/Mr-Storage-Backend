@@ -14,10 +14,16 @@ const pickMaterialSellOverride = (override = {}, extras = {}) => {
   const candidates = [
     extras.materialSellOverride,
     extras.matSellOverride,
+    extras.matLockSell,
+    extras.lockedMatSell,
     extras.quoteControls?.materialSellOverride,
     extras.quoteControls?.matSellOverride,
+    extras.quoteControls?.matLockSell,
+    extras.quoteControls?.lockedMatSell,
     override.materialSellOverride,
     override.matSellOverride,
+    override.matLockSell,
+    override.lockedMatSell,
     override.materialSell,
   ]
   for (const c of candidates) {
@@ -42,9 +48,9 @@ const normalizeCogsOverrideInput = (override, extras = {}) => {
     toPositiveNumber(next.sellDollar) != null ||
     (next.costDollar != null && next.costDollar !== '')
 
-  // FE often sends sellDollar / materialSellOverride without applied:true — treat as apply.
-  // Explicit applied:false still wins (preview-only).
-  if (hasSellIntent && next.applied !== false) {
+  // Any positive sell/cost override dollars mean apply — even if FE also sent a default
+  // `cogsOverride: { applied: false }` blob (that used to wipe Material Sell Override on reopen).
+  if (hasSellIntent) {
     next.applied = true
   }
 

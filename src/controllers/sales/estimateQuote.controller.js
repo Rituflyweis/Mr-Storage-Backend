@@ -507,11 +507,20 @@ const resolveEstimateBuildingSubtotal = (estimate = {}) => {
   }
 }
 
-const withEstimateTotals = (estimate) => ({
-  ...estimate,
-  grandTotal: resolveEstimateGrandTotal(estimate),
-  buildingSubtotal: resolveEstimateBuildingSubtotal(estimate),
-})
+const withEstimateTotals = (estimate) => {
+  const materialSellOverride =
+    estimate?.cogsOverride?.materialSellOverride ??
+    estimate?.materialSellOverride ??
+    estimate?.quoteControls?.materialSellOverride ??
+    null
+  return {
+    ...estimate,
+    grandTotal: resolveEstimateGrandTotal(estimate),
+    buildingSubtotal: resolveEstimateBuildingSubtotal(estimate),
+    materialSellOverride,
+    cogsOverride: estimate?.cogsOverride || null,
+  }
+}
 
 const withEstimateListTotals = (estimate) => {
   const {
@@ -861,9 +870,48 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
     salesTax: body.salesTax || savedPayload.salesTax,
     staircase: body.staircase || body.multiStory || savedPayload.staircase,
     multiStory: body.multiStory || savedPayload.multiStory,
-    cogsOverride: body.cogsOverride || savedPayload.cogsOverride,
+    // Prefer body override only when FE actually sends sell dollars / applied:true.
+    // Empty `{ applied: false }` defaults must not wipe a saved material sell lock.
+    cogsOverride: (() => {
+      const bodyHasSellIntent =
+        body.materialSellOverride != null ||
+        body.matSellOverride != null ||
+        body.matLockSell != null ||
+        body.cogsOverride?.materialSellOverride != null ||
+        body.cogsOverride?.sellDollar != null ||
+        body.cogsOverride?.applied === true
+      const bodyClearsOnly =
+        body.cogsOverride &&
+        body.cogsOverride.applied === false &&
+        !bodyHasSellIntent
+      if (bodyClearsOnly) return savedPayload.cogsOverride || null
+      const sourceOverride = bodyHasSellIntent
+        ? body.cogsOverride
+        : body.cogsOverride !== undefined && body.cogsOverride !== null
+          ? body.cogsOverride
+          : savedPayload.cogsOverride
+      return (
+        normalizeCogsOverrideInput(sourceOverride, {
+          ...savedPayload,
+          ...body,
+          materialSellOverride:
+            body.materialSellOverride ??
+            body.matSellOverride ??
+            body.matLockSell ??
+            savedPayload.materialSellOverride ??
+            savedPayload.cogsOverride?.materialSellOverride,
+        }) ||
+        savedPayload.cogsOverride ||
+        null
+      )
+    })(),
     materialSellOverride:
-      body.materialSellOverride ?? body.matSellOverride ?? savedPayload.materialSellOverride,
+      body.materialSellOverride ??
+      body.matSellOverride ??
+      body.matLockSell ??
+      savedPayload.materialSellOverride ??
+      savedPayload.cogsOverride?.materialSellOverride ??
+      null,
     pembDrawings: firstDefined(
       body.pembDrawings,
       body.engineeringDrawings,
@@ -947,14 +995,17 @@ const applyLiveDocumentRebuild = async (userId, payload, body = {}) => {
     body.matMuOverride != null ||
     body.matMuPct != null ||
     body.freightOverride != null
+  const savedCogs = normalizeCogsOverrideInput(payload.cogsOverride, payload)
   const wantsRecompute =
     body.recompute === true ||
     body.recompute === 'true' ||
     body.materialSellOverride != null ||
     body.matSellOverride != null ||
+    body.matLockSell != null ||
     body.cogsOverride?.applied ||
     body.cogsOverride?.materialSellOverride != null ||
     body.cogsOverride?.sellDollar != null ||
+    Boolean(savedCogs?.applied) ||
     drawingsChanged ||
     finishChanged ||
     liveControlsTouched ||
@@ -1154,17 +1205,27 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
     concreteAddon: fullQuote?.concrete || req.body.concreteAddon || null,
     insulationAddon: fullQuote?.insulation || req.body.insulationAddon || null,
     salesTax: fullQuote?.salesTax || req.body.salesTax || null,
-    cogsOverride: req.body.cogsOverride || null,
+    // Always persist normalized override (top-level materialSellOverride alone must stick).
+    cogsOverride: fullExtras.cogsOverride || null,
     marginOverride: req.body.marginOverride || null,
     pembAddOns: req.body.pembAddOns || [],
-    quoteControls: req.body.quoteControls || {
-      steelFinish: options.steelFinish,
-      matMuOverride: options.matMuOverride,
-      freightOverride: options.freightOverride,
-      pembDrawings: options.pembDrawings,
-      pembIncludeErection: options.pembIncludeErection,
-      deletedRowKeys: options.deletedRowKeys,
-    },
+    quoteControls: (() => {
+      const base = req.body.quoteControls || {
+        steelFinish: options.steelFinish,
+        matMuOverride: options.matMuOverride,
+        freightOverride: options.freightOverride,
+        pembDrawings: options.pembDrawings,
+        pembIncludeErection: options.pembIncludeErection,
+        deletedRowKeys: options.deletedRowKeys,
+      }
+      if (fullExtras.cogsOverride?.materialSellOverride != null) {
+        return {
+          ...base,
+          materialSellOverride: fullExtras.cogsOverride.materialSellOverride,
+        }
+      }
+      return base
+    })(),
     contractDetails: req.body.contractDetails || req.body.contract || null,
     drawingAttachments: req.body.drawingAttachments || req.body.drawings || [],
     additionalInfo: req.body.additionalInfo || '',
@@ -1196,7 +1257,10 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
   if (estimate.jobType === 'Storage' && estimate.storagePricingResult) {
     applyStorageEstimateTotals(estimate, estimate.storagePricingResult)
   } else {
-    applyEstimateTotals(estimate, { pricing, fullQuote })
+    // Prefer post-override pricing when Material Sell Override is applied.
+    const pricingForSave =
+      fullExtras.cogsOverride?.applied && fullQuote?.pricing ? fullQuote.pricing : pricing
+    applyEstimateTotals(estimate, { pricing: pricingForSave, fullQuote })
   }
   await estimate.save()
 
@@ -1228,14 +1292,28 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
   if (estimate.status !== 'draft') return badRequest(res, 'Only draft estimates can be edited')
 
   const options = normalizeQuoteOptions({ ...estimate.toObject(), ...req.body })
-  const fullExtras = normalizeFullQuoteExtras(req.body, options)
+  // Merge saved override into normalize so top-level materialSellOverride alone still applies.
+  const fullExtras = normalizeFullQuoteExtras(
+    {
+      ...estimate.toObject(),
+      ...req.body,
+      materialSellOverride:
+        req.body.materialSellOverride ??
+        req.body.matSellOverride ??
+        req.body.matLockSell ??
+        estimate.cogsOverride?.materialSellOverride,
+      cogsOverride:
+        req.body.cogsOverride !== undefined ? req.body.cogsOverride : estimate.cogsOverride,
+    },
+    options,
+  )
 
   const EDITABLE = [
     'jobType', 'scope', 'roofType', 'installLevel', 'blendPct', 'leadCompanyName', 'customerEmail',
     'streetAddress', 'cityStateZip', 'buildingSize', 'squareFootage', 'jobNumber', 'quoteDate',
     'installCostPerSf', 'sellPerSf', 'sourceFileName', 'extractedDrawingFields', 'parsedCategories',
     'tabSummary', 'breakdownRows', 'pricingResult', 'storageData', 'storagePricingResult',
-    'concreteAddon', 'insulationAddon', 'salesTax', 'cogsOverride', 'marginOverride',
+    'concreteAddon', 'insulationAddon', 'salesTax', 'marginOverride',
     'pembAddOns', 'quoteControls',
     'contractDetails', 'drawingAttachments', 'additionalInfo', 'fullQuoteResult',
     'statementOfWork', 'exclusions', 'status',
@@ -1254,6 +1332,26 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
   if (req.body.sf !== undefined) estimate.squareFootage = Number(req.body.sf) || 0
   if (req.body.contract !== undefined) estimate.contractDetails = req.body.contract
   if (req.body.drawings !== undefined) estimate.drawingAttachments = req.body.drawings
+
+  // Persist normalized Material Sell / COGS override (do not store raw body-only blob).
+  if (
+    req.body.cogsOverride !== undefined ||
+    req.body.materialSellOverride != null ||
+    req.body.matSellOverride != null ||
+    req.body.matLockSell != null
+  ) {
+    estimate.cogsOverride = fullExtras.cogsOverride || null
+    if (estimate.cogsOverride?.materialSellOverride != null) {
+      estimate.quoteControls = {
+        ...(estimate.quoteControls && typeof estimate.quoteControls === 'object'
+          ? estimate.quoteControls.toObject
+            ? estimate.quoteControls.toObject()
+            : estimate.quoteControls
+          : {}),
+        materialSellOverride: estimate.cogsOverride.materialSellOverride,
+      }
+    }
+  }
 
   const cats = req.body.parsedCategories || estimate.parsedCategories
   if (cats) {
@@ -1283,7 +1381,11 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
         ...fullExtras,
         sf: options.sf,
       })
-    applyEstimateTotals(estimate, { pricing: req.body.pricingResult, fullQuote })
+    const pricingForSave =
+      fullExtras.cogsOverride?.applied && fullQuote?.pricing
+        ? fullQuote.pricing
+        : req.body.pricingResult
+    applyEstimateTotals(estimate, { pricing: pricingForSave, fullQuote })
   }
 
   await estimate.save()

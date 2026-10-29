@@ -66,7 +66,15 @@ To force `sellDollar` as ex-freight (HTML breakdown behavior):
 
 ## Clear override
 
-Omit the field, or send `"materialSellOverride": null` / `"cogsOverride": { "applied": false }`, then recompute.
+Omit the field, or send `"materialSellOverride": null` **and** `"cogsOverride": { "applied": false }` (no sell dollars), then recompute.
+
+## Persist / reopen (backend fix)
+
+On **create/update**, backend now always saves normalized `cogsOverride` (including top-level `materialSellOverride`).  
+GET estimate returns `materialSellOverride` + `cogsOverride` for form hydrate.  
+Quote preview with `estimateId` re-applies the saved lock (Previous / reopen no longer snaps back to the pre-edit shipper total).
+
+**FE on Edit:** bind Material Sell from `estimate.materialSellOverride` or `estimate.cogsOverride.materialSellOverride`, and keep sending it on preview/save.
 
 ## Quote preview after Recompute
 
