@@ -39,6 +39,9 @@ const TaxSchema = new mongoose.Schema(
     paymentMethod: { type: String, default: '', trim: true },
     paymentStatus: { type: String, enum: ['none', 'processing', 'completed'], default: 'none' },
     receiptUrl:  { type: String, default: '', trim: true },
+    /** Set when FE calls Prepare Filing (GET …/prepare). */
+    preparedAt:  { type: Date, default: null },
+    preparedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     activityLog: [
       {
         at: { type: Date, default: Date.now },

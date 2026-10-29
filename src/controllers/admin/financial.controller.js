@@ -351,15 +351,30 @@ exports.getTaxFilingFilters = asyncHandler(async (req, res) => {
 })
 
 exports.prepareFiling = asyncHandler(async (req, res) => {
-  const tax = await Tax.findById(req.params.taxId)
+  const taxDoc = await Tax.findById(req.params.taxId)
+  if (!taxDoc) return notFound(res, 'Tax record not found')
+
+  if (!taxDoc.preparedAt) {
+    taxDoc.preparedAt = new Date()
+    taxDoc.preparedBy = req.user._id
+    taxDoc.activityLog = [
+      ...(taxDoc.activityLog || []),
+      { at: new Date(), type: 'prepare', amount: null, label: 'Filing prepared' },
+    ]
+    await taxDoc.save()
+  }
+
+  const tax = await Tax.findById(taxDoc._id)
     .populate('leadId', 'projectName jobId')
     .populate('customerId', 'firstName lastName')
     .lean()
-  if (!tax) return notFound(res, 'Tax record not found')
   const { mapDetailModal } = require('../../utils/taxFilingPresentation.util')
   return success(res, {
     tax,
     detail: mapDetailModal(tax),
+    isPrepared: true,
+    prepared: true,
+    preparedAt: tax.preparedAt,
     message: 'Filing details ready for review',
   })
 })
@@ -374,6 +389,9 @@ exports.getTaxFilingDetail = asyncHandler(async (req, res) => {
   const { isReturnsConfigured } = require('../../config/taxEngine')
   return success(res, {
     detail: mapDetailModal(tax),
+    isPrepared: Boolean(tax.preparedAt),
+    prepared: Boolean(tax.preparedAt),
+    preparedAt: tax.preparedAt || null,
     avalara: {
       filingId: tax.avalaraFilingId || null,
       returnsConfigured: isReturnsConfigured(),
@@ -382,7 +400,13 @@ exports.getTaxFilingDetail = asyncHandler(async (req, res) => {
   })
 })
 
-const handleTaxPayment = async (req, res, { useAvalaraApprove }) => {
+/**
+ * Single Pay Tax endpoint — staging vs prod decided here:
+ * Avalara Returns configured → approveFilings; otherwise local ledger.
+ */
+const handleTaxPayment = async (req, res) => {
+  const { isReturnsConfigured } = require('../../config/taxEngine')
+  const useAvalaraApprove = isReturnsConfigured()
   const taxFilingActions = require('../../services/tax/taxFilingActions.service')
   const result = await taxFilingActions.submitTaxPayment(
     req.params.taxId,
@@ -397,18 +421,21 @@ const handleTaxPayment = async (req, res, { useAvalaraApprove }) => {
   }
   return success(
     res,
-    { payment: result.payment, tax: result.tax, avalara: result.avalara || null },
+    {
+      payment: result.payment,
+      tax: result.tax,
+      avalara: result.avalara || null,
+      mode: useAvalaraApprove ? 'avalara' : 'local',
+    },
     useAvalaraApprove ? 'Filing approved via Avalara' : 'Payment submitted successfully'
   )
 }
 
-/** Figma Pay Now — local ledger (no Returns call unless forced). */
-exports.payTaxFiling = asyncHandler(async (req, res) => handleTaxPayment(req, res, { useAvalaraApprove: false }))
+/** Canonical Pay Tax — FE should use this only. */
+exports.payTaxFiling = asyncHandler(async (req, res) => handleTaxPayment(req, res))
 
-/** Figma Pay Tax / Prepare remittance — calls Avalara `approveFilings` when Returns env is set. */
-exports.approveTaxFiling = asyncHandler(async (req, res) =>
-  handleTaxPayment(req, res, { useAvalaraApprove: true })
-)
+/** Alias of pay — same auto staging/prod behavior (kept for old FE links). */
+exports.approveTaxFiling = asyncHandler(async (req, res) => handleTaxPayment(req, res))
 
 exports.getTaxFilingReceipt = asyncHandler(async (req, res) => {
   const tax = await Tax.findById(req.params.taxId).lean()

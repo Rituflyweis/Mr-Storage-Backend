@@ -50,6 +50,7 @@ const formatFilingPeriodLabel = (tax = {}) => {
 const mapPendingRow = (tax = {}) => {
   const uiStatus = deriveUiStatus(tax)
   const left = daysUntil(tax.dueDate)
+  const isPrepared = Boolean(tax.preparedAt)
   return {
     _id: tax._id,
     state: tax.state,
@@ -63,6 +64,10 @@ const mapPendingRow = (tax = {}) => {
     taxDue: tax.taxDue ?? tax.amount ?? 0,
     payable: tax.payable ?? tax.taxDue ?? tax.amount ?? 0,
     status: uiStatus,
+    /** True after Prepare Filing was opened (GET …/prepare). */
+    isPrepared,
+    prepared: isPrepared,
+    preparedAt: tax.preparedAt || null,
     leadId: tax.leadId?._id || tax.leadId || null,
     projectName: tax.leadId?.projectName || '',
     jobId: tax.leadId?.jobId || '',
@@ -117,7 +122,12 @@ const mapDetailModal = (tax = {}) => {
       currency: 'USD',
       provider: 'avalara',
       providerLabel: 'Tax Partner: Avalara CERTIFIED PARTNER',
+      /** FE always POSTs …/pay — backend picks Avalara vs local. */
+      endpoint: 'pay',
     },
+    isPrepared: Boolean(tax.preparedAt),
+    prepared: Boolean(tax.preparedAt),
+    preparedAt: tax.preparedAt || null,
     recentActivity: Array.isArray(tax.activityLog) ? tax.activityLog : [],
     activityLog: Array.isArray(tax.activityLog) ? tax.activityLog : [],
     taxRecord: tax,
