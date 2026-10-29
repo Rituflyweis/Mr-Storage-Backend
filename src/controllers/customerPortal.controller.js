@@ -42,6 +42,10 @@ const env = require('../config/env')
 const generateMaterialRequestId = require('../utils/generateMaterialRequestId')
 const auditService = require('../services/audit.service')
 const notificationService = require('../services/notification.service')
+const {
+  alertPlantUsersForLead,
+  notifyPlantUsersForLead,
+} = require('../utils/notifyPlantUsers')
 const { syncLeadBuildings } = require('../services/leadBuilding.service')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require('../config/constants')
 // Granular fulfillment steps (material_prepared -> ... -> dispatched_to_site) all read as
@@ -2453,14 +2457,35 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
     metadata,
   })
 
-  await notificationService.notifyLeadOwner(lead._id, {
+  const notifyPayload = {
     title: 'Drawing approved',
     body: `${result.name || 'A drawing'} was approved by the customer.`,
     type: 'drawing',
     priority: 'medium',
     refId: result._id,
     refModel: 'DrawingDocument',
+  }
+  // Sales owner (legacy) + plant assignees on this project (PO assignedTo).
+  await notificationService.notifyLeadOwner(lead._id, notifyPayload)
+  const socketPayload = {
+    documentId: String(result._id),
+    leadId: String(lead._id),
+    status: 'approved',
+    name: result.name || '',
+    source: metadata.source,
+    buildingNumber: metadata.buildingNumber || null,
+  }
+  await alertPlantUsersForLead(lead._id, {
+    eventName: 'drawing_approved',
+    socketPayload,
+    notification: notifyPayload,
   })
+  // Also emit shared drawing_status_updated (lead rooms + plant users via alert above).
+  if (global.io) {
+    global.io.of('/chat').to(`lead:${lead._id}`).emit('drawing_status_updated', socketPayload)
+    global.io.of('/admin').to(`lead:${lead._id}`).emit('drawing_status_updated', socketPayload)
+  }
+  await notifyPlantUsersForLead(lead._id, 'drawing_status_updated', socketPayload)
 
   return success(res, { message: 'Drawing approved', drawing: result })
 })
@@ -2512,14 +2537,35 @@ exports.requestDrawingRevision = asyncHandler(async (req, res) => {
     metadata,
   })
 
-  await notificationService.notifyLeadOwner(lead._id, {
+  const notifyPayload = {
     title: 'Drawing revision requested',
     body: `Customer requested a revision on ${result.name || 'a drawing'}: "${note.trim()}"`,
     type: 'drawing',
     priority: 'high',
     refId: result._id,
     refModel: 'DrawingDocument',
+  }
+  await notificationService.notifyLeadOwner(lead._id, notifyPayload)
+  const socketPayload = {
+    documentId: String(result._id),
+    leadId: String(lead._id),
+    status: result.status === 'rejected' ? 'rejected' : 'under_review',
+    revisionRequired: true,
+    name: result.name || '',
+    note: note.trim(),
+    source: metadata.source,
+    buildingNumber: metadata.buildingNumber || null,
+  }
+  await alertPlantUsersForLead(lead._id, {
+    eventName: 'drawing_revision_requested',
+    socketPayload,
+    notification: notifyPayload,
   })
+  if (global.io) {
+    global.io.of('/chat').to(`lead:${lead._id}`).emit('drawing_status_updated', socketPayload)
+    global.io.of('/admin').to(`lead:${lead._id}`).emit('drawing_status_updated', socketPayload)
+  }
+  await notifyPlantUsersForLead(lead._id, 'drawing_status_updated', socketPayload)
 
   return success(res, { message: 'Revision requested', drawing: result })
 })

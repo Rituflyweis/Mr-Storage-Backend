@@ -5,6 +5,7 @@ const AuditLog = require('../../models/AuditLog')
 const User = require('../../models/User')
 const Building = require('../../models/Building')
 const auditService = require('../../services/audit.service')
+const notificationService = require('../../services/notification.service')
 const { success, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
@@ -71,13 +72,32 @@ const releasePOToPlant = async (order, assignedTo, adminUserId) => {
     }
   }
 
+  const leadDoc = lead || await Lead.findById(order.leadId).select('projectName jobId').lean()
+  const projectName = leadDoc?.projectName || ''
+  const jobId = leadDoc?.jobId || ''
+  const assignPayload = {
+    leadId: order.leadId,
+    poOrderId: order._id,
+    projectName,
+    jobId,
+  }
+
+  // In-app row (Notifications list + badge) + realtime `notification` / `new_notification` emits.
+  await notificationService.notify({
+    userId: assignedTo,
+    leadId: order.leadId,
+    title: 'Project assigned',
+    body: projectName
+      ? `${projectName}${jobId ? ` (${jobId})` : ''} was assigned to you.`
+      : 'A project was assigned to you.',
+    type: 'system',
+    priority: 'high',
+    refId: order._id,
+    refModel: 'POOrder',
+  })
+
   if (global.io) {
-    const leadDoc = lead || await Lead.findById(order.leadId).select('projectName').lean()
-    global.io.of('/admin').to(`user:${assignedTo}`).emit('project_assigned', {
-      leadId: order.leadId,
-      poOrderId: order._id,
-      projectName: leadDoc?.projectName || '',
-    })
+    global.io.of('/admin').to(`user:${assignedTo}`).emit('project_assigned', assignPayload)
   }
 
   return { lead, plantUser }

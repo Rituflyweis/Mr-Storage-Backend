@@ -10,6 +10,26 @@ const Lead = require('../models/Lead')
  * refId/refModel let the frontend deep-link straight to the relevant screen from the notification
  * (e.g. refModel: 'Delivery', refId: delivery._id -> navigate to that delivery's detail view).
  */
+const emitStaffNotification = (userId, doc) => {
+  if (!global.io || !userId || !doc) return
+  const payload = {
+    _id: doc._id,
+    title: doc.title,
+    body: doc.body || '',
+    type: doc.type,
+    priority: doc.priority,
+    leadId: doc.leadId || null,
+    refId: doc.refId || null,
+    refModel: doc.refModel || null,
+    isRead: false,
+    createdAt: doc.createdAt,
+  }
+  // Plant / sales / construction / admin all connect on `/admin` and auto-join `user:{id}`.
+  global.io.of('/admin').to(`user:${String(userId)}`).emit('notification', payload)
+  // Alias used by some FE toast handlers.
+  global.io.of('/admin').to(`user:${String(userId)}`).emit('new_notification', payload)
+}
+
 const notify = async ({
   userId = null,
   customerId = null,
@@ -24,7 +44,9 @@ const notify = async ({
   if (!userId && !customerId) return null
   if (!title) return null
   try {
-    return await Notification.create({ userId, customerId, leadId, title, body, type, priority, refId, refModel })
+    const doc = await Notification.create({ userId, customerId, leadId, title, body, type, priority, refId, refModel })
+    if (userId) emitStaffNotification(userId, doc)
+    return doc
   } catch (err) {
     console.error('[Notification] Write failed:', err.message)
     return null
