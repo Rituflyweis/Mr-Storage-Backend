@@ -80,7 +80,7 @@ Authorization: Bearer <token>
 | `page` | int | `1` | Page (≥ 1) |
 | `limit` | int | `20` | Page size (1–200) |
 | **`status`** | string | — | **Optional.** Delivery and/or bid status filter (§4) |
-| `search` | string | — | Delivery #, locations, project name, job id, etc. |
+| `search` | string | — | Delivery #, locations; **project name / job id**; **customer (client) name** (first, last, or full) |
 | `projectId` | ObjectId | — | Lead / project id |
 | `customerId` | ObjectId | — | Customer (via lead) |
 | `carrierId` | ObjectId | — | **Awarded (selected) carrier** only |

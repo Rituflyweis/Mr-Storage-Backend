@@ -34,6 +34,33 @@ const {
   formatDeliveryStatusLabel,
 } = require('../../utils/notificationDetailsQuery.util')
 
+const FREIGHT_LEAD_POPULATE = {
+  path: 'leadId',
+  select: 'projectName jobId customerId',
+  populate: { path: 'customerId', select: 'firstName lastName email' },
+}
+
+/** `search` → client (customer) name and/or project name / job id (+ token, carrier). */
+const matchesFreightBidSearch = (bid, search) => {
+  const term = String(search || '').trim().toLowerCase()
+  if (!term) return true
+  const lead = bid.deliveryId?.leadId
+  const customer = lead?.customerId
+  const customerName = customer
+    ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim().toLowerCase()
+    : ''
+  return (
+    bid.token?.toLowerCase().includes(term) ||
+    lead?.projectName?.toLowerCase().includes(term) ||
+    lead?.jobId?.toLowerCase().includes(term) ||
+    customerName.includes(term) ||
+    customer?.firstName?.toLowerCase().includes(term) ||
+    customer?.lastName?.toLowerCase().includes(term) ||
+    customer?.email?.toLowerCase().includes(term) ||
+    bid.carrierId?.carrierName?.toLowerCase().includes(term)
+  )
+}
+
 const computeSavings = async ({ startDate, endDate, status, search, projectId }) => {
   const dateFilter = buildDateFilter({ startDate, endDate })
 
@@ -157,7 +184,7 @@ exports.getFreightLoads = asyncHandler(async (req, res) => {
       .populate({
         path: 'deliveryId',
         select: 'leadId materialType pickupLocation deliveryLocation deliveryDate createdAt status',
-        populate: { path: 'leadId', select: 'projectName jobId customerId' },
+        populate: FREIGHT_LEAD_POPULATE,
       })
       .populate({ path: 'carrierId', select: 'carrierName phone' })
       .sort({ createdAt: -1 })
@@ -170,19 +197,14 @@ exports.getFreightLoads = asyncHandler(async (req, res) => {
 
   let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
   if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
-  if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
-  if (materialType) bids = bids.filter((b) => b.deliveryId?.materialType === materialType)
-  if (siteLocation) bids = bids.filter((b) => b.deliveryId?.deliveryLocation === siteLocation)
-  // `token` alone isn't human-searchable — search also matches project name/job ID and carrier name.
-  if (search?.trim()) {
-    const term = search.trim().toLowerCase()
+  if (customerId) {
     bids = bids.filter((b) =>
-      b.token?.toLowerCase().includes(term) ||
-      b.deliveryId?.leadId?.projectName?.toLowerCase().includes(term) ||
-      b.deliveryId?.leadId?.jobId?.toLowerCase().includes(term) ||
-      b.carrierId?.carrierName?.toLowerCase().includes(term)
+      String(b.deliveryId.leadId.customerId?._id || b.deliveryId.leadId.customerId) === String(customerId)
     )
   }
+  if (materialType) bids = bids.filter((b) => b.deliveryId?.materialType === materialType)
+  if (siteLocation) bids = bids.filter((b) => b.deliveryId?.deliveryLocation === siteLocation)
+  if (search?.trim()) bids = bids.filter((b) => matchesFreightBidSearch(b, search))
 
   const filteredTotal = (projectId || customerId || search || materialType || siteLocation) ? bids.length : total - (rawBids.length - bids.length)
   const paged = bids.slice((parseInt(page) - 1) * parseInt(limit), (parseInt(page) - 1) * parseInt(limit) + parseInt(limit))
@@ -220,7 +242,7 @@ exports.getAwardedLoads = asyncHandler(async (req, res) => {
       .populate({
         path: 'deliveryId',
         select: 'leadId materialType pickupLocation deliveryLocation deliveryDate status',
-        populate: { path: 'leadId', select: 'projectName jobId customerId' },
+        populate: FREIGHT_LEAD_POPULATE,
       })
       .populate({ path: 'carrierId', select: 'carrierName phone contactName' })
       .sort({ selectedAt: -1 })
@@ -241,16 +263,12 @@ exports.getAwardedLoads = asyncHandler(async (req, res) => {
 
   let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
   if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
-  if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
-  if (search?.trim()) {
-    const term = search.trim().toLowerCase()
+  if (customerId) {
     bids = bids.filter((b) =>
-      b.token?.toLowerCase().includes(term) ||
-      b.deliveryId?.leadId?.projectName?.toLowerCase().includes(term) ||
-      b.deliveryId?.leadId?.jobId?.toLowerCase().includes(term) ||
-      b.carrierId?.carrierName?.toLowerCase().includes(term)
+      String(b.deliveryId.leadId.customerId?._id || b.deliveryId.leadId.customerId) === String(customerId)
     )
   }
+  if (search?.trim()) bids = bids.filter((b) => matchesFreightBidSearch(b, search))
 
   const filteredTotal = (projectId || customerId || search) ? bids.length : total - (rawBids.length - bids.length)
   const paged = bids.slice((parseInt(page) - 1) * parseInt(limit), (parseInt(page) - 1) * parseInt(limit) + parseInt(limit))
@@ -316,25 +334,25 @@ exports.exportFreightLoads = asyncHandler(async (req, res) => {
   if (dateFilter.createdAt) filter.createdAt = dateFilter.createdAt
 
   const rawBids = await FreightBid.find(filter)
-    .populate({ path: 'deliveryId', select: 'leadId materialType deliveryLocation', populate: { path: 'leadId', select: 'projectName jobId customerId' } })
+    .populate({
+      path: 'deliveryId',
+      select: 'leadId materialType deliveryLocation',
+      populate: FREIGHT_LEAD_POPULATE,
+    })
     .populate({ path: 'carrierId', select: 'carrierName' })
     .sort({ createdAt: -1 })
     .lean()
 
   let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
   if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
-  if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
-  if (materialType) bids = bids.filter((b) => b.deliveryId?.materialType === materialType)
-  if (siteLocation) bids = bids.filter((b) => b.deliveryId?.deliveryLocation === siteLocation)
-  if (search?.trim()) {
-    const term = search.trim().toLowerCase()
+  if (customerId) {
     bids = bids.filter((b) =>
-      b.token?.toLowerCase().includes(term) ||
-      b.deliveryId?.leadId?.projectName?.toLowerCase().includes(term) ||
-      b.deliveryId?.leadId?.jobId?.toLowerCase().includes(term) ||
-      b.carrierId?.carrierName?.toLowerCase().includes(term)
+      String(b.deliveryId.leadId.customerId?._id || b.deliveryId.leadId.customerId) === String(customerId)
     )
   }
+  if (materialType) bids = bids.filter((b) => b.deliveryId?.materialType === materialType)
+  if (siteLocation) bids = bids.filter((b) => b.deliveryId?.deliveryLocation === siteLocation)
+  if (search?.trim()) bids = bids.filter((b) => matchesFreightBidSearch(b, search))
 
   const buffer = await generateFreightLoadsExcel(bids, 'Freight Loads')
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -351,23 +369,23 @@ exports.exportAwardedLoads = asyncHandler(async (req, res) => {
   if (dateFilter.createdAt) filter.createdAt = dateFilter.createdAt
 
   const rawBids = await FreightBid.find(filter)
-    .populate({ path: 'deliveryId', select: 'leadId materialType deliveryLocation', populate: { path: 'leadId', select: 'projectName jobId customerId' } })
+    .populate({
+      path: 'deliveryId',
+      select: 'leadId materialType deliveryLocation',
+      populate: FREIGHT_LEAD_POPULATE,
+    })
     .populate({ path: 'carrierId', select: 'carrierName' })
     .sort({ selectedAt: -1 })
     .lean()
 
   let bids = rawBids.filter((b) => b.deliveryId && b.deliveryId.leadId)
   if (projectId) bids = bids.filter((b) => String(b.deliveryId.leadId._id) === String(projectId))
-  if (customerId) bids = bids.filter((b) => String(b.deliveryId.leadId.customerId) === String(customerId))
-  if (search?.trim()) {
-    const term = search.trim().toLowerCase()
+  if (customerId) {
     bids = bids.filter((b) =>
-      b.token?.toLowerCase().includes(term) ||
-      b.deliveryId?.leadId?.projectName?.toLowerCase().includes(term) ||
-      b.deliveryId?.leadId?.jobId?.toLowerCase().includes(term) ||
-      b.carrierId?.carrierName?.toLowerCase().includes(term)
+      String(b.deliveryId.leadId.customerId?._id || b.deliveryId.leadId.customerId) === String(customerId)
     )
   }
+  if (search?.trim()) bids = bids.filter((b) => matchesFreightBidSearch(b, search))
 
   const buffer = await generateFreightLoadsExcel(bids, 'Awarded Loads')
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

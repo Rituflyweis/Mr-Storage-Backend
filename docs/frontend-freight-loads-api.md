@@ -124,7 +124,7 @@ Authorization: Bearer <token>
 |--------|------|---------|-------------|
 | `page` | int | `1` | Page number (≥ 1) |
 | `limit` | int | `20` | Page size (1–200) |
-| `search` | string | — | Delivery #, description, locations, POC, material; also project name / job id |
+| `search` | string | — | Delivery #, description, locations, POC, material; **project name / job id**; **customer (client) name** (first, last, or full) |
 | `status` | string | — | **Bid status** or **delivery status** (see below) |
 | `projectId` | ObjectId | — | Filter by lead / project |
 | `customerId` | ObjectId | — | Filter by customer (via lead) |
@@ -261,7 +261,7 @@ Authorization: Bearer <token>
 | `materialType` | string | Exact match on delivery |
 | `siteLocation` | string | Exact match on `deliveryLocation` |
 | `startDate`, `endDate` | ISO8601 | Bid `createdAt` range |
-| `search` | string | Token, project, job id, carrier name |
+| `search` | string | Token, **project name / job id**, **customer (client) name**, carrier name |
 
 ### Example response
 

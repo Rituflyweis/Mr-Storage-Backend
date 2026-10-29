@@ -1343,6 +1343,10 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
   }
 
   const searchFilter = buildDeliverySearchFilter(req.query.search)
+  const searchKeyword = String(req.query.search || '').trim()
+  const searchRx = searchKeyword
+    ? new RegExp(searchKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+    : null
 
   const customerFilterId = baseFilter._customerId
   delete baseFilter._customerId
@@ -1359,6 +1363,17 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
   pipeline.push({
     $unwind: '$leadDoc',
   })
+  pipeline.push({
+    $lookup: {
+      from: 'customers',
+      localField: 'leadDoc.customerId',
+      foreignField: '_id',
+      as: 'customerDoc',
+    },
+  })
+  pipeline.push({
+    $unwind: { path: '$customerDoc', preserveNullAndEmptyArrays: true },
+  })
 
   if (customerFilterId) {
     pipeline.push({
@@ -1366,13 +1381,40 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
     })
   }
 
-  if (searchFilter) {
+  // `search` matches delivery fields + project name / job id + customer name (client).
+  if (searchFilter || searchRx) {
     pipeline.push({
       $match: {
         $or: [
-          ...(searchFilter.$or || []),
-          { 'leadDoc.projectName': new RegExp(String(req.query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-          { 'leadDoc.jobId': new RegExp(String(req.query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+          ...((searchFilter && searchFilter.$or) || []),
+          ...(searchRx
+            ? [
+                { 'leadDoc.projectName': searchRx },
+                { 'leadDoc.jobId': searchRx },
+                { 'customerDoc.firstName': searchRx },
+                { 'customerDoc.lastName': searchRx },
+                { 'customerDoc.email': searchRx },
+                {
+                  $expr: {
+                    $regexMatch: {
+                      input: {
+                        $trim: {
+                          input: {
+                            $concat: [
+                              { $ifNull: ['$customerDoc.firstName', ''] },
+                              ' ',
+                              { $ifNull: ['$customerDoc.lastName', ''] },
+                            ],
+                          },
+                        },
+                      },
+                      regex: searchKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                      options: 'i',
+                    },
+                  },
+                },
+              ]
+            : []),
         ],
       },
     })
@@ -1435,6 +1477,14 @@ const getFreightLoadsCommon = async (req, res, { awardedOnly }) => {
         _id: row.leadDoc?._id || row.leadId,
         projectName: row.leadDoc?.projectName || '',
         jobId: row.leadDoc?.jobId || '',
+        customerId: row.customerDoc
+          ? {
+              _id: row.customerDoc._id,
+              firstName: row.customerDoc.firstName || '',
+              lastName: row.customerDoc.lastName || '',
+              email: row.customerDoc.email || '',
+            }
+          : row.leadDoc?.customerId || null,
       },
       selectedCarrierBidId: row.selectedBidDoc
         ? {
