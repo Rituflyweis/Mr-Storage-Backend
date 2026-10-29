@@ -62,15 +62,23 @@ exports.listProjectInvoices = async (projectId, query = {}) => {
     : {}
 
   const now = new Date()
-  const records = data.records.map((row) => ({
-    ...row,
-    status: mapInvoiceStatusLabel(
-      { status: row.invoiceStatus, dueDate: row.dueDate, date: row.invoiceDate },
-      now
-    ),
-    sentDate: row.invoiceDate,
-    items: lineCounts[String(row.invoiceId)] || 0,
-  }))
+  const records = data.records.map((row) => {
+    const paid =
+      row.paymentStatus === 'Paid' ||
+      row.payableStatus === 'paid' ||
+      row.invoiceStatus === 'paid'
+    return {
+      ...row,
+      status: paid
+        ? 'Paid'
+        : mapInvoiceStatusLabel(
+            { status: row.invoiceStatus, dueDate: row.dueDate, date: row.invoiceDate },
+            now,
+          ),
+      sentDate: row.invoiceDate,
+      items: lineCounts[String(row.invoiceId)] || 0,
+    }
+  })
 
   return { ...data, records, leadId: lead._id, projectName: lead.projectName }
 }

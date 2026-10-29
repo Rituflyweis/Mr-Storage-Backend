@@ -10,6 +10,7 @@ const { marginPct } = require('../utils/profitLossPeriod.util')
 const { resolveCustomerInvoiceDocuments } = require('../utils/customerInvoiceDocument.util')
 const { pickBillingFieldsForListRow } = require('../utils/invoiceBilling.util')
 const { distinctFinancialLeadIds } = require('../utils/financialProjectScope')
+const { isInvoiceOverdue } = require('../utils/invoiceScope')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 const LOW_MARGIN_PCT = 15
@@ -191,50 +192,90 @@ exports.getFilters = async () => {
   }
 }
 
+/** Project invoice pages: all kinds unless invoiceType= is set. Unscoped lists stay customer-only. */
+const buildProjectInvoiceTypeFilter = (query = {}) => {
+  const typeQ = String(query.invoiceType || '').trim().toLowerCase()
+  if (typeQ && typeQ !== 'all') return { invoiceType: typeQ }
+  if (query.projectId || query.leadId) return {} // customer + vendor + freight_carrier
+  return { invoiceType: 'customer' }
+}
+
+const isPayableInvoice = (inv) =>
+  inv?.invoiceType === 'vendor' || inv?.invoiceType === 'freight_carrier'
+
+const invoiceIsPaid = (inv) =>
+  isPayableInvoice(inv)
+    ? inv.payableWorkflow?.status === 'paid'
+    : inv.status === 'paid'
+
 exports.getProjectSummary = async (query = {}) => {
   const dateFilter = buildDateFilter(query, 'date')
-  const filter = { invoiceType: 'customer', ...dateFilter }
+  const filter = {
+    status: { $ne: 'cancelled' },
+    ...buildProjectInvoiceTypeFilter(query),
+    ...dateFilter,
+  }
   if (query.projectId || query.leadId) filter.leadId = query.projectId || query.leadId
 
-  const [totals, received, outstanding, overdue] = await Promise.all([
-    Invoice.aggregate([
-      { $match: filter },
-      { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } },
-    ]),
-    Invoice.aggregate([
-      { $match: { ...filter, status: 'paid' } },
-      { $group: { _id: null, amount: { $sum: '$totalAmount' } } },
-    ]),
-    Invoice.aggregate([
-      { $match: { ...filter, status: { $in: ['sent', 'draft', 'overdue'] } } },
-      { $group: { _id: null, amount: { $sum: '$totalAmount' } } },
-    ]),
-    Invoice.aggregate([
-      { $match: { ...filter, status: 'overdue' } },
-      { $group: { _id: null, amount: { $sum: '$totalAmount' } } },
-    ]),
-  ])
+  const invoices = await Invoice.find(filter).select('totalAmount status dueDate date invoiceType payableWorkflow').lean()
+  const now = new Date()
+  let invoiceAmount = 0
+  let totalReceived = 0
+  let outstandingAmount = 0
+  let overdueAmount = 0
 
-  const t = totals[0] || {}
+  for (const inv of invoices) {
+    const amt = Number(inv.totalAmount) || 0
+    invoiceAmount += amt
+    if (invoiceIsPaid(inv)) {
+      totalReceived += amt
+      continue
+    }
+    outstandingAmount += amt
+    if (!isPayableInvoice(inv) && (inv.status === 'overdue' || isInvoiceOverdue(inv, now))) {
+      overdueAmount += amt
+    }
+  }
+
   return {
-    totalInvoices: t.count || 0,
-    invoiceAmount: round2(t.amount || 0),
-    totalBilled: round2(t.amount || 0),
-    totalReceived: round2(received[0]?.amount || 0),
-    outstandingAmount: round2(outstanding[0]?.amount || 0),
-    overdueAmount: round2(overdue[0]?.amount || 0),
+    totalInvoices: invoices.length,
+    invoiceAmount: round2(invoiceAmount),
+    totalBilled: round2(invoiceAmount),
+    totalReceived: round2(totalReceived),
+    outstandingAmount: round2(outstandingAmount),
+    overdueAmount: round2(overdueAmount),
   }
 }
 
 exports.listProjectRecords = async (query = {}) => {
   const { page, limit, skip } = paginate(query)
   const dateFilter = buildDateFilter(query, 'date')
-  const filter = { invoiceType: 'customer', ...dateFilter }
+  const filter = {
+    status: { $ne: 'cancelled' },
+    ...buildProjectInvoiceTypeFilter(query),
+    ...dateFilter,
+  }
   if (query.projectId || query.leadId) filter.leadId = query.projectId || query.leadId
+
   if (query.paymentStatus) {
     const ps = String(query.paymentStatus).toLowerCase()
-    if (ps === 'paid') filter.status = 'paid'
-    else if (ps === 'pending' || ps === 'unpaid') filter.status = { $in: ['sent', 'draft', 'overdue'] }
+    if (ps === 'paid') {
+      filter.$or = [
+        { invoiceType: { $nin: ['vendor', 'freight_carrier'] }, status: 'paid' },
+        { invoiceType: { $in: ['vendor', 'freight_carrier'] }, 'payableWorkflow.status': 'paid' },
+      ]
+    } else if (ps === 'pending' || ps === 'unpaid') {
+      filter.$or = [
+        {
+          invoiceType: { $nin: ['vendor', 'freight_carrier'] },
+          status: { $in: ['sent', 'draft', 'overdue'] },
+        },
+        {
+          invoiceType: { $in: ['vendor', 'freight_carrier'] },
+          'payableWorkflow.status': { $ne: 'paid' },
+        },
+      ]
+    }
   }
   if (query.search?.trim()) {
     filter.invoiceNumber = { $regex: query.search.trim(), $options: 'i' }
@@ -247,7 +288,9 @@ exports.listProjectRecords = async (query = {}) => {
 
   const [rows, total] = await Promise.all([
     Invoice.find(filter)
-      .populate('customerId', 'firstName lastName companyName')
+      .populate('customerId', 'firstName lastName companyName company')
+      .populate('vendorId', 'vendorName')
+      .populate('carrierId', 'carrierName')
       .populate('leadId', 'projectName jobId')
       .sort(sort)
       .skip(skip)
@@ -257,9 +300,46 @@ exports.listProjectRecords = async (query = {}) => {
   ])
 
   const records = rows.map((inv) => {
+    const projectName = inv.leadId?.projectName || '—'
+    const leadId = inv.leadId?._id || inv.leadId
+
+    if (isPayableInvoice(inv)) {
+      const row = buildPayableListRow(inv)
+      const partyName =
+        inv.invoiceType === 'freight_carrier' ? row.carrierName : row.vendorName
+      const paid = invoiceIsPaid(inv)
+      return {
+        invoiceId: inv._id,
+        invoiceNumber: row.invoiceNumber,
+        customerName: partyName || '—',
+        customerId: null,
+        project: projectName,
+        projectName,
+        leadId,
+        invoiceType: inv.invoiceType,
+        invoiceTypeLabel:
+          inv.invoiceType === 'freight_carrier' ? 'Carrier' : 'Vendor',
+        category: inv.category || null,
+        amount: round2(row.amount),
+        dueDate: row.dueDate,
+        invoiceDate: inv.date,
+        paymentStatus: paid ? 'Paid' : 'Pending',
+        invoiceStatus: inv.status,
+        payableStatus: row.payableStatus,
+        paid: round2(paid ? row.amount : 0),
+        amountDue: round2(paid ? 0 : row.amount),
+        documentUrl: row.documentUrl,
+        pdfUrl: row.documentUrl,
+        documentType: 'payable',
+      }
+    }
+
     const cust = inv.customerId
     const customerName = cust
-      ? [cust.firstName, cust.lastName].filter(Boolean).join(' ') || cust.companyName || '—'
+      ? [cust.firstName, cust.lastName].filter(Boolean).join(' ') ||
+        cust.companyName ||
+        cust.company ||
+        '—'
       : '—'
     const paid = inv.status === 'paid' ? inv.totalAmount : 0
     const docs = resolveCustomerInvoiceDocuments(inv)
@@ -268,11 +348,15 @@ exports.listProjectRecords = async (query = {}) => {
       invoiceNumber: inv.invoiceNumber,
       customerName,
       customerId: inv.customerId?._id || inv.customerId,
-      project: inv.leadId?.projectName || '—',
-      projectName: inv.leadId?.projectName || '—',
-      leadId: inv.leadId?._id || inv.leadId,
-      invoiceType: inv.category || 'product',
-      invoiceTypeLabel: inv.category ? inv.category.charAt(0).toUpperCase() + inv.category.slice(1) : 'Product',
+      project: projectName,
+      projectName,
+      leadId,
+      invoiceType: inv.invoiceType || 'customer',
+      invoiceTypeLabel: 'Customer',
+      category: inv.category || 'product',
+      categoryLabel: inv.category
+        ? inv.category.charAt(0).toUpperCase() + inv.category.slice(1)
+        : 'Product',
       amount: round2(inv.totalAmount),
       dueDate: inv.dueDate,
       invoiceDate: inv.date,
