@@ -51,6 +51,9 @@ router.put(
   validate,
   ctrl.updateTaxFilingNotificationSettings
 )
+// Sync must be registered before /tax-filing/:taxId/* so "sync" is not treated as an id.
+router.post('/tax-filing/sync', ctrl.syncStateTax)
+
 router.get('/tax-filing/:taxId/prepare', ctrl.prepareFiling)
 router.get('/tax-filing/:taxId/detail', ctrl.getTaxFilingDetail)
 router.post('/tax-filing/:taxId/pay', ctrl.payTaxFiling)
@@ -76,6 +79,7 @@ router.get('/state-wise-tax/upcoming-deadlines',
   validate,
   ctrl.getUpcomingFilingDeadlines
 )
+// Canonical Sync Now endpoint (alias: POST /tax-filing/sync above).
 router.post('/state-wise-tax/sync', ctrl.syncStateTax)
 router.get('/tax-compliance/status', ctrl.getTaxComplianceStatus)
 

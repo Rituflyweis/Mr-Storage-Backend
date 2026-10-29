@@ -17,7 +17,7 @@
 | **Addresses** | Read/write **`installAddress`** on leads/projects; invoices expose **`shipToAddress`**; tax needs complete ship-to |
 | **Invoice tax** | Tax is calculated on invoice create/update; **committed when invoice is sent** (`mark-sent` / send)—not on paid |
 | **Account tax UI** | Use **`/api/account/financial-extra/*`** only; rows now have **`status: { code, label, tone }`**; Pay → **`POST .../approve`** or **`.../pay`** |
-| **Sync** | **Sync Now** → `POST .../state-wise-tax/sync` then refetch lists/KPIs |
+| **Sync** | **Sync Now** → `POST .../state-wise-tax/sync` **or** `POST .../tax-filing/sync` (same handler), then refetch lists/KPIs |
 | **Stop using** | Raw `/api/account/tax` CRUD for Figma tax screens; don’t bind filing KPIs to quote tax alone |
 
 ---
