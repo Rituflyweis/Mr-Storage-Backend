@@ -2,23 +2,22 @@
 
 **Steel Investments LLC** (dba **Steel Building Depot**)  
 [https://www.steelbuildingdepot.com](https://www.steelbuildingdepot.com)  
-**Effective / last updated:** October 14, 2026
+**Effective / last updated:** October 29, 2026
 
-By using our website, chat, forms, portals, or related online tools (“Services”), you agree to these Terms. If you do not agree, do not use the Services. Our [Privacy Policy](./steel-investments-privacy-policy.md) explains how we handle personal data.
+By using our website, apps, chat, forms, portals, or related online tools (“Services”), you agree to these Terms. If you do not agree, do not use the Services. Our [Privacy Policy](./steel-investments-privacy-policy.md) explains how we handle personal data.
 
 ---
 
 ## Company
 
-Steel Investments LLC · EIN 99-4515145 · 1851 Madison Ave, Suite 300, Council Bluffs, IA 51503  
-[info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) · 712-466-3825  
-Representative: Juana Mares, Operations — [juana@storagematerials.com](mailto:juana@storagematerials.com)
+Steel Investments LLC · 1851 Madison Ave, Suite 300, Council Bluffs, IA 51503  
+[info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) · 712-466-3825
 
 ---
 
 ## Scope
 
-These Terms cover online use of Steel Building Depot properties (public site, admin/sales/plant/customer apps, chat, quoting, invoicing, payment uploads, vendor/carrier links, email/SMS we send in connection with the Services).
+These Terms cover online use of Steel Building Depot properties (website, apps, chat, quoting, invoicing, and related tools).
 
 They do **not** replace a signed project contract, accepted quote, or invoice for a specific job. If those documents conflict on price, delivery, or warranty, the **project documents control** that job.
 
@@ -28,33 +27,25 @@ You must be **18+** and able to enter a contract. If you act for a company, you 
 
 ## Accounts and security
 
-Keep passwords and OTP codes private. OTPs expire quickly and are single-use. You are responsible for activity under your account. We may suspend accounts for abuse, security, or non-payment. Contact [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) for access issues or closure requests.
+Keep passwords and OTP codes private. You are responsible for activity under your account. Contact [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) for access issues.
 
 ---
 
 ## Chat, forms, and quotes
 
-Information you submit should be accurate. Chat and online estimates are for general information—not final engineering, pricing, or a binding offer until we send an **approved** quote or you sign a project agreement and pay any required deposit. Prices and availability can change. Drawings may be preliminary until formally released.
+Information you submit should be accurate. Online estimates are for general information until we send an **approved** quote or you sign a project agreement and pay any required deposit.
 
 ---
 
 ## Payments
 
-Invoices are due as stated. Uploading a payment receipt in the portal is a **review request**; an invoice is paid only after we verify it. Disputes: contact us with the invoice number before initiating a chargeback.
+Invoices are due as stated. Uploading a payment receipt is a **review request**; an invoice is paid only after we verify it.
 
 ---
 
 ## Acceptable use
 
-Do not break the law, harass others, impersonate Steel, scrape or attack the Services, upload malware, or misuse another customer’s or vendor’s data. Staff must use systems only for Steel business and within their role.
-
----
-
-## Your uploads and our materials
-
-You must have rights to files you upload. Our software, templates, and branding remain our property. You receive a limited license to use the Services as intended.
-
-Vendor/carrier links are confidential to that request—do not share except to complete that bid or delivery.
+Do not break the law, harass others, impersonate Steel, attack the Services, upload malware, or misuse another user’s data.
 
 ---
 
@@ -62,32 +53,27 @@ Vendor/carrier links are confidential to that request—do not share except to c
 
 Steel Building Depot may text the U.S. mobile number you provide:
 
-1. **Service messages** — OTP, quotes, invoices, reminders, project updates (when you give us your number for project contact).  
-2. **Marketing messages** — promotions and offers **only if you opt in** (e.g. separate optional **unchecked** box on a form, or promotional SMS setting in the portal if offered).
+1. **Service messages** — OTP, quotes, invoices, reminders, project updates.  
+2. **Marketing messages** — promotions and offers **only if you opt in** (for example a separate optional **unchecked** box).
 
-**Frequency varies. Message and data rates may apply.** You must be the subscriber or authorized user of the number.
+**Frequency varies. Message and data rates may apply.**
 
-- **Opt out (marketing):** Reply **STOP**, or email [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) (subject “SMS Opt-Out”) with your number.  
+- **Opt out:** Reply **STOP**, or email [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) (subject “SMS Opt-Out”) with your number.  
 - **Help:** Reply **HELP** or call **712-466-3825**.  
-- Carriers are not liable for delayed or undelivered messages.  
-- **Privacy:** [Privacy Policy](./steel-investments-privacy-policy.md) — **We do not sell or share your SMS opt-in data or personal information with third parties for marketing purposes.**  
+- **Privacy:** We do **not** sell or share SMS opt-in data or personal information with third parties for marketing. See our [Privacy Policy](./steel-investments-privacy-policy.md).  
 - Marketing SMS consent is **not required** to purchase.
 
 ---
 
-## Disclaimers and liability
+## Disclaimers
 
-Services are provided **“as is”** to the extent allowed by law. We disclaim implied warranties where permitted. We are not liable for indirect or consequential damages from use of the **online Services**, except as required by law. Liability for purchased buildings/materials is governed by your **project agreement** and invoice, not these online caps.
-
-Third-party hosts, email, and SMS providers may experience outages beyond our control.
+Services are provided **“as is”** to the extent allowed by law. Liability for purchased buildings or materials is governed by your **project agreement** and invoice.
 
 ---
 
-## Law and disputes
+## Law
 
-These Terms are governed by **Iowa** law (for online Services). Courts in **Pottawattamie County, Iowa** have exclusive jurisdiction for those disputes, unless a signed project agreement says otherwise for that project.
-
-Before suing over the Services, email [info@steelbuildingdepot.com](mailto:info@steelbuildingdepot.com) to try to resolve the issue in good faith.
+These Terms are governed by **Iowa** law. Courts in **Pottawattamie County, Iowa** have jurisdiction for disputes about the online Services, unless a signed project agreement says otherwise for that project.
 
 ---
 

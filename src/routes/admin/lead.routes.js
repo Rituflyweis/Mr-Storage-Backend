@@ -1,10 +1,11 @@
 const router = require('express').Router()
-const { body, query } = require('express-validator')
+const { body, query, param } = require('express-validator')
 const leadImportUpload = require('../../middleware/leadImportUpload')
 const { LEAD_TEMPERATURES, LIFECYCLE_STAGES } = require('../../config/constants')
 const ctrl = require('../../controllers/admin/lead.controller')
 const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
 const agreementCtrl = require('../../controllers/common/agreement.controller')
+const mediaCtrl = require('../../controllers/common/leadMedia.controller')
 const validate = require('../../middleware/validate')
 const { leadCreateFieldValidators, leadEditFieldValidators } = require('../../utils/leadCreateValidators')
 
@@ -13,6 +14,14 @@ router.get('/stats', ctrl.getLeadStats)
 router.get('/ai-handled', ctrl.getAiHandledLeads)
 router.get('/signed-contracts', ctrl.getSignedContracts)
 router.get('/terminated', ctrl.getTerminatedLeads)
+router.get('/archived',
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+  ],
+  validate,
+  ctrl.getArchivedLeads
+)
 router.get('/scoring/today', ctrl.getScoringToday)
 router.get('/by-score',
   [
@@ -51,9 +60,23 @@ router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
 router.get('/:leadId/detail', ctrl.getLeadDetail)
 router.get('/:leadId/timeline', ctrl.getLeadTimeline)
 router.get('/:leadId/documents',
-  [query('type').optional().isIn(['drawing', 'approval', 'general', 'contract', 'photo', 'other'])],
+  [query('type').optional().isIn(['drawing', 'approval', 'general', 'contract', 'photo', 'video', 'other'])],
   validate,
   ctrl.getLeadDocuments
+)
+router.get('/:leadId/media',
+  [query('type').optional().isIn(['photo', 'video'])],
+  validate,
+  mediaCtrl.getLeadMedia
+)
+router.post('/:leadId/media',
+  [
+    body('url').notEmpty(),
+    body('name').notEmpty(),
+    body('type').isIn(['photo', 'video']),
+  ],
+  validate,
+  mediaCtrl.uploadLeadMedia
 )
 router.get('/:leadId/notes', ctrl.getLeadNotes)
 router.post('/:leadId/notes',
@@ -61,13 +84,61 @@ router.post('/:leadId/notes',
   validate,
   ctrl.createLeadNote
 )
+router.put('/:leadId/notes/:noteId',
+  [body('note').notEmpty().trim()],
+  validate,
+  ctrl.updateLeadNote
+)
+router.delete('/:leadId/notes/:noteId', ctrl.deleteLeadNote)
+router.use('/:leadId/structural-drawing', require('../common/structuralDrawing.routes'))
 router.get('/:leadId/budget', ctrl.getLeadBudget)
 
+const budgetCustomLineBody = [
+  body('key').optional().trim().isString(),
+  body('label').optional().trim().isString(),
+  body('amount').optional().isNumeric(),
+  body('expenseCategories').optional().isArray(),
+]
+
 router.post('/:leadId/budget',
-  [body('materialBudget').optional().isNumeric(), body('logisticBudget').optional().isNumeric()],
+  [
+    body('materialBudget').optional().isNumeric(),
+    body('logisticBudget').optional().isNumeric(),
+    body('productionBudget').optional().isNumeric(),
+    body('shipperBudget').optional().isNumeric(),
+    body('otherCost').optional().isNumeric(),
+    body('customLines').optional().isArray(),
+    body('customLines.*.key').optional().trim().isString(),
+    body('customLines.*.label').optional().trim().isString(),
+    body('customLines.*.amount').optional().isNumeric(),
+    body('customLines.*.expenseCategories').optional().isArray(),
+  ],
   validate,
   ctrl.setLeadBudget
 )
+
+router.put(
+  '/:leadId/budget/categories/:categoryKey',
+  [body('amount').isNumeric(), param('categoryKey').isIn(['material', 'logistic', 'production', 'shipper', 'other'])],
+  validate,
+  ctrl.updateBudgetPresetCategory
+)
+
+router.post(
+  '/:leadId/budget/custom-lines',
+  [...budgetCustomLineBody, body('label').notEmpty().trim()],
+  validate,
+  ctrl.addBudgetCustomLine
+)
+
+router.put(
+  '/:leadId/budget/custom-lines/:lineKey',
+  budgetCustomLineBody,
+  validate,
+  ctrl.updateBudgetCustomLine
+)
+
+router.delete('/:leadId/budget/custom-lines/:lineKey', ctrl.deleteBudgetCustomLine)
 
 router.put('/:leadId/buildings/:buildingId/approve-bom',
   [body('action').isIn(['approved', 'rejected'])],
@@ -80,6 +151,13 @@ router.put('/:leadId/terminate',
   validate,
   ctrl.terminateLead
 )
+
+router.put('/:leadId/archive',
+  [body('reason').optional().trim()],
+  validate,
+  ctrl.archiveLead
+)
+router.put('/:leadId/unarchive', ctrl.unarchiveLead)
 
 router.delete('/:leadId', ctrl.deleteLead)
 

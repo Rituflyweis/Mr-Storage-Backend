@@ -5,6 +5,7 @@ const { LEAD_TEMPERATURES } = require('../../config/constants')
 const ctrl = require('../../controllers/sales/lead.controller')
 const chatCtrl = require('../../controllers/common/chatLifecycle.controller')
 const agreementCtrl = require('../../controllers/common/agreement.controller')
+const mediaCtrl = require('../../controllers/common/leadMedia.controller')
 const validate = require('../../middleware/validate')
 const { leadCreateFieldValidators, leadEditFieldValidators } = require('../../utils/leadCreateValidators')
 
@@ -39,6 +40,14 @@ router.get('/with-po',
 )
 router.get('/export', ctrl.exportLeads)
 router.get('/export/excel', ctrl.exportLeadsExcel)
+router.get('/archived',
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }),
+  ],
+  validate,
+  ctrl.getArchivedLeads
+)
 
 router.post('/import', leadImportUpload, ctrl.importLeads)
 router.get('/import/jobs/:jobId', ctrl.getLeadImportJobStatus)
@@ -63,12 +72,38 @@ router.put('/:leadId/chat/reopen', chatCtrl.reopenChat)
 
 router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
 router.get('/:leadId/detail', ctrl.getLeadDetail)
+router.get('/:leadId/media',
+  [query('type').optional().isIn(['photo', 'video'])],
+  validate,
+  mediaCtrl.getLeadMedia
+)
+router.post('/:leadId/media',
+  [
+    body('url').notEmpty(),
+    body('name').notEmpty(),
+    body('type').isIn(['photo', 'video']),
+  ],
+  validate,
+  mediaCtrl.uploadLeadMedia
+)
 router.get('/:leadId/notes', ctrl.getLeadNotes)
 router.post('/:leadId/notes',
   [body('note').notEmpty().trim()],
   validate,
   ctrl.createLeadNote
 )
+router.put('/:leadId/notes/:noteId',
+  [body('note').notEmpty().trim()],
+  validate,
+  ctrl.updateLeadNote
+)
+router.delete('/:leadId/notes/:noteId', ctrl.deleteLeadNote)
+router.get('/:leadId/documents',
+  [query('type').optional().isIn(['drawing', 'approval', 'general', 'contract', 'photo', 'video', 'other'])],
+  validate,
+  ctrl.getLeadDocuments
+)
+router.use('/:leadId/structural-drawing', require('../common/structuralDrawing.routes'))
 router.get('/:leadId/buildings', ctrl.getBuildings)
 
 router.put('/:leadId/lifecycle',
@@ -82,6 +117,13 @@ router.put('/:leadId/temperature',
   validate,
   ctrl.updateLeadTemperature
 )
+
+router.put('/:leadId/archive',
+  [body('reason').optional().trim()],
+  validate,
+  ctrl.archiveLead
+)
+router.put('/:leadId/unarchive', ctrl.unarchiveLead)
 
 router.put('/:leadId', leadEditFieldValidators, validate, ctrl.editLead)
 
