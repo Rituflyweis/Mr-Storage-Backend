@@ -26,33 +26,9 @@ const resolveCustomer = async (customerIdOrCode) => {
   return Customer.findOne({ customerId: customerIdOrCode }).lean()
 }
 
-const IMPORT_EMAIL_SUFFIX = '@imports.mrstorage.internal'
-
-/** Bulk lead import creates Customer stubs — not real account customers. */
-const isTruthyQueryFlag = (v) => ['true', '1', 'yes'].includes(String(v || '').toLowerCase())
-
-/**
- * Account Customers default = real customers only (exclude import stubs).
- * Opt-in: `imported=true` → only stubs; `source=` → exact source (incl. import).
- */
-const applyCustomerSourceScope = (filter, query = {}) => {
-  const { source, imported } = query
-  if (isTruthyQueryFlag(imported)) {
-    filter.source = 'import'
-    return filter
-  }
-  if (source?.trim()) {
-    filter.source = source.trim()
-    return filter
-  }
-  // Default: hide bulk-import placeholders (source + synthetic email domain).
-  filter.$and = [
-    ...(filter.$and || []),
-    { source: { $ne: 'import' } },
-    { email: { $not: new RegExp(`${IMPORT_EMAIL_SUFFIX.replace(/\./g, '\\.')}$`, 'i') } },
-  ]
-  return filter
-}
+const {
+  applyCustomerSourceScope,
+} = require('../utils/customerImportScope')
 
 const buildCustomerSearchFilter = (search) => {
   if (!search?.trim()) return null

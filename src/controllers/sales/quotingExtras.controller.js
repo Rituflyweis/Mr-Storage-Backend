@@ -2,7 +2,12 @@ const EstimateQuote = require('../../models/EstimateQuote')
 const User = require('../../models/User')
 const { success, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-const { computeDeposit, computeMilestones } = require('../../services/quoting/depositMilestoneEngine')
+const {
+  computeDeposit,
+  computeMilestones,
+  syncDepositIntoMilestoneRows,
+  depositTermsToMilestoneRows,
+} = require('../../services/quoting/depositMilestoneEngine')
 const { computeStaircase } = require('../../services/quoting/staircase')
 const {
   generateDepositReceiptHtml,
@@ -11,9 +16,11 @@ const {
 const { renderHtmlToPdf } = require('../../services/quoting/htmlPdf')
 
 const grandOf = (est = {}) =>
+  est.revisedContractTotal ??
   est.fullQuoteResult?.grandTotal ??
   est.totalSell ??
   est.pricingResult?.totSell ??
+  est.storagePricingResult?.grandTotal ??
   0
 
 const quoteInfoOf = (est = {}) => ({
@@ -69,7 +76,10 @@ const hydrateFromEstimateId = async (req) => {
         (Array.isArray(req.body.milestones) && req.body.milestones.length
           ? req.body.milestones
           : null) ||
-        est.milestoneSchedule ||
+        (Array.isArray(est.milestoneSchedule) && est.milestoneSchedule.length
+          ? est.milestoneSchedule
+          : null) ||
+        depositTermsToMilestoneRows(est.depositTerms, grandOf(est)) ||
         [],
       milestones:
         (Array.isArray(req.body.milestones) && req.body.milestones.length
@@ -78,7 +88,10 @@ const hydrateFromEstimateId = async (req) => {
         (Array.isArray(req.body.rows) && req.body.rows.length
           ? req.body.rows
           : null) ||
-        est.milestoneSchedule ||
+        (Array.isArray(est.milestoneSchedule) && est.milestoneSchedule.length
+          ? est.milestoneSchedule
+          : null) ||
+        depositTermsToMilestoneRows(est.depositTerms, grandOf(est)) ||
         [],
       pct: req.body.pct != null ? req.body.pct : est.depositTerms?.pct,
       flat: req.body.flat != null ? req.body.flat : est.depositTerms?.flat,
@@ -142,9 +155,31 @@ exports.updateEstimateDeposit = asyncHandler(async (req, res) => {
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
   const grand = req.body.grand != null ? Number(req.body.grand) : grandOf(est)
   const d = computeDeposit({ grand, pct: req.body.pct, flat: req.body.flat })
-  est.depositTerms = { ...d, note: req.body.note || '' }
+  const flat =
+    req.body.flat != null && Number(req.body.flat) > 0 ? Number(req.body.flat) : undefined
+  est.depositTerms = { ...d, flat, note: req.body.note || '' }
+
+  // Keep payment milestones + quote preview in sync when only Request Deposit is used.
+  const syncedRows = syncDepositIntoMilestoneRows(est.milestoneSchedule || [], d, { flat })
+  const m = computeMilestones({ grand, rows: syncedRows })
+  est.milestoneSchedule = m.rows
+  if (req.body.note) est.milestoneNote = req.body.note
+
   await est.save()
-  return success(res, est.depositTerms, 'Deposit terms saved')
+  // Keep legacy flat deposit fields (pct/deposit/…) for existing FE; also return milestones.
+  return success(
+    res,
+    {
+      ...est.depositTerms,
+      depositTerms: est.depositTerms,
+      milestoneSchedule: m.rows,
+      milestones: m.rows,
+      scheduled: m.scheduled,
+      remaining: m.remaining,
+      fullyScheduled: m.fullyScheduled,
+    },
+    'Deposit terms saved',
+  )
 })
 
 exports.updateEstimateMilestones = asyncHandler(async (req, res) => {
@@ -198,12 +233,13 @@ exports.depositReceiptPdf = asyncHandler(async (req, res) => {
   if (resolved.error) {
     return resolved.code === 403 ? forbidden(res, resolved.error) : notFound(res, resolved.error)
   }
+  const saved = resolved.depositTerms || null
   const html = generateDepositReceiptHtml({
     quote: resolved.quote,
     grand: resolved.grand,
-    pct: req.body.pct,
-    flat: req.body.flat,
-    note: req.body.note || '',
+    pct: req.body.pct != null ? req.body.pct : saved?.pct,
+    flat: req.body.flat != null ? req.body.flat : saved?.flat,
+    note: req.body.note || saved?.note || '',
     company: req.body.company || resolved.company || 'SM',
   })
   if (req.body.format === 'html') return success(res, { html }, 'Deposit receipt HTML')

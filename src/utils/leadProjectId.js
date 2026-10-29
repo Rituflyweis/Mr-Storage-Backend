@@ -2,7 +2,8 @@ const { getBusinessUnitLabel } = require('./businessUnit')
 
 /**
  * FE may use either `jobId` or `projectId` — both are the lead's project id
- * (year format like 2026001; older projects keep legacy PRO-xxx ids).
+ * (year format like 2026001 / 2026240). Always prefer API `jobId`/`projectId`;
+ * never show local optimistic IDs (UNIQ-*).
  */
 const resolveJobId = (leadOrJobId) => {
   if (leadOrJobId == null) return ''

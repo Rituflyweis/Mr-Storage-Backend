@@ -37,23 +37,25 @@ const run = async () => {
   )
   console.log(`[migrate] numberOfBuildings/height — matched: ${result.matchedCount}, modified: ${result.modifiedCount}`)
 
-  // Backfill jobId for leads that don't have one, sorted by createdAt so numbering is chronological
-  const leadsWithoutJobId = await Lead.find({ jobId: null }).sort({ createdAt: 1 }).lean()
-  console.log(`[migrate] leads missing jobId: ${leadsWithoutJobId.length}`)
-
-  let counter = 1
-  const lastWithJobId = await Lead.findOne({ jobId: { $exists: true, $ne: null } }, { jobId: 1 })
-    .sort({ createdAt: -1 })
+  // Backfill missing/non-year jobIds with YYYY### (same as generateJobId / Lead pre-save)
+  const generateJobId = require('../src/utils/generateJobId')
+  const { isYearFormatJobId } = generateJobId
+  const leadsNeedingJobId = await Lead.find({})
+    .setOptions({ includeDeleted: true })
+    .sort({ createdAt: 1 })
+    .select('_id jobId createdAt')
     .lean()
-  if (lastWithJobId?.jobId) {
-    counter = parseInt(lastWithJobId.jobId.split('-')[1], 10) + 1
-  }
+  const toFix = leadsNeedingJobId.filter((l) => !isYearFormatJobId(l.jobId))
+  console.log(`[migrate] leads missing year-format jobId: ${toFix.length}`)
 
-  for (const lead of leadsWithoutJobId) {
-    await Lead.updateOne({ _id: lead._id }, { $set: { jobId: `PRO-${String(counter).padStart(3, '0')}` } })
-    counter++
+  for (const lead of toFix) {
+    const nextId = await generateJobId(lead.createdAt ? new Date(lead.createdAt) : new Date())
+    await Lead.updateOne(
+      { _id: lead._id },
+      { $set: { jobId: nextId, previousJobId: lead.jobId || null } },
+    ).setOptions({ includeDeleted: true })
   }
-  console.log(`[migrate] jobId backfill done — assigned ${leadsWithoutJobId.length} job IDs`)
+  console.log(`[migrate] jobId backfill done — assigned ${toFix.length} year-format job IDs`)
 
   await mongoose.disconnect()
 }

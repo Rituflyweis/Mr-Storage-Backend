@@ -6,6 +6,7 @@ const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildActiveLeadMatch } = require('../../utils/activeLeadScope')
 const { applyBusinessUnitFilter } = require('../../utils/businessUnit')
+const { applyCustomerSourceScope } = require('../../utils/customerImportScope')
 
 const buildCustomerSearchFilter = (search) => {
   if (!search || !search.trim()) return {}
@@ -51,7 +52,7 @@ exports.listCustomers = asyncHandler(async (req, res) => {
   const parsedLimit = Math.min(Math.max(1, Number(limit) || 20), 100)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const filter = buildCustomerSearchFilter(search)
+  const filter = applyCustomerSourceScope(buildCustomerSearchFilter(search), req.query)
 
   if (req.user.role === 'sales') {
     const customerIds = await Lead.distinct('customerId', { assignedSales: req.user._id })

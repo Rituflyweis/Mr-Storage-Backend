@@ -89,4 +89,69 @@ const computeMilestones = (input = {}) => {
   };
 };
 
-module.exports = { computeDeposit, computeMilestones, normalizeMilestoneRow };
+const isDepositLabel = (label) => /^deposit\b/i.test(String(label || "").trim());
+const isBalanceLabel = (label) =>
+  /remaining|balance\s*due|balance$/i.test(String(label || "").trim());
+
+/**
+ * Build / upsert milestone rows from Request Deposit terms so quote preview
+ * and payment milestones stay in sync when only a deposit is saved.
+ *
+ * - Empty or deposit-only schedules → Deposit + Remaining Balance Due
+ * - Existing custom milestones → Deposit row upserted first; other rows kept
+ */
+const syncDepositIntoMilestoneRows = (existingRows = [], depositResult = {}, opts = {}) => {
+  const grand = num(depositResult.grand);
+  const deposit = Math.round(num(depositResult.deposit));
+  const balance = Math.round(
+    depositResult.balance != null ? num(depositResult.balance) : grand - deposit,
+  );
+  const pct = num(depositResult.pct);
+  const useFlat = opts.flat != null && num(opts.flat) > 0;
+
+  const depositRow = useFlat
+    ? { label: "Deposit", type: "fixed", amount: deposit, pct: pct || undefined }
+    : { label: "Deposit", type: "pct", pct: pct || 0, amount: deposit };
+
+  const balanceRow = {
+    label: "Remaining Balance Due",
+    type: "fixed",
+    amount: balance,
+    pct: grand > 0 ? Math.round((balance / grand) * 1000) / 10 : undefined,
+  };
+
+  const rows = Array.isArray(existingRows) ? existingRows : [];
+  const others = rows.filter(
+    (r) => !isDepositLabel(r?.label) && !isBalanceLabel(r?.label),
+  );
+
+  if (!others.length) {
+    return [depositRow, balanceRow];
+  }
+  return [depositRow, ...others];
+};
+
+/**
+ * Milestone rows derived from saved depositTerms (for preview when schedule empty).
+ */
+const depositTermsToMilestoneRows = (depositTerms = null, grand = 0) => {
+  if (!depositTerms || (depositTerms.deposit == null && depositTerms.pct == null && !depositTerms.flat)) {
+    return [];
+  }
+  const d = computeDeposit({
+    grand: grand || depositTerms.grand,
+    pct: depositTerms.pct,
+    flat: depositTerms.flat,
+  });
+  return syncDepositIntoMilestoneRows([], d, { flat: depositTerms.flat });
+};
+
+module.exports = {
+  computeDeposit,
+  computeMilestones,
+  normalizeMilestoneRow,
+  syncDepositIntoMilestoneRows,
+  depositTermsToMilestoneRows,
+  isDepositLabel,
+  isBalanceLabel,
+};

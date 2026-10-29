@@ -363,6 +363,10 @@ const estimateToDocumentPayload = (estimate) => {
   milestoneSchedule: estimate.milestoneSchedule || [],
   milestoneNote: estimate.milestoneNote || '',
   milestones: estimate.milestoneSchedule || [],
+  originalContractValue:
+    estimate.originalContractValue != null ? Number(estimate.originalContractValue) : null,
+  revisedContractTotal:
+    estimate.revisedContractTotal != null ? Number(estimate.revisedContractTotal) : null,
   companyBrand: estimate.companyBrand || 'SM',
   company: estimate.companyBrand || 'SM',
   companyLogoUrl: estimate.companyLogoUrl || '',
@@ -445,6 +449,10 @@ const applyStorageEstimateTotals = (estimate, storagePricing) => {
 /** Quote total shown to customer (building + concrete + insulation + tax). */
 const resolveEstimateGrandTotal = (estimate = {}) => {
   try {
+    // After change orders on a final estimate, revised total is the customer contract value.
+    if (estimate.revisedContractTotal != null && Number.isFinite(Number(estimate.revisedContractTotal))) {
+      return Math.round(toNumber(estimate.revisedContractTotal))
+    }
     if (estimate.jobType === 'Storage' && estimate.storagePricingResult?.grandTotal != null) {
       return Math.round(toNumber(estimate.storagePricingResult.grandTotal))
     }
@@ -817,7 +825,12 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
     fullQuote: mergedFull,
     fullQuoteResult: mergedFull,
     // Live pricing must not keep a stale body.grandTotal (that froze preview until save).
+    // Change-order revised total always wins for final contracts.
     grandTotal: (() => {
+      const revised = body.revisedContractTotal ?? savedPayload.revisedContractTotal
+      if (revised != null && Number.isFinite(Number(revised))) {
+        return Math.round(Number(revised))
+      }
       if (liveFull?.grandTotal != null && Number.isFinite(Number(liveFull.grandTotal))) {
         return Math.round(Number(liveFull.grandTotal))
       }
@@ -827,6 +840,10 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
       }
       return savedPayload.grandTotal
     })(),
+    originalContractValue:
+      body.originalContractValue ?? savedPayload.originalContractValue ?? null,
+    revisedContractTotal:
+      body.revisedContractTotal ?? savedPayload.revisedContractTotal ?? null,
     storagePricingResult: liveStorage || savedPayload.storagePricingResult,
     storagePricing: liveStorage || savedPayload.storagePricing,
     pembAddOns: body.pembAddOns || savedPayload.pembAddOns,
@@ -1022,6 +1039,8 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     pricing: payload.pricingResult || payload.pricing || payload.fullQuote?.pricing || null,
     fullQuote: payload.fullQuote || null,
     grandTotal: payload.grandTotal ?? payload.fullQuote?.grandTotal ?? null,
+    originalContractValue: payload.originalContractValue ?? null,
+    revisedContractTotal: payload.revisedContractTotal ?? null,
     milestoneSchedule,
     milestones: milestoneSchedule,
     milestoneNote: payload.milestoneNote || '',

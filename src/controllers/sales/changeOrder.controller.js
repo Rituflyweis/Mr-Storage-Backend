@@ -5,6 +5,10 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { computeChangeOrder, nextChangeOrderContext } = require('../../services/quoting/changeOrderEngine')
 const { generateChangeOrderHtml } = require('../../services/quoting/changeOrderDocument')
 const { renderHtmlToPdf } = require('../../services/quoting/htmlPdf')
+const {
+  syncEstimateFromChangeOrders,
+  estimateRevisionSummary,
+} = require('../../services/quoting/changeOrderApply')
 
 const parentFilter = (req) => {
   const { estimateId, parentQuoteRef } = { ...req.query, ...req.body, ...req.params }
@@ -18,12 +22,30 @@ const baseQuoteTotal = async (estimateId) => {
   if (!estimateId) return 0
   const est = await EstimateQuote.findById(estimateId).lean()
   if (!est) return 0
+  if (est.revisedContractTotal != null) return Math.round(Number(est.revisedContractTotal) || 0)
+  if (est.originalContractValue != null) return Math.round(Number(est.originalContractValue) || 0)
   return (
     est.fullQuoteResult?.grandTotal ??
     est.totalSell ??
     est.pricingResult?.totSell ??
+    est.storagePricingResult?.grandTotal ??
     0
   )
+}
+
+/** Change orders attach to a finalized contract — draft quotes should be edited instead. */
+const loadEstimateForChangeOrder = async (estimateId) => {
+  if (!estimateId) return { est: null }
+  const est = await EstimateQuote.findById(estimateId)
+  if (!est) return { error: 'Estimate not found', code: 404 }
+  if (est.status !== 'final') {
+    return {
+      error:
+        'Change orders are only allowed after the estimate is final (client contract issued). Edit the draft quote to change price instead.',
+      code: 400,
+    }
+  }
+  return { est }
 }
 
 // POST /change-orders/preview  — stateless math (no save)
@@ -44,6 +66,15 @@ exports.createChangeOrder = asyncHandler(async (req, res) => {
   const { estimateId, parentQuoteRef } = req.body
   if (!estimateId && !parentQuoteRef) {
     return badRequest(res, 'estimateId or parentQuoteRef is required')
+  }
+
+  let linkedEstimate = null
+  if (estimateId) {
+    const loaded = await loadEstimateForChangeOrder(estimateId)
+    if (loaded.error) {
+      return loaded.code === 404 ? notFound(res, loaded.error) : badRequest(res, loaded.error)
+    }
+    linkedEstimate = loaded.est
   }
 
   const existing = await ChangeOrder.find(parentFilter(req)).sort({ coNum: 1 }).lean()
@@ -80,13 +111,30 @@ exports.createChangeOrder = asyncHandler(async (req, res) => {
     employeeRole: req.user.role || '',
   })
 
-  return created(res, co, 'Change order created')
+  let estimateSummary = null
+  if (linkedEstimate) {
+    await syncEstimateFromChangeOrders(linkedEstimate)
+    estimateSummary = estimateRevisionSummary(linkedEstimate)
+  }
+
+  return created(
+    res,
+    { ...(co.toObject ? co.toObject() : co), estimate: estimateSummary },
+    'Change order created',
+  )
 })
 
 // PUT /change-orders/:coId
 exports.updateChangeOrder = asyncHandler(async (req, res) => {
   const co = await ChangeOrder.findOne({ _id: req.params.coId, createdBy: req.user._id })
   if (!co) return notFound(res, 'Change order not found')
+
+  if (co.estimateQuoteId) {
+    const loaded = await loadEstimateForChangeOrder(co.estimateQuoteId)
+    if (loaded.error) {
+      return loaded.code === 404 ? notFound(res, loaded.error) : badRequest(res, loaded.error)
+    }
+  }
 
   const math = computeChangeOrder({
     origVal: req.body.origVal != null ? req.body.origVal : co.origVal,
@@ -109,14 +157,38 @@ exports.updateChangeOrder = asyncHandler(async (req, res) => {
     newTotal: math.newTotal,
   })
   await co.save()
-  return success(res, co, 'Change order updated')
+
+  let estimateSummary = null
+  if (co.estimateQuoteId) {
+    const est = await EstimateQuote.findById(co.estimateQuoteId)
+    if (est) {
+      await syncEstimateFromChangeOrders(est)
+      estimateSummary = estimateRevisionSummary(est)
+    }
+  }
+
+  return success(
+    res,
+    { ...(co.toObject ? co.toObject() : co), estimate: estimateSummary },
+    'Change order updated',
+  )
 })
 
 // DELETE /change-orders/:coId
 exports.deleteChangeOrder = asyncHandler(async (req, res) => {
   const co = await ChangeOrder.findOneAndDelete({ _id: req.params.coId, createdBy: req.user._id })
   if (!co) return notFound(res, 'Change order not found')
-  return success(res, { deleted: true }, 'Change order deleted')
+
+  let estimateSummary = null
+  if (co.estimateQuoteId) {
+    const est = await EstimateQuote.findById(co.estimateQuoteId)
+    if (est) {
+      await syncEstimateFromChangeOrders(est)
+      estimateSummary = estimateRevisionSummary(est)
+    }
+  }
+
+  return success(res, { deleted: true, estimate: estimateSummary }, 'Change order deleted')
 })
 
 // POST /change-orders/:coId/pdf  (or POST /change-orders/pdf with inline `co`)

@@ -134,18 +134,18 @@ Lists, exports, plant/construction filters: [frontend-project-business-unit-api.
 
 **Product:** Consistent automatic project IDs per calendar year.
 
-**Behaviour (new leads only):**
+**Behaviour (all projects):**
 
 - Format: **`YYYY` + 3-digit sequence** (resets each year in business timezone).
-- Examples: `2026001`, `2026002`, … `2026123` (not `PRO-042`; legacy IDs unchanged).
-- Assigned on create when `jobId` is omitted (`Lead` pre-save → `generateJobId()`).
+- Examples: `2026001`, `2026002`, … `2026240` (not `PRO-042` / not local `UNIQ-*`).
+- Assigned on create via `Lead` pre-save → `generateJobId()`. Client-sent `PRO-` / `UNIQ-` / other non-year values are **ignored** and replaced.
+- Updates that set a non-year `jobId` are rejected.
 - `projectId` in API responses is an **alias** of `jobId`.
+- Legacy `PRO-*` leads: run `node scripts/migrate-jobids-to-year-format.js --apply` (stores old value in `previousJobId`).
 
 **Optional env:** `PROJECT_ID_TIMEZONE` (default US Eastern for year rollover).
 
-**Manual override:** If create payload includes `jobId`, that value is stored (admin/sales create validators permitting).
-
-**FE:** Show `jobId` / `projectId` on lead detail, lists, PDFs, and filters (`search` matches `jobId` on many list APIs).
+**FE:** Always display API `jobId` / `projectId` on lead lists and detail. Never show optimistic local IDs (`UNIQ-…`) once the create response returns.
 
 ---
 

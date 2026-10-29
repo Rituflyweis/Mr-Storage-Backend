@@ -1,20 +1,43 @@
 /**
- * Change Order math — exact port of SM-QuotingTool v7
- * (coCalcAll / coCalcFromMarkup / saveAndPrintCO, attachment L6471-6560)
+ * Change Order math — exact port of SM-QuotingTool
+ * (coCalcAll / coCalcFromMarkup / saveAndPrintCO)
+ *
+ * Markup % on the CO form is a **target margin on sell**, not markup-on-cost:
+ *   sell = round(cost / (1 - markup/100))
+ * e.g. cost 50000 + markup 10 → sell 55556, profit 5556, margin 10.0%
+ * (NOT cost * 1.10 = 55000, which yields only 9.1% margin)
  */
 
 const round = (n) => Math.round(Number(n) || 0);
+
+/** Client coCalcFromMarkup: sell from cost + target margin %. */
+const sellFromMarkup = (cost, markup) => {
+  const c = Number(cost);
+  const m = Number(markup);
+  if (!(c > 0) || !Number.isFinite(m) || m >= 100) return null;
+  return Math.round(c / (1 - m / 100));
+};
+
+/** Wrong FE formula often used by mistake: sell = cost * (1 + markup/100). */
+const sellFromMarkupOnCost = (cost, markup) => {
+  const c = Number(cost);
+  const m = Number(markup);
+  if (!(c > 0) || !Number.isFinite(m)) return null;
+  return Math.round(c * (1 + m / 100));
+};
 
 /**
  * Compute a change order's totals.
  * @param {object} input
  * @param {number} input.origVal  Original (or running) contract value
- * @param {number} [input.amount] CO sell amount (+/-). If omitted but cost+markup
- *                                are supplied, it is derived: sell = cost/(1-markup/100)
+ * @param {number} [input.amount] CO sell amount (+/-)
  * @param {number} [input.cost]   CO cost (COGS)
- * @param {number} [input.markup] Markup % (used only to derive amount when amount is blank)
+ * @param {number} [input.markup] Target margin % — drives sell when amount omitted,
+ *                                fromMarkup=true, or amount matches the wrong
+ *                                cost*(1+markup/100) formula
+ * @param {boolean} [input.fromMarkup] Force derive sell from cost + markup
  * @returns {{origVal:number, amount:number, cost:(number|null), newTotal:number,
- *            profit:(number|null), margin:(number|null)}}
+ *            profit:(number|null), margin:(number|null), markup:(number|null)}}
  */
 const computeChangeOrder = (input = {}) => {
   const origVal = round(input.origVal);
@@ -22,14 +45,41 @@ const computeChangeOrder = (input = {}) => {
     input.cost !== undefined && input.cost !== null && input.cost !== "" && Number(input.cost) > 0;
   const cost = hasCost ? Number(input.cost) : null;
 
-  let amount;
+  const markupRaw = input.markup;
+  const hasMarkup =
+    markupRaw !== undefined && markupRaw !== null && markupRaw !== "" && Number.isFinite(Number(markupRaw));
+  const markup = hasMarkup ? Number(markupRaw) : null;
+
   const amountProvided =
     input.amount !== undefined && input.amount !== null && input.amount !== "";
-  if (amountProvided) {
-    amount = Number(input.amount) || 0;
-  } else if (hasCost && input.markup != null && input.markup !== "" && Number(input.markup) < 100) {
-    // coCalcFromMarkup: sell = cost / (1 - markup/100)
-    amount = Math.round(cost / (1 - Number(input.markup) / 100));
+  const amountIn = amountProvided ? Number(input.amount) || 0 : null;
+
+  const derivedSell =
+    hasCost && hasMarkup && markup < 100 ? sellFromMarkup(cost, markup) : null;
+  const wrongSell =
+    hasCost && hasMarkup ? sellFromMarkupOnCost(cost, markup) : null;
+
+  const forceFromMarkup =
+    input.fromMarkup === true ||
+    input.recalcFromMarkup === true ||
+    input.deriveFromMarkup === true;
+
+  // Prefer client coCalcFromMarkup when markup drives the calc, or when FE
+  // sent the common wrong markup-on-cost sell (cost * 1.10 at 10% → 55000).
+  const amountLooksLikeMarkupOnCost =
+    amountIn != null &&
+    wrongSell != null &&
+    derivedSell != null &&
+    round(amountIn) === wrongSell &&
+    wrongSell !== derivedSell;
+
+  let amount;
+  if (forceFromMarkup && derivedSell != null) {
+    amount = derivedSell;
+  } else if ((!amountProvided || amountLooksLikeMarkupOnCost) && derivedSell != null) {
+    amount = derivedSell;
+  } else if (amountProvided) {
+    amount = round(amountIn);
   } else {
     amount = 0;
   }
@@ -39,8 +89,11 @@ const computeChangeOrder = (input = {}) => {
   const profit = hasCost ? round(amount - cost) : null;
   const margin =
     hasCost && amount !== 0
-      ? Number(((amount - cost) / Math.abs(amount) * 100).toFixed(1))
+      ? Number((((amount - cost) / Math.abs(amount)) * 100).toFixed(1))
       : null;
+
+  // Mirror coCalcAll: when sell+cost known, exposed markup % = computed margin.
+  const markupOut = margin != null ? margin : hasMarkup ? Number(markup.toFixed(1)) : null;
 
   return {
     origVal,
@@ -49,6 +102,7 @@ const computeChangeOrder = (input = {}) => {
     newTotal: round(newTotal),
     profit,
     margin,
+    markup: markupOut,
   };
 };
 
@@ -68,4 +122,9 @@ const nextChangeOrderContext = (existingCOs = [], baseQuoteTotal = 0) => {
   return { coNum, origVal };
 };
 
-module.exports = { computeChangeOrder, nextChangeOrderContext };
+module.exports = {
+  computeChangeOrder,
+  nextChangeOrderContext,
+  sellFromMarkup,
+  sellFromMarkupOnCost,
+};

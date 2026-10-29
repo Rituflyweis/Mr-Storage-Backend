@@ -91,6 +91,8 @@ const LeadSchema = new mongoose.Schema(
     height:          { type: Number, default: null },
     source:          { type: String, enum: LEAD_SOURCES, default: 'chat' },
     jobId:           { type: String, default: null },
+    /** Prior display id when migrated from PRO-### / other non-year formats. */
+    previousJobId:   { type: String, default: null },
     projectName:     { type: String, default: '' },
     // Mongoose skips enum validation for null, so older leads without a unit stay valid.
     businessUnit:    { type: String, enum: BUSINESS_UNITS, default: null },
@@ -207,9 +209,21 @@ LeadSchema.pre('aggregate', function (next) {
 LeadSchema.pre('save', async function (next) {
   syncLeadScoringTemperature(this.leadScoring)
 
-  if (this.isNew && !this.jobId) {
-    const generateJobId = require('../utils/generateJobId')
-    this.jobId = await generateJobId()
+  // Always use YYYY### project IDs (2026001…). Ignore client/legacy PRO-/UNIQ- on create.
+  const generateJobId = require('../utils/generateJobId')
+  const { isYearFormatJobId } = generateJobId
+  if (this.isNew) {
+    if (!isYearFormatJobId(this.jobId)) {
+      this.jobId = await generateJobId()
+    }
+  } else if (this.isModified('jobId') && this.jobId) {
+    if (!isYearFormatJobId(this.jobId)) {
+      return next(
+        new Error(
+          'jobId must use year format YYYY### (e.g. 2026001). Legacy PRO-/custom IDs are not allowed.',
+        ),
+      )
+    }
   }
   next()
 })

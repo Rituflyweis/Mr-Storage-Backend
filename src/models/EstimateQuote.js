@@ -69,6 +69,9 @@ const EstimateQuoteSchema = new mongoose.Schema(
     milestoneSchedule: { type: [mongoose.Schema.Types.Mixed], default: [] }, // [{ label, type, amount }]
     milestoneNote: { type: String, default: '' },
     multiStory: { type: mongoose.Schema.Types.Mixed, default: null }, // { stories, staircaseCount, staircaseUnitCost, staircaseSell }
+    // Locked when the first change order is applied on a final estimate; revised tracks latest CO newTotal.
+    originalContractValue: { type: Number, default: null },
+    revisedContractTotal: { type: Number, default: null },
     companyBrand: { type: String, default: 'SM' },
     companyLogoUrl: { type: String, default: '' },
     employeeName: { type: String, default: '' },

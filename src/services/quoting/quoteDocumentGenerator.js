@@ -4,7 +4,10 @@ const CONTRACT_TEXT = require('./contractText')
 const { getStoragePricingSummaryLines } = require('./storagePricingEngine')
 const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
 const { computeStaircase } = require('./staircase')
-const { computeMilestones } = require('./depositMilestoneEngine')
+const {
+  computeMilestones,
+  depositTermsToMilestoneRows,
+} = require('./depositMilestoneEngine')
 const {
   getCompanyInfo,
   getLogoHtml,
@@ -214,15 +217,26 @@ const buildQuoteContext = (payload = {}) => {
     grandTotal = recomputed || buildingSell
   }
 
+  // Change-order revised contract total wins over live BOM recompute on final contracts.
+  if (
+    payload.revisedContractTotal != null &&
+    Number.isFinite(Number(payload.revisedContractTotal))
+  ) {
+    grandTotal = Math.round(Number(payload.revisedContractTotal))
+  }
+
   const sf = res.sf || payload.squareFootage || 0
   const grandSF = sf > 0 ? (grandTotal / sf).toFixed(2) : res.sfPrice
   const steelFinish = res.steelFinish || payload.steelFinish || payload.finishType || 'red-iron'
 
-  const milestoneRows =
+  let milestoneRows =
     payload.milestoneSchedule ||
     payload.milestones ||
     payload.milestone?.rows ||
     []
+  if ((!Array.isArray(milestoneRows) || !milestoneRows.length) && payload.depositTerms) {
+    milestoneRows = depositTermsToMilestoneRows(payload.depositTerms, grandTotal)
+  }
   const milestones = Array.isArray(milestoneRows) && milestoneRows.length
     ? computeMilestones({ grand: grandTotal, rows: milestoneRows })
     : null
@@ -252,6 +266,11 @@ const buildQuoteContext = (payload = {}) => {
     stairSell,
     milestones,
     milestoneNote: payload.milestoneNote || '',
+    depositTerms: payload.depositTerms || null,
+    originalContractValue:
+      payload.originalContractValue != null ? Number(payload.originalContractValue) : null,
+    revisedContractTotal:
+      payload.revisedContractTotal != null ? Number(payload.revisedContractTotal) : null,
     isStorage: false,
   }
 }
@@ -594,6 +613,18 @@ const generateSowHtml = (payload = {}) => {
   </div>`
 }
 
+const formatDepositContractPhrase = (depositTerms) => {
+  if (!depositTerms || typeof depositTerms !== 'object') return null
+  if (depositTerms.flat != null && Number(depositTerms.flat) > 0) {
+    return `$${Math.round(Number(depositTerms.flat)).toLocaleString()}`
+  }
+  if (depositTerms.pct != null && Number.isFinite(Number(depositTerms.pct))) {
+    const pct = Number(depositTerms.pct)
+    return `${pct}-percent (${pct}%)`
+  }
+  return null
+}
+
 const generateContractHtml = (payload = {}) => {
   const contract = payload.contract || {}
   const ctx = buildQuoteContext(payload)
@@ -602,7 +633,10 @@ const generateContractHtml = (payload = {}) => {
   const city = contract.city || ctx.loc || ''
   const email = contract.email || ctx.email || '[E-MAIL ADDRESS]'
   const date = contract.date || ctx.today || '[DATE]'
-  const deposit = contract.deposit || 'forty-percent (40%)'
+  const deposit =
+    contract.deposit ||
+    formatDepositContractPhrase(payload.depositTerms || ctx.depositTerms) ||
+    'forty-percent (40%)'
   const type = contract.type || (String(ctx.res.scope || '').toLowerCase() === 'supply' ? 'supply' : 'both')
   const scope = type === 'both' ? 'fabrication, supply, delivery, and installation' : 'fabrication and supply'
   const value = contract.value || fmtMoney(ctx.grandTotal)

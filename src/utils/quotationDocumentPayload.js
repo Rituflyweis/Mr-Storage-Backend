@@ -4,6 +4,9 @@ const toNumber = (value, fallback = 0) => {
 };
 
 const resolveEstimateGrandTotal = (estimate = {}) => {
+  if (estimate.revisedContractTotal != null && Number.isFinite(Number(estimate.revisedContractTotal))) {
+    return Math.round(toNumber(estimate.revisedContractTotal));
+  }
   if (estimate.storagePricingResult?.grandTotal != null) {
     return Math.round(toNumber(estimate.storagePricingResult.grandTotal));
   }

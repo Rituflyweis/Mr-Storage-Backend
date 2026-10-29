@@ -19,6 +19,7 @@ const {
   PO_PROJECT_MATCH,
   getCustomerIdsWithRaisedPO,
 } = require('../../utils/customerPoFilter')
+const { applyCustomerSourceScope } = require('../../utils/customerImportScope')
 const {
   computeProjectInvoiceStats,
   mapProjectInvoiceRow,
@@ -45,10 +46,11 @@ const loadCustomerProject = async (customerId, leadId) => {
 }
 exports.getCustomerStats = asyncHandler(async (req, res) => {
   const poCustomerIds = await getCustomerIdsWithRaisedPO()
+  const customerScope = applyCustomerSourceScope({ _id: { $in: poCustomerIds } }, req.query)
 
   const [totalCustomers, activeCustomers, totalProjects, activeProjects, notAssigned, completed] = await Promise.all([
-    Customer.countDocuments({ _id: { $in: poCustomerIds } }),
-    Customer.countDocuments({ _id: { $in: poCustomerIds }, isActive: true }),
+    Customer.countDocuments(customerScope),
+    Customer.countDocuments({ ...customerScope, isActive: true }),
     Lead.countDocuments(PO_PROJECT_MATCH),
     Lead.countDocuments(ACTIVE_PROJECT_MATCH),
     Lead.countDocuments(NOT_ASSIGNED_PROJECT_MATCH),
@@ -69,7 +71,7 @@ exports.getAllCustomers = asyncHandler(async (req, res) => {
   const { scope, isActive, search, page = 1, limit = 20 } = req.query
   const dateFilter = buildDateFilter(req.query)
 
-  const filter = { ...dateFilter }
+  const filter = applyCustomerSourceScope({ ...dateFilter }, req.query)
   if (scope === 'active') filter.isActive = true
   else if (isActive !== undefined) filter.isActive = isActive === 'true'
   if (search && search.trim()) {

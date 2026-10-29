@@ -136,7 +136,7 @@ async function main() {
 
   // ── Smoke: each generator returns a string matching expected pattern ───────
   const smokeTests = [
-    ['generateJobId', generateJobId, /^PRO-\d{3,}$/],
+    ['generateJobId', generateJobId, /^\d{4}\d{3,}$/],
     ['generateVendorCode', generateVendorCode, /^VND-\d{4,}$/],
     ['generateCarrierCode', generateCarrierCode, /^CAR-\d{4,}$/],
     ['generateInvoiceNumber', generateInvoiceNumber, /^INV-\d{4,}$/],
@@ -188,7 +188,7 @@ async function main() {
       source: 'manual',
     }))
 
-    assert(/^PRO-\d{3,}$/.test(lead.jobId || ''), `lead got jobId: ${lead.jobId}`)
+    assert(/^\d{4}\d{3,}$/.test(lead.jobId || ''), `lead got jobId: ${lead.jobId}`)
   })
 
   // ── Module load sanity (controllers that import generators) ────────────────

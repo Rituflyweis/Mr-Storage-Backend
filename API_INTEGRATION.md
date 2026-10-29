@@ -231,7 +231,10 @@ Response `data`
 { "origVal": 512500, "amount": 15000, "cost": 11000, "newTotal": 527500, "profit": 4000, "margin": 26.7 }
 ```
 > Derive the sell from a markup instead: send `{ "origVal": 512500, "cost": 11000, "markup": 25 }`
-> and `amount` comes back as `round(cost / (1 - markup/100))`.
+> and `amount` comes back as `round(cost / (1 - markup/100))` (target **margin** on sell — e.g. cost 50000 +
+> markup 10 → sell **55556**, margin 10.0%; not `cost * 1.10` = 55000).
+> If both `amount` and `markup` are sent and amount equals the wrong `cost*(1+markup/100)` value, backend
+> corrects to the margin formula. Force with `"fromMarkup": true`.
 
 ### POST `/change-orders` (create)
 Request

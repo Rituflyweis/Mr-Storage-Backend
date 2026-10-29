@@ -51,6 +51,8 @@ Authorization: Bearer <token>
 
 **Scope:** stats and list **exclude bulk-import lead stubs** by default (`source: "import"` / `@imports.mrstorage.internal`). Those are created so imported leads have a `customerId`, not because they are Accounts customers.
 
+Same default exclusion applies to **Admin** and **Sales** Customers list/stats (`/api/admin/customers`, `/api/sales/customers`) and common customer lookup.
+
 | Query | Effect |
 |--------|--------|
 | _(default)_ | Real customers only |

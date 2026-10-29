@@ -17,6 +17,7 @@ const {
   PO_PROJECT_MATCH,
   getSalesCustomerIdsWithRaisedPO,
 } = require('../../utils/customerPoFilter')
+const { applyCustomerSourceScope } = require('../../utils/customerImportScope')
 const { startOfMonth, endOfMonth } = require('date-fns')
 
 const getOwnCustomerIds = async (salesId) => {
@@ -30,15 +31,31 @@ exports.getCustomerStats = asyncHandler(async (req, res) => {
   const monthEnd = endOfMonth(now)
 
   const poCustomerIds = await getSalesCustomerIdsWithRaisedPO(salesId)
+  const scopeBase = applyCustomerSourceScope({ _id: { $in: poCustomerIds } }, req.query)
 
   const [total, active, newThisMonth, returningAgg] = await Promise.all([
-    Customer.countDocuments({ _id: { $in: poCustomerIds } }),
-    Customer.countDocuments({ _id: { $in: poCustomerIds }, isActive: true }),
-    Customer.countDocuments({ _id: { $in: poCustomerIds }, createdAt: { $gte: monthStart, $lte: monthEnd } }),
+    Customer.countDocuments(scopeBase),
+    Customer.countDocuments({ ...scopeBase, isActive: true }),
+    Customer.countDocuments({
+      ...scopeBase,
+      createdAt: { $gte: monthStart, $lte: monthEnd },
+    }),
     Lead.aggregate([
       { $match: { assignedSales: salesId, ...PO_PROJECT_MATCH } },
       { $group: { _id: '$customerId', count: { $sum: 1 } } },
       { $match: { count: { $gt: 1 } } },
+      {
+        $lookup: {
+          from: 'customers',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'customer',
+        },
+      },
+      { $unwind: '$customer' },
+      {
+        $match: applyCustomerSourceScope({}, req.query),
+      },
       { $count: 'total' },
     ]),
   ])
@@ -58,7 +75,7 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
   const poCustomerIds = await getSalesCustomerIdsWithRaisedPO(req.user._id)
 
-  const filter = { _id: { $in: poCustomerIds } }
+  const filter = applyCustomerSourceScope({ _id: { $in: poCustomerIds } }, req.query)
   if (search && search.trim()) {
     const regex = new RegExp(search.trim(), 'i')
     filter.$or = [{ firstName: regex }, { email: regex }, { customerId: regex }]

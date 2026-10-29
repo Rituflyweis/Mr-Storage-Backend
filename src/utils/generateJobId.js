@@ -5,6 +5,9 @@ const { PROJECT_ID_TIMEZONE } = require('../config/env')
 const PROJECT_ID_SEQUENCE_PAD = 3
 const PROJECT_ID_FALLBACK_TIMEZONE = 'America/New_York'
 
+/** YYYY + at least 3-digit sequence, e.g. 2026001, 2026240 */
+const YEAR_JOB_ID_REGEX = /^(\d{4})(\d{3,})$/
+
 const resolveProjectIdTimeZone = () =>
   isValidTimeZone(PROJECT_ID_TIMEZONE) ? PROJECT_ID_TIMEZONE : PROJECT_ID_FALLBACK_TIMEZONE
 
@@ -14,6 +17,13 @@ const getProjectIdYear = (date = new Date(), timeZone = resolveProjectIdTimeZone
 
 /** Year-based project id: YYYY + sequence that restarts each year (2026001, 2026002, …). */
 const formatYearJobId = (year, n) => `${year}${String(n).padStart(PROJECT_ID_SEQUENCE_PAD, '0')}`
+
+const isYearFormatJobId = (value) => {
+  const s = String(value || '').trim()
+  if (!YEAR_JOB_ID_REGEX.test(s)) return false
+  const year = Number(s.slice(0, 4))
+  return year >= 2000 && year <= 2100
+}
 
 const generateJobId = async (date = new Date()) => {
   const Lead = require('../models/Lead')
@@ -32,3 +42,5 @@ const generateJobId = async (date = new Date()) => {
 module.exports = generateJobId
 module.exports.formatYearJobId = formatYearJobId
 module.exports.getProjectIdYear = getProjectIdYear
+module.exports.isYearFormatJobId = isYearFormatJobId
+module.exports.YEAR_JOB_ID_REGEX = YEAR_JOB_ID_REGEX
