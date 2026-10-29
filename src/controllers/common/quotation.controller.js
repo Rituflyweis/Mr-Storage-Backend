@@ -1676,7 +1676,7 @@ const buildQuoteInvoiceBreakdown = (quotation = {}, estimate = null) => {
 
 exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
   const { leadId } = req.params;
-  const { error: accessError, code } = await checkLeadAccess(leadId, req.user);
+  const { lead, error: accessError, code } = await checkLeadAccess(leadId, req.user);
   if (accessError) return code === 404 ? notFound(res, accessError) : forbidden(res, accessError);
 
   const quotation = await Quotation.findOne({
@@ -1693,12 +1693,43 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
   const estimate = quotation.sourceEstimateId
     ? await EstimateQuote.findById(quotation.sourceEstimateId)
         .select(
-          "jobType salesTax storagePricingResult fullQuoteResult totalSell pricingResult totalCOGS concreteAddon insulationAddon"
+          "jobType salesTax storagePricingResult fullQuoteResult totalSell pricingResult totalCOGS concreteAddon insulationAddon milestoneSchedule depositTerms revisedContractTotal"
         )
         .lean()
     : null;
 
   const breakdown = buildQuoteInvoiceBreakdown(quotation, estimate);
+
+  // Prefill Payment Schedule on invoice form the same way tax is prefilled.
+  const {
+    ensurePaymentScheduleFromEstimate,
+    suggestPaymentStagesFromEstimate,
+  } = require("../../services/paymentScheduleFromEstimate.service");
+  const PaymentSchedule = require("../../models/PaymentSchedule");
+
+  let paymentSchedule = await PaymentSchedule.findOne({ leadId }).lean();
+  let paymentScheduleSeededFromQuote = false;
+  if (!paymentSchedule?.stages?.length && lead) {
+    const seeded = await ensurePaymentScheduleFromEstimate({
+      lead,
+      userId: req.user._id,
+      quotationId: quotation._id,
+    });
+    if (seeded.schedule) {
+      paymentSchedule =
+        typeof seeded.schedule.toObject === "function"
+          ? seeded.schedule.toObject()
+          : seeded.schedule;
+      paymentScheduleSeededFromQuote = Boolean(seeded.seeded);
+    }
+  }
+  const suggested = paymentSchedule?.stages?.length
+    ? {
+        stages: paymentSchedule.stages,
+        totalAmount: paymentSchedule.totalAmount,
+        quotationId: quotation._id,
+      }
+    : await suggestPaymentStagesFromEstimate(leadId, quotation._id);
 
   return success(res, {
     leadId: quotation.leadId,
@@ -1722,6 +1753,10 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     approvalStatus: quotation.approval?.status || "approved",
     versionNumber: quotation.versionNumber || 1,
     reviewedAt: quotation.approval?.reviewedAt || null,
+    paymentSchedule: paymentSchedule || null,
+    paymentScheduleStages: suggested.stages || [],
+    paymentScheduleTotal: suggested.totalAmount || 0,
+    paymentScheduleSeededFromQuote,
   });
 });
 

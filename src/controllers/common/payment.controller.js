@@ -4,6 +4,9 @@ const auditService = require('../../services/audit.service')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
+const {
+  ensurePaymentScheduleFromEstimate,
+} = require('../../services/paymentScheduleFromEstimate.service')
 
 const checkLeadAccess = async (leadId, user) => {
   const lead = await Lead.findById(leadId)
@@ -106,11 +109,29 @@ exports.createSchedule = asyncHandler(async (req, res) => {
 
 exports.getScheduleByLead = asyncHandler(async (req, res) => {
   const { leadId } = req.params
-  const { error, code } = await checkLeadAccess(leadId, req.user)
+  const { lead, error, code } = await checkLeadAccess(leadId, req.user)
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
 
-  const schedule = await PaymentSchedule.findOne({ leadId }).lean()
-  return success(res, { schedule: schedule || null })
+  let schedule = await PaymentSchedule.findOne({ leadId }).lean()
+  let seededFromQuote = false
+  if (!schedule || !Array.isArray(schedule.stages) || !schedule.stages.length) {
+    const seeded = await ensurePaymentScheduleFromEstimate({
+      lead,
+      userId: req.user._id,
+      quotationId: req.query.quotationId || null,
+    })
+    if (seeded.schedule) {
+      schedule =
+        typeof seeded.schedule.toObject === 'function'
+          ? seeded.schedule.toObject()
+          : seeded.schedule
+      seededFromQuote = Boolean(seeded.seeded)
+    }
+  }
+  return success(res, {
+    schedule: schedule || null,
+    seededFromQuote,
+  })
 })
 
 exports.updateScheduleByLead = asyncHandler(async (req, res) => {

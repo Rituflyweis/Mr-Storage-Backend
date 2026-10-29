@@ -32,6 +32,9 @@ const { assertPlantProjectAccess } = require("../../utils/plantProjectAccess");
 const { buildInstallAddressFromLead } = require("../../models/schemas/structuredAddress");
 const taxOrchestrator = require("../../services/tax/taxOrchestrator.service");
 const { shouldBlockOnTaxFailure } = require("../../config/taxEngine");
+const {
+  ensurePaymentScheduleFromEstimate,
+} = require("../../services/paymentScheduleFromEstimate.service");
 
 // Skip reasons that mean "tax genuinely could not be confirmed" and must block
 // finalization when the active provider is Avalara (spec §9, §10).
@@ -683,8 +686,15 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     }
   }
 
+  // Auto-seed Payment Schedule from quote milestones (same source as quote preview).
+  const seededSchedule = await ensurePaymentScheduleFromEstimate({
+    lead,
+    userId: req.user._id,
+    quotationId: quoteTax.quotationId || req.body.quotationId || null,
+  });
+
   const { paymentScheduleStageId } = req.body;
-  let paymentScheduleId = null;
+  let paymentScheduleId = seededSchedule.schedule?._id || null;
 
   if (paymentScheduleStageId) {
     const resolved = await resolvePaymentScheduleStage(
@@ -809,7 +819,17 @@ exports.createInvoice = asyncHandler(async (req, res) => {
     console.warn('[tax] calculate on create:', taxErr.message);
   }
 
-  return created(res, { invoice: decorateInvoiceForResponse(invoice) });
+  const paymentScheduleDoc = seededSchedule.schedule
+    ? typeof seededSchedule.schedule.toObject === "function"
+      ? seededSchedule.schedule.toObject()
+      : seededSchedule.schedule
+    : await PaymentSchedule.findOne({ leadId }).lean();
+
+  return created(res, {
+    invoice: decorateInvoiceForResponse(invoice),
+    paymentSchedule: paymentScheduleDoc || null,
+    paymentScheduleSeededFromQuote: Boolean(seededSchedule.seeded),
+  });
 });
 
 exports.getInvoice = asyncHandler(async (req, res) => {
