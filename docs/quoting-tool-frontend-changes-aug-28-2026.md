@@ -79,7 +79,9 @@ This doc covers **only the fixes from Aug 27–28** that frontend must wire up o
 |-------|---------|
 | `squareFootageMeta.selected` | SF used for pricing (same as `squareFootage`) |
 | `squareFootageMeta.source` | `"weight_formula"` or `"manual"` |
-| `squareFootageMeta.formula` | `"round(totalWeightLbs / 9)"` when auto-derived |
+| `squareFootageMeta.formula` | `"round(detectedWeightLbs / 9)"` when auto-derived (full shipper weight = mapped + unmapped) |
+| `squareFootageMeta.weightLbsUsed` | Lbs used in the ÷9 formula (same as Shipper Weight card) |
+| `squareFootageMeta.mappedWeightLbs` | Mapped category weight only |
 | `squareFootageMeta.fromWeight` | SF from weight formula |
 | `squareFootageMeta.coverDerivedSqft` | SF from cover sheet width × length (reference only unless manual override) |
 | `squareFootageMeta.inputSf` | SF sent in request |
@@ -87,9 +89,11 @@ This doc covers **only the fixes from Aug 27–28** that frontend must wire up o
 **UI recommendation:**
 
 ```
-SF: 1,505 (auto from weight: 13,547.18 lbs ÷ 9)
+SF: 1,481 (auto from weight: 13,325.61 lbs ÷ 9)
 Cover sheet: 20 × 150 = 3,000 SF (reference)
 ```
+
+> Label must show **lbs ÷ 9**, not `SF ÷ 9`. Do not use mapped-only weight for this label.
 
 When user edits SF field → send `useManualSquareFootage: true` and the new value on next `compute` / save.
 

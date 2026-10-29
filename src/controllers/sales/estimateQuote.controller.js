@@ -650,8 +650,15 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
   const cover = parseShipperCoverSheet(parsed.workbook)
   const coverSqft = deriveCoverSquareFootage(cover)
 
-  const autoSf =
-    parsed.totalWeightLbs > 0 ? Math.round(parsed.totalWeightLbs / 9) : 0
+  // SF from weight must use full shipper weight (mapped + unmapped tabs).
+  // Using only mapped `totalWeightLbs` understated SF vs the Shipper Weight card
+  // (e.g. 13,325.61 lbs ÷ 9 → 1,481; mapped-only → 1,458).
+  const weightForSf = Number(
+    parsed.detectedWeightLbs > 0
+      ? parsed.detectedWeightLbs
+      : parsed.totalWeightLbs || 0,
+  )
+  const autoSf = weightForSf > 0 ? Math.round(weightForSf / 9) : 0
   // Fresh shipper upload: derive SF from weight unless client explicitly locked manual SF
   const manualSfEnabled = Boolean(req.body.useManualSquareFootage && options.sf > 0)
   const sf =
@@ -678,7 +685,9 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
     squareFootageMeta: {
       selected: sf,
       source: manualSfEnabled ? 'manual' : 'weight_formula',
-      formula: 'round(totalWeightLbs / 9)',
+      formula: 'round(detectedWeightLbs / 9)',
+      weightLbsUsed: Math.round(weightForSf * 100) / 100,
+      mappedWeightLbs: Math.round(parsed.totalWeightLbs * 100) / 100,
       fromWeight: autoSf,
       coverDerivedSqft: coverSqft,
       inputSf: options.sf || 0,
