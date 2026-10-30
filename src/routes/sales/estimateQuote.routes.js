@@ -8,6 +8,20 @@ router.post('/extract-drawing', [body('fileBase64').notEmpty()], validate, ctrl.
 router.post('/extract-shipper', [body('fileBase64').notEmpty()], validate, ctrl.extractShipperFile)
 router.post('/extract-storage-cog', [body('fileBase64').notEmpty()], validate, ctrl.extractStorageCog)
 
+// EstimateId-first: file + leadId → draft estimate (no FE blob threading).
+router.post(
+  '/from-shipper',
+  [body('fileBase64').notEmpty(), body('leadId').notEmpty()],
+  validate,
+  ctrl.createEstimateFromShipper,
+)
+router.post(
+  '/from-storage-cog',
+  [body('fileBase64').notEmpty(), body('leadId').notEmpty()],
+  validate,
+  ctrl.createEstimateFromStorageCog,
+)
+
 router.post('/compute', ctrl.computeQuote)
 router.post('/compute-storage', ctrl.computeStorageQuote)
 router.post('/cogs/preview', ctrl.previewCogsOverride)
@@ -37,6 +51,8 @@ router.get('/history/summary', ctrl.getQuoteHistorySummary)
 
 router.get('/', ctrl.listEstimateQuotes)
 router.post('/', ctrl.createEstimateQuote)
+// Recompute from stored parsedCategories / storageData (small options body only).
+router.post('/:estimateId/compute', ctrl.computeEstimateById)
 router.get('/:estimateId', ctrl.getEstimateQuote)
 router.put('/:estimateId', ctrl.updateEstimateQuote)
 router.delete('/:estimateId', ctrl.deleteEstimateQuote)

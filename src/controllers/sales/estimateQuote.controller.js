@@ -2,6 +2,7 @@ const PricingRules = require('../../models/PricingRules')
 const EstimateQuote = require('../../models/EstimateQuote')
 const Quotation = require('../../models/Quotation')
 const Lead = require('../../models/Lead')
+const Customer = require('../../models/Customer')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildPricingRates } = require('../../services/quoting/pricingRulesAdapter')
@@ -29,6 +30,40 @@ const {
   generateQuotePdf,
 } = require('../../services/quoting/quoteDocumentGenerator')
 const { rescalePaymentsForGrand } = require('../../services/quoting/changeOrderApply')
+
+const roundMoney2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+
+/** Header fields from lead (+ customer) for estimateId-first create. */
+const leadHeaderFromLead = async (lead) => {
+  if (!lead) return {}
+  let customerName = ''
+  let customerEmail = ''
+  if (lead.customerId) {
+    const c = await Customer.findById(lead.customerId).select('name email').lean()
+    customerName = c?.name || ''
+    customerEmail = c?.email || ''
+  }
+  const install = lead.installAddress || {}
+  const street =
+    [install.line1, install.line2].filter(Boolean).join(', ') || lead.location || ''
+  const cityStateZip = [
+    lead.city || install.city,
+    lead.state || install.state,
+    lead.pincode || install.postalCode,
+  ]
+    .filter(Boolean)
+    .join(', ')
+  const sqftNum = Number(String(lead.sqft || '').replace(/,/g, '')) || 0
+  return {
+    leadCompanyName: customerName || lead.projectName || '',
+    customerEmail,
+    streetAddress: street,
+    cityStateZip: cityStateZip || lead.location || '',
+    jobNumber: lead.jobId || '',
+    buildingSize: sqftNum > 0 ? `${sqftNum.toLocaleString()} SF` : lead.sqft || '',
+    squareFootageHint: sqftNum > 0 ? sqftNum : undefined,
+  }
+}
 
 const getOrCreatePricingRules = async (userId) => {
   let rules = await PricingRules.findOne({ ownerId: userId })
@@ -156,6 +191,13 @@ const normalizeQuoteOptions = (body = {}) => {
       ? controls.deletedRowKeys
       : []
 
+  // 0 from saved EstimateQuote must not override pricing-engine defaults (?? treats 0 as set).
+  const positiveOrUndef = (v) => {
+    if (v === undefined || v === null || v === '') return undefined
+    const n = Number(v)
+    return Number.isFinite(n) && n > 0 ? n : undefined
+  }
+
   return {
     jobType: body.jobType || 'PEMB',
     scope,
@@ -163,8 +205,8 @@ const normalizeQuoteOptions = (body = {}) => {
     install: body.install || body.installLevel || 'medium',
     sf: Number(body.squareFootage || body.sf || body.buildingSf || 0) || 0,
     blendPct: body.blendPct !== undefined ? Number(body.blendPct) : 50,
-    installCostPerSf: body.installCostPerSf !== undefined ? Number(body.installCostPerSf) : undefined,
-    sellPerSf: body.sellPerSf !== undefined ? Number(body.sellPerSf) : undefined,
+    installCostPerSf: positiveOrUndef(body.installCostPerSf),
+    sellPerSf: positiveOrUndef(body.sellPerSf),
     matMuOverride,
     steelFinish,
     freightOverride,
@@ -640,13 +682,18 @@ exports.extractDrawingPdf = asyncHandler(async (req, res) => {
   return success(res, result)
 })
 
-exports.extractShipperFile = asyncHandler(async (req, res) => {
-  const buffer = decodeBase64File(req.body.fileBase64)
-  if (!buffer?.length) return badRequest(res, 'fileBase64 required')
+/** Shared shipper parse + price (used by extract-shipper and from-shipper). */
+const runShipperExtract = async (userId, body = {}) => {
+  const buffer = decodeBase64File(body.fileBase64)
+  if (!buffer?.length) {
+    const err = new Error('fileBase64 required')
+    err.statusCode = 400
+    throw err
+  }
 
-  const options = normalizeQuoteOptions(req.body)
-  const fullExtras = normalizeFullQuoteExtras(req.body, options)
-  const rulesDoc = await getOrCreatePricingRules(req.user._id)
+  const options = normalizeQuoteOptions(body)
+  const fullExtras = normalizeFullQuoteExtras(body, options)
+  const rulesDoc = await getOrCreatePricingRules(userId)
   const { pr, customTabRules } = buildPricingRates(rulesDoc)
 
   const parsed = parseShipperBuffer(buffer, {
@@ -660,37 +707,30 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
 
   // SF from weight must use full shipper weight:
   // category buckets + customItems (item rules e.g. Mullion) + unmapped tabs.
-  // Excluding customItems understated Paris TN as 13,122.98 → SF 1,458 instead of 13,547.18 → 1,505.
   const weightForSf = Number(
     parsed.detectedWeightLbs > 0
       ? parsed.detectedWeightLbs
       : parsed.totalWeightLbs || 0,
   )
   const autoSf = weightForSf > 0 ? Math.round(weightForSf / 9) : 0
-  // Fresh shipper upload: derive SF from weight unless client explicitly locked manual SF
-  const manualSfEnabled = Boolean(req.body.useManualSquareFootage && options.sf > 0)
-  const sf =
-    manualSfEnabled
-      ? options.sf
-      : autoSf || options.sf || 0
+  const manualSfEnabled = Boolean(body.useManualSquareFootage && options.sf > 0)
+  const sf = manualSfEnabled ? options.sf : autoSf || options.sf || 0
 
-  const payload = await buildPricingPayload(req.user._id, {
+  const payload = await buildPricingPayload(userId, {
     categories: parsed.categories,
     options: { ...options, sf },
     fullExtras,
   })
 
-  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
-
-  return success(res, {
-    fileName: req.body.fileName || '',
+  return {
+    fileName: body.fileName || '',
     sheetCount: parsed.sheetCount,
     tabSummary: parsed.tabSummary,
-    totalWeightLbs: round2(parsed.totalWeightLbs),
-    detectedWeightLbs: round2(parsed.detectedWeightLbs || parsed.totalWeightLbs),
-    categoryWeightLbs: round2(parsed.categoryWeightLbs),
-    customItemsWeightLbs: round2(parsed.customItemsWeightLbs),
-    unmappedWeightLbs: round2(parsed.unmappedWeightLbs || 0),
+    totalWeightLbs: roundMoney2(parsed.totalWeightLbs),
+    detectedWeightLbs: roundMoney2(parsed.detectedWeightLbs || parsed.totalWeightLbs),
+    categoryWeightLbs: roundMoney2(parsed.categoryWeightLbs),
+    customItemsWeightLbs: roundMoney2(parsed.customItemsWeightLbs),
+    unmappedWeightLbs: roundMoney2(parsed.unmappedWeightLbs || 0),
     extractionCoveragePct: parsed.extractionCoveragePct ?? 100,
     unmappedTabs: parsed.unmappedTabs || [],
     squareFootage: sf,
@@ -698,51 +738,418 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
       selected: sf,
       source: manualSfEnabled ? 'manual' : 'weight_formula',
       formula: 'round(detectedWeightLbs / 9)',
-      weightLbsUsed: round2(weightForSf),
-      mappedWeightLbs: round2(parsed.totalWeightLbs),
-      categoryWeightLbs: round2(parsed.categoryWeightLbs),
-      customItemsWeightLbs: round2(parsed.customItemsWeightLbs),
+      weightLbsUsed: roundMoney2(weightForSf),
+      mappedWeightLbs: roundMoney2(parsed.totalWeightLbs),
+      categoryWeightLbs: roundMoney2(parsed.categoryWeightLbs),
+      customItemsWeightLbs: roundMoney2(parsed.customItemsWeightLbs),
       fromWeight: autoSf,
       coverDerivedSqft: coverSqft,
       inputSf: options.sf || 0,
     },
     parsedCategories: parsed.categories,
     coverSheet: cover.coverName
-      ? { coverName: cover.coverName, labelMap: cover.labelMap, preview: cover.allText.substring(0, 2000) }
+      ? {
+          coverName: cover.coverName,
+          labelMap: cover.labelMap,
+          preview: cover.allText.substring(0, 2000),
+        }
       : null,
     weightByCategory: payload.weightByCategory,
     pricing: payload.pricing,
     fullQuote: payload.fullQuote,
+    options: { ...options, sf },
+    fullExtras,
     note: 'Parsed using Steel Building Depot quoting tool rules — review categories and pricing before saving.',
-  })
-})
+  }
+}
 
-exports.extractStorageCog = asyncHandler(async (req, res) => {
-  const buffer = decodeBase64File(req.body.fileBase64)
-  if (!buffer?.length) return badRequest(res, 'fileBase64 required')
-
-  const options = normalizeQuoteOptions(req.body)
+const runStorageCogExtract = (body = {}) => {
+  const buffer = decodeBase64File(body.fileBase64)
+  if (!buffer?.length) {
+    const err = new Error('fileBase64 required')
+    err.statusCode = 400
+    throw err
+  }
+  const options = normalizeQuoteOptions({ ...body, jobType: body.jobType || 'Storage' })
   const data = parseStorageCogBuffer(buffer)
-  const storagePricing = computeStoragePricing(
-    {
-      buildings: data.buildings,
-      doors: data.doors,
-      extras: data.extras,
-      shipping: data.shippingDefault ?? 0,
-      installSellPerSf: req.body.installSellPerSf ?? 3.25,
-      installCostPerSf: req.body.installCostPerSf ?? 2.5,
-    },
-    normalizeFullQuoteExtras(req.body, options)
-  )
-
-  return success(res, {
-    fileName: req.body.fileName || '',
+  const storageData = {
+    buildings: data.buildings,
+    doors: data.doors,
+    extras: data.extras,
+    shipping: data.shippingDefault ?? 0,
+    installSellPerSf: body.installSellPerSf ?? 3.25,
+    installCostPerSf: body.installCostPerSf ?? 2.5,
+  }
+  const fullExtras = normalizeFullQuoteExtras(body, options)
+  const storagePricing = computeStoragePricing(storageData, fullExtras)
+  return {
+    fileName: body.fileName || '',
     ...data,
+    storageData,
     storagePricing,
+    options: { ...options, jobType: 'Storage', sf: storagePricing.totalSqft || options.sf },
+    fullExtras,
     note:
       data.format === 'vendor_cog'
         ? 'Vendor COG quote parsed (manufacturer + COGS tab) — review buildings, extras, and markup before saving.'
         : 'Storage COG sheet parsed — review buildings, doors, and extras before saving.',
+  }
+}
+
+exports.extractShipperFile = asyncHandler(async (req, res) => {
+  try {
+    const extracted = await runShipperExtract(req.user._id, req.body)
+    const { options: _o, fullExtras: _f, ...publicPayload } = extracted
+    return success(res, publicPayload)
+  } catch (err) {
+    if (err.statusCode === 400) return badRequest(res, err.message)
+    throw err
+  }
+})
+
+exports.extractStorageCog = asyncHandler(async (req, res) => {
+  try {
+    const extracted = runStorageCogExtract(req.body)
+    const { options: _o, fullExtras: _f, storageData: _sd, ...publicPayload } = extracted
+    return success(res, {
+      ...publicPayload,
+      storagePricing: extracted.storagePricing,
+    })
+  } catch (err) {
+    if (err.statusCode === 400) return badRequest(res, err.message)
+    throw err
+  }
+})
+
+/**
+ * EstimateId-first: leadId + shipper file → draft EstimateQuote.
+ * POST /estimates/from-shipper
+ */
+exports.createEstimateFromShipper = asyncHandler(async (req, res) => {
+  const { leadId } = req.body
+  if (!leadId) return badRequest(res, 'leadId required')
+  const access = await checkLeadAccess(leadId, req.user)
+  if (access.error) {
+    return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+  }
+
+  let extracted
+  try {
+    extracted = await runShipperExtract(req.user._id, req.body)
+  } catch (err) {
+    if (err.statusCode === 400) return badRequest(res, err.message)
+    throw err
+  }
+
+  const header = await leadHeaderFromLead(access.lead)
+  const options = extracted.options
+  const fullExtras = extracted.fullExtras
+  const pricing = extracted.pricing
+  const fullQuote = extracted.fullQuote
+
+  const estimate = await EstimateQuote.create({
+    createdBy: req.user._id,
+    leadId,
+    jobType: options.jobType || 'PEMB',
+    scope: toStoredScope(options.scope),
+    roofType: options.roof,
+    installLevel: options.install,
+    blendPct: options.blendPct,
+    leadCompanyName: req.body.leadCompanyName || header.leadCompanyName || '',
+    customerEmail: req.body.customerEmail || header.customerEmail || '',
+    streetAddress: req.body.streetAddress || header.streetAddress || '',
+    cityStateZip: req.body.cityStateZip || header.cityStateZip || '',
+    buildingSize:
+      req.body.buildingSize ||
+      header.buildingSize ||
+      (extracted.squareFootage ? `${Number(extracted.squareFootage).toLocaleString()} SF` : ''),
+    squareFootage: extracted.squareFootage || header.squareFootageHint || 0,
+    jobNumber: req.body.jobNumber || header.jobNumber || '',
+    quoteDate: req.body.quoteDate,
+    installCostPerSf: options.installCostPerSf ?? req.body.installCostPerSf ?? 0,
+    sellPerSf: options.sellPerSf ?? req.body.sellPerSf ?? 0,
+    sourceFileName: req.body.fileName || req.body.sourceFileName || '',
+    parsedCategories: extracted.parsedCategories,
+    tabSummary: extracted.tabSummary || [],
+    breakdownRows: pricing?.rows || [],
+    pricingResult: pricing,
+    concreteAddon: fullQuote?.concrete || null,
+    insulationAddon: fullQuote?.insulation || null,
+    salesTax: fullQuote?.salesTax || req.body.salesTax || null,
+    cogsOverride: fullExtras.cogsOverride || null,
+    marginOverride: req.body.marginOverride || null,
+    pembAddOns: req.body.pembAddOns || [],
+    quoteControls: {
+      steelFinish: options.steelFinish,
+      matMuOverride: options.matMuOverride,
+      freightOverride: options.freightOverride,
+      pembDrawings: options.pembDrawings,
+      pembIncludeErection: options.pembIncludeErection,
+      deletedRowKeys: options.deletedRowKeys,
+    },
+    fullQuoteResult: fullQuote,
+    weightByCategory: extracted.weightByCategory || [],
+    status: 'draft',
+    companyBrand: req.body.companyBrand || req.body.company || 'SBD',
+    companyLogoUrl: req.body.companyLogoUrl || '',
+    employeeName: req.user.name || '',
+    employeeRole: req.user.role || '',
+  })
+
+  applyEstimateTotals(estimate, {
+    pricing:
+      fullExtras.cogsOverride?.applied && fullQuote?.pricing ? fullQuote.pricing : pricing,
+    fullQuote,
+  })
+  rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
+  await estimate.save()
+
+  const estimateObj = withEstimateTotals(estimate.toObject())
+  return created(
+    res,
+    {
+      estimateId: estimate._id,
+      estimate: estimateObj,
+      squareFootage: extracted.squareFootage,
+      squareFootageMeta: extracted.squareFootageMeta,
+      parsedCategories: extracted.parsedCategories,
+      weightByCategory: extracted.weightByCategory,
+      pricing: extracted.pricing,
+      fullQuote: extracted.fullQuote,
+      tabSummary: extracted.tabSummary,
+      totalWeightLbs: extracted.totalWeightLbs,
+      detectedWeightLbs: extracted.detectedWeightLbs,
+      note: 'Draft estimate created from shipper — use estimateId for compute, preview, and edits.',
+    },
+    'Estimate created from shipper',
+  )
+})
+
+/**
+ * EstimateId-first Storage: leadId + COG file → draft EstimateQuote.
+ * POST /estimates/from-storage-cog
+ */
+exports.createEstimateFromStorageCog = asyncHandler(async (req, res) => {
+  const { leadId } = req.body
+  if (!leadId) return badRequest(res, 'leadId required')
+  const access = await checkLeadAccess(leadId, req.user)
+  if (access.error) {
+    return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+  }
+
+  let extracted
+  try {
+    extracted = runStorageCogExtract(req.body)
+  } catch (err) {
+    if (err.statusCode === 400) return badRequest(res, err.message)
+    throw err
+  }
+
+  const header = await leadHeaderFromLead(access.lead)
+  const storageData = extracted.storageData
+  const storagePricing = extracted.storagePricing
+  const sf = storagePricing.totalSqft || 0
+
+  const estimate = await EstimateQuote.create({
+    createdBy: req.user._id,
+    leadId,
+    jobType: 'Storage',
+    scope: toStoredScope(extracted.options.scope || 'both'),
+    roofType: extracted.options.roof || 'screw-down',
+    installLevel: extracted.options.install || 'medium',
+    blendPct: extracted.options.blendPct,
+    leadCompanyName: req.body.leadCompanyName || header.leadCompanyName || '',
+    customerEmail: req.body.customerEmail || header.customerEmail || '',
+    streetAddress: req.body.streetAddress || header.streetAddress || '',
+    cityStateZip: req.body.cityStateZip || header.cityStateZip || '',
+    buildingSize:
+      req.body.buildingSize ||
+      header.buildingSize ||
+      (sf ? `${Number(sf).toLocaleString()} SF` : ''),
+    squareFootage: sf || header.squareFootageHint || 0,
+    jobNumber: req.body.jobNumber || header.jobNumber || '',
+    quoteDate: req.body.quoteDate,
+    sourceFileName: req.body.fileName || req.body.sourceFileName || '',
+    storageData,
+    storagePricingResult: storagePricing,
+    salesTax: storagePricing.salesTax || req.body.salesTax || null,
+    status: 'draft',
+    companyBrand: req.body.companyBrand || req.body.company || 'SM',
+    companyLogoUrl: req.body.companyLogoUrl || '',
+    employeeName: req.user.name || '',
+    employeeRole: req.user.role || '',
+  })
+
+  applyStorageEstimateTotals(estimate, storagePricing)
+  rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
+  await estimate.save()
+
+  return created(
+    res,
+    {
+      estimateId: estimate._id,
+      estimate: withEstimateTotals(estimate.toObject()),
+      squareFootage: sf,
+      storageData,
+      storagePricing,
+      format: extracted.format,
+      note: 'Draft Storage estimate created from COG — use estimateId for compute-storage path, preview, and edits.',
+    },
+    'Estimate created from storage COG',
+  )
+})
+
+/**
+ * Recompute draft from stored categories/storageData + small options body.
+ * POST /estimates/:estimateId/compute
+ */
+exports.computeEstimateById = asyncHandler(async (req, res) => {
+  const estimate = await EstimateQuote.findById(req.params.estimateId)
+  if (!estimate) return notFound(res, 'Estimate not found')
+  const access = assertEstimateAccess(estimate, req.user)
+  if (access.error) {
+    return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+  }
+  if (estimate.status !== 'draft') {
+    return badRequest(res, 'Only draft estimates can be recomputed')
+  }
+
+  const mergedBody = {
+    ...estimate.toObject(),
+    ...req.body,
+    jobType: req.body.jobType || estimate.jobType,
+    squareFootage:
+      req.body.squareFootage ?? req.body.sf ?? estimate.squareFootage,
+    scope: req.body.scope || estimate.scope,
+    roof: req.body.roof || req.body.roofType || estimate.roofType,
+    install: req.body.install || req.body.installLevel || estimate.installLevel,
+    steelFinish:
+      req.body.steelFinish ||
+      estimate.quoteControls?.steelFinish ||
+      'red-iron',
+    quoteControls: {
+      ...(estimate.quoteControls && typeof estimate.quoteControls.toObject === 'function'
+        ? estimate.quoteControls.toObject()
+        : estimate.quoteControls || {}),
+      ...(req.body.quoteControls || {}),
+    },
+    concrete: req.body.concrete || req.body.concreteAddon || estimate.concreteAddon,
+    insulation:
+      req.body.insulation || req.body.insulationAddon || estimate.insulationAddon,
+    salesTax: req.body.salesTax || estimate.salesTax,
+    cogsOverride:
+      req.body.cogsOverride !== undefined ? req.body.cogsOverride : estimate.cogsOverride,
+    marginOverride:
+      req.body.marginOverride !== undefined
+        ? req.body.marginOverride
+        : estimate.marginOverride,
+    pembAddOns: req.body.pembAddOns || estimate.pembAddOns,
+    materialSellOverride:
+      req.body.materialSellOverride ??
+      req.body.matSellOverride ??
+      estimate.cogsOverride?.materialSellOverride,
+  }
+
+  const options = normalizeQuoteOptions(mergedBody)
+  const fullExtras = normalizeFullQuoteExtras(mergedBody, options)
+
+  // Persist option field updates from body
+  if (req.body.scope !== undefined) estimate.scope = toStoredScope(req.body.scope)
+  if (req.body.roof !== undefined || req.body.roofType !== undefined) {
+    estimate.roofType = req.body.roof || req.body.roofType
+  }
+  if (req.body.install !== undefined || req.body.installLevel !== undefined) {
+    estimate.installLevel = req.body.install || req.body.installLevel
+  }
+  if (req.body.blendPct !== undefined) estimate.blendPct = Number(req.body.blendPct)
+  if (req.body.squareFootage != null || req.body.sf != null) {
+    estimate.squareFootage = Number(req.body.squareFootage ?? req.body.sf) || 0
+  }
+  if (req.body.marginOverride !== undefined) estimate.marginOverride = req.body.marginOverride
+  if (req.body.pembAddOns !== undefined) estimate.pembAddOns = req.body.pembAddOns
+  if (req.body.salesTax !== undefined) estimate.salesTax = req.body.salesTax
+  if (req.body.concrete !== undefined || req.body.concreteAddon !== undefined) {
+    estimate.concreteAddon = req.body.concrete || req.body.concreteAddon
+  }
+  if (req.body.insulation !== undefined || req.body.insulationAddon !== undefined) {
+    estimate.insulationAddon = req.body.insulation || req.body.insulationAddon
+  }
+  if (
+    req.body.cogsOverride !== undefined ||
+    req.body.materialSellOverride != null ||
+    req.body.matSellOverride != null
+  ) {
+    estimate.cogsOverride = fullExtras.cogsOverride || null
+  }
+  estimate.quoteControls = {
+    ...(estimate.quoteControls && typeof estimate.quoteControls.toObject === 'function'
+      ? estimate.quoteControls.toObject()
+      : estimate.quoteControls || {}),
+    steelFinish: options.steelFinish,
+    matMuOverride: options.matMuOverride,
+    freightOverride: options.freightOverride,
+    pembDrawings: options.pembDrawings,
+    pembIncludeErection: options.pembIncludeErection,
+    deletedRowKeys: options.deletedRowKeys,
+  }
+
+  const isStorage =
+    estimate.jobType === 'Storage' || estimate.storageData?.buildings?.length
+
+  if (isStorage) {
+    const storageData = req.body.storageData || estimate.storageData
+    if (!storageData?.buildings?.length) {
+      return badRequest(res, 'storageData.buildings required on estimate')
+    }
+    if (req.body.storageData) estimate.storageData = req.body.storageData
+    const priorSp = estimate.storagePricingResult || {}
+    const storagePricing = computeStoragePricing(storageData, {
+      ...fullExtras,
+      shipping: req.body.shipping ?? storageData.shipping ?? priorSp.shipping,
+      drawings: req.body.drawings ?? storageData.drawings ?? priorSp.drawings,
+      installSellPerSf:
+        req.body.installSellPerSf ??
+        storageData.installSellPerSf ??
+        priorSp.installSellPerSf,
+      installCostPerSf:
+        req.body.installCostPerSf ??
+        storageData.installCostPerSf ??
+        priorSp.installCostPerSf,
+      salesTax: req.body.salesTax ?? estimate.salesTax ?? storageData.salesTax,
+      concrete: estimate.concreteAddon || storageData.concrete,
+      insulation: estimate.insulationAddon || storageData.insulation,
+      totalSqft: estimate.squareFootage || priorSp.totalSqft,
+    })
+    applyStorageEstimateTotals(estimate, storagePricing)
+    rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
+    await estimate.save()
+    return success(res, {
+      estimateId: estimate._id,
+      estimate: withEstimateTotals(estimate.toObject()),
+      storagePricing,
+    })
+  }
+
+  const cats = estimate.parsedCategories
+  if (!cats) return badRequest(res, 'Estimate has no parsedCategories to recompute')
+
+  const payload = await buildPricingPayload(req.user._id, {
+    categories: cats,
+    options,
+    fullExtras,
+  })
+  estimate.weightByCategory = payload.weightByCategory
+  applyEstimateTotals(estimate, payload)
+  rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
+  await estimate.save()
+
+  return success(res, {
+    estimateId: estimate._id,
+    estimate: withEstimateTotals(estimate.toObject()),
+    weightByCategory: payload.weightByCategory,
+    pricing: payload.pricing,
+    fullQuote: payload.fullQuote,
+    parsedCategories: payload.parsedCategories || cats,
   })
 })
 
