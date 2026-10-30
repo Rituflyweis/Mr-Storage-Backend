@@ -62,6 +62,9 @@ const mergeDraftNotes = (...parts) =>
 
 const mapEstimateToDocumentPayload = (estimate = {}) => {
   const grandTotal = resolveEstimateGrandTotal(estimate);
+  const milestoneSchedule = Array.isArray(estimate.milestoneSchedule)
+    ? estimate.milestoneSchedule
+    : [];
   return {
     jobType: estimate.jobType,
     leadCompanyName: estimate.leadCompanyName,
@@ -76,6 +79,13 @@ const mapEstimateToDocumentPayload = (estimate = {}) => {
     storageData: estimate.storageData,
     storagePricingResult: estimate.storagePricingResult,
     grandTotal,
+    originalContractValue: estimate.originalContractValue ?? null,
+    revisedContractTotal: estimate.revisedContractTotal ?? null,
+    // Required for Milestone Payment Schedule on quote PDF / email (was omitted → missing section).
+    milestoneSchedule,
+    milestones: milestoneSchedule,
+    milestoneNote: estimate.milestoneNote || '',
+    depositTerms: estimate.depositTerms || null,
     fullQuote: estimate.fullQuoteResult || {
       pricing: estimate.pricingResult,
       concrete: estimate.concreteAddon,
