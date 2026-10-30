@@ -16,7 +16,7 @@ Fresh `POST /api/sales/estimates/extract-shipper` on `#6959 Paris, TN expansion 
 | Weight SF (`fromWeight` = round(lbs÷9)) | **1,505** | 1,458 |
 | Cover SF (`coverDerivedSqft` = 20×150) | **3,000** | 3,000 (OK) |
 
-**1,458 is not a backend weight-SF bug** — it is `round(13122.98 / 9)`, i.e. FE (or a stale locked SF) using a **partial** weight, not the extract total.
+**Confirmed backend bug (fixed 30 Oct):** with pricing rules on, item rules moved **Mullion 424.2 lbs** into `customItems`, which were **excluded** from `totalWeightLbs` / `detectedWeightLbs` → API returned **13,122.98** / SF **1,458**. Parser now includes `customItemsWeightLbs` in those totals → **13,547.18** / SF **1,505**.
 
 Weight SF **1,505 ≠ Cover 3,000** by design (lbs÷9 estimate vs building W×L). Use the mismatch banner **Use Cover SF** if pricing should use **3,000**.
 

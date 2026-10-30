@@ -657,9 +657,9 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
   const cover = parseShipperCoverSheet(parsed.workbook)
   const coverSqft = deriveCoverSquareFootage(cover)
 
-  // SF from weight must use full shipper weight (mapped + unmapped tabs).
-  // Using only mapped `totalWeightLbs` understated SF vs the Shipper Weight card
-  // (e.g. 13,325.61 lbs ÷ 9 → 1,481; mapped-only → 1,458).
+  // SF from weight must use full shipper weight:
+  // category buckets + customItems (item rules e.g. Mullion) + unmapped tabs.
+  // Excluding customItems understated Paris TN as 13,122.98 → SF 1,458 instead of 13,547.18 → 1,505.
   const weightForSf = Number(
     parsed.detectedWeightLbs > 0
       ? parsed.detectedWeightLbs
@@ -679,13 +679,17 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
     fullExtras,
   })
 
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+
   return success(res, {
     fileName: req.body.fileName || '',
     sheetCount: parsed.sheetCount,
     tabSummary: parsed.tabSummary,
-    totalWeightLbs: Math.round(parsed.totalWeightLbs * 100) / 100,
-    detectedWeightLbs: Math.round((parsed.detectedWeightLbs || parsed.totalWeightLbs) * 100) / 100,
-    unmappedWeightLbs: Math.round((parsed.unmappedWeightLbs || 0) * 100) / 100,
+    totalWeightLbs: round2(parsed.totalWeightLbs),
+    detectedWeightLbs: round2(parsed.detectedWeightLbs || parsed.totalWeightLbs),
+    categoryWeightLbs: round2(parsed.categoryWeightLbs),
+    customItemsWeightLbs: round2(parsed.customItemsWeightLbs),
+    unmappedWeightLbs: round2(parsed.unmappedWeightLbs || 0),
     extractionCoveragePct: parsed.extractionCoveragePct ?? 100,
     unmappedTabs: parsed.unmappedTabs || [],
     squareFootage: sf,
@@ -693,8 +697,10 @@ exports.extractShipperFile = asyncHandler(async (req, res) => {
       selected: sf,
       source: manualSfEnabled ? 'manual' : 'weight_formula',
       formula: 'round(detectedWeightLbs / 9)',
-      weightLbsUsed: Math.round(weightForSf * 100) / 100,
-      mappedWeightLbs: Math.round(parsed.totalWeightLbs * 100) / 100,
+      weightLbsUsed: round2(weightForSf),
+      mappedWeightLbs: round2(parsed.totalWeightLbs),
+      categoryWeightLbs: round2(parsed.categoryWeightLbs),
+      customItemsWeightLbs: round2(parsed.customItemsWeightLbs),
       fromWeight: autoSf,
       coverDerivedSqft: coverSqft,
       inputSf: options.sf || 0,

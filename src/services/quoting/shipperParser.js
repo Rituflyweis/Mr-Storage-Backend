@@ -566,9 +566,19 @@ const parseShipperWorkbook = (
     tabSummary.push({ sheetName: sn, category: cat, weightLbs: w });
   });
 
-  const totalWeightLbs = Object.entries(cats)
+  // Category buckets (primary, sheeting, …) — excludes customItems.
+  const categoryWeightLbs = Object.entries(cats)
     .filter(([k]) => k !== "customItems")
     .reduce((sum, [, v]) => sum + (v.weight || 0), 0);
+  // Built-in / custom tab item rules move some lbs into customItems (e.g. Mullion).
+  // Those lbs are still part of the shipper and must count toward SF (lbs ÷ 9).
+  const customItemsWeightLbs = (cats.customItems || []).reduce(
+    (sum, item) => sum + (Number(item.weight) || 0),
+    0,
+  );
+  // Mapped/extracted weight = category buckets + rule-extracted custom lines.
+  const totalWeightLbs = categoryWeightLbs + customItemsWeightLbs;
+  // Full shipper weight = mapped + skipped tabs with weight.
   const detectedWeightLbs = totalWeightLbs + unmappedWeightLbs;
   const extractionCoveragePct =
     detectedWeightLbs > 0 ? (totalWeightLbs / detectedWeightLbs) * 100 : 100;
@@ -577,6 +587,8 @@ const parseShipperWorkbook = (
     categories: cats,
     tabSummary,
     totalWeightLbs,
+    categoryWeightLbs,
+    customItemsWeightLbs,
     unmappedWeightLbs,
     detectedWeightLbs,
     extractionCoveragePct: Math.round(extractionCoveragePct * 100) / 100,
