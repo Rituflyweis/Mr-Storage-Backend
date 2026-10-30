@@ -27,8 +27,100 @@ const {
   parseTaskScheduleFromBody,
   applyTaskStatusAndCompletion,
 } = require('../../utils/constructionTaskFields.util')
+const { enrichConstructionTaskForCard } = require('../../utils/constructionTaskCard.util')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
 const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered')
+
+const MS_PER_DAY = 86400000
+const startOfLocalDay = (d = new Date()) => {
+  const x = new Date(d)
+  x.setHours(0, 0, 0, 0)
+  return x
+}
+
+/**
+ * Open construction timeline tasks for Admin Overview "Upcoming Project Deadlines".
+ * Same Task records as Construction Panel cards (start / est end / completed / badge).
+ */
+const loadUpcomingConstructionTasks = async ({
+  leadFilter = {},
+  projectId = null,
+  daysAhead = 30,
+  limit = 10,
+} = {}) => {
+  const now = new Date()
+  const windowEnd = new Date(now.getTime() + Math.max(1, daysAhead) * MS_PER_DAY)
+
+  let leadIds = null
+  if (projectId) {
+    leadIds = [projectId]
+  } else if (Object.keys(leadFilter).length) {
+    const leads = await Lead.find(leadFilter).select('_id').lean()
+    leadIds = leads.map((l) => l._id)
+    if (!leadIds.length) {
+      return { tasks: [], count: 0 }
+    }
+  }
+
+  const taskFilter = {
+    status: { $ne: 'done' },
+    dueDate: { $ne: null, $lte: windowEnd },
+  }
+  if (leadIds) taskFilter.leadId = { $in: leadIds }
+
+  const [rawTasks, count] = await Promise.all([
+    Task.find(taskFilter)
+      .select('title description leadId assignedTo priority status startDate dueDate completedAt notes createdAt updatedAt')
+      .populate('assignedTo', 'name email')
+      .sort({ dueDate: 1 })
+      .limit(Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50))
+      .lean(),
+    Task.countDocuments(taskFilter),
+  ])
+
+  const taskLeadIds = [...new Set(rawTasks.map((t) => String(t.leadId)))]
+  const projects = taskLeadIds.length
+    ? await Lead.find({ _id: { $in: taskLeadIds } })
+        .select('projectName jobId location lifecycleStatus')
+        .lean()
+    : []
+  const projectMap = Object.fromEntries(projects.map((p) => [String(p._id), p]))
+  const today = startOfLocalDay(now)
+
+  const tasks = rawTasks.map((t) => {
+    const card = enrichConstructionTaskForCard(t)
+    const project = projectMap[String(t.leadId)] || null
+    const est = card.estimatedEndDate ? startOfLocalDay(card.estimatedEndDate) : null
+    const daysLeft = est ? Math.round((est - today) / MS_PER_DAY) : null
+    return {
+      taskId: t._id,
+      title: card.title,
+      status: card.status,
+      priority: card.priority,
+      startDate: card.startDate,
+      estimatedEndDate: card.estimatedEndDate,
+      completedDate: card.completedDate,
+      timelineBadge: card.timelineBadge,
+      timelineStatusLine: card.timelineStatusLine,
+      onTimeStatus: card.onTimeStatus,
+      daysLeft,
+      assignedTo: t.assignedTo
+        ? { _id: t.assignedTo._id, name: t.assignedTo.name, email: t.assignedTo.email }
+        : null,
+      project: project
+        ? {
+            leadId: project._id,
+            projectName: project.projectName || '',
+            jobId: project.jobId || '',
+            location: project.location || '',
+            lifecycleStatus: project.lifecycleStatus || '',
+          }
+        : { leadId: t.leadId, projectName: '', jobId: '', location: '', lifecycleStatus: '' },
+    }
+  })
+
+  return { tasks, count }
+}
 
 // The 5-phase "Project Timeline" bucket shown in Figma (Planning/Design/Procurement/
 // Execution/Handover) mapped onto the real Lead.lifecycleStatus enum (sales + plant stages).
@@ -56,21 +148,45 @@ const computeProjectTimeline = (lead) => {
 }
 
 exports.getOverview = asyncHandler(async (req, res) => {
-  const { projectId, buildingLabel, status, startDate, endDate } = req.query
+  const {
+    projectId,
+    buildingLabel,
+    status,
+    startDate,
+    endDate,
+    taskDeadlineDays = 30,
+    taskLimit = 10,
+  } = req.query
   const dateFilter = buildDateFilter({ startDate, endDate })
+  const parsedTaskDays = Math.min(Math.max(parseInt(taskDeadlineDays, 10) || 30, 1), 90)
+  const parsedTaskLimit = Math.min(Math.max(parseInt(taskLimit, 10) || 10, 1), 50)
 
   const leadFilter = { ...dateFilter, isTerminated: { $ne: true } }
   if (projectId) leadFilter._id = projectId
   if (status) leadFilter.lifecycleStatus = status
 
   const now = new Date()
-  const [totalProjects, completed, delayed, tasks, deliveries, materialRequests] = await Promise.all([
+  const [
+    totalProjects,
+    completed,
+    delayed,
+    tasks,
+    deliveries,
+    materialRequests,
+    upcomingConstruction,
+  ] = await Promise.all([
     Lead.countDocuments(leadFilter),
     Lead.countDocuments({ ...leadFilter, lifecycleStatus: 'delivered' }),
     Lead.countDocuments({ ...leadFilter, lifecycleStatus: { $ne: 'delivered' }, expectedCloseDate: { $lt: now } }),
     Task.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
     Delivery.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
     MaterialRequest.aggregate([{ $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } }]),
+    loadUpcomingConstructionTasks({
+      leadFilter: projectId || status || Object.keys(dateFilter).length ? leadFilter : {},
+      projectId: projectId || null,
+      daysAhead: parsedTaskDays,
+      limit: parsedTaskLimit,
+    }),
   ])
   const onTrack = totalProjects - completed - delayed
 
@@ -80,11 +196,21 @@ exports.getOverview = asyncHandler(async (req, res) => {
 
   const completionRate = totalProjects > 0 ? Math.round((completed / totalProjects) * 100) : 0
 
-  const upcomingDeadlines = await Lead.find({ isTerminated: { $ne: true }, expectedCloseDate: { $gte: now, $lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) } })
-    .select('projectName location expectedCloseDate')
+  // Legacy: project-level expectedCloseDate (kept for backward compatibility).
+  const upcomingProjectCloseDates = await Lead.find({
+    isTerminated: { $ne: true },
+    expectedCloseDate: { $gte: now, $lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) },
+    ...(projectId ? { _id: projectId } : {}),
+    ...(status ? { lifecycleStatus: status } : {}),
+  })
+    .select('projectName location expectedCloseDate jobId')
     .sort({ expectedCloseDate: 1 })
     .limit(5)
     .lean()
+
+  const upcomingConstructionTasks = upcomingConstruction.tasks
+  // Widget + top KPI use construction timeline tasks (same as Construction Panel cards).
+  const upcomingDeadlinesCount = upcomingConstruction.count
 
   // "Additional Material Request" feed on the overview screen — most recent requests across all projects.
   const recentMaterialRequests = await MaterialRequest.find(buildingLabel ? { buildingLabel } : {})
@@ -142,7 +268,16 @@ exports.getOverview = asyncHandler(async (req, res) => {
   ])
 
   return success(res, {
-    stats: { totalProjects, onTrack, delayed, completed, completionRate, upcomingDeadlinesCount: upcomingDeadlines.length },
+    stats: {
+      totalProjects,
+      onTrack,
+      delayed,
+      completed,
+      completionRate,
+      // Open construction tasks with estimated end (dueDate) on/before window end (includes overdue).
+      upcomingDeadlinesCount,
+      taskDeadlineDays: parsedTaskDays,
+    },
     deliveryOverview: {
       todaysDeliveries: await Delivery.countDocuments({ deliveryDate: { $gte: new Date(now.toDateString()) }, status: { $nin: ['draft', 'cancelled'] } }),
       delivered: deliveryMap['delivered'] || 0,
@@ -163,14 +298,32 @@ exports.getOverview = asyncHandler(async (req, res) => {
       done:        taskMap['done'] || 0,
       total:       (taskMap['todo'] || 0) + (taskMap['in_progress'] || 0) + (taskMap['done'] || 0),
     },
-    upcomingDeadlines,
-    // Alias for Figma "Upcoming Schedule" widget (same rows as upcomingDeadlines).
-    upcomingSchedule: upcomingDeadlines.map((d) => ({
-      projectName: d.projectName,
-      location: d.location || '',
-      endDate: d.expectedCloseDate,
-      expectedCloseDate: d.expectedCloseDate,
+    /**
+     * Primary widget for Figma "Upcoming Project Deadlines":
+     * Construction Panel timeline tasks (start / estimated end / completed + badges).
+     */
+    upcomingConstructionTasks,
+    // Figma "Upcoming Schedule" — same rows as upcomingConstructionTasks (task-shaped).
+    upcomingSchedule: upcomingConstructionTasks.map((t) => ({
+      taskId: t.taskId,
+      title: t.title,
+      projectName: t.project.projectName,
+      location: t.project.location || '',
+      startDate: t.startDate,
+      estimatedEndDate: t.estimatedEndDate,
+      completedDate: t.completedDate,
+      endDate: t.estimatedEndDate,
+      expectedCloseDate: t.estimatedEndDate,
+      timelineBadge: t.timelineBadge,
+      timelineStatusLine: t.timelineStatusLine,
+      daysLeft: t.daysLeft,
+      status: t.status,
+      assignedTo: t.assignedTo,
+      project: t.project,
     })),
+    // Legacy project-level expectedCloseDate list (not task cards). Prefer upcomingConstructionTasks.
+    upcomingDeadlines: upcomingProjectCloseDates,
+    upcomingProjectCloseDates,
     liveSiteConstruction,
     liveSiteActivity: {
       activeSites: activeLeads.length,

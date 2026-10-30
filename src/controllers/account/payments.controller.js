@@ -34,9 +34,9 @@ exports.getOrdersAndPayments = asyncHandler(async (req, res) => {
 })
 
 exports.getOrderDetail = asyncHandler(async (req, res) => {
-  const wip = await accountPaymentsService.resolveWip(req.params.orderId)
-  if (!wip) return notFound(res, 'Order payment record not found')
-  return success(res, accountPaymentsService.mapOrderDetail(wip))
+  const row = await accountPaymentsService.resolveWip(req.params.orderId)
+  if (!row) return notFound(res, 'Order / project not found')
+  return success(res, accountPaymentsService.mapOrderDetail(row))
 })
 
 exports.createOrderPayment = asyncHandler(async (req, res) => {
@@ -46,19 +46,12 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
 })
 
 exports.updateOrderPayment = asyncHandler(async (req, res) => {
-  const wip = await accountPaymentsService.resolveWip(req.params.orderId)
-  if (!wip) return notFound(res, 'Order payment record not found')
-
-  const result = await accountPaymentsService.upsertOrder(
-    {
-      ...req.body,
-      leadId: wip.leadId?._id || wip.leadId,
-      quoteOrderId: req.body.quoteOrderId || wip.leadId?.jobId,
-    },
-    req.user._id
-  )
+  // Overview is derived — updates are not stored. Detail still loads by leadId.
+  const row = await accountPaymentsService.resolveWip(req.params.orderId)
+  if (!row) return notFound(res, 'Order / project not found')
+  const result = await accountPaymentsService.upsertOrder(req.body, req.user._id)
   if (result.error) return badRequest(res, result.error)
-  return success(res, accountPaymentsService.mapOrderDetail(result.wip), 'Payment updated')
+  return success(res, accountPaymentsService.mapOrderDetail(row), 'Payment updated')
 })
 
 exports.exportOrders = asyncHandler(async (req, res) => {

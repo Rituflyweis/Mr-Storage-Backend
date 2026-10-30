@@ -204,6 +204,8 @@ FE: add a **logo brand toggle** on the Quote tab (independent of Job Type PEMB/S
 
 ## 5. Construction Panel
 
+**Detailed FE doc (req/res examples for 5.1–5.5):** [`construction-panel-backlog-fe.md`](./construction-panel-backlog-fe.md)
+
 ### 5.1.1 / 5.1.2 Dashboard — Upcoming Schedule + Project Timeline
 
 | | |

@@ -10,18 +10,37 @@ const customerDisplayName = (customer) => {
 exports.mapMaterialRequestRow = (mr) => {
   const customerName = customerDisplayName(mr.requestedByCustomer)
   const staff = mr.requestedBy
+  const lead = mr.leadId && typeof mr.leadId === 'object' ? mr.leadId : null
+  const projectName = lead?.projectName || ''
+  const jobId = lead?.jobId || ''
+  const site =
+    (mr.siteLocation && String(mr.siteLocation).trim()) ||
+    (mr.buildingLabel && String(mr.buildingLabel).trim()) ||
+    ''
+  // Figma "Project / Site" column — real lead.projectName (+ site), never a hardcoded label.
+  const projectSite = site
+    ? `${projectName || jobId} (${site})`
+    : projectName || jobId || ''
+
   return {
     requestId: mr.requestId,
     _id: mr._id,
     source: mr.source || 'construction',
-    project: mr.leadId
+    /** Flat fields for Admin/Construction table "Project / Site" column */
+    projectName,
+    jobId,
+    site,
+    projectSite,
+    project: lead
       ? {
-          leadId: mr.leadId._id || mr.leadId,
-          projectName: mr.leadId.projectName,
-          jobId: mr.leadId.jobId,
-          location: mr.leadId.location,
+          leadId: lead._id || mr.leadId,
+          projectName,
+          jobId,
+          location: lead.location || '',
         }
-      : null,
+      : mr.leadId
+        ? { leadId: mr.leadId, projectName: '', jobId: '', location: '' }
+        : null,
     siteLocation: mr.siteLocation,
     buildingLabel: mr.buildingLabel || '',
     department: mr.department,
