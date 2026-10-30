@@ -7,13 +7,66 @@ const marginSellFromCost = (costSF, marginPct) => {
   return costSF / (1 - m)
 }
 
+/** Parse numeric fields; treat null / "" / "null" as missing (FE often sends thickness: null). */
+const pickPositiveNumber = (cfg = {}, keys = [], fallback) => {
+  for (const key of keys) {
+    const raw = cfg[key]
+    if (raw == null || raw === '') continue
+    if (typeof raw === 'string' && /^null$/i.test(raw.trim())) continue
+    const n = Number(String(raw).replace(/[^0-9.-]/g, ''))
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return fallback
+}
+
+/**
+ * Normalize concrete payload from FE / saved estimate.
+ * Maps aliases (slabThickness, psiRating) and replaces null thickness/psi with defaults.
+ */
+const normalizeConcreteConfig = (config = {}) => {
+  const cfg = config && typeof config === 'object' ? config : {}
+  return {
+    ...cfg,
+    include: Boolean(cfg.include),
+    thickness: pickPositiveNumber(cfg, ['thickness', 'slabThickness', 'slab'], 6),
+    psi: pickPositiveNumber(cfg, ['psi', 'psiRating', 'strength'], 4000),
+    costSF: pickPositiveNumber(cfg, ['costSF', 'costPerSf', 'installCostPerSf'], 7.25),
+    marginPct: (() => {
+      const n = pickPositiveNumber(cfg, ['marginPct', 'targetMarginPct'], 25)
+      return n > 0 ? n : 25
+    })(),
+    sowItems: Array.isArray(cfg.sowItems) ? cfg.sowItems : [],
+    sowNotes: cfg.sowNotes || '',
+  }
+}
+
+/** Prefer non-null fields from primary; fill gaps from fallback (e.g. fullQuote.concrete). */
+const coalesceConcrete = (primary, fallback) => {
+  const p = primary && typeof primary === 'object' ? primary : {}
+  const f = fallback && typeof fallback === 'object' ? fallback : {}
+  const merged = { ...f }
+  for (const [k, v] of Object.entries(p)) {
+    if (v != null && v !== '' && !(typeof v === 'string' && /^null$/i.test(v.trim()))) {
+      merged[k] = v
+    }
+  }
+  // Keep include / money from primary when present even if thickness was null.
+  if (Object.prototype.hasOwnProperty.call(p, 'include')) merged.include = p.include
+  if (p.appliedSell != null) merged.appliedSell = p.appliedSell
+  if (p.sell != null) merged.sell = p.sell
+  if (p.cost != null) merged.cost = p.cost
+  if (p.sellSF != null) merged.sellSF = p.sellSF
+  if (p.profit != null) merged.profit = p.profit
+  return normalizeConcreteConfig(merged)
+}
+
 const computeConcreteAddon = (config = {}, sf = 0) => {
-  const cfg = config || {}
+  const cfg = normalizeConcreteConfig(config)
   const include = Boolean(cfg.include)
-  const thickness = Number(cfg.thickness || 6)
-  const psi = Number(cfg.psi || 4000)
-  const costSF = Number(cfg.costSF ?? cfg.costPerSf ?? 7.25)
-  const marginPct = Number(cfg.marginPct ?? 25)
+  const thickness = cfg.thickness
+  const psi = cfg.psi
+  const costSF = cfg.costSF
+  const marginPct = cfg.marginPct
 
   if (!include || !sf) {
     return {
@@ -110,6 +163,9 @@ const computeInsulationAddon = (config = {}, sf = 0) => {
 
 module.exports = {
   marginSellFromCost,
+  pickPositiveNumber,
+  normalizeConcreteConfig,
+  coalesceConcrete,
   computeConcreteAddon,
   computeInsulationAddon,
 }

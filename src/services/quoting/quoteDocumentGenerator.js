@@ -4,6 +4,7 @@ const CONTRACT_TEXT = require('./contractText')
 const { getStoragePricingSummaryLines } = require('./storagePricingEngine')
 const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
 const { computeStaircase } = require('./staircase')
+const { coalesceConcrete } = require('./addonPricing')
 const {
   computeMilestones,
   depositTermsToMilestoneRows,
@@ -119,7 +120,10 @@ const buildQuoteContext = (payload = {}) => {
       res: { jobType: 'Storage', sf, scope: 'both' },
       storagePricing,
       storageData: payload.storageData || {},
-      concrete: storagePricing.concrete || payload.concrete || {},
+      concrete: coalesceConcrete(
+        payload.concrete || payload.concreteAddon,
+        storagePricing.concrete,
+      ),
       insulation: storagePricing.insulation || payload.insulation || {},
       salesTax: storagePricing.salesTax || payload.salesTax || {},
       grandTotal,
@@ -136,7 +140,12 @@ const buildQuoteContext = (payload = {}) => {
   const topPricing = payload.pricingResult || payload.pricing || null
   const fullPricing = full.pricing || null
   const res = topPricing || fullPricing || {}
-  const concrete = payload.concrete || payload.concreteAddon || full.concrete || {}
+  // FE often sends concrete: { include, appliedSell, thickness: null, psi: null } after
+  // "Apply to Quote" — coalesce with fullQuote.concrete and default 6" / 4000 PSI.
+  const concrete = coalesceConcrete(
+    payload.concrete || payload.concreteAddon,
+    full.concrete,
+  )
   const insulation = payload.insulation || payload.insulationAddon || full.insulation || {}
   const salesTax = payload.salesTax || full.salesTax || {}
 

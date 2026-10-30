@@ -203,8 +203,13 @@ const toStoredScope = (value) => {
   return 'Both'
 }
 
+const { normalizeConcreteConfig } = require('../../services/quoting/addonPricing')
+
 const normalizeFullQuoteExtras = (body = {}, options = {}) => ({
-  concrete: body.concrete || body.concreteAddon || undefined,
+  concrete: (() => {
+    const raw = body.concrete || body.concreteAddon
+    return raw ? normalizeConcreteConfig(raw) : undefined
+  })(),
   insulation: body.insulation || body.insulationAddon || undefined,
   salesTax: body.salesTax || undefined,
   // Material Sell Override (ex-freight) → cogsOverride.materialSellOverride; auto-applies.
