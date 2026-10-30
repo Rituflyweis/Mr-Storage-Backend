@@ -95,15 +95,47 @@ const resolveExemption = (invoice = {}) => {
   return { apply: true, entityUseCode, exemptionNo }
 }
 
+/** Sum of line-item taxAmount (sales UI / quote 8% on materials). */
+const sumLineTaxAmounts = (invoice) => {
+  if (!Array.isArray(invoice?.lineItems)) return 0
+  return round2(
+    invoice.lineItems.reduce((s, li) => s + (Number(li.taxAmount) || 0), 0),
+  )
+}
+
+/**
+ * Persist AvaTax/local snapshot on invoice.avalara.
+ * Estimates (SalesOrder / testOnly / Saved) must NOT overwrite an existing
+ * quote/line tax — that caused INV totals like tax $14,437 vs correct $3,259.
+ * Committed tax always wins as the charged amount.
+ */
 const applyAvalaraSnapshot = (invoice, snapshot) => {
   invoice.avalara = {
     ...(invoice.avalara || {}),
     ...snapshot,
   }
-  if (snapshot.totalTax != null) invoice.tax = round2(snapshot.totalTax)
+
+  const committed = String(snapshot.documentStatus || '') === 'Committed'
+  const isEstimate =
+    !committed &&
+    (snapshot.estimate === true ||
+      snapshot.testOnly === true ||
+      String(snapshot.transactionType || '') === 'SalesOrder' ||
+      String(snapshot.documentStatus || '') === 'Saved')
+
+  const existingTax = round2(invoice.tax)
+  const lineTax = sumLineTaxAmounts(invoice)
+  const preservedTax = existingTax > 0 ? existingTax : lineTax
+
+  if (snapshot.totalTax != null) {
+    if (committed || !isEstimate || preservedTax <= 0) {
+      invoice.tax = round2(snapshot.totalTax)
+    }
+    // else: keep quote/line tax; AvaTax figure stays on invoice.avalara.totalTax only
+  }
   if (snapshot.totalTaxable != null) {
     invoice.taxableSales = round2(snapshot.totalTaxable)
-    invoice.taxCollected = snapshot.documentStatus === 'Committed' ? round2(snapshot.totalTax) : invoice.taxCollected
+    invoice.taxCollected = committed ? round2(snapshot.totalTax) : invoice.taxCollected
   }
 }
 
