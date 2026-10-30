@@ -40,6 +40,8 @@ const generatePlantOverviewExcel = async (payload) => {
     ['Quantity mismatches', m.quantityMismatches ?? 0],
     ['Specification mismatches', m.specificationMismatches ?? 0],
     ['Extra items in shipper', m.extraItems ?? 0],
+    ['Delivery mismatches (construction)', m.deliveryMismatches ?? 0],
+    ['Delivery mismatch line items', m.deliveryMismatchItems ?? 0],
   ])
 
   addSection(sheet, 'Shipper quotations', Object.entries(payload.shipperQuotation || {}))
