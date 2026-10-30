@@ -17,14 +17,10 @@ const { renderHtmlToPdf } = require('../../services/quoting/htmlPdf')
 const {
   syncLinkedQuotationFromUpdatedEstimate,
 } = require('../common/quotation.controller')
+const { resolveEstimateGrandTotal } = require('../../utils/quotationDocumentPayload')
 
-const grandOf = (est = {}) =>
-  est.revisedContractTotal ??
-  est.fullQuoteResult?.grandTotal ??
-  est.totalSell ??
-  est.pricingResult?.totSell ??
-  est.storagePricingResult?.grandTotal ??
-  0
+/** Prefer Storage grand over stale PEMB fullQuote when present. */
+const grandOf = (est = {}) => resolveEstimateGrandTotal(est) || 0
 
 const quoteInfoOf = (est = {}) => ({
   id: est._id,

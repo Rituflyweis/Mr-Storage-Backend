@@ -28,6 +28,7 @@ const {
   generateContractHtml,
   generateQuotePdf,
 } = require('../../services/quoting/quoteDocumentGenerator')
+const { rescalePaymentsForGrand } = require('../../services/quoting/changeOrderApply')
 
 const getOrCreatePricingRules = async (userId) => {
   let rules = await PricingRules.findOne({ ownerId: userId })
@@ -1258,14 +1259,36 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
   }
 
   const estimate = await EstimateQuote.create(estimateData)
-  if (estimate.jobType === 'Storage' && estimate.storagePricingResult) {
-    applyStorageEstimateTotals(estimate, estimate.storagePricingResult)
+  if (estimate.jobType === 'Storage' || estimate.storageData?.buildings?.length) {
+    const storageData = estimate.storageData
+    const storagePricing =
+      storageData?.buildings?.length
+        ? computeStoragePricing(storageData, {
+            ...fullExtras,
+            shipping: req.body.shipping ?? storageData.shipping ?? estimate.storagePricingResult?.shipping,
+            drawings: req.body.drawings ?? storageData.drawings ?? estimate.storagePricingResult?.drawings,
+            installSellPerSf:
+              req.body.installSellPerSf ??
+              storageData.installSellPerSf ??
+              estimate.storagePricingResult?.installSellPerSf,
+            installCostPerSf:
+              req.body.installCostPerSf ??
+              storageData.installCostPerSf ??
+              estimate.storagePricingResult?.installCostPerSf,
+            salesTax: req.body.salesTax ?? estimate.salesTax ?? storageData.salesTax,
+            concrete: estimate.concreteAddon || storageData.concrete,
+            insulation: estimate.insulationAddon || storageData.insulation,
+            totalSqft: estimate.squareFootage || estimate.storagePricingResult?.totalSqft,
+          })
+        : estimate.storagePricingResult
+    if (storagePricing) applyStorageEstimateTotals(estimate, storagePricing)
   } else {
     // Prefer post-override pricing when Material Sell Override is applied.
     const pricingForSave =
       fullExtras.cogsOverride?.applied && fullQuote?.pricing ? fullQuote.pricing : pricing
     applyEstimateTotals(estimate, { pricing: pricingForSave, fullQuote })
   }
+  rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
   await estimate.save()
 
   return created(res, { estimate: withEstimateTotals(estimate.toObject()) })
@@ -1357,8 +1380,63 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     }
   }
 
+  const jobType = req.body.jobType || estimate.jobType
+  const isStorageJob =
+    jobType === 'Storage' ||
+    !!(req.body.storageData?.buildings?.length || estimate.storageData?.buildings?.length)
   const cats = req.body.parsedCategories || estimate.parsedCategories
-  if (cats) {
+
+  // Storage: always recompute from storageData when present (same as PEMB from categories).
+  if (isStorageJob && (req.body.storageData || estimate.storageData || req.body.storagePricingResult)) {
+    const storageData = req.body.storageData || estimate.storageData
+    const priorSp = estimate.storagePricingResult || {}
+    let storagePricing
+    if (storageData?.buildings?.length) {
+      storagePricing = computeStoragePricing(storageData, {
+        ...fullExtras,
+        shipping:
+          req.body.shipping ??
+          storageData.shipping ??
+          priorSp.shipping,
+        drawings:
+          req.body.drawings ??
+          storageData.drawings ??
+          priorSp.drawings,
+        installSellPerSf:
+          req.body.installSellPerSf ??
+          storageData.installSellPerSf ??
+          priorSp.installSellPerSf,
+        installCostPerSf:
+          req.body.installCostPerSf ??
+          storageData.installCostPerSf ??
+          priorSp.installCostPerSf,
+        salesTax: req.body.salesTax ?? estimate.salesTax ?? storageData.salesTax,
+        concrete:
+          req.body.concrete ||
+          req.body.concreteAddon ||
+          estimate.concreteAddon ||
+          storageData.concrete,
+        insulation:
+          req.body.insulation ||
+          req.body.insulationAddon ||
+          estimate.insulationAddon ||
+          storageData.insulation,
+        totalSqft:
+          req.body.squareFootage ??
+          req.body.sf ??
+          estimate.squareFootage ??
+          priorSp.totalSqft,
+      })
+    } else {
+      storagePricing = req.body.storagePricingResult || estimate.storagePricingResult
+    }
+    // Explicit FE-computed snapshot wins only when no buildings payload to reprice.
+    if (req.body.storagePricingResult && !storageData?.buildings?.length) {
+      storagePricing = req.body.storagePricingResult
+    }
+    applyStorageEstimateTotals(estimate, storagePricing)
+    rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
+  } else if (cats) {
     const payload = await buildPricingPayload(req.user._id, {
       categories: cats,
       options,
@@ -1367,17 +1445,7 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     estimate.parsedCategories = cats
     estimate.weightByCategory = payload.weightByCategory
     applyEstimateTotals(estimate, payload)
-  } else if (req.body.storageData || req.body.storagePricingResult) {
-    const storagePricing =
-      req.body.storagePricingResult ||
-      computeStoragePricing(req.body.storageData || estimate.storageData, {
-        ...fullExtras,
-        shipping: req.body.shipping,
-        drawings: req.body.drawings,
-        installSellPerSf: req.body.installSellPerSf,
-        installCostPerSf: req.body.installCostPerSf,
-      })
-    applyStorageEstimateTotals(estimate, storagePricing)
+    rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
   } else if (req.body.pricingResult) {
     const fullQuote =
       req.body.fullQuoteResult ||
@@ -1390,6 +1458,7 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
         ? fullQuote.pricing
         : req.body.pricingResult
     applyEstimateTotals(estimate, { pricing: pricingForSave, fullQuote })
+    rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
   }
 
   await estimate.save()

@@ -10,16 +10,9 @@ const {
   computeMilestones,
   depositTermsToMilestoneRows,
 } = require('./quoting/depositMilestoneEngine')
+const { resolveEstimateGrandTotal } = require('../utils/quotationDocumentPayload')
 
-const grandOfEstimate = (est = {}) =>
-  Number(
-    est.revisedContractTotal ??
-      est.fullQuoteResult?.grandTotal ??
-      est.totalSell ??
-      est.pricingResult?.totSell ??
-      est.storagePricingResult?.grandTotal ??
-      0,
-  ) || 0
+const grandOfEstimate = (est = {}) => resolveEstimateGrandTotal(est) || 0
 
 const resolveMilestoneRowsFromEstimate = (est = {}) => {
   const grand = grandOfEstimate(est)

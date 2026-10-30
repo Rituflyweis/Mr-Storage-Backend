@@ -6,8 +6,10 @@ const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
 const { computeStaircase } = require('./staircase')
 const { coalesceConcrete } = require('./addonPricing')
 const {
+  computeDeposit,
   computeMilestones,
   depositTermsToMilestoneRows,
+  syncDepositIntoMilestoneRows,
 } = require('./depositMilestoneEngine')
 const {
   getCompanyInfo,
@@ -101,6 +103,39 @@ const isStoragePayload = (payload = {}) =>
   payload.storagePricing ||
   payload.storageData?.buildings?.length
 
+/** Recompute milestone $ against current grand so schedule always adds up (pct + deposit). */
+const resolveMilestoneContext = (payload = {}, grandTotal = 0) => {
+  let milestoneRows =
+    payload.milestoneSchedule ||
+    payload.milestones ||
+    payload.milestone?.rows ||
+    []
+  if (!Array.isArray(milestoneRows)) milestoneRows = []
+
+  if (payload.depositTerms) {
+    const d = computeDeposit({
+      grand: grandTotal || payload.depositTerms.grand,
+      pct: payload.depositTerms.pct,
+      flat: payload.depositTerms.flat,
+    })
+    milestoneRows = syncDepositIntoMilestoneRows(milestoneRows, d, {
+      flat: payload.depositTerms.flat,
+    })
+  } else if (!milestoneRows.length) {
+    milestoneRows = depositTermsToMilestoneRows(payload.depositTerms, grandTotal)
+  }
+
+  const milestones =
+    Array.isArray(milestoneRows) && milestoneRows.length
+      ? computeMilestones({ grand: grandTotal, rows: milestoneRows })
+      : null
+  return {
+    milestones,
+    milestoneNote: payload.milestoneNote || '',
+    depositTerms: payload.depositTerms || null,
+  }
+}
+
 const buildQuoteContext = (payload = {}) => {
   const customer = payload.customer || {}
   const storagePricing = payload.storagePricingResult || payload.storagePricing
@@ -108,7 +143,10 @@ const buildQuoteContext = (payload = {}) => {
 
   if (isStorage && storagePricing) {
     const sf = storagePricing.totalSqft || payload.squareFootage || 0
-    const grandTotal = storagePricing.grandTotal ?? payload.grandTotal ?? payload.totalSell ?? 0
+    const grandTotal = Math.round(
+      storagePricing.grandTotal ?? payload.grandTotal ?? payload.totalSell ?? 0,
+    )
+    const ms = resolveMilestoneContext(payload, grandTotal)
     return {
       cust: customer.name || payload.leadCompanyName || 'Customer',
       addr: customer.address || payload.streetAddress || '',
@@ -130,6 +168,7 @@ const buildQuoteContext = (payload = {}) => {
       grandSF: sf > 0 ? (grandTotal / sf).toFixed(2) : storagePricing.pricePerSf || '0',
       sf,
       additionalInfo: payload.additionalInfo || '',
+      ...ms,
       isStorage: true,
     }
   }
@@ -238,17 +277,7 @@ const buildQuoteContext = (payload = {}) => {
   const grandSF = sf > 0 ? (grandTotal / sf).toFixed(2) : res.sfPrice
   const steelFinish = res.steelFinish || payload.steelFinish || payload.finishType || 'red-iron'
 
-  let milestoneRows =
-    payload.milestoneSchedule ||
-    payload.milestones ||
-    payload.milestone?.rows ||
-    []
-  if ((!Array.isArray(milestoneRows) || !milestoneRows.length) && payload.depositTerms) {
-    milestoneRows = depositTermsToMilestoneRows(payload.depositTerms, grandTotal)
-  }
-  const milestones = Array.isArray(milestoneRows) && milestoneRows.length
-    ? computeMilestones({ grand: grandTotal, rows: milestoneRows })
-    : null
+  const ms = resolveMilestoneContext(payload, grandTotal)
 
   return {
     cust: customer.name || payload.leadCompanyName || 'Customer',
@@ -273,9 +302,7 @@ const buildQuoteContext = (payload = {}) => {
     pembAddOnTotals,
     staircase,
     stairSell,
-    milestones,
-    milestoneNote: payload.milestoneNote || '',
-    depositTerms: payload.depositTerms || null,
+    ...ms,
     originalContractValue:
       payload.originalContractValue != null ? Number(payload.originalContractValue) : null,
     revisedContractTotal:
@@ -406,10 +433,12 @@ const generateStorageQuoteHtml = (payload = {}) => {
         </ul>
       </div>
     </div>
+    ${renderMilestoneScheduleSection(ctx)}
     <div class="q-sign">
       <div class="q-sign-block"><strong>${co.name}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
       <div class="q-sign-block"><strong>${ctx.cust}</strong><div class="q-sign-line"></div><p>Authorized Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</p></div>
     </div>
+    ${ctx.additionalInfo ? `<div style="margin-top:14px;padding:12px;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;"><div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Additional Information</div><p style="font-size:12px;color:#374151;line-height:1.7;white-space:pre-wrap;">${ctx.additionalInfo}</p></div>` : ''}
     <p style="font-size:10px;color:#94a3b8;margin-top:12px;text-align:center;">Thanks for your Business!!! Reach out with any questions · ${co.phone} · ${co.email}</p>
   </div>`
 }
