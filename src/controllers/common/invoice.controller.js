@@ -314,6 +314,18 @@ const getUnifiedInvoiceStatus = (invoice) => {
   return getWorkflowStatus(invoice);
 };
 
+/** Charged tax for invoice UI: prefer invoice.tax, else sum of line taxAmount. */
+const resolveChargedInvoiceTax = (invoice = {}) => {
+  const header = toFiniteNumber(invoice.tax, 0);
+  if (header > 0) return Math.round(header * 100) / 100;
+  const lines = Array.isArray(invoice.lineItems) ? invoice.lineItems : [];
+  const lineSum = lines.reduce(
+    (s, li) => s + toFiniteNumber(li.taxAmount, 0),
+    0,
+  );
+  return Math.round(lineSum * 100) / 100;
+};
+
 const decorateInvoiceForResponse = (invoiceLike) => {
   if (!invoiceLike) return invoiceLike;
   const invoice =
@@ -333,6 +345,33 @@ const decorateInvoiceForResponse = (invoiceLike) => {
   invoice.billingAddress = billing.billingAddress;
   invoice.bankDetails = billing.bankDetails;
   invoice.recipientAddress = billing.recipientAddress;
+
+  // Align Tax column + Subtotal Tax row (Admin was binding line taxAmount vs avalara.totalTax).
+  const chargedTax = resolveChargedInvoiceTax(invoice);
+  invoice.tax = chargedTax;
+  const ava = invoice.avalara && typeof invoice.avalara === "object" ? { ...invoice.avalara } : null;
+  if (ava) {
+    const committed = String(ava.documentStatus || "") === "Committed";
+    const isEstimate =
+      !committed &&
+      (ava.estimate === true ||
+        ava.testOnly === true ||
+        String(ava.documentStatus || "") === "Saved");
+    if (isEstimate && chargedTax > 0) {
+      // Keep AvaTax figure for debug; do not let it drive the summary Tax row.
+      if (ava.totalTax != null && Math.abs(Number(ava.totalTax) - chargedTax) > 0.009) {
+        ava.estimatedTotalTax = Number(ava.totalTax);
+      }
+      ava.totalTax = chargedTax;
+      ava.chargedTax = chargedTax;
+      ava.estimateNote =
+        ava.estimatedTotalTax != null
+          ? "Summary Tax uses quote/line tax; estimatedTotalTax is AvaTax estimate only."
+          : undefined;
+    }
+    invoice.avalara = ava;
+  }
+
   return invoice;
 };
 
