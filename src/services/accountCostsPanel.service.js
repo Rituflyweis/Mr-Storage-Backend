@@ -637,63 +637,232 @@ exports.createLogisticsCost = async (body, userId, generateExpenseId) => {
   return { expenseId: expense.expenseId, id: expense._id }
 }
 
-exports.getVarianceSummary = async () => {
+const CATEGORY_LABELS = {
+  materialCost: 'Material',
+  manpowerCost: 'Manpower / Labor',
+  logisticsCost: 'Freight / Logistics',
+  siteCost: 'Site',
+  administrativeCost: 'Administrative',
+  miscellaneous: 'Miscellaneous',
+}
+
+const loadProjectVarianceRows = async (query = {}) => {
+  const dateFilter = buildDateFilter(query, 'date')
+  const budgetFilter = {}
+  const leadId = query.leadId || query.projectId
+  if (leadId) budgetFilter.leadId = leadId
+
+  const budgets = await ProjectBudget.find(budgetFilter)
+    .select(
+      'leadId totalBudget materialBudget logisticBudget productionBudget shipperBudget otherCost customLines updatedAt',
+    )
+    .populate('leadId', 'projectName jobId')
+    .sort({ updatedAt: -1 })
+    .lean()
+
+  const leadIds = budgets.map((b) => b.leadId?._id || b.leadId).filter(Boolean)
+  const expenseMap = await aggregateProjectExpensesByLeadMap(leadIds, dateFilter)
+
+  const search = String(query.search || '').trim().toLowerCase()
+  const rows = []
+
+  for (const b of budgets) {
+    const lead = b.leadId && typeof b.leadId === 'object' ? b.leadId : null
+    const leadKey = String(lead?._id || b.leadId)
+    const rollup = expenseMap.get(leadKey) || {}
+    const planned = resolveTotalBudget(b)
+    const actual = Number(rollup.totalExpense) || 0
+    const variance = round2(actual - planned)
+    const status = budgetVarianceStatus(actual, planned)
+    const projectName = lead?.projectName || ''
+    const jobId = lead?.jobId || ''
+
+    if (
+      search &&
+      !`${projectName} ${jobId}`.toLowerCase().includes(search) &&
+      !status.toLowerCase().includes(search)
+    ) {
+      continue
+    }
+
+    const base = {
+      leadId: lead?._id || b.leadId,
+      project: projectName,
+      projectName,
+      jobId,
+      description: 'Total project budget vs total expense',
+      vendor: '',
+      vendorId: '',
+      awardedAmount: round2(planned),
+      plannedBudget: round2(planned),
+      actualInvoice: round2(actual),
+      actualExpense: round2(actual),
+      variance,
+      variancePct:
+        planned > 0 ? round2((variance / planned) * 100) : actual > 0 ? 100 : 0,
+      approvalStatus: status,
+      source: 'project_budget',
+      breakdown: {
+        manualExpense: rollup.manualExpenseTotal || 0,
+        vendorMaterial: rollup.vendorMaterialFromBids || 0,
+        freight: rollup.freightFromBids || 0,
+        categories: rollup.categories || {},
+      },
+    }
+    rows.push(base)
+
+    // Optional category sub-rows when FE asks for breakdown.
+    if (String(query.includeBreakdown || '').toLowerCase() === 'true') {
+      const cats = rollup.categories || {}
+      for (const [key, label] of Object.entries(CATEGORY_LABELS)) {
+        const amt = Number(cats[key]) || 0
+        if (amt <= 0) continue
+        rows.push({
+          leadId: base.leadId,
+          project: projectName,
+          projectName,
+          jobId,
+          description: `${label} expense`,
+          vendor: '',
+          vendorId: '',
+          awardedAmount: 0,
+          plannedBudget: 0,
+          actualInvoice: round2(amt),
+          actualExpense: round2(amt),
+          variance: round2(amt),
+          variancePct: null,
+          approvalStatus: status,
+          source: 'project_category',
+          parentSource: 'project_budget',
+          categoryKey: key,
+        })
+      }
+    }
+  }
+
+  return rows
+}
+
+const loadFreightVarianceRows = async (query = {}) => {
+  const rows = []
+  const bidFilter = { status: 'selected' }
+  if (query.leadId || query.projectId) {
+    const leadId = query.leadId || query.projectId
+    const deliveries = await Delivery.find({ leadId }).select('_id').lean()
+    bidFilter.deliveryId = { $in: deliveries.map((d) => d._id) }
+  }
+
+  const bids = await FreightBid.find(bidFilter)
+    .populate({ path: 'deliveryId', populate: { path: 'leadId', select: 'projectName jobId' } })
+    .populate('carrierId', 'carrierName vendorId')
+    .sort({ selectedAt: -1 })
+    .limit(200)
+    .lean()
+
+  for (const b of bids) {
+    const awarded = b.submissionHistory?.[0]?.quotedAmount ?? b.quotedAmount ?? 0
+    const approval = await PaymentApproval.findOne({
+      linkedType: 'freight_bid',
+      linkedId: b._id,
+    }).lean()
+    const actual = approval?.amount ?? b.quotedAmount ?? 0
+    const variance = actual - awarded
+    rows.push({
+      leadId: b.deliveryId?.leadId?._id || null,
+      project: b.deliveryId?.leadId?.projectName || '',
+      projectName: b.deliveryId?.leadId?.projectName || '',
+      jobId: b.deliveryId?.leadId?.jobId || '',
+      description: `Freight delivery ${b.deliveryId?.deliveryNumber || ''}`,
+      vendor: b.carrierId?.carrierName || '',
+      vendorId: b.carrierId?.vendorId || '',
+      awardedAmount: round2(awarded),
+      plannedBudget: round2(awarded),
+      actualInvoice: round2(actual),
+      actualExpense: round2(actual),
+      variance: round2(variance),
+      variancePct: awarded > 0 ? round2((variance / awarded) * 100) : 0,
+      approvalStatus: budgetVarianceStatus(actual, awarded),
+      source: 'freight_bid',
+    })
+  }
+  return rows
+}
+
+exports.getVarianceSummary = async (query = {}) => {
+  const dateFilter = buildDateFilter(query, 'date')
   const budgets = await ProjectBudget.find()
-    .select('leadId totalBudget materialBudget logisticBudget productionBudget shipperBudget otherCost customLines')
+    .select(
+      'leadId totalBudget materialBudget logisticBudget productionBudget shipperBudget otherCost customLines',
+    )
     .lean()
   const leadIds = budgets.map((b) => b.leadId)
-  const expenseMap = await aggregateProjectExpensesByLeadMap(leadIds)
+  const expenseMap = await aggregateProjectExpensesByLeadMap(leadIds, dateFilter)
   let net = 0
   let over = 0
   let under = 0
   let on = 0
+  let noBudget = 0
+  let totalPlannedBudget = 0
+  let totalActualExpense = 0
   for (const b of budgets) {
     const actual = expenseMap.get(String(b.leadId))?.totalExpense || 0
     const awarded = resolveTotalBudget(b)
+    totalPlannedBudget += awarded
+    totalActualExpense += actual
     const v = actual - awarded
     net += v
     const st = budgetVarianceStatus(actual, awarded)
     if (st === 'Over Budget') over += 1
     else if (st === 'Under Budget') under += 1
     else if (st === 'On Budget') on += 1
+    else if (st === 'No Budget Set') noBudget += 1
   }
   return {
     netVariance: round2(net),
     overBudget: over,
     underBudget: under,
     onBudget: on,
-    overBudgetAmount: round2(Math.max(0, net)),
-    underBudgetSavings: round2(Math.abs(Math.min(0, net))),
+    noBudget,
+    projectCount: budgets.length,
+    totalPlannedBudget: round2(totalPlannedBudget),
+    totalActualExpense: round2(totalActualExpense),
+    overBudgetAmount: round2(
+      budgets.reduce((s, b) => {
+        const actual = expenseMap.get(String(b.leadId))?.totalExpense || 0
+        const awarded = resolveTotalBudget(b)
+        const v = actual - awarded
+        return s + (v > 0 ? v : 0)
+      }, 0),
+    ),
+    underBudgetSavings: round2(
+      budgets.reduce((s, b) => {
+        const actual = expenseMap.get(String(b.leadId))?.totalExpense || 0
+        const awarded = resolveTotalBudget(b)
+        const v = actual - awarded
+        return s + (v < 0 ? Math.abs(v) : 0)
+      }, 0),
+    ),
   }
 }
 
-exports.getVarianceAlerts = async () => {
-  const shippers = await ShipperRequest.find({ status: 'approved' })
-    .populate('leadId', 'projectName')
-    .populate('vendorId', 'vendorName vendorId')
-    .limit(50)
-    .lean()
-  const alerts = []
-  for (const sr of shippers) {
-    const awarded = sr.quoteValue || 0
-    const approval = await PaymentApproval.findOne({ linkedType: 'delivery', notes: { $regex: String(sr._id) } })
-      .select('amount status')
-      .lean()
-    const actual = approval?.amount ?? awarded
-    const variance = actual - awarded
-    const pct = awarded > 0 ? round2((variance / awarded) * 100) : 0
-    if (Math.abs(pct) >= 5) {
-      alerts.push({
-        itemName: 'Vendor material quote',
-        project: sr.leadId?.projectName || '',
-        awardedAmount: round2(awarded),
-        actualAmount: round2(actual),
-        variance: round2(variance),
-        variancePct: pct,
-      })
-    }
-  }
-  return alerts.sort((a, b) => Math.abs(b.variancePct) - Math.abs(a.variancePct)).slice(0, 10)
+exports.getVarianceAlerts = async (query = {}) => {
+  const rows = await loadProjectVarianceRows(query)
+  return rows
+    .filter((r) => r.source === 'project_budget' && Math.abs(r.variancePct || 0) >= 5)
+    .map((r) => ({
+      itemName: 'Project budget vs expense',
+      project: r.project,
+      leadId: r.leadId,
+      jobId: r.jobId,
+      awardedAmount: r.awardedAmount,
+      actualAmount: r.actualInvoice,
+      variance: r.variance,
+      variancePct: r.variancePct,
+      approvalStatus: r.approvalStatus,
+      source: 'project_budget',
+    }))
+    .sort((a, b) => Math.abs(b.variancePct) - Math.abs(a.variancePct))
+    .slice(0, 10)
 }
 
 exports.getVarianceTrend = async () => {
@@ -701,77 +870,62 @@ exports.getVarianceTrend = async () => {
   const start = new Date(now.getFullYear(), now.getMonth() - 5, 1)
   const expenseTrend = await Expense.aggregate([
     { $match: { isActive: true, date: { $gte: start } } },
-    { $group: { _id: { y: { $year: '$date' }, m: { $month: '$date' } }, actual: { $sum: '$amount' } } },
+    {
+      $group: {
+        _id: { y: { $year: '$date' }, m: { $month: '$date' } },
+        actual: { $sum: '$amount' },
+      },
+    },
     { $sort: { '_id.y': 1, '_id.m': 1 } },
   ])
-  const budgetTrend = await ProjectBudget.aggregate([
-    { $group: { _id: null, awarded: { $sum: '$totalBudget' } } },
-  ])
-  const awardedFlat = budgetTrend[0]?.awarded || 0
+  const budgets = await ProjectBudget.find()
+    .select('totalBudget materialBudget logisticBudget productionBudget shipperBudget otherCost customLines')
+    .lean()
+  const plannedTotal = budgets.reduce((s, b) => s + resolveTotalBudget(b), 0)
+  const months = Math.max(expenseTrend.length, 1)
   return expenseTrend.map((r) => ({
     label: `${r._id.m}/${r._id.y}`,
-    awardedAmount: round2(awardedFlat / Math.max(expenseTrend.length, 1)),
+    awardedAmount: round2(plannedTotal / months),
+    plannedBudget: round2(plannedTotal / months),
     actualInvoice: round2(r.actual),
+    actualExpense: round2(r.actual),
   }))
 }
 
 exports.listVarianceDetails = async (query) => {
   const { page, limit, skip } = paginate(query)
-  const rows = []
-  const bids = await FreightBid.find({ status: 'selected' })
-    .populate({ path: 'deliveryId', populate: { path: 'leadId', select: 'projectName' } })
-    .populate('carrierId', 'carrierName vendorId')
-    .sort({ selectedAt: -1 })
-    .limit(200)
-    .lean()
-  for (const b of bids) {
-    const awarded = b.submissionHistory?.[0]?.quotedAmount ?? b.quotedAmount ?? 0
-    const approval = await PaymentApproval.findOne({ linkedType: 'freight_bid', linkedId: b._id }).lean()
-    const actual = approval?.amount ?? b.quotedAmount ?? 0
-    const variance = actual - awarded
-    rows.push({
-      project: b.deliveryId?.leadId?.projectName || '',
-      description: `Freight delivery ${b.deliveryId?.deliveryNumber || ''}`,
-      vendor: b.carrierId?.carrierName || '',
-      vendorId: b.carrierId?.vendorId || '',
-      awardedAmount: round2(awarded),
-      actualInvoice: round2(actual),
-      variance: round2(variance),
-      approvalStatus: budgetVarianceStatus(actual, awarded),
-      source: 'freight_bid',
-    })
+  const view = String(query.view || 'project').toLowerCase()
+
+  let rows = []
+  if (view === 'freight') {
+    rows = await loadFreightVarianceRows(query)
+  } else if (view === 'all') {
+    const [projectRows, freightRows] = await Promise.all([
+      loadProjectVarianceRows(query),
+      loadFreightVarianceRows(query),
+    ])
+    rows = [...projectRows, ...freightRows]
+  } else {
+    // Default: whole project planned budget vs total project expense
+    rows = await loadProjectVarianceRows(query)
   }
-  const shipperRows = await ShipperRequest.find({ status: 'approved' })
-    .populate('leadId', 'projectName')
-    .populate('vendorId', 'vendorName vendorId')
-    .limit(100)
-    .lean()
-  for (const sr of shipperRows) {
-    const awarded = sr.quoteValue || 0
-    const actual = sr.quoteValue || 0
-    const variance = 0
-    rows.push({
-      project: sr.leadId?.projectName || '',
-      description: 'Material vendor quote (email bid)',
-      vendor: sr.vendorId?.vendorName || '',
-      vendorId: sr.vendorId?.vendorCode || '',
-      awardedAmount: round2(awarded),
-      actualInvoice: round2(actual),
-      variance: round2(variance),
-      approvalStatus: 'On Budget',
-      source: 'shipper_request',
-    })
-  }
+
   if (query.status) {
-    const filtered = rows.filter((r) => r.approvalStatus.toLowerCase().includes(query.status.toLowerCase()))
-    return {
-      rows: filtered.slice(skip, skip + limit),
-      pagination: { page, limit, total: filtered.length, totalPages: Math.ceil(filtered.length / limit) || 1 },
-    }
+    const st = String(query.status).toLowerCase()
+    rows = rows.filter((r) => String(r.approvalStatus || '').toLowerCase().includes(st))
   }
+
+  rows.sort((a, b) => Math.abs(b.variance || 0) - Math.abs(a.variance || 0))
+
   return {
+    view: view === 'freight' || view === 'all' ? view : 'project',
     rows: rows.slice(skip, skip + limit),
-    pagination: { page, limit, total: rows.length, totalPages: Math.ceil(rows.length / limit) || 1 },
+    pagination: {
+      page,
+      limit,
+      total: rows.length,
+      totalPages: Math.ceil(rows.length / limit) || 1,
+    },
   }
 }
 

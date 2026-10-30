@@ -165,10 +165,18 @@ exports.lookupDelivery = asyncHandler(async (req, res) => {
 })
 exports.createLogisticsCost = withGen(costs.createLogisticsCost)
 
-exports.getVarianceSummary = asyncHandler(async (req, res) => success(res, await costs.getVarianceSummary()))
-exports.getVarianceAlerts = asyncHandler(async (req, res) => success(res, { alerts: await costs.getVarianceAlerts() }))
-exports.getVarianceTrend = asyncHandler(async (req, res) => success(res, { points: await costs.getVarianceTrend() }))
-exports.listVarianceDetails = asyncHandler(async (req, res) => success(res, await costs.listVarianceDetails(req.query)))
+exports.getVarianceSummary = asyncHandler(async (req, res) =>
+  success(res, await costs.getVarianceSummary(req.query)),
+)
+exports.getVarianceAlerts = asyncHandler(async (req, res) =>
+  success(res, { alerts: await costs.getVarianceAlerts(req.query) }),
+)
+exports.getVarianceTrend = asyncHandler(async (req, res) =>
+  success(res, { points: await costs.getVarianceTrend() }),
+)
+exports.listVarianceDetails = asyncHandler(async (req, res) =>
+  success(res, await costs.listVarianceDetails(req.query)),
+)
 
 exports.getRentSummary = asyncHandler(async (req, res) => success(res, await costs.getRentSummary()))
 exports.listRentRecords = asyncHandler(async (req, res) => success(res, await costs.listRentRecords(req.query)))
