@@ -287,17 +287,14 @@ const buildQuoteContext = (payload = {}) => {
 const renderMilestoneScheduleSection = (ctx) => {
   const m = ctx.milestones
   if (!m || !Array.isArray(m.rows) || !m.rows.length) return ''
-  let running = 0
   const rows = m.rows
     .map((r, i) => {
-      running += Number(r.amount) || 0
       const pctLabel =
         r.type === 'pct' && r.pct != null ? ` (${r.pct}%)` : ''
       return `<tr class="q-sub-row">
         <td style="width:36px;color:#7c3aed;font-weight:700;">${i + 1}</td>
         <td>${r.label || `Milestone ${i + 1}`}${pctLabel}</td>
         <td style="text-align:right;font-weight:700;">${fmtMoney(r.amount)}</td>
-        <td style="text-align:right;color:#64748b;">${fmtMoney(running)}</td>
       </tr>`
     })
     .join('')
@@ -307,7 +304,6 @@ const renderMilestoneScheduleSection = (ctx) => {
           <td>—</td>
           <td style="font-weight:700;">Unscheduled Balance</td>
           <td style="text-align:right;font-weight:800;">${fmtMoney(m.remaining)}</td>
-          <td style="text-align:right;">${fmtMoney(m.grand)}</td>
         </tr>`
       : ''
   return `
@@ -318,14 +314,12 @@ const renderMilestoneScheduleSection = (ctx) => {
           <td style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;">#</td>
           <td style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;">Description</td>
           <td style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;text-align:right;">Amount Due</td>
-          <td style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;text-align:right;">Running</td>
         </tr>
         ${rows}
         ${remainingRow}
         <tr class="q-total-row" style="color:#7c3aed;">
           <td colspan="2">Total Scheduled (${m.pct}% of contract)</td>
           <td style="text-align:right;">${fmtMoney(m.scheduled)}</td>
-          <td></td>
         </tr>
       </table></div>
       ${ctx.milestoneNote ? `<p style="font-size:11px;color:#64748b;margin-top:8px;"><strong>Notes:</strong> ${ctx.milestoneNote}</p>` : ''}
