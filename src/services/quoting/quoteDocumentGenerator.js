@@ -16,6 +16,63 @@ const {
   getLogoHtml,
   companySubline,
 } = require('./companyInfo')
+const { computePembSalesTax, computeStorageSalesTax } = require('./salesTaxLookup')
+
+/** Merge tax flags/rate from body + fullQuote; compute amount when FE sends rate only. */
+const resolveDocumentSalesTax = (payload = {}, { pricing, insulation, full, storagePricing } = {}) => {
+  const fromPayload = payload.salesTax && typeof payload.salesTax === 'object' ? payload.salesTax : {}
+  const fromFull = full?.salesTax && typeof full.salesTax === 'object' ? full.salesTax : {}
+  const fromStorage =
+    storagePricing?.salesTax && typeof storagePricing.salesTax === 'object'
+      ? storagePricing.salesTax
+      : {}
+
+  const includeOff =
+    fromPayload.include === false ||
+    fromPayload.includeTax === false ||
+    payload.includeTax === false
+  const includeOn =
+    fromPayload.include === true ||
+    fromPayload.includeTax === true ||
+    payload.includeTax === true ||
+    payload.includeTax === undefined
+
+  const rate = Number(
+    fromPayload.rate ??
+      fromPayload.taxRate ??
+      payload.taxRate ??
+      fromFull.rate ??
+      fromFull.taxRate ??
+      fromStorage.rate ??
+      0,
+  )
+
+  const taxOpts = {
+    ...fromFull,
+    ...fromStorage,
+    ...fromPayload,
+    rate,
+    include: includeOff ? false : includeOn ? true : fromPayload.include !== false,
+  }
+
+  if (storagePricing) {
+    const computed = computeStorageSalesTax(storagePricing, taxOpts)
+    if (computed.amount > 0) return computed
+    const legacyAmt = Number(fromStorage.amount ?? fromPayload.amount ?? fromFull.amount) || 0
+    if (legacyAmt > 0 && rate > 0) {
+      return { ...computed, rate, amount: legacyAmt, include: true }
+    }
+    return computed
+  }
+
+  const computed = computePembSalesTax(pricing || {}, insulation || {}, taxOpts)
+  if (computed.amount > 0) return computed
+  const legacyAmt = Number(fromPayload.amount ?? fromFull.amount) || 0
+  if (legacyAmt > 0 && rate > 0) {
+    return { ...computed, rate, amount: legacyAmt, include: true }
+  }
+  return computed
+}
 
 /** Resolve staircase from fullQuote / multiStory / top-level body (FE field aliases). */
 const resolveStaircase = (full = {}, payload = {}) => {
@@ -163,7 +220,7 @@ const buildQuoteContext = (payload = {}) => {
         storagePricing.concrete,
       ),
       insulation: storagePricing.insulation || payload.insulation || {},
-      salesTax: storagePricing.salesTax || payload.salesTax || {},
+      salesTax: resolveDocumentSalesTax(payload, { storagePricing }),
       grandTotal,
       grandSF: sf > 0 ? (grandTotal / sf).toFixed(2) : storagePricing.pricePerSf || '0',
       sf,
@@ -186,7 +243,11 @@ const buildQuoteContext = (payload = {}) => {
     full.concrete,
   )
   const insulation = payload.insulation || payload.insulationAddon || full.insulation || {}
-  const salesTax = payload.salesTax || full.salesTax || {}
+  const salesTax = resolveDocumentSalesTax(payload, {
+    pricing: res,
+    insulation,
+    full,
+  })
 
   // Prefer non-empty add-on lists — empty [] on fullQuote used to shadow payload.pembAddOns
   // (which is why Options & Add-ons only appeared after save when fullQuote was recomputed).
