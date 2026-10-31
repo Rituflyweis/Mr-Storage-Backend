@@ -6,6 +6,7 @@
 const Quotation = require('../models/Quotation')
 const EstimateQuote = require('../models/EstimateQuote')
 const PaymentSchedule = require('../models/PaymentSchedule')
+const Lead = require('../models/Lead')
 const {
   computeMilestones,
   depositTermsToMilestoneRows,
@@ -138,10 +139,32 @@ const suggestPaymentStagesFromEstimate = async (leadId, quotationId = null) => {
   return { ...mapped, quotationId: quotation._id }
 }
 
+/** After quote milestone edit — refresh lead schedule when no invoiced/paid stages. */
+const syncPaymentScheduleFromQuoteForLead = async ({
+  leadId,
+  userId,
+  quotationId = null,
+} = {}) => {
+  const lead = await Lead.findById(leadId).lean()
+  if (!lead) return { synced: false, reason: 'no_lead' }
+  const result = await ensurePaymentScheduleFromEstimate({
+    lead,
+    userId,
+    quotationId,
+    force: true,
+  })
+  return {
+    synced: Boolean(result.seeded),
+    reason: result.reason,
+    schedule: result.schedule || null,
+  }
+}
+
 module.exports = {
   grandOfEstimate,
   resolveMilestoneRowsFromEstimate,
   milestoneRowsToPaymentStages,
   ensurePaymentScheduleFromEstimate,
   suggestPaymentStagesFromEstimate,
+  syncPaymentScheduleFromQuoteForLead,
 }

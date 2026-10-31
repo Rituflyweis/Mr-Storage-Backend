@@ -337,6 +337,8 @@ const decorateInvoiceForResponse = (invoiceLike) => {
   invoice.workflowStatus = getWorkflowStatus(invoice);
   // Frontend-friendly single status across approval + payment stages.
   invoice.invoiceStatus = getUnifiedInvoiceStatus(invoice);
+  invoice.sendBlockReason = assertInvoiceReadyToSend(invoice);
+  invoice.canSend = !invoice.sendBlockReason;
   invoice.approvalRequests = [...buildApprovalRequests(invoice)].reverse();
   if (invoice.approval) {
     invoice.approval.history = [...(invoice.approval.history || [])].reverse();
@@ -936,8 +938,37 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
   if (hasBodyFieldUpdates) {
     applyInvoiceBodyFields(invoice, req.body);
     const prevRevision = Number(invoice.revision || 1);
+    const wasSent = invoice.status === "sent";
     invoice.revision = prevRevision + 1;
-    if (
+    if (wasSent && hasLineOrAmountUpdates) {
+      invoice.status = "draft";
+      pushApprovalHistory(invoice, {
+        status: "not_submitted",
+        note: `Invoice edited after send (revision ${invoice.revision}) — re-approve and send again`,
+        by: req.user._id,
+        revision: invoice.revision,
+      });
+      if (req.user.role === "admin") {
+        invoice.approval.status = "approved";
+        invoice.approval.reviewedBy = req.user._id;
+        invoice.approval.reviewedAt = new Date();
+        invoice.approval.approvedRevision = invoice.revision;
+        pushApprovalHistory(invoice, {
+          status: "approved",
+          note: "Admin edit after send — auto-approved for resend",
+          by: req.user._id,
+          revision: invoice.revision,
+        });
+      } else {
+        invoice.approval.status = "not_submitted";
+        invoice.approval.submittedBy = null;
+        invoice.approval.submittedAt = null;
+        invoice.approval.reviewedBy = null;
+        invoice.approval.reviewedAt = null;
+        invoice.approval.rejectionReason = "";
+        invoice.approval.approvedRevision = null;
+      }
+    } else if (
       invoice.status !== "sent" &&
       invoice.status !== "paid" &&
       invoice.status !== "cancelled"

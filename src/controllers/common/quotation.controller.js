@@ -2006,13 +2006,24 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
       paymentScheduleSeededFromQuote = Boolean(seeded.seeded);
     }
   }
+  const quoteMilestoneSuggested = await suggestPaymentStagesFromEstimate(
+    leadId,
+    quotation._id,
+  );
   const suggested = paymentSchedule?.stages?.length
     ? {
         stages: paymentSchedule.stages,
         totalAmount: paymentSchedule.totalAmount,
         quotationId: quotation._id,
       }
-    : await suggestPaymentStagesFromEstimate(leadId, quotation._id);
+    : quoteMilestoneSuggested;
+  const paymentScheduleOutOfSync =
+    Boolean(paymentSchedule?.stages?.length) &&
+    Boolean(quoteMilestoneSuggested?.stages?.length) &&
+    Math.abs(
+      Number(paymentSchedule.totalAmount || 0) -
+        Number(quoteMilestoneSuggested.totalAmount || 0),
+    ) > 0.01;
 
   return success(res, {
     leadId: quotation.leadId,
@@ -2040,6 +2051,9 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     paymentScheduleStages: suggested.stages || [],
     paymentScheduleTotal: suggested.totalAmount || 0,
     paymentScheduleSeededFromQuote,
+    paymentScheduleOutOfSync,
+    quoteMilestoneStages: quoteMilestoneSuggested.stages || [],
+    quoteMilestoneTotal: quoteMilestoneSuggested.totalAmount || 0,
   });
 });
 

@@ -22,6 +22,7 @@ const { lookupSalesTaxByZip } = require('../../services/quoting/salesTaxLookup')
 const { syncLinkedQuotationFromUpdatedEstimate } = require('../common/quotation.controller')
 const { resolveCompanyKey } = require('../../services/quoting/companyInfo')
 const { buildEstimateConversionMeta, QUOTATION_LINK_SELECT } = require('../../utils/quotationConversionMeta')
+const { syncPaymentScheduleFromQuoteForLead } = require('../../services/paymentScheduleFromEstimate.service')
 const {
   generateAssembledHtml,
   generateQuoteHtml,
@@ -1991,6 +1992,17 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     estimate,
     user: req.user,
   })
+  const milestoneTouched =
+    req.body.milestoneSchedule !== undefined ||
+    req.body.milestones !== undefined ||
+    req.body.depositTerms !== undefined
+  let paymentScheduleSync = null
+  if (milestoneTouched && estimate.leadId) {
+    paymentScheduleSync = await syncPaymentScheduleFromQuoteForLead({
+      leadId: estimate.leadId,
+      userId: req.user._id,
+    })
+  }
   const linkedQuotation = quotationSync.quotation
     ? quotationSync.quotation.toObject
       ? quotationSync.quotation.toObject()
@@ -2012,6 +2024,12 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
       requiresSubmitForApproval: Boolean(quotationSync.requiresSubmitForApproval),
       quotationId: linkedQuotation?._id || null,
     },
+    paymentScheduleSync: paymentScheduleSync
+      ? {
+          synced: Boolean(paymentScheduleSync.synced),
+          skippedReason: paymentScheduleSync.synced ? null : paymentScheduleSync.reason,
+        }
+      : null,
   })
 })
 

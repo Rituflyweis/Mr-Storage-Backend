@@ -17,6 +17,9 @@ const checkLeadAccess = async (leadId, user) => {
   return { lead }
 }
 
+const stageAmountSum = (stages = []) =>
+  stages.reduce((acc, s) => acc + Number(s.amount || 0), 0)
+
 const validateStages = (stages, totalAmount) => {
   const allPercentage = stages.every(s => s.amountType === 'percentage')
   const allFixed = stages.every(s => s.amountType === 'fixed')
@@ -25,7 +28,7 @@ const validateStages = (stages, totalAmount) => {
     return { error: 'All stages must use the same amountType (percentage or fixed)' }
   }
 
-  const sum = stages.reduce((acc, s) => acc + s.amount, 0)
+  const sum = stageAmountSum(stages)
 
   if (allPercentage && Math.abs(sum - 100) > 0.01) {
     return { error: `Percentage stages must sum to 100. Got ${sum}` }
@@ -34,7 +37,16 @@ const validateStages = (stages, totalAmount) => {
     return { error: `Fixed stages must sum to totalAmount (${totalAmount}). Got ${sum}` }
   }
 
-  return { allPercentage, allFixed }
+  return { allPercentage, allFixed, sum }
+}
+
+/** Fixed $ milestones: totalAmount is always sum(stages) — not tax-inclusive invoice total. */
+const resolveScheduleTotalAmount = (stages, requestedTotal) => {
+  const allFixed = stages.every((s) => s.amountType === 'fixed')
+  const sum = stageAmountSum(stages)
+  if (allFixed) return sum
+  if (requestedTotal != null && requestedTotal !== '') return Number(requestedTotal)
+  return sum
 }
 
 const mergePaymentScheduleStages = (existingStages, incomingStages) => {
@@ -88,7 +100,7 @@ exports.createSchedule = asyncHandler(async (req, res) => {
 
   const { lead, error, code } = await checkLeadAccess(leadId, req.user)
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
-  const totalAmount = (req.body.totalAmount != null) ? req.body.totalAmount : lead.quoteValue
+  const totalAmount = resolveScheduleTotalAmount(stages, req.body.totalAmount ?? lead.quoteValue)
 
   const existing = await PaymentSchedule.findOne({ leadId })
   if (existing) return badRequest(res, 'Payment schedule already exists for this lead')
@@ -114,6 +126,9 @@ exports.getScheduleByLead = asyncHandler(async (req, res) => {
 
   let schedule = await PaymentSchedule.findOne({ leadId }).lean()
   let seededFromQuote = false
+  const refreshFromQuote =
+    req.query.refreshFromQuote === 'true' || req.query.syncMilestones === 'true'
+
   if (!schedule || !Array.isArray(schedule.stages) || !schedule.stages.length) {
     const seeded = await ensurePaymentScheduleFromEstimate({
       lead,
@@ -126,6 +141,20 @@ exports.getScheduleByLead = asyncHandler(async (req, res) => {
           ? seeded.schedule.toObject()
           : seeded.schedule
       seededFromQuote = Boolean(seeded.seeded)
+    }
+  } else if (refreshFromQuote) {
+    const seeded = await ensurePaymentScheduleFromEstimate({
+      lead,
+      userId: req.user._id,
+      quotationId: req.query.quotationId || null,
+      force: true,
+    })
+    if (seeded.seeded && seeded.schedule) {
+      schedule =
+        typeof seeded.schedule.toObject === 'function'
+          ? seeded.schedule.toObject()
+          : seeded.schedule
+      seededFromQuote = true
     }
   }
   return success(res, {
@@ -144,7 +173,10 @@ exports.updateScheduleByLead = asyncHandler(async (req, res) => {
   const schedule = await PaymentSchedule.findOne({ leadId })
   if (!schedule) return notFound(res, 'Payment schedule not found for this lead')
 
-  const totalAmount = req.body.totalAmount != null ? req.body.totalAmount : schedule.totalAmount
+  const totalAmount = resolveScheduleTotalAmount(
+    stages,
+    req.body.totalAmount != null ? req.body.totalAmount : schedule.totalAmount,
+  )
   const stageValidation = validateStages(stages, totalAmount)
   if (stageValidation.error) return badRequest(res, stageValidation.error)
 
