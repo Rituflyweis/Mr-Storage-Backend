@@ -4,7 +4,11 @@ const CONTRACT_TEXT = require('./contractText')
 const { getStoragePricingSummaryLines } = require('./storagePricingEngine')
 const { normalizePembAddOns, sumPembAddOnTotals } = require('./pembAddOns')
 const { computeStaircase } = require('./staircase')
-const { coalesceConcrete } = require('./addonPricing')
+const {
+  coalesceConcrete,
+  computeConcreteAddon,
+  computeInsulationAddon,
+} = require('./addonPricing')
 const {
   computeDeposit,
   computeMilestones,
@@ -35,7 +39,9 @@ const resolveDocumentSalesTax = (payload = {}, { pricing, insulation, full, stor
     fromPayload.include === true ||
     fromPayload.includeTax === true ||
     payload.includeTax === true ||
-    payload.includeTax === undefined
+    fromFull.include === true ||
+    fromFull.includeTax === true ||
+    Number(fromFull.amount) > 0
 
   const rate = Number(
     fromPayload.rate ??
@@ -238,11 +244,32 @@ const buildQuoteContext = (payload = {}) => {
   const res = topPricing || fullPricing || {}
   // FE often sends concrete: { include, appliedSell, thickness: null, psi: null } after
   // "Apply to Quote" — coalesce with fullQuote.concrete and default 6" / 4000 PSI.
-  const concrete = coalesceConcrete(
+  const sfForAddons = Number(res.sf || payload.squareFootage || payload.sf || 0) || 0
+  let concrete = coalesceConcrete(
     payload.concrete || payload.concreteAddon,
     full.concrete,
   )
-  const insulation = payload.insulation || payload.insulationAddon || full.insulation || {}
+  if (concrete.include !== false && !Number(concrete.appliedSell) && sfForAddons > 0) {
+    concrete = computeConcreteAddon(concrete, sfForAddons)
+  }
+
+  let insulation = {
+    ...(full.insulation && typeof full.insulation === 'object' ? full.insulation : {}),
+    ...(payload.insulation || payload.insulationAddon || {}),
+  }
+  const bodyIns = payload.insulation || payload.insulationAddon
+  if (
+    bodyIns?.include === false &&
+    !Number(bodyIns.appliedSell) &&
+    full.insulation &&
+    (full.insulation.include === true || Number(full.insulation.appliedSell) > 0)
+  ) {
+    insulation = { ...full.insulation }
+  }
+  if (insulation.include !== false && !Number(insulation.appliedSell) && sfForAddons > 0) {
+    insulation = computeInsulationAddon(insulation, sfForAddons)
+  }
+
   const salesTax = resolveDocumentSalesTax(payload, {
     pricing: res,
     insulation,
@@ -509,8 +536,8 @@ const generateQuoteHtml = (payload = {}) => {
 
   const ctx = buildQuoteContext(payload)
   const { res, concrete, insulation, salesTax, grandTotal, grandSF, sf } = ctx
-  const concInclude = concrete.include && concrete.appliedSell > 0
-  const insulInclude = insulation.include && insulation.appliedSell > 0
+  const concInclude = concrete.include !== false && Number(concrete.appliedSell) > 0
+  const insulInclude = insulation.include !== false && Number(insulation.appliedSell) > 0
   const scope = scopeDesc(res.scope)
   const co = companyOf(payload)
   const custFull = ctx.addr
@@ -634,8 +661,8 @@ const generateSowHtml = (payload = {}) => {
   const { res, concrete, insulation, grandTotal } = ctx
   const isSupply = String(res.scope || '').toLowerCase() === 'supply'
   const scopeTitle = scopeDesc(res.scope)
-  const concInclude = concrete.include && concrete.appliedSell > 0
-  const insulInclude = insulation.include && insulation.appliedSell > 0
+  const concInclude = concrete.include !== false && Number(concrete.appliedSell) > 0
+  const insulInclude = insulation.include !== false && Number(insulation.appliedSell) > 0
 
   const concreteSow = concInclude
     ? `<div class="q-section" style="margin-top:16px;">

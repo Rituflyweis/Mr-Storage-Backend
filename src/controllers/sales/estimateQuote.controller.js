@@ -98,6 +98,47 @@ const firstDefined = (...vals) => {
   return undefined
 }
 
+/** FE often posts default `{ include: false }` on preview — keep saved addon when it has sell dollars. */
+const mergePreviewAddon = (body = {}, saved, keys) => {
+  const fromBody = keys.map((k) => body[k]).find(Boolean)
+  if (!fromBody || !isPlainObject(fromBody)) return saved
+  const bodyTurnedOff =
+    fromBody.include === false &&
+    (fromBody.appliedSell === 0 || fromBody.sell === 0)
+  const defaultOffShell =
+    fromBody.include === false &&
+    fromBody.appliedSell == null &&
+    fromBody.sell == null
+  if (
+    !bodyTurnedOff &&
+    defaultOffShell &&
+    saved &&
+    isPlainObject(saved) &&
+    (saved.include === true || Number(saved.appliedSell) > 0 || Number(saved.sell) > 0)
+  ) {
+    return saved
+  }
+  return fromBody
+}
+
+const mergePreviewSalesTax = (body = {}, saved) => {
+  const nested = body.salesTax && isPlainObject(body.salesTax) ? body.salesTax : null
+  const flat =
+    body.includeTax != null ||
+    body.taxRate != null ||
+    body.taxZip != null ||
+    body.zip != null
+      ? {
+          include: body.includeTax !== false,
+          rate: body.taxRate ?? nested?.rate ?? nested?.taxRate,
+          zip: body.taxZip ?? body.zip ?? nested?.zip,
+        }
+      : null
+  const fromBody = nested || flat
+  if (!fromBody) return saved
+  return { ...(saved && isPlainObject(saved) ? saved : {}), ...fromBody }
+}
+
 /** Engineering Drawings $ — UI field; many FE aliases. Numeric `drawings` only (array = attachments). */
 const pickPembDrawings = (body = {}, controls = {}) => {
   const drawingsAsAmount =
@@ -1277,9 +1318,17 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
     storagePricingResult: liveStorage || savedPayload.storagePricingResult,
     storagePricing: liveStorage || savedPayload.storagePricing,
     pembAddOns: body.pembAddOns || savedPayload.pembAddOns,
-    concrete: body.concrete || body.concreteAddon || savedPayload.concrete,
-    insulation: body.insulation || body.insulationAddon || savedPayload.insulation,
-    salesTax: body.salesTax || savedPayload.salesTax,
+    concrete: mergePreviewAddon(
+      body,
+      savedPayload.concreteAddon || savedPayload.concrete,
+      ['concrete', 'concreteAddon'],
+    ),
+    insulation: mergePreviewAddon(
+      body,
+      savedPayload.insulationAddon || savedPayload.insulation,
+      ['insulation', 'insulationAddon'],
+    ),
+    salesTax: mergePreviewSalesTax(body, savedPayload.salesTax),
     staircase: body.staircase || body.multiStory || savedPayload.staircase,
     multiStory: body.multiStory || savedPayload.multiStory,
     // Prefer body override only when FE actually sends sell dollars / applied:true.
@@ -1408,6 +1457,15 @@ const applyLiveDocumentRebuild = async (userId, payload, body = {}) => {
     body.matMuPct != null ||
     body.freightOverride != null
   const savedCogs = normalizeCogsOverrideInput(payload.cogsOverride, payload)
+  const addonTouched =
+    body.insulation != null ||
+    body.insulationAddon != null ||
+    body.concrete != null ||
+    body.concreteAddon != null ||
+    body.salesTax != null ||
+    body.includeTax != null ||
+    body.taxRate != null ||
+    body.taxZip != null
   const wantsRecompute =
     body.recompute === true ||
     body.recompute === 'true' ||
@@ -1421,6 +1479,7 @@ const applyLiveDocumentRebuild = async (userId, payload, body = {}) => {
     drawingsChanged ||
     finishChanged ||
     liveControlsTouched ||
+    addonTouched ||
     (explicitDrawings && pickPembDrawings(body, body.quoteControls || {}) > 0) ||
     explicitFinish
 
