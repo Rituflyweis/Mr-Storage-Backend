@@ -1,5 +1,6 @@
 const Quotation = require("../../models/Quotation");
 const EstimateQuote = require("../../models/EstimateQuote");
+const CustomQuote = require("../../models/CustomQuote");
 const QuoteSummary = require("../../models/QuoteSummary");
 const Lead = require("../../models/Lead");
 const Customer = require("../../models/Customer");
@@ -345,25 +346,50 @@ const mapEstimateSummary = (estimate) => {
   };
 };
 
+const mapCustomQuoteSummary = (customQuote) => {
+  if (!customQuote) return null;
+  return {
+    _id: customQuote._id,
+    leadId: customQuote.leadId || null,
+    status: customQuote.status || "Draft",
+    jobType: "Custom",
+    size: customQuote.size || "",
+    grandTotal: toNumber(customQuote.sell, 0),
+    updatedAt: customQuote.updatedAt || customQuote.createdAt || null,
+  };
+};
+
+const customQuoteAccessFilter = (user, id) => {
+  const filter = { _id: id };
+  if (user.role === "sales") filter.createdBy = user._id;
+  return filter;
+};
+
 const buildQuotationDocumentMeta = (quotation = {}, estimate = null) => {
   const quotationId = quotation?._id || null;
   const estimateId = quotation.sourceEstimateId || estimate?._id || null;
-  const previewEndpoint = quotationId
+  const customQuoteId = quotation.sourceCustomQuoteId || null;
+  let previewEndpoint = quotationId
     ? `/api/quotations/${quotationId}/pdf?format=html`
     : null;
+  if (customQuoteId) {
+    previewEndpoint = `/api/sales/custom-quotes/${customQuoteId}/preview`;
+  }
   const pdfEndpoint = quotationId ? `/api/quotations/${quotationId}/pdf` : null;
   const hasPricingData = Boolean(
-    estimate?.pricingResult ||
+    customQuoteId ||
+      estimate?.pricingResult ||
       estimate?.fullQuoteResult?.pricing ||
       estimate?.storagePricingResult
   );
   return {
-    source: estimateId ? "estimate" : "quotation",
+    source: customQuoteId ? "custom_quote" : estimateId ? "estimate" : "quotation",
     sourceEstimateId: estimateId || null,
+    sourceCustomQuoteId: customQuoteId || null,
     hasPricingData,
     previewEndpoint,
     pdfEndpoint,
-    defaultSections: ["quote", "sow", "contract", "drawings"],
+    defaultSections: customQuoteId ? ["quote"] : ["quote", "sow", "contract", "drawings"],
   };
 };
 
@@ -471,6 +497,7 @@ const decorateQuotationResponse = async (
   applyApprovalDecorators(quotation);
 
   let estimate = null;
+  let customQuote = null;
   if (includeEstimate && quotation.sourceEstimateId) {
     estimate = await EstimateQuote.findById(quotation.sourceEstimateId)
       .select(
@@ -478,9 +505,16 @@ const decorateQuotationResponse = async (
       )
       .lean();
   }
+  if (includeEstimate && quotation.sourceCustomQuoteId) {
+    customQuote = await CustomQuote.findById(quotation.sourceCustomQuoteId)
+      .select("_id leadId status size sell updatedAt createdAt customer location")
+      .lean();
+  }
 
   if (includeEstimate) {
     quotation.sourceEstimate = mapEstimateSummary(estimate);
+    quotation.sourceCustomQuote = mapCustomQuoteSummary(customQuote);
+    quotation.quoteKind = customQuote ? "custom" : estimate ? "estimate" : null;
   }
 
   if (includeDocuments) {
@@ -586,8 +620,93 @@ const mapEstimateToQuotationPayload = (estimate = {}, lead, reqUser) => {
   };
 };
 
+const mapCustomQuoteToQuotationPayload = (customQuote = {}, lead, reqUser) => {
+  const materialCost = toNumber(customQuote.matCost, 0);
+  const freightCost = toNumber(customQuote.freight, 0);
+  const laborCost = toNumber(customQuote.laborCost, 0);
+  const totalCOGS = toNumber(customQuote.totalCost, materialCost + freightCost + laborCost);
+  const finalPrice = toNumber(customQuote.sell, 0);
+  const markupValue = Math.max(0, finalPrice - totalCOGS);
+  const markupPercent =
+    totalCOGS > 0 ? Number(((markupValue / totalCOGS) * 100).toFixed(2)) : toNumber(customQuote.marginPct, 0);
+
+  const inclusions = Array.isArray(customQuote.inclusions) ? customQuote.inclusions : [];
+  const includedMaterials = inclusions.map((line) => ({
+    name: String(line || "").trim(),
+    description: customQuote.scope ? `Scope: ${customQuote.scope}` : "",
+    quantity: 1,
+  }));
+
+  const expDays = toNumber(customQuote.expDays, 15);
+
+  return {
+    sourceEstimateId: null,
+    sourceCustomQuoteId: customQuote._id,
+    leadId: lead._id,
+    customerId: lead.customerId,
+    createdBy: reqUser._id,
+    proposalDate: new Date(),
+    preparedBy: reqUser.name || customQuote.employeeName || "",
+    companyName: customQuote.customer || "",
+    location: customQuote.location || "",
+    buildingType: "Custom",
+    sqft: String(customQuote.size || "").trim(),
+    specialNote: customQuote.additional || "",
+    clientNotes: customQuote.additional || "",
+    exclusions: Array.isArray(customQuote.exclusions) ? customQuote.exclusions : [],
+    includedMaterials,
+    includedComponents: inclusions,
+    optionalAddOns: [],
+    materialCost,
+    freightCost,
+    shippingCost: freightCost,
+    totalCOGS,
+    markupPercent,
+    markupValue,
+    margin: toNumber(customQuote.profPct, customQuote.marginPct),
+    basePrice: finalPrice,
+    maxPrice: finalPrice,
+    finalPrice,
+    validity: expDays > 0 ? `${expDays} days` : "",
+    validTill:
+      expDays > 0
+        ? new Date(Date.now() + expDays * 24 * 60 * 60 * 1000)
+        : null,
+    approval:
+      reqUser.role === "sales"
+        ? {
+            status: "not_submitted",
+            history: [
+              {
+                status: "not_submitted",
+                note: "Quotation created from custom quote — click Send for Approval",
+                by: reqUser._id,
+                at: new Date(),
+                versionNumber: 1,
+              },
+            ],
+          }
+        : {
+            status: "approved",
+            reviewedBy: reqUser._id,
+            reviewedAt: new Date(),
+            approvedVersionNumber: 1,
+            history: [
+              {
+                status: "approved",
+                note: "Admin-created quotation auto-approved from custom quote",
+                by: reqUser._id,
+                at: new Date(),
+                versionNumber: 1,
+              },
+            ],
+          },
+  };
+};
+
 const ESTIMATE_SYNC_SKIP_KEYS = new Set([
   "sourceEstimateId",
+  "sourceCustomQuoteId",
   "leadId",
   "customerId",
   "createdBy",
@@ -706,6 +825,137 @@ const resolveLeadForEstimateConversion = async ({
   };
 };
 
+const resolveLeadForCustomQuoteConversion = async ({
+  customQuote,
+  reqUser,
+  explicitLeadId = null,
+}) => {
+  if (explicitLeadId) {
+    const explicitAccess = await checkLeadAccess(explicitLeadId, reqUser);
+    if (explicitAccess.error) {
+      return { error: explicitAccess.error, code: explicitAccess.code || 400 };
+    }
+    return {
+      lead: explicitAccess.lead,
+      resolvedLeadId: explicitAccess.lead?._id || explicitLeadId,
+      resolutionSource: "request_body_leadId",
+    };
+  }
+
+  if (customQuote.leadId) {
+    const direct = await checkLeadAccess(customQuote.leadId, reqUser);
+    if (direct.error) return { error: direct.error, code: direct.code || 400 };
+    return {
+      lead: direct.lead,
+      resolvedLeadId: direct.lead?._id || customQuote.leadId,
+      resolutionSource: "custom_quote_leadId",
+    };
+  }
+
+  return {
+    error:
+      "Custom quote is not linked to a lead. Provide body.leadId before converting to a quotation.",
+    code: 400,
+  };
+};
+
+const findOrCreateQuotationFromCustomQuote = async ({
+  customQuoteId,
+  reqUser,
+  forceNotSubmitted = false,
+  explicitLeadId = null,
+}) => {
+  const customQuote = await CustomQuote.findOne(customQuoteAccessFilter(reqUser, customQuoteId));
+  if (!customQuote) return { error: "Custom quote not found", code: 404 };
+
+  const resolvedLead = await resolveLeadForCustomQuoteConversion({
+    customQuote,
+    reqUser,
+    explicitLeadId,
+  });
+  if (resolvedLead.error) return { error: resolvedLead.error, code: resolvedLead.code };
+  const lead = resolvedLead.lead;
+
+  if (lead && String(customQuote.leadId || "") !== String(lead._id || "")) {
+    customQuote.leadId = lead._id;
+    await customQuote.save();
+  }
+
+  const existing = await Quotation.findOne({ sourceCustomQuoteId: customQuote._id })
+    .sort({ createdAt: -1 })
+    .lean();
+  if (existing) {
+    return {
+      quotation: await Quotation.findById(existing._id),
+      customQuote,
+      lead,
+      created: false,
+    };
+  }
+
+  const quoteNumber = await generateQuoteNumber();
+  const quotationPayload = mapCustomQuoteToQuotationPayload(
+    customQuote.toObject(),
+    lead,
+    reqUser
+  );
+
+  if (forceNotSubmitted) {
+    quotationPayload.approval = {
+      status: "not_submitted",
+      submittedBy: null,
+      submittedAt: null,
+      reviewedBy: null,
+      reviewedAt: null,
+      rejectionReason: "",
+      approvedVersionNumber: null,
+      history: [],
+    };
+  }
+
+  const quotation = await Quotation.create({
+    ...quotationPayload,
+    quoteNumber,
+  });
+
+  await Lead.findByIdAndUpdate(lead._id, {
+    isQuoteReady: true,
+    quoteValue: quotation.basePrice || 0,
+  });
+
+  await auditService.log({
+    type: "quotation",
+    action: AUDIT_ACTIONS.QUOTATION_CREATED,
+    leadId: lead._id,
+    customerId: lead.customerId,
+    performedBy: reqUser._id,
+    metadata: {
+      quotationId: quotation._id,
+      quoteNumber: quotation.quoteNumber,
+      source: "custom_quote_conversion",
+      sourceCustomQuoteId: customQuote._id,
+      approvalStatus: quotation.approval?.status || "not_submitted",
+    },
+  });
+
+  if (!forceNotSubmitted && reqUser.role === "admin") {
+    await auditService.log({
+      type: "quotation",
+      action: AUDIT_ACTIONS.QUOTATION_APPROVED,
+      leadId: lead._id,
+      customerId: lead.customerId,
+      performedBy: reqUser._id,
+      metadata: {
+        quotationId: quotation._id,
+        quoteNumber: quotation.quoteNumber,
+        source: "custom_quote_conversion_admin",
+      },
+    });
+  }
+
+  return { quotation, customQuote, lead, created: true };
+};
+
 const findOrCreateQuotationFromEstimate = async ({
   estimateId,
   reqUser,
@@ -713,7 +963,17 @@ const findOrCreateQuotationFromEstimate = async ({
   explicitLeadId = null,
 }) => {
   const estimate = await EstimateQuote.findById(estimateId);
-  if (!estimate) return { error: "Estimate not found", code: 404 };
+  if (!estimate) {
+    const customExists = await CustomQuote.findById(estimateId).select("_id").lean();
+    if (customExists) {
+      return {
+        error:
+          "This ID is a custom quote, not an estimate. Use POST /api/quotations/from-custom-quote/:customQuoteId",
+        code: 400,
+      };
+    }
+    return { error: "Estimate not found", code: 404 };
+  }
   const resolvedLead = await resolveLeadForEstimateConversion({
     estimate,
     reqUser,
@@ -913,6 +1173,43 @@ exports.createQuotationFromEstimate = asyncHandler(async (req, res) => {
         (quotation.approval?.status || "not_submitted") === "not_submitted",
     },
     "Quotation created from estimate"
+  );
+});
+
+exports.createQuotationFromCustomQuote = asyncHandler(async (req, res) => {
+  const { customQuoteId } = req.params;
+  const explicitLeadId = req.body?.leadId || null;
+  const resolved = await findOrCreateQuotationFromCustomQuote({
+    customQuoteId,
+    reqUser: req.user,
+    explicitLeadId,
+  });
+  if (resolved.error) {
+    if (resolved.code === 404) return notFound(res, resolved.error);
+    if (resolved.code === 403) return forbidden(res, resolved.error);
+    return badRequest(res, resolved.error);
+  }
+  const { quotation, customQuote } = resolved;
+
+  const quotationObj = await decorateQuotationResponse(quotation.toObject(), {
+    includeEstimate: true,
+    includeDocuments: true,
+  });
+  return created(
+    res,
+    {
+      quotation: quotationObj,
+      sourceCustomQuote: {
+        _id: customQuote._id,
+        status: customQuote.status,
+        leadId: customQuote.leadId,
+        sell: customQuote.sell,
+      },
+      requiresSubmitForApproval:
+        req.user.role === "sales" &&
+        (quotation.approval?.status || "not_submitted") === "not_submitted",
+    },
+    "Quotation created from custom quote"
   );
 });
 

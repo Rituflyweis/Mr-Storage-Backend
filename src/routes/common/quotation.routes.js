@@ -14,6 +14,12 @@ router.post(
   validate,
   ctrl.createQuotationFromEstimate
 );
+router.post(
+  "/from-custom-quote/:customQuoteId",
+  [param("customQuoteId").isMongoId(), body("leadId").optional().isMongoId()],
+  validate,
+  ctrl.createQuotationFromCustomQuote
+);
 
 router.get(
   "/approval/pending",

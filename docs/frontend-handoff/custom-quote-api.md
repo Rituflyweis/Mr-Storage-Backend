@@ -10,7 +10,7 @@ Wire the **Custom Quote** screen (manual estimate, no shipper file) to the backe
 | Same file · `cogsCalcCustom()` / `renderCustomQuote()` | Live calc + printable HTML (~L8600–8720) |
 | Backend port | `src/services/quoting/customQuoteEngine.js`, `customQuoteDocument.js` |
 
-**Related:** full v7 quoting guide [`docs/API_INTEGRATION.md`](../API_INTEGRATION.md) · PEMB shipper flow [`pemb-quoting-extraction-api.md`](./pemb-quoting-extraction-api.md)
+**Related:** document preview + **full JSON schemas** → [`custom-quote-preview-schemas-fe.md`](./custom-quote-preview-schemas-fe.md) · full v7 quoting [`docs/API_INTEGRATION.md`](../API_INTEGRATION.md) · PEMB [`pemb-quoting-extraction-api.md`](./pemb-quoting-extraction-api.md)
 
 ---
 
@@ -114,7 +114,12 @@ Mirror these inputs from `SM-QuotingTool-API.html` `#page-custom`:
 └────────┬────────┘
          ▼
 ┌─────────────────┐
-│ POST /:id/pdf   │  ← PDF download or { format: "html" } for iframe/print
+│ GET|POST        │  ← Document HTML preview (saved id)
+│ /:id/preview    │     PEMB equivalent: …/estimates/:id/documents/preview
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ POST /:id/pdf   │  ← PDF download (or POST /pdf inline body)
 └─────────────────┘
 ```
 
@@ -134,20 +139,11 @@ List / edit / delete from a “My custom quotes” screen using GET/PUT/DELETE.
 Open row → custom quote editor (`/custom-quotes/:id`), not estimate routes.  
 Filter: `?jobType=Custom`. Dashboard KPIs: `GET /estimates/history/summary` includes custom quotes.
 
-### Detail & preview vs PEMB (do not use `/estimates/:id` alone)
-
-| Action | PEMB / Storage | Custom quote |
-|--------|----------------|--------------|
-| Load detail | `GET /api/sales/estimates/:estimateId` | `GET /api/sales/custom-quotes/:id` |
-| History mis-route fallback | `GET /estimates/:id` may return `quoteKind: "custom"` + `customQuote` (after deploy) | Prefer custom-quotes GET |
-| Document preview | `GET\|POST …/estimates/:estimateId/documents/preview` | `GET\|POST …/custom-quotes/:id/preview` → `{ html }` |
-| PDF | `POST …/estimates/:estimateId/documents/pdf` | `POST …/custom-quotes/:id/pdf` |
-
-If history sends you to `/estimates/6ae5…` and that id is a **custom** row (`quoteKind: "custom"`), **404 meant wrong API** — use `custom-quotes` paths above.
+**Preview & schemas:** see [`custom-quote-preview-schemas-fe.md`](./custom-quote-preview-schemas-fe.md) (`GET|POST /:id/preview`, full `CustomQuote` + history shapes).
 
 ---
 
-## 5. Endpoints
+## 5. Endpoints (examples)
 
 Base path below: `${BASE}/api/sales/custom-quotes`
 
@@ -294,7 +290,7 @@ Server stamps `employeeName` / `employeeRole` from the JWT user and recomputes `
 
 ---
 
-### 5.3 List mine
+### 5.3 List
 
 `GET /`
 
@@ -311,7 +307,8 @@ Server stamps `employeeName` / `employeeRole` from the JWT user and recomputes `
 }
 ```
 
-Scoped to `createdBy = current user`.
+**Sales:** only quotes where `createdBy = current user`.  
+**Admin:** all custom quotes.
 
 ---
 
@@ -319,8 +316,9 @@ Scoped to `createdBy = current user`.
 
 `GET /:id`
 
-**Response `200`** — `{ success, message, data: <doc> }`  
-**404** if missing or not owned by current user.
+**Response `200`** — `{ success, message, data: <CustomQuote> }` — full field list in [`custom-quote-preview-schemas-fe.md` §6](./custom-quote-preview-schemas-fe.md).
+
+**404** if missing. **403** if sales user does not own the quote.
 
 ---
 
@@ -350,52 +348,11 @@ Scoped to `createdBy = current user`.
 
 ---
 
-### 5.7 PDF / HTML document
+### 5.7 Document preview & PDF
 
-Matches HTML `renderCustomQuote()` layout (logo, pricing summary, inclusions/exclusions, SOW, signatures).
+→ [`custom-quote-preview-schemas-fe.md`](./custom-quote-preview-schemas-fe.md) (§2 document preview, §4 PDF/HTML).
 
-**From saved id**
-
-`POST /:id/pdf`
-
-```json
-{ "format": "html" }
-```
-
-omit `format` (or anything other than `"html"`) → PDF.
-
-**Inline (no save)**
-
-`POST /pdf` with the same body as create.
-
-**Response `200` — HTML**
-
-```json
-{
-  "success": true,
-  "message": "Custom quote HTML",
-  "data": {
-    "html": "<!DOCTYPE html>...<div class=\"quote-output\">...</div>..."
-  }
-}
-```
-
-**Response `200` — PDF**
-
-```json
-{
-  "success": true,
-  "message": "Success",
-  "data": {
-    "fileName": "estimate-Bluebird_LLC.pdf",
-    "mimeType": "application/pdf",
-    "fileBase64": "JVBERi0xLjcK...",
-    "sizeBytes": 48210
-  }
-}
-```
-
-Frontend: `atob` / `Uint8Array` → blob download, or render `html` in an iframe / print window (same as PEMB quote docs).
+Quick ref: **`GET|POST /custom-quotes/:id/preview`** → `{ html, quoteKind, customQuoteId }`.
 
 ---
 
@@ -434,12 +391,16 @@ const saved = await api('/custom-quotes', {
   body: { customer, location, size, scope, expDays, matCost, freight, laborCost, marginPct, sellOverride, inclusions, exclusions, sow, additional, company: 'SM' },
 });
 
-// Print / PDF
-const { html } = await api(`/custom-quotes/${saved._id}/pdf`, {
-  method: 'POST',
+// Document preview (preferred — same as history detail)
+const { html } = await api(`/custom-quotes/${saved._id}/preview`, {
+  method: 'GET',
   token,
-  body: { format: 'html' },
 });
+
+// Or PDF route with format html (equivalent HTML)
+// const { html } = await api(`/custom-quotes/${saved._id}/pdf`, {
+//   method: 'POST', token, body: { format: 'html' },
+// });
 ```
 
 ---
@@ -458,11 +419,12 @@ const { html } = await api(`/custom-quotes/${saved._id}/pdf`, {
 
 - [ ] Login → store JWT; call all routes with Bearer token  
 - [ ] Form fields match table in §3 (same ids/semantics as HTML)  
-- [ ] Calculate → `POST /preview` before save  
+- [ ] Calculate → `POST /preview` (pricing only)  
 - [ ] Save → `POST /`; show `_id`, `sell`, `profit`  
-- [ ] Generate / Print → `POST /:id/pdf` with `{ format: "html" }` or PDF base64  
-- [ ] Optional: list + edit + delete for history of custom quotes  
-- [ ] Optional: pass `leadId` when opened from a lead  
+- [ ] **Preview panel → `GET /custom-quotes/:id/preview`** (not `/estimates/.../documents/preview`)  
+- [ ] History row: if `quoteKind === "custom"` → custom routes + editor  
+- [ ] PDF download → `POST /:id/pdf` (no format) or inline `POST /pdf`  
+- [ ] Pass `leadId` when opened from a lead  
 - [ ] Compare totals against HTML tool **Custom Quote** page for the same inputs  
 
 ---
@@ -479,4 +441,4 @@ Custom Quote is a **separate** resource: free-form costs → sell. Do not send s
 
 ---
 
-*Last updated: October 2026 — aligned with `SM-QuotingTool-API.html` Custom Quote page and Render branch `shubham-changes-13-aug`.*
+*Last updated: 2026-10-31 — preview/schemas in [`custom-quote-preview-schemas-fe.md`](./custom-quote-preview-schemas-fe.md).*

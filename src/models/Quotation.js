@@ -42,6 +42,12 @@ const QuotationSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    sourceCustomQuoteId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CustomQuote",
+      default: null,
+      index: true,
+    },
     leadId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Lead",
