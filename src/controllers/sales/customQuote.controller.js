@@ -53,7 +53,9 @@ exports.previewCustomQuote = asyncHandler(async (req, res) => {
 
 // GET /custom-quotes
 exports.listCustomQuotes = asyncHandler(async (req, res) => {
-  const items = await CustomQuote.find({ createdBy: req.user._id }).sort({ updatedAt: -1 }).lean()
+  const filter = {}
+  if (req.user.role === 'sales') filter.createdBy = req.user._id
+  const items = await CustomQuote.find(filter).sort({ updatedAt: -1 }).lean()
   return success(res, { items, count: items.length }, 'Custom quotes')
 })
 

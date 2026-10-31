@@ -120,6 +120,20 @@ Mirror these inputs from `SM-QuotingTool-API.html` `#page-custom`:
 
 List / edit / delete from a “My custom quotes” screen using GET/PUT/DELETE.
 
+**Quote history (unified):** Saved custom quotes also appear on  
+`GET /api/sales/estimates` (same table as PEMB/Storage) with:
+
+| Field | Value |
+|-------|--------|
+| `quoteKind` | `"custom"` |
+| `customQuoteId` | same as `_id` |
+| `jobType` | `"Custom"` |
+| `leadCompanyName` | `customer` |
+| `grandTotal` | `sell` |
+
+Open row → custom quote editor (`/custom-quotes/:id`), not estimate routes.  
+Filter: `?jobType=Custom`. Dashboard KPIs: `GET /estimates/history/summary` includes custom quotes.
+
 ---
 
 ## 5. Endpoints

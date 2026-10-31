@@ -1,5 +1,6 @@
 const PricingRules = require('../../models/PricingRules')
 const EstimateQuote = require('../../models/EstimateQuote')
+const CustomQuote = require('../../models/CustomQuote')
 const Quotation = require('../../models/Quotation')
 const Lead = require('../../models/Lead')
 const Customer = require('../../models/Customer')
@@ -631,6 +632,33 @@ const withEstimateListTotals = (estimate) => {
     drawingCount: Array.isArray(_drawings) ? _drawings.length : 0,
   }
 }
+
+const mapCustomQuoteToHistoryRow = (cq = {}) => ({
+  _id: cq._id,
+  quoteKind: 'custom',
+  customQuoteId: cq._id,
+  jobType: 'Custom',
+  status: cq.status || 'Draft',
+  leadId: cq.leadId || null,
+  leadCompanyName: cq.customer || '',
+  customerEmail: '',
+  streetAddress: '',
+  cityStateZip: cq.location || '',
+  buildingSize: cq.size || '',
+  squareFootage: 0,
+  scope: cq.scope || 'both',
+  grandTotal: Math.round(toNumber(cq.sell)),
+  buildingSubtotal: Math.round(toNumber(cq.sell)),
+  totalSell: Math.round(toNumber(cq.sell)),
+  profit: Math.round(toNumber(cq.profit)),
+  marginPercent: toNumber(cq.profPct),
+  companyBrand: cq.company || 'SM',
+  sourceFileName: '',
+  drawingCount: 0,
+  createdAt: cq.createdAt,
+  updatedAt: cq.updatedAt,
+  conversion: buildEstimateConversionMeta(null),
+})
 
 const buildEstimateConversionMeta = (quotation) => {
   if (!quotation) {
@@ -1972,26 +2000,51 @@ exports.listEstimateQuotes = asyncHandler(async (req, res) => {
   const { jobType, status, search, leadId, page = 1, limit = 20 } = req.query
   const filter = {}
   if (req.user.role === 'sales') filter.createdBy = req.user._id
-  if (jobType) filter.jobType = jobType
+  if (jobType && jobType !== 'Custom') filter.jobType = jobType
   if (status) filter.status = status
   if (leadId) filter.leadId = leadId
   if (search) filter.leadCompanyName = { $regex: search, $options: 'i' }
+
+  const includeEstimates = !jobType || jobType !== 'Custom'
+  const includeCustom = !jobType || jobType === 'Custom'
+
+  const customFilter = {}
+  if (req.user.role === 'sales') customFilter.createdBy = req.user._id
+  if (leadId) customFilter.leadId = leadId
+  if (search) customFilter.customer = { $regex: search, $options: 'i' }
+  if (status) customFilter.status = status
 
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
   const skip = (parsedPage - 1) * parsedLimit
 
-  const [estimates, total] = await Promise.all([
-    EstimateQuote.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parsedLimit)
-      .select('-drawingAttachments -parsedCategories -breakdownRows -tabSummary -storageData -weightByCategory')
-      .lean(),
-    EstimateQuote.countDocuments(filter),
+  const [estimateRows, customRows] = await Promise.all([
+    includeEstimates
+      ? EstimateQuote.find(filter)
+          .select('-drawingAttachments -parsedCategories -breakdownRows -tabSummary -storageData -weightByCategory')
+          .lean()
+      : [],
+    includeCustom ? CustomQuote.find(customFilter).lean() : [],
   ])
 
-  const estimateIds = estimates.map((row) => row._id)
+  const merged = [
+    ...estimateRows.map((row) => ({
+      ...withEstimateListTotals(row),
+      quoteKind: 'estimate',
+      sortAt: new Date(row.updatedAt || row.createdAt).getTime(),
+    })),
+    ...customRows.map((row) => ({
+      ...mapCustomQuoteToHistoryRow(row),
+      sortAt: new Date(row.updatedAt || row.createdAt).getTime(),
+    })),
+  ].sort((a, b) => b.sortAt - a.sortAt)
+
+  const total = merged.length
+  const pageRows = merged.slice(skip, skip + parsedLimit).map(({ sortAt: _s, ...row }) => row)
+
+  const estimateIds = pageRows
+    .filter((row) => row.quoteKind !== 'custom')
+    .map((row) => row._id)
   const quotations = estimateIds.length
     ? await Quotation.find({ sourceEstimateId: { $in: estimateIds } })
         .select('_id sourceEstimateId quoteNumber status approval createdAt')
@@ -2006,12 +2059,16 @@ exports.listEstimateQuotes = asyncHandler(async (req, res) => {
   }
 
   return success(res, {
-    estimates: estimates.map((estimate) => ({
-      ...withEstimateListTotals(estimate),
-      conversion: buildEstimateConversionMeta(
-        quotationByEstimateId.get(String(estimate._id))
-      ),
-    })),
+    estimates: pageRows.map((row) =>
+      row.quoteKind === 'custom'
+        ? row
+        : {
+            ...row,
+            conversion: buildEstimateConversionMeta(
+              quotationByEstimateId.get(String(row._id)),
+            ),
+          },
+    ),
     total,
     page: parsedPage,
     limit: parsedLimit,
@@ -2021,11 +2078,21 @@ exports.listEstimateQuotes = asyncHandler(async (req, res) => {
 const rangeStats = async (userId, from) => {
   const filter = { ...(from ? { createdAt: { $gte: from } } : {}) }
   if (userId) filter.createdBy = userId
-  const rows = await EstimateQuote.find(filter).lean()
-  const totalQuotes = rows.length
-  const totalValue = rows.reduce((s, r) => s + toNumber(resolveEstimateGrandTotal(r)), 0)
-  const totalProfit = rows.reduce((s, r) => s + (r.profit || 0), 0)
-  const avgMargin = totalQuotes > 0 ? rows.reduce((s, r) => s + (r.marginPercent || 0), 0) / totalQuotes : 0
+  const [rows, customRows] = await Promise.all([
+    EstimateQuote.find(filter).lean(),
+    CustomQuote.find(filter).lean(),
+  ])
+  const totalQuotes = rows.length + customRows.length
+  const totalValue =
+    rows.reduce((s, r) => s + toNumber(resolveEstimateGrandTotal(r)), 0) +
+    customRows.reduce((s, r) => s + toNumber(r.sell), 0)
+  const totalProfit =
+    rows.reduce((s, r) => s + (r.profit || 0), 0) +
+    customRows.reduce((s, r) => s + (r.profit || 0), 0)
+  const marginSum =
+    rows.reduce((s, r) => s + (r.marginPercent || 0), 0) +
+    customRows.reduce((s, r) => s + (r.profPct || 0), 0)
+  const avgMargin = totalQuotes > 0 ? marginSum / totalQuotes : 0
   return {
     totalQuotes,
     totalValue: Math.round(totalValue * 100) / 100,
@@ -2050,11 +2117,17 @@ exports.getQuoteHistorySummary = asyncHandler(async (req, res) => {
 
   const mongoose = require('mongoose')
   const match = userFilter ? { createdBy: new mongoose.Types.ObjectId(userFilter) } : {}
-  const byJobType = await EstimateQuote.aggregate([
-    { $match: match },
-    { $group: { _id: '$jobType', totalProfit: { $sum: '$profit' }, count: { $sum: 1 } } },
+  const [byJobType, customAgg] = await Promise.all([
+    EstimateQuote.aggregate([
+      { $match: match },
+      { $group: { _id: '$jobType', totalProfit: { $sum: '$profit' }, count: { $sum: 1 } } },
+    ]),
+    CustomQuote.aggregate([
+      { $match: match },
+      { $group: { _id: 'Custom', totalProfit: { $sum: '$profit' }, count: { $sum: 1 } } },
+    ]),
   ])
-  const profitByCategory = byJobType.map((r) => ({
+  const profitByCategory = [...byJobType, ...customAgg].map((r) => ({
     jobType: r._id,
     totalProfit: Math.round(r.totalProfit * 100) / 100,
     count: r.count,
