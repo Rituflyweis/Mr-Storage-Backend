@@ -65,9 +65,15 @@ exports.createCustomQuote = asyncHandler(async (req, res) => {
   return created(res, doc, 'Custom quote created')
 })
 
+const customQuoteAccessFilter = (user, id) => {
+  const filter = { _id: id }
+  if (user.role === 'sales') filter.createdBy = user._id
+  return filter
+}
+
 // GET /custom-quotes/:id
 exports.getCustomQuote = asyncHandler(async (req, res) => {
-  const doc = await CustomQuote.findOne({ _id: req.params.id, createdBy: req.user._id }).lean()
+  const doc = await CustomQuote.findOne(customQuoteAccessFilter(req.user, req.params.id)).lean()
   if (!doc) return notFound(res, 'Custom quote not found')
   return success(res, doc, 'Custom quote')
 })
@@ -89,6 +95,19 @@ exports.deleteCustomQuote = asyncHandler(async (req, res) => {
   const doc = await CustomQuote.findOneAndDelete({ _id: req.params.id, createdBy: req.user._id })
   if (!doc) return notFound(res, 'Custom quote not found')
   return success(res, { deleted: true }, 'Custom quote deleted')
+})
+
+/** HTML preview — PEMB equivalent: GET /estimates/:id/documents/preview */
+exports.previewCustomQuoteDocument = asyncHandler(async (req, res) => {
+  let cq
+  if (req.params.id) {
+    cq = await CustomQuote.findOne(customQuoteAccessFilter(req.user, req.params.id)).lean()
+    if (!cq) return notFound(res, 'Custom quote not found')
+  } else {
+    cq = req.body
+  }
+  const html = generateCustomQuoteHtml(cq, { company: req.body?.company || cq.company || 'SM' })
+  return success(res, { html, quoteKind: 'custom', customQuoteId: cq._id || null }, 'Custom quote preview')
 })
 
 // POST /custom-quotes/:id/pdf  (or POST /custom-quotes/pdf with inline body)

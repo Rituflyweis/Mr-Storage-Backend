@@ -134,6 +134,17 @@ List / edit / delete from a “My custom quotes” screen using GET/PUT/DELETE.
 Open row → custom quote editor (`/custom-quotes/:id`), not estimate routes.  
 Filter: `?jobType=Custom`. Dashboard KPIs: `GET /estimates/history/summary` includes custom quotes.
 
+### Detail & preview vs PEMB (do not use `/estimates/:id` alone)
+
+| Action | PEMB / Storage | Custom quote |
+|--------|----------------|--------------|
+| Load detail | `GET /api/sales/estimates/:estimateId` | `GET /api/sales/custom-quotes/:id` |
+| History mis-route fallback | `GET /estimates/:id` may return `quoteKind: "custom"` + `customQuote` (after deploy) | Prefer custom-quotes GET |
+| Document preview | `GET\|POST …/estimates/:estimateId/documents/preview` | `GET\|POST …/custom-quotes/:id/preview` → `{ html }` |
+| PDF | `POST …/estimates/:estimateId/documents/pdf` | `POST …/custom-quotes/:id/pdf` |
+
+If history sends you to `/estimates/6ae5…` and that id is a **custom** row (`quoteKind: "custom"`), **404 meant wrong API** — use `custom-quotes` paths above.
+
 ---
 
 ## 5. Endpoints

@@ -1792,20 +1792,44 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
 })
 
 exports.getEstimateQuote = asyncHandler(async (req, res) => {
-  const estimate = await EstimateQuote.findById(req.params.estimateId).lean()
-  if (!estimate) return notFound(res, 'Estimate not found')
-  const access = assertEstimateAccess(estimate, req.user)
-  if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-  const quotation = await Quotation.findOne({ sourceEstimateId: estimate._id })
-    .select('_id quoteNumber status approval createdAt')
-    .sort({ createdAt: -1 })
-    .lean()
-  return success(res, {
-    estimate: {
-      ...withEstimateTotals(estimate),
-      conversion: buildEstimateConversionMeta(quotation),
-    },
-  })
+  const id = req.params.estimateId
+  const estimate = await EstimateQuote.findById(id).lean()
+  if (estimate) {
+    const access = assertEstimateAccess(estimate, req.user)
+    if (access.error) {
+      return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+    }
+    const quotation = await Quotation.findOne({ sourceEstimateId: estimate._id })
+      .select('_id quoteNumber status approval createdAt')
+      .sort({ createdAt: -1 })
+      .lean()
+    return success(res, {
+      quoteKind: 'estimate',
+      estimate: {
+        ...withEstimateTotals(estimate),
+        conversion: buildEstimateConversionMeta(quotation),
+      },
+    })
+  }
+
+  const custom = await CustomQuote.findById(id).lean()
+  if (custom) {
+    if (
+      req.user.role === 'sales' &&
+      String(custom.createdBy) !== String(req.user._id)
+    ) {
+      return forbidden(res, 'Access denied')
+    }
+    return success(res, {
+      quoteKind: 'custom',
+      customQuote: custom,
+      customQuoteId: custom._id,
+      previewApi: `/api/sales/custom-quotes/${custom._id}/pdf`,
+      editApi: `/api/sales/custom-quotes/${custom._id}`,
+    })
+  }
+
+  return notFound(res, 'Estimate not found')
 })
 
 exports.updateEstimateQuote = asyncHandler(async (req, res) => {
