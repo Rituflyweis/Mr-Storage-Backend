@@ -65,6 +65,22 @@ const normalizeMilestoneRow = (r = {}, grand = 0) => {
   };
 };
 
+/** Penny drift from rounding each % line — absorb on last row instead of “Unscheduled Balance”. */
+const MILESTONE_ROUNDING_ABSORB_MAX = 1;
+
+const absorbMilestonePennyDrift = (rows, grand, remaining) => {
+  if (!rows.length || remaining === 0 || Math.abs(remaining) > MILESTONE_ROUNDING_ABSORB_MAX) {
+    return rows;
+  }
+  const next = rows.map((r) => ({ ...r }));
+  const last = next[next.length - 1];
+  last.amount = Math.max(0, Math.round(last.amount + remaining));
+  if (grand > 0 && last.type === "pct") {
+    last.pct = Math.round((last.amount / grand) * 1000) / 10;
+  }
+  return next;
+};
+
 /**
  * Milestone schedule totals.
  * @param {object} input
@@ -73,11 +89,16 @@ const normalizeMilestoneRow = (r = {}, grand = 0) => {
  */
 const computeMilestones = (input = {}) => {
   const grand = num(input.grand);
-  const rows = (Array.isArray(input.rows) ? input.rows : []).map((r) =>
+  let rows = (Array.isArray(input.rows) ? input.rows : []).map((r) =>
     normalizeMilestoneRow(r, grand),
   );
-  const scheduled = rows.reduce((a, r) => a + r.amount, 0);
-  const remaining = Math.round(grand - scheduled);
+  let scheduled = rows.reduce((a, r) => a + r.amount, 0);
+  let remaining = Math.round(grand - scheduled);
+  if (remaining !== 0) {
+    rows = absorbMilestonePennyDrift(rows, grand, remaining);
+    scheduled = rows.reduce((a, r) => a + r.amount, 0);
+    remaining = Math.round(grand - scheduled);
+  }
   const pct = grand > 0 ? Math.min(100, Math.round((scheduled / grand) * 100)) : 0;
   return {
     grand: Math.round(grand),
