@@ -1,3 +1,7 @@
+const { resolveCompanyKey } = require("../services/quoting/companyInfo");
+
+const resolveBrandKey = (value) => resolveCompanyKey(value);
+
 const toNumber = (value, fallback = 0) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -99,6 +103,10 @@ const mapEstimateToDocumentPayload = (estimate = {}) => {
     salesTax: estimate.salesTax,
     contract: estimate.contractDetails,
     drawingAttachments: estimate.drawingAttachments,
+    companyBrand: estimate.companyBrand,
+    company: estimate.companyBrand || estimate.company,
+    companyLogoUrl: estimate.companyLogoUrl || "",
+    quoteControls: estimate.quoteControls,
     customer: {
       name: estimate.leadCompanyName,
       address: estimate.streetAddress,
@@ -124,6 +132,16 @@ const mapQuotationToDocumentPayload = (quotation = {}, customer = {}, estimate =
       email: customer.email || payload.customer?.email || "",
     };
     if (customer.email) payload.customerEmail = customer.email;
+    // Brand must flow to email/PDF (preview uses estimateToDocumentPayload; send uses this path).
+    const brand =
+      resolveBrandKey(quotation.companyBrand) ||
+      resolveBrandKey(estimate.companyBrand) ||
+      resolveBrandKey(estimate.company);
+    if (brand) {
+      payload.companyBrand = brand;
+      payload.company = brand;
+    }
+    if (estimate.companyLogoUrl) payload.companyLogoUrl = estimate.companyLogoUrl;
     return payload;
   }
 

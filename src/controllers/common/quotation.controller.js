@@ -1244,7 +1244,14 @@ exports.downloadQuotationPdf = asyncHandler(async (req, res) => {
   const format = String(req.query.format || "pdf").trim().toLowerCase();
 
   try {
-    const pdfPayload = mapQuotationToDocumentPayload(quotation.toObject(), customer || {}, sourceEstimate);
+    let pdfPayload = mapQuotationToDocumentPayload(quotation.toObject(), customer || {}, sourceEstimate);
+    if (!sourceEstimate && quotation.sourceCustomQuoteId) {
+      const cq = await CustomQuote.findById(quotation.sourceCustomQuoteId).lean();
+      if (cq?.company) {
+        pdfPayload.companyBrand = cq.company;
+        pdfPayload.company = cq.company;
+      }
+    }
     if (format === "html") {
       const assembledHtml = generateAssembledHtml({
         ...pdfPayload,

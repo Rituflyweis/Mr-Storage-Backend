@@ -20,6 +20,7 @@ const {
 const { previewMarginOverride } = require('../../services/quoting/marginOverride')
 const { lookupSalesTaxByZip } = require('../../services/quoting/salesTaxLookup')
 const { syncLinkedQuotationFromUpdatedEstimate } = require('../common/quotation.controller')
+const { resolveCompanyKey } = require('../../services/quoting/companyInfo')
 const { buildEstimateConversionMeta, QUOTATION_LINK_SELECT } = require('../../utils/quotationConversionMeta')
 const {
   generateAssembledHtml,
@@ -1538,6 +1539,25 @@ const applyLiveDocumentRebuild = async (userId, payload, body = {}) => {
   return next
 }
 
+const persistEstimateBrandFromBody = async (estimateId, body, user) => {
+  if (!estimateId || !body) return
+  const raw = body.companyBrand ?? body.company ?? body.brand ?? body.logoBrand
+  if (raw == null || raw === '') return
+  const brand = resolveCompanyKey(raw)
+  if (!brand) return
+  const estimate = await EstimateQuote.findById(estimateId)
+  if (!estimate) return
+  const access = assertEstimateAccess(estimate, user)
+  if (access.error) return
+  const patch = { companyBrand: brand }
+  const logoUrl = body.companyLogoUrl ?? body.logoUrl ?? body.logoSrc
+  if (logoUrl) patch.companyLogoUrl = String(logoUrl)
+  const changed =
+    estimate.companyBrand !== brand ||
+    (patch.companyLogoUrl && estimate.companyLogoUrl !== patch.companyLogoUrl)
+  if (changed) await EstimateQuote.updateOne({ _id: estimateId }, { $set: patch })
+}
+
 exports.previewDocuments = asyncHandler(async (req, res) => {
   let payload = req.body
   const estimateId = resolveEstimateIdFromReq(req)
@@ -1547,7 +1567,9 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     if (!estimate) return notFound(res, 'Estimate not found')
     const access = assertEstimateAccess(estimate, req.user)
     if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-    const saved = estimateToDocumentPayload(estimate)
+    await persistEstimateBrandFromBody(estimateId, req.body, req.user)
+    const estimateDoc = (await EstimateQuote.findById(estimateId).lean()) || estimate
+    const saved = estimateToDocumentPayload(estimateDoc)
     // History often sends only { estimateId }; hydrate full quote + milestones from DB.
     // Live recompute fields in body still win when present.
     payload = mergeLiveDocumentPayload(saved, { ...req.body, estimateId })
@@ -1593,6 +1615,7 @@ exports.generateQuotePdf = asyncHandler(async (req, res) => {
     if (!estimate) return notFound(res, 'Estimate not found')
     const access = assertEstimateAccess(estimate, req.user)
     if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+    await persistEstimateBrandFromBody(estimateId, req.body, req.user)
     payload = mergeLiveDocumentPayload(estimateToDocumentPayload(estimate), {
       ...req.body,
       estimateId,

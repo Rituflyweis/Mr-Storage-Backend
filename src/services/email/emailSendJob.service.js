@@ -1,6 +1,7 @@
 const EmailSendJob = require('../../models/EmailSendJob')
 const Quotation = require('../../models/Quotation')
 const EstimateQuote = require('../../models/EstimateQuote')
+const CustomQuote = require('../../models/CustomQuote')
 const Invoice = require('../../models/Invoice')
 const Lead = require('../../models/Lead')
 const Customer = require('../../models/Customer')
@@ -64,6 +65,14 @@ const processQuotationEmailJob = async (job) => {
     customer.toObject(),
     sourceEstimate
   )
+
+  if (!sourceEstimate && quotation.sourceCustomQuoteId) {
+    const cq = await CustomQuote.findById(quotation.sourceCustomQuoteId).lean()
+    if (cq?.company) {
+      pdfPayload.companyBrand = cq.company
+      pdfPayload.company = cq.company
+    }
+  }
   const emailSections = requestedSections.filter((section) => section !== 'drawings')
 
   let pdfAttachment = null
