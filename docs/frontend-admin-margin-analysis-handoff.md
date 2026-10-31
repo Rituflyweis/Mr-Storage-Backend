@@ -7,7 +7,7 @@
 
 **Not for account panel.** Account margin stays on `/api/account/financial/margin-analysis` (paid invoices + expenses).
 
-All margin endpoints below return **`dataSource: "quotation"`** and **`audience: "admin"`** inside `data` (except where noted).
+All margin endpoints below return **`dataSource: "financial"`** and **`audience: "admin"`** inside `data` (except where noted).
 
 ---
 
@@ -25,11 +25,11 @@ Delta for **Admin → Financial Overview → Margin Analysis** vs older frontend
 | **Trend `period`** | Same query param name as account; values must match route (`month` \| `quarter` \| `year` on admin trend). |
 | **Response shape** | No **`dataSource`** / **`audience`** flags; labour/markup from estimate extraction not on by-project rows. |
 
-### After (`fcd1301`+, branch `shubham-changes-13-aug`)
+### After (latest `shubham-changes-13-aug`)
 
 | Topic | Now |
 |-------|-----|
-| **Data source** | **`dataSource: "quotation"`** — latest **Quotation** per project, enriched from **`EstimateQuote`** when linked (`margin`, `markupPercent`, `installCost`, COGS fields). Dates filter on quotation **`proposalDate`**. |
+| **Data source** | **`dataSource: "financial"`** — same as account panel: **paid invoices + expenses + taxes** (`accountMarginAnalysis.service.js`). Date filters apply to invoice/expense **`date`**, not proposal date. |
 | **API prefix** | **`/api/admin/financials`** (with **`s`**) for KPI, trend, by-project, and **`GET /profit-loss/projects`**. |
 | **Account panel** | Unchanged: **`/api/account/financial/margin-analysis*`** still uses **invoices + expenses** — do **not** point admin UI at account routes. |
 | **P&L table** | Use **`GET /api/admin/financials/profit-loss/projects`** → bind **`data.projects[]`** (or **`rows`**). Single **`grossMarginPct`** column. |

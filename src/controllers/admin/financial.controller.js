@@ -1844,11 +1844,11 @@ exports.exportProfitLoss = asyncHandler(async (req, res) => {
 
 // GET /profit-loss/projects — "Project-wise Profit & Loss" table
 exports.getProfitLossByProject = asyncHandler(async (req, res) => {
-  const marginService = require('../../services/adminQuotationMarginAnalysis.service')
+  const marginService = require('../../services/accountMarginAnalysis.service')
   const data = await marginService.getProfitLossSummaryTable(req.query)
   return success(res, {
-    dataSource: data.dataSource,
-    audience: data.audience,
+    dataSource: 'financial',
+    audience: 'admin',
     projects: data.rows,
     rows: data.rows,
     total: data.total,
@@ -1997,27 +1997,27 @@ exports.exportFreightCosts = asyncHandler(async (req, res) => {
 })
 
 exports.getMarginAnalysis = asyncHandler(async (req, res) => {
-  const marginService = require('../../services/adminQuotationMarginAnalysis.service')
+  const marginService = require('../../services/accountMarginAnalysis.service')
   const data = await marginService.getMarginAnalysisSummary({
     ...req.query,
     projectId: req.query.projectId,
   })
-  return success(res, data)
+  return success(res, { ...data, dataSource: 'financial', audience: 'admin' })
 })
 
 // GET /margin-analysis/trend?period=month|quarter|year — "Margin Trend Over Time" chart
 exports.getMarginTrendOverTime = asyncHandler(async (req, res) => {
-  const marginService = require('../../services/adminQuotationMarginAnalysis.service')
+  const marginService = require('../../services/accountMarginAnalysis.service')
   const data = await marginService.getMarginTrendOverTime(req.query)
   if (data.error) return badRequest(res, data.error)
-  return success(res, data)
+  return success(res, { ...data, dataSource: 'financial', audience: 'admin' })
 })
 
 // GET /margin-analysis/by-project?projectId=... — "Margin by Projects" chart, optionally scoped to one project
 exports.getMarginByProjects = asyncHandler(async (req, res) => {
-  const marginService = require('../../services/adminQuotationMarginAnalysis.service')
+  const marginService = require('../../services/accountMarginAnalysis.service')
   const data = await marginService.getMarginByProjects(req.query)
-  return success(res, data)
+  return success(res, { ...data, dataSource: 'financial', audience: 'admin' })
 })
 
 exports.getBudgetVsActual = asyncHandler(async (req, res) => {
