@@ -1145,6 +1145,21 @@ exports.computeEstimateById = asyncHandler(async (req, res) => {
       return badRequest(res, 'storageData.buildings required on estimate')
     }
     if (req.body.storageData) estimate.storageData = req.body.storageData
+    const mergedConcrete = mergePreviewAddon(req.body, estimate.concreteAddon, [
+      'concrete',
+      'concreteAddon',
+    ])
+    const mergedInsulation = mergePreviewAddon(req.body, estimate.insulationAddon, [
+      'insulation',
+      'insulationAddon',
+    ])
+    if (mergedConcrete !== undefined) {
+      estimate.concreteAddon = normalizeConcreteConfig(mergedConcrete)
+    }
+    if (mergedInsulation !== undefined) {
+      estimate.insulationAddon = mergedInsulation
+    }
+    if (req.body.pembAddOns !== undefined) estimate.pembAddOns = req.body.pembAddOns
     const priorSp = estimate.storagePricingResult || {}
     const storagePricing = computeStoragePricing(storageData, {
       ...fullExtras,
@@ -1158,9 +1173,10 @@ exports.computeEstimateById = asyncHandler(async (req, res) => {
         req.body.installCostPerSf ??
         storageData.installCostPerSf ??
         priorSp.installCostPerSf,
-      salesTax: req.body.salesTax ?? estimate.salesTax ?? storageData.salesTax,
-      concrete: estimate.concreteAddon || storageData.concrete,
-      insulation: estimate.insulationAddon || storageData.insulation,
+      salesTax: mergePreviewSalesTax(req.body, estimate.salesTax ?? storageData.salesTax),
+      concrete: estimate.concreteAddon || fullExtras.concrete,
+      insulation: estimate.insulationAddon || fullExtras.insulation,
+      pembAddOns: estimate.pembAddOns ?? fullExtras.pembAddOns,
       totalSqft: estimate.squareFootage || priorSp.totalSqft,
     })
     applyStorageEstimateTotals(estimate, storagePricing)
@@ -1272,6 +1288,7 @@ exports.computeStorageQuote = asyncHandler(async (req, res) => {
     installSellPerSf: req.body.installSellPerSf ?? storageData.installSellPerSf,
     installCostPerSf: req.body.installCostPerSf ?? storageData.installCostPerSf,
     totalSqft: req.body.squareFootage ?? req.body.sf,
+    pembAddOns: fullExtras.pembAddOns,
   })
 
   return success(res, { storagePricing })
@@ -1469,6 +1486,74 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
   }
 }
 
+const isStorageDocumentPayload = (payload = {}) =>
+  payload.jobType === 'Storage' ||
+  Boolean(payload.storagePricingResult || payload.storagePricing) ||
+  Boolean(payload.storageData?.buildings?.length)
+
+/** Recompute storage COG pricing for preview/PDF (concrete, insulation, add-ons, tax). */
+const recomputeStoragePricingForPayload = (payload = {}, body = {}) => {
+  const storageData = body.storageData || payload.storageData
+  if (!storageData?.buildings?.length) return payload
+
+  const options = normalizeQuoteOptions({ ...payload, ...body })
+  const savedConcrete =
+    payload.concreteAddon || payload.concrete || storageData.concrete
+  const savedInsulation =
+    payload.insulationAddon || payload.insulation || storageData.insulation
+  const concreteRaw = mergePreviewAddon(body, savedConcrete, [
+    'concrete',
+    'concreteAddon',
+  ])
+  const insulationRaw = mergePreviewAddon(body, savedInsulation, [
+    'insulation',
+    'insulationAddon',
+  ])
+  const concrete = concreteRaw ? normalizeConcreteConfig(concreteRaw) : undefined
+  const insulation = insulationRaw || undefined
+  const salesTax = mergePreviewSalesTax(body, payload.salesTax || storageData.salesTax)
+  const pembAddOns =
+    body.pembAddOns ??
+    payload.pembAddOns ??
+    payload.quoteControls?.pembAddOns ??
+    storageData.pembAddOns
+
+  const priorSp = payload.storagePricingResult || payload.storagePricing || {}
+  const storagePricing = computeStoragePricing(storageData, {
+    concrete,
+    insulation,
+    salesTax,
+    pembAddOns,
+    shipping: body.shipping ?? storageData.shipping ?? priorSp.shipping,
+    drawings: body.drawings ?? storageData.drawings ?? priorSp.drawings,
+    installSellPerSf:
+      body.installSellPerSf ??
+      storageData.installSellPerSf ??
+      priorSp.installSellPerSf,
+    installCostPerSf:
+      body.installCostPerSf ??
+      storageData.installCostPerSf ??
+      priorSp.installCostPerSf,
+    totalSqft:
+      body.squareFootage ?? body.sf ?? payload.squareFootage ?? priorSp.totalSqft,
+  })
+
+  return {
+    ...payload,
+    jobType: 'Storage',
+    storageData,
+    storagePricingResult: storagePricing,
+    storagePricing,
+    concrete: storagePricing.concrete,
+    concreteAddon: storagePricing.concrete,
+    insulation: storagePricing.insulation,
+    insulationAddon: storagePricing.insulation,
+    salesTax: storagePricing.salesTax,
+    pembAddOns: storagePricing.pembAddOns,
+    grandTotal: storagePricing.grandTotal,
+  }
+}
+
 /**
  * Apply live Recompute / drawings / finish onto a document payload.
  * Shared by HTML preview and PDF so both stay in sync before save.
@@ -1577,6 +1662,11 @@ const applyLiveDocumentRebuild = async (userId, payload, body = {}) => {
       pembDrawings: Number(patched.pembDrawings) || options.pembDrawings,
     }
   }
+
+  if (isStorageDocumentPayload({ ...payload, ...body, ...next })) {
+    next = recomputeStoragePricingForPayload(next, body)
+  }
+
   return next
 }
 
@@ -1635,7 +1725,12 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
     assembledHtml: generateAssembledHtml({ ...payload, sections }),
     pricing: payload.pricingResult || payload.pricing || payload.fullQuote?.pricing || null,
     fullQuote: payload.fullQuote || null,
-    grandTotal: payload.grandTotal ?? payload.fullQuote?.grandTotal ?? null,
+    grandTotal:
+      payload.grandTotal ??
+      payload.storagePricingResult?.grandTotal ??
+      payload.fullQuote?.grandTotal ??
+      null,
+    storagePricing: payload.storagePricingResult || payload.storagePricing || null,
     originalContractValue: payload.originalContractValue ?? null,
     revisedContractTotal: payload.revisedContractTotal ?? null,
     milestoneSchedule,

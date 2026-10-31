@@ -5,6 +5,7 @@ const {
   computeInsulationAddon,
 } = require("./addonPricing");
 const { computeStorageSalesTax } = require("./salesTaxLookup");
+const { sumPembAddOnTotals, normalizePembAddOns } = require("./pembAddOns");
 
 const roundSell = (cogs, markupPct) =>
   Math.round((cogs || 0) * (1 + (markupPct || 0) / 100));
@@ -92,6 +93,11 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
   const erectSell = installSellPerSf * sf;
   const erectCost = installCostPerSf * sf;
 
+  const pembAddOns = normalizePembAddOns(
+    options.pembAddOns || storageData.pembAddOns || [],
+  );
+  const pembAddOnTotals = sumPembAddOnTotals(pembAddOns);
+
   const tax = computeStorageSalesTax(
     {
       buildingSell: bld.buildingSell,
@@ -110,6 +116,7 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
       erectSell +
       (concrete.include ? concrete.appliedSell : 0) +
       (insulation.include ? insulation.appliedSell : 0) +
+      pembAddOnTotals.sell +
       tax.amount,
   );
 
@@ -119,6 +126,7 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
   const concProfit = concrete.include ? concrete.profit : 0;
   const insulProfit = insulation.include ? insulation.profit : 0;
   const extrasProfit = ext.extrasSell - ext.extrasCogs;
+  const addOnProfit = pembAddOnTotals.profit;
 
   const totalProfit = Math.round(
     bldProfit +
@@ -126,7 +134,8 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
       erectProfit +
       concProfit +
       insulProfit +
-      extrasProfit,
+      extrasProfit +
+      addOnProfit,
   );
   const totalCogs = Math.round(
     bld.buildingCogs +
@@ -167,6 +176,8 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
     installCostPerSf,
     concrete,
     insulation,
+    pembAddOns,
+    pembAddOnTotals,
     salesTax: tax,
     grandTotal,
     pricePerSf: sf > 0 ? (grandTotal / sf).toFixed(2) : "0",
@@ -244,6 +255,8 @@ const getStoragePricingSummaryLines = (sp = {}, options = {}) => {
   push("Doors & Hardware", sp.doorSell || 0, "doors");
   push("Erection / Installation", installSell, "install");
   push("Options & Add-ons", sp.extrasSell || 0, "extras");
+  const manualAddOnSell = Math.round(sp.pembAddOnTotals?.sell || 0);
+  if (manualAddOnSell) push("Manual add-on line items", manualAddOnSell, "pembAddOns");
   push("Shipping & Freight", sp.shipping || 0, "shipping");
   push("Engineering Drawings", sp.drawings || 0, "drawings");
   if (concSell) {
