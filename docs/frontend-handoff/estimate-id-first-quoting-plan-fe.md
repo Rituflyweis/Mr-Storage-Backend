@@ -126,7 +126,8 @@ POST /api/sales/estimates/:estimateId/compute
 | Action | Request | Status |
 |--------|---------|--------|
 | Open / refresh | `GET /estimates/:estimateId` | Ready |
-| Change SF / markup / finish | `POST /estimates/:estimateId/compute` | **Ready** |
+| Change SF / markup / finish (PEMB) | `POST /estimates/:estimateId/compute` | **Ready** |
+| Recompute Storage draft | `POST /estimates/:estimateId/compute-storage` or same `/compute` | **Ready** |
 | Apply concrete / tax / addons / margin | `PUT /estimates/:estimateId` | Ready |
 | Deposit / milestones | `PUT …/:estimateId/deposit`, `…/milestones` | Ready |
 | Quote HTML / PDF | `…/:estimateId/documents/preview\|pdf` | Ready |

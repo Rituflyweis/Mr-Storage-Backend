@@ -1217,10 +1217,50 @@ exports.computeQuote = asyncHandler(async (req, res) => {
   })
 })
 
+/**
+ * POST /estimates/:estimateId/compute-storage — recompute Storage draft from DB (+ optional body overrides).
+ */
+exports.computeStorageEstimateById = asyncHandler(async (req, res) => {
+  const estimate = await EstimateQuote.findById(req.params.estimateId)
+  if (!estimate) return notFound(res, 'Estimate not found')
+  const access = assertEstimateAccess(estimate, req.user)
+  if (access.error) {
+    return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+  }
+
+  const hasBuildings =
+    req.body.storageData?.buildings?.length || estimate.storageData?.buildings?.length
+  if (!hasBuildings) {
+    return badRequest(
+      res,
+      'storageData.buildings required — create via POST /from-storage-cog or send storageData in body',
+    )
+  }
+
+  if (estimate.jobType !== 'Storage' && estimate.storageData?.buildings?.length) {
+    estimate.jobType = 'Storage'
+    await estimate.save()
+  }
+  if (estimate.jobType !== 'Storage') {
+    return badRequest(res, 'Estimate is not a Storage quote. Use POST /:estimateId/compute for PEMB.')
+  }
+
+  return exports.computeEstimateById(req, res)
+})
+
 exports.computeStorageQuote = asyncHandler(async (req, res) => {
+  const estimateId = req.body.estimateId || req.body.estimate_id
+  if (estimateId && !req.body.storageData?.buildings?.length) {
+    req.params.estimateId = String(estimateId)
+    return exports.computeStorageEstimateById(req, res)
+  }
+
   const storageData = req.body.storageData
   if (!storageData?.buildings?.length) {
-    return badRequest(res, 'storageData.buildings required')
+    return badRequest(
+      res,
+      'storageData.buildings required (or pass estimateId after POST /from-storage-cog)',
+    )
   }
 
   const options = normalizeQuoteOptions(req.body)
