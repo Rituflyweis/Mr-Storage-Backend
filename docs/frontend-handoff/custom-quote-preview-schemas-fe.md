@@ -228,7 +228,26 @@ Computed fields may be sent but are **recomputed** on save.
 
 **Lines:** `inclusions` / `exclusions` may be a newline **string**; API normalizes to `string[]`.
 
-### 6.2 Example GET `data` (full document)
+### 6.2 `conversion` (same as PEMB `GET /estimates/:id`)
+
+On **`GET /api/sales/custom-quotes/:id`** (and list `items[]`), after `POST /quotations/from-custom-quote/:id`:
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `isConvertedToQuotation` | boolean | |
+| `quotationId` | ObjectId \| null | Open quotation detail / submit approval |
+| `quoteNumber` | string \| null | |
+| `quotationStatus` | string \| null | e.g. `draft`, `sent` |
+| `approvalStatus` | string \| null | `not_submitted`, `pending_approval`, `approved`, `rejected` |
+| `workflowStatus` | string \| null | FE badge: `draft`, `pending_approval`, `approved`, `sent`, `admin_rejected`, … |
+| `versionNumber` | number \| null | |
+| `convertedAt` | ISO date \| null | |
+
+Also on `data`: `quoteKind: "custom"`, `customQuoteId`, `previewApi`, `editApi`, `convertApi`.
+
+Before convert, `conversion.isConvertedToQuotation === false` and `workflowStatus === null` — call **`convertApi`** then existing quotation approval routes.
+
+### 6.3 Example GET `data` (full document)
 
 ```json
 {

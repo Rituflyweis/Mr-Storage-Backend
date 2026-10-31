@@ -19,10 +19,8 @@ const {
 } = require('../../services/quoting/cogsOverride')
 const { previewMarginOverride } = require('../../services/quoting/marginOverride')
 const { lookupSalesTaxByZip } = require('../../services/quoting/salesTaxLookup')
-const {
-  syncLinkedQuotationFromUpdatedEstimate,
-  getWorkflowStatus,
-} = require('../common/quotation.controller')
+const { syncLinkedQuotationFromUpdatedEstimate } = require('../common/quotation.controller')
+const { buildEstimateConversionMeta, QUOTATION_LINK_SELECT } = require('../../utils/quotationConversionMeta')
 const {
   generateAssembledHtml,
   generateQuoteHtml,
@@ -633,7 +631,7 @@ const withEstimateListTotals = (estimate) => {
   }
 }
 
-const mapCustomQuoteToHistoryRow = (cq = {}) => ({
+const mapCustomQuoteToHistoryRow = (cq = {}, quotation = null) => ({
   _id: cq._id,
   quoteKind: 'custom',
   customQuoteId: cq._id,
@@ -657,34 +655,8 @@ const mapCustomQuoteToHistoryRow = (cq = {}) => ({
   drawingCount: 0,
   createdAt: cq.createdAt,
   updatedAt: cq.updatedAt,
-  conversion: buildEstimateConversionMeta(null),
+  conversion: buildEstimateConversionMeta(quotation),
 })
-
-const buildEstimateConversionMeta = (quotation) => {
-  if (!quotation) {
-    return {
-      isConvertedToQuotation: false,
-      quotationId: null,
-      quoteNumber: null,
-      quotationStatus: null,
-      approvalStatus: null,
-      workflowStatus: null,
-      versionNumber: null,
-      convertedAt: null,
-    }
-  }
-  const approvalStatus = quotation.approval?.status || 'not_submitted'
-  return {
-    isConvertedToQuotation: true,
-    quotationId: quotation._id,
-    quoteNumber: quotation.quoteNumber || null,
-    quotationStatus: quotation.status || 'draft',
-    approvalStatus,
-    workflowStatus: getWorkflowStatus(quotation),
-    versionNumber: quotation.versionNumber || 1,
-    convertedAt: quotation.createdAt || null,
-  }
-}
 
 const applyEstimateTotals = (estimate, payload) => {
   const { pricing, fullQuote: incomingFullQuote } = payload
@@ -1800,7 +1772,7 @@ exports.getEstimateQuote = asyncHandler(async (req, res) => {
       return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
     }
     const quotation = await Quotation.findOne({ sourceEstimateId: estimate._id })
-      .select('_id quoteNumber status approval createdAt')
+      .select(QUOTATION_LINK_SELECT)
       .sort({ createdAt: -1 })
       .lean()
     return success(res, {
@@ -1820,11 +1792,20 @@ exports.getEstimateQuote = asyncHandler(async (req, res) => {
     ) {
       return forbidden(res, 'Access denied')
     }
+    const quotation = await Quotation.findOne({ sourceCustomQuoteId: custom._id })
+      .select(QUOTATION_LINK_SELECT)
+      .sort({ createdAt: -1 })
+      .lean()
+    const conversion = buildEstimateConversionMeta(quotation)
     return success(res, {
       quoteKind: 'custom',
-      customQuote: custom,
+      customQuote: {
+        ...custom,
+        conversion,
+      },
       customQuoteId: custom._id,
-      previewApi: `/api/sales/custom-quotes/${custom._id}/pdf`,
+      conversion,
+      previewApi: `/api/sales/custom-quotes/${custom._id}/preview`,
       editApi: `/api/sales/custom-quotes/${custom._id}`,
     })
   }
@@ -2058,7 +2039,7 @@ exports.listEstimateQuotes = asyncHandler(async (req, res) => {
       sortAt: new Date(row.updatedAt || row.createdAt).getTime(),
     })),
     ...customRows.map((row) => ({
-      ...mapCustomQuoteToHistoryRow(row),
+      ...mapCustomQuoteToHistoryRow(row, null),
       sortAt: new Date(row.updatedAt || row.createdAt).getTime(),
     })),
   ].sort((a, b) => b.sortAt - a.sortAt)
@@ -2069,23 +2050,45 @@ exports.listEstimateQuotes = asyncHandler(async (req, res) => {
   const estimateIds = pageRows
     .filter((row) => row.quoteKind !== 'custom')
     .map((row) => row._id)
-  const quotations = estimateIds.length
-    ? await Quotation.find({ sourceEstimateId: { $in: estimateIds } })
-        .select('_id sourceEstimateId quoteNumber status approval createdAt')
-        .sort({ createdAt: -1 })
-        .lean()
-    : []
+  const customIds = pageRows
+    .filter((row) => row.quoteKind === 'custom')
+    .map((row) => row.customQuoteId || row._id)
+  const [estimateQuotations, customQuotations] = await Promise.all([
+    estimateIds.length
+      ? Quotation.find({ sourceEstimateId: { $in: estimateIds } })
+          .select(QUOTATION_LINK_SELECT)
+          .sort({ createdAt: -1 })
+          .lean()
+      : [],
+    customIds.length
+      ? Quotation.find({ sourceCustomQuoteId: { $in: customIds } })
+          .select(QUOTATION_LINK_SELECT)
+          .sort({ createdAt: -1 })
+          .lean()
+      : [],
+  ])
   const quotationByEstimateId = new Map()
-  for (const row of quotations) {
+  for (const row of estimateQuotations) {
     const key = String(row.sourceEstimateId || '')
     if (!key || quotationByEstimateId.has(key)) continue
     quotationByEstimateId.set(key, row)
+  }
+  const quotationByCustomQuoteId = new Map()
+  for (const row of customQuotations) {
+    const key = String(row.sourceCustomQuoteId || '')
+    if (!key || quotationByCustomQuoteId.has(key)) continue
+    quotationByCustomQuoteId.set(key, row)
   }
 
   return success(res, {
     estimates: pageRows.map((row) =>
       row.quoteKind === 'custom'
-        ? row
+        ? {
+            ...row,
+            conversion: buildEstimateConversionMeta(
+              quotationByCustomQuoteId.get(String(row.customQuoteId || row._id)),
+            ),
+          }
         : {
             ...row,
             conversion: buildEstimateConversionMeta(
