@@ -6,6 +6,7 @@ router.post('/pdf', ctrl.generateChangeOrderPdf)
 
 router.get('/', ctrl.listChangeOrders)
 router.post('/', ctrl.createChangeOrder)
+router.get('/:coId/document', ctrl.getChangeOrderDocument)
 router.put('/:coId', ctrl.updateChangeOrder)
 router.delete('/:coId', ctrl.deleteChangeOrder)
 router.post('/:coId/pdf', ctrl.generateChangeOrderPdf)

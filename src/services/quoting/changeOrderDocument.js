@@ -15,6 +15,27 @@ const esc = (s) =>
 
 const money = (n) => "$" + Math.round(Number(n) || 0).toLocaleString();
 
+const moneyOrDash = (n) => {
+  if (n == null || n === "" || Number.isNaN(Number(n))) return "—";
+  return money(n);
+};
+
+const pctOrDash = (n) => {
+  if (n == null || n === "" || Number.isNaN(Number(n))) return "—";
+  return `${Number(n).toFixed(1)}%`;
+};
+
+/** API model uses `description` / `coDate`; v7 printCO uses `desc` / `date`. */
+const normalizeChangeOrderForDocument = (co = {}) => ({
+  ...co,
+  desc:
+    co.desc != null && String(co.desc).trim() !== ""
+      ? co.desc
+      : co.description || "",
+  date: co.date || co.coDate || "",
+  origDate: co.origDate || "",
+});
+
 /**
  * @param {object} co Change order: {coNum, customer, date, origDate, origVal, amount, cost, profit, margin, newTotal, desc}
  * @param {object} [opts]
@@ -23,6 +44,7 @@ const money = (n) => "$" + Math.round(Number(n) || 0).toLocaleString();
  * @param {number} [opts.baseOrigVal] base quote original value (before any COs)
  */
 const generateChangeOrderHtml = (co = {}, opts = {}) => {
+  co = normalizeChangeOrderForDocument(co);
   const info = getCompanyInfo(opts.company);
   const logoHtml = getLogoHtml(info);
   const amount = Number(co.amount) || 0;
@@ -37,8 +59,17 @@ const generateChangeOrderHtml = (co = {}, opts = {}) => {
   const baseOrigVal =
     opts.baseOrigVal != null ? Math.round(opts.baseOrigVal) : Math.round(co.origVal || 0);
   const priorCOs = (Array.isArray(opts.priorCOs) ? opts.priorCOs : [])
+    .map(normalizeChangeOrderForDocument)
     .slice()
     .sort((a, b) => Number(a.coNum) - Number(b.coNum));
+
+  const cost = co.cost != null ? Number(co.cost) : null;
+  const profit = co.profit != null ? Number(co.profit) : null;
+  const margin = co.margin != null ? Number(co.margin) : null;
+  const showEconomics =
+    (cost != null && cost !== 0) ||
+    (profit != null && profit !== 0) ||
+    (margin != null && margin !== 0);
 
   const css = [
     "*{box-sizing:border-box;margin:0;padding:0;}",
@@ -157,8 +188,26 @@ const generateChangeOrderHtml = (co = {}, opts = {}) => {
     money(newTotal) +
     "</div></div></div></div>" +
     '<div class="q-section-title">Description of Change</div><div class="desc-box">' +
-    esc(co.desc) +
+    esc(co.desc || "—") +
     "</div>" +
+    (showEconomics
+      ? '<div class="q-section-title">Change Order Economics (internal)</div><table class="price-table">' +
+        '<tr class="sub"><td>Change Order Sell Amount (+/-)</td><td style="text-align:right;font-variant-numeric:tabular-nums;color:' +
+        deltaColor +
+        ';">' +
+        deltaSign +
+        deltaAmtStr +
+        "</td></tr>" +
+        '<tr class="sub"><td>Change Order Cost</td><td style="text-align:right;font-variant-numeric:tabular-nums;">' +
+        moneyOrDash(cost) +
+        "</td></tr>" +
+        '<tr class="sub"><td>CO Profit</td><td style="text-align:right;font-variant-numeric:tabular-nums;">' +
+        moneyOrDash(profit) +
+        "</td></tr>" +
+        '<tr class="sub"><td>Margin</td><td style="text-align:right;font-variant-numeric:tabular-nums;">' +
+        pctOrDash(margin) +
+        "</td></tr></table>"
+      : "") +
     '<div class="q-section-title">Price Adjustment</div><table class="price-table">' +
     '<tr class="sub"><td>Original Contract Value</td><td style="text-align:right;font-variant-numeric:tabular-nums;">' +
     money(baseOrigVal) +
@@ -186,4 +235,7 @@ const generateChangeOrderHtml = (co = {}, opts = {}) => {
   );
 };
 
-module.exports = { generateChangeOrderHtml };
+module.exports = {
+  generateChangeOrderHtml,
+  normalizeChangeOrderForDocument,
+};

@@ -48,6 +48,27 @@ const loadEstimateForChangeOrder = async (estimateId) => {
   return { est }
 }
 
+const loadChangeOrderForDocument = async (coId, userId) => {
+  const co = await ChangeOrder.findOne({ _id: coId, createdBy: userId }).lean()
+  if (!co) return { error: 'Change order not found', code: 404 }
+  const filter = { createdBy: userId, coNum: { $lte: co.coNum } }
+  if (co.estimateQuoteId) filter.estimateQuoteId = co.estimateQuoteId
+  else filter.parentQuoteRef = co.parentQuoteRef
+  const priorCOs = await ChangeOrder.find(filter).sort({ coNum: 1 }).lean()
+  const baseOrigVal =
+    priorCOs.length && priorCOs[0].origVal != null
+      ? Math.round(Number(priorCOs[0].origVal))
+      : Math.round(Number(co.origVal) || 0)
+  return { co, priorCOs, baseOrigVal }
+}
+
+const renderChangeOrderDocument = (co, { priorCOs, baseOrigVal, company }) =>
+  generateChangeOrderHtml(co, {
+    company: company || co.company || 'SM',
+    priorCOs,
+    baseOrigVal,
+  })
+
 // POST /change-orders/preview  — stateless math (no save)
 exports.previewChangeOrder = asyncHandler(async (req, res) => {
   const result = computeChangeOrder(req.body)
@@ -191,33 +212,66 @@ exports.deleteChangeOrder = asyncHandler(async (req, res) => {
   return success(res, { deleted: true, estimate: estimateSummary }, 'Change order deleted')
 })
 
+// GET /change-orders/:coId/document?format=html|pdf — client-style CO (SM-QuotingTool printCO)
+exports.getChangeOrderDocument = asyncHandler(async (req, res) => {
+  const loaded = await loadChangeOrderForDocument(req.params.coId, req.user._id)
+  if (loaded.error) {
+    return loaded.code === 404 ? notFound(res, loaded.error) : badRequest(res, loaded.error)
+  }
+  const { co, priorCOs, baseOrigVal } = loaded
+  const html = renderChangeOrderDocument(co, {
+    priorCOs,
+    baseOrigVal,
+    company: req.query.company || co.company,
+  })
+  const fileName = `CO-${String(co.coNum).padStart(3, '0')}-${(co.customer || 'change-order').replace(/[^\w.-]+/g, '_')}.pdf`
+
+  if (req.query.format === 'pdf') {
+    try {
+      const pdf = await renderHtmlToPdf(html)
+      return success(res, {
+        html,
+        fileName,
+        mimeType: 'application/pdf',
+        fileBase64: pdf.toString('base64'),
+        sizeBytes: pdf.length,
+      })
+    } catch (err) {
+      return badRequest(res, `PDF generation failed: ${err.message}`)
+    }
+  }
+
+  return success(res, { html, fileName }, 'Change order document')
+})
+
 // POST /change-orders/:coId/pdf  (or POST /change-orders/pdf with inline `co`)
 exports.generateChangeOrderPdf = asyncHandler(async (req, res) => {
   let co
   let priorCOs = []
+  let baseOrigVal
   if (req.params.coId) {
-    co = await ChangeOrder.findOne({ _id: req.params.coId, createdBy: req.user._id }).lean()
-    if (!co) return notFound(res, 'Change order not found')
-    const filter = { createdBy: req.user._id, coNum: { $lte: co.coNum } }
-    if (co.estimateQuoteId) filter.estimateQuoteId = co.estimateQuoteId
-    else filter.parentQuoteRef = co.parentQuoteRef
-    priorCOs = await ChangeOrder.find(filter).sort({ coNum: 1 }).lean()
+    const loaded = await loadChangeOrderForDocument(req.params.coId, req.user._id)
+    if (loaded.error) {
+      return loaded.code === 404 ? notFound(res, loaded.error) : badRequest(res, loaded.error)
+    }
+    co = loaded.co
+    priorCOs = loaded.priorCOs
+    baseOrigVal = loaded.baseOrigVal
   } else {
     co = req.body.co || req.body
     priorCOs = req.body.priorCOs || []
+    baseOrigVal =
+      req.body.baseOrigVal != null
+        ? req.body.baseOrigVal
+        : priorCOs.length
+          ? priorCOs[0].origVal
+          : co.origVal
   }
 
-  const baseOrigVal =
-    req.body.baseOrigVal != null
-      ? req.body.baseOrigVal
-      : priorCOs.length
-        ? priorCOs[0].origVal
-        : co.origVal
-
-  const html = generateChangeOrderHtml(co, {
-    company: req.body.company || co.company || 'SM',
+  const html = renderChangeOrderDocument(co, {
     priorCOs,
     baseOrigVal,
+    company: req.body.company || co.company || 'SM',
   })
 
   if (req.body.format === 'html') {
@@ -231,6 +285,7 @@ exports.generateChangeOrderPdf = asyncHandler(async (req, res) => {
       mimeType: 'application/pdf',
       fileBase64: pdf.toString('base64'),
       sizeBytes: pdf.length,
+      html,
     })
   } catch (err) {
     return badRequest(res, `PDF generation failed: ${err.message}`)
