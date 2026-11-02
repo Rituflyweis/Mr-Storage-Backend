@@ -33,6 +33,10 @@ const {
 } = require('../../services/quoting/quoteDocumentGenerator')
 const { rescalePaymentsForGrand } = require('../../services/quoting/changeOrderApply')
 const { saveEstimateQuoteWithRetry } = require('../../utils/saveEstimateQuoteWithRetry')
+const {
+  debounceCoalescedEstimateWrite,
+  estimateWriteCoalesceKey,
+} = require('../../utils/estimateUpdateCoalesce')
 
 const roundMoney2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -1991,12 +1995,22 @@ exports.getEstimateQuote = asyncHandler(async (req, res) => {
   return notFound(res, 'Estimate not found')
 })
 
-exports.updateEstimateQuote = asyncHandler(async (req, res) => {
+const updateEstimateQuoteCore = async (req) => {
   let estimate = await EstimateQuote.findById(req.params.estimateId)
-  if (!estimate) return notFound(res, 'Estimate not found')
+  if (!estimate) {
+    return { type: 'error', status: 404, message: 'Estimate not found' }
+  }
   const access = assertEstimateAccess(estimate, req.user)
-  if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
-  if (estimate.status !== 'draft') return badRequest(res, 'Only draft estimates can be edited')
+  if (access.error) {
+    return {
+      type: 'error',
+      status: access.code === 404 ? 404 : 403,
+      message: access.error,
+    }
+  }
+  if (estimate.status !== 'draft') {
+    return { type: 'error', status: 400, message: 'Only draft estimates can be edited' }
+  }
 
   const options = normalizeQuoteOptions({ ...estimate.toObject(), ...req.body })
   // Merge saved override into normalize so top-level materialSellOverride alone still applies.
@@ -2173,29 +2187,45 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
       ? quotationSync.quotation.toObject()
       : quotationSync.quotation
     : null
-  return success(res, {
-    estimate: {
-      ...withEstimateTotals(estimate.toObject()),
-      conversion: buildEstimateConversionMeta(linkedQuotation),
+  return {
+    type: 'ok',
+    data: {
+      estimate: {
+        ...withEstimateTotals(estimate.toObject()),
+        conversion: buildEstimateConversionMeta(linkedQuotation),
+      },
+      quotationSync: {
+        synced: Boolean(quotationSync.synced),
+        skippedReason: quotationSync.skippedReason || null,
+        quotationStatus: linkedQuotation?.status || null,
+        approvalStatus: quotationSync.approvalStatus || linkedQuotation?.approval?.status || null,
+        workflowStatus: quotationSync.workflowStatus || null,
+        versionNumber: linkedQuotation?.versionNumber || null,
+        reopenedFromSent: Boolean(quotationSync.reopenedFromSent),
+        requiresSubmitForApproval: Boolean(quotationSync.requiresSubmitForApproval),
+        quotationId: linkedQuotation?._id || null,
+      },
+      paymentScheduleSync: paymentScheduleSync
+        ? {
+            synced: Boolean(paymentScheduleSync.synced),
+            skippedReason: paymentScheduleSync.synced ? null : paymentScheduleSync.reason,
+          }
+        : null,
     },
-    quotationSync: {
-      synced: Boolean(quotationSync.synced),
-      skippedReason: quotationSync.skippedReason || null,
-      quotationStatus: linkedQuotation?.status || null,
-      approvalStatus: quotationSync.approvalStatus || linkedQuotation?.approval?.status || null,
-      workflowStatus: quotationSync.workflowStatus || null,
-      versionNumber: linkedQuotation?.versionNumber || null,
-      reopenedFromSent: Boolean(quotationSync.reopenedFromSent),
-      requiresSubmitForApproval: Boolean(quotationSync.requiresSubmitForApproval),
-      quotationId: linkedQuotation?._id || null,
-    },
-    paymentScheduleSync: paymentScheduleSync
-      ? {
-          synced: Boolean(paymentScheduleSync.synced),
-          skippedReason: paymentScheduleSync.synced ? null : paymentScheduleSync.reason,
-        }
-      : null,
-  })
+  }
+}
+
+exports.updateEstimateQuote = asyncHandler(async (req, res) => {
+  const coalesceKey = estimateWriteCoalesceKey(req.user._id, req.params.estimateId)
+  const result = await debounceCoalescedEstimateWrite(coalesceKey, () =>
+    updateEstimateQuoteCore(req),
+  )
+  if (result.type === 'error') {
+    if (result.status === 404) return notFound(res, result.message)
+    if (result.status === 403) return forbidden(res, result.message)
+    return badRequest(res, result.message)
+  }
+  return success(res, result.data)
 })
 
 exports.deleteEstimateQuote = asyncHandler(async (req, res) => {
