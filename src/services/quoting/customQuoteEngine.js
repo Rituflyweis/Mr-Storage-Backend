@@ -8,6 +8,26 @@ const num = (v, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+/** Pro-rate sell price across cost buckets so pricing lines sum to total sell. */
+const allocateSellBreakdown = (mat, freight, labor, sell) => {
+  const totalCost = mat + freight + labor;
+  const sellR = Math.round(sell);
+  if (totalCost <= 0 || sellR <= 0) {
+    return { matSell: 0, freightSell: 0, laborSell: 0 };
+  }
+  if (Math.abs(sellR - Math.round(totalCost)) < 1) {
+    return {
+      matSell: Math.round(mat),
+      freightSell: Math.round(freight),
+      laborSell: Math.round(labor),
+    };
+  }
+  const matSell = Math.round((mat / totalCost) * sellR);
+  const freightSell = Math.round((freight / totalCost) * sellR);
+  const laborSell = sellR - matSell - freightSell;
+  return { matSell, freightSell, laborSell };
+};
+
 /**
  * @param {object} input
  * @param {number} input.matCost   Material cost
@@ -28,6 +48,8 @@ const computeCustomQuote = (input = {}) => {
   const sell = sellOverride || totalCost / (1 - mPct / 100);
   const profit = sell - totalCost;
   const profPct = sell > 0 ? Number(((profit / sell) * 100).toFixed(1)) : 0;
+  const sellR = Math.round(sell);
+  const breakdown = allocateSellBreakdown(mat, freight, labor, sellR);
 
   return {
     matCost: mat,
@@ -36,10 +58,13 @@ const computeCustomQuote = (input = {}) => {
     marginPct: mPct,
     sellOverride,
     totalCost: Math.round(totalCost),
-    sell: Math.round(sell),
+    sell: sellR,
     profit: Math.round(profit),
     profPct,
+    matSell: breakdown.matSell,
+    freightSell: breakdown.freightSell,
+    laborSell: breakdown.laborSell,
   };
 };
 
-module.exports = { computeCustomQuote };
+module.exports = { computeCustomQuote, allocateSellBreakdown };

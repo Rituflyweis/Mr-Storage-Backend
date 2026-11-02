@@ -46,6 +46,19 @@ const sumDoors = (doors = []) => {
   return { rows, doorCogs, doorSell };
 };
 
+/**
+ * Storage COG "Options & Add-ons" (storageData.extras) and estimate pembAddOns must not
+ * both count when the FE mirrors the same lines onto both fields.
+ */
+const resolveStoragePembAddOnSell = (extrasSell, pembSell) => {
+  const extras = Math.round(Number(extrasSell) || 0);
+  const pemb = Math.round(Number(pembSell) || 0);
+  if (pemb <= 0) return 0;
+  if (extras <= 0) return pemb;
+  if (Math.abs(extras - pemb) <= 1) return 0;
+  return pemb;
+};
+
 const sumExtras = (extras = []) => {
   let extrasCogs = 0;
   let extrasSell = 0;
@@ -100,6 +113,16 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
     options.pembAddOns || storageData.pembAddOns || [],
   );
   const pembAddOnTotals = sumPembAddOnTotals(pembAddOns);
+  const pembAddOnSellApplied = resolveStoragePembAddOnSell(
+    ext.extrasSell,
+    pembAddOnTotals.sell,
+  );
+  const addOnProfitApplied =
+    pembAddOnTotals.sell > 0
+      ? Math.round(
+          (pembAddOnTotals.profit / pembAddOnTotals.sell) * pembAddOnSellApplied,
+        )
+      : 0;
 
   const tax = computeStorageSalesTax(
     {
@@ -119,7 +142,7 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
       erectSell +
       (concrete.include ? concrete.appliedSell : 0) +
       (insulation.include ? insulation.appliedSell : 0) +
-      pembAddOnTotals.sell +
+      pembAddOnSellApplied +
       tax.amount,
   );
 
@@ -129,8 +152,6 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
   const concProfit = concrete.include ? concrete.profit : 0;
   const insulProfit = insulation.include ? insulation.profit : 0;
   const extrasProfit = ext.extrasSell - ext.extrasCogs;
-  const addOnProfit = pembAddOnTotals.profit;
-
   const totalProfit = Math.round(
     bldProfit +
       doorProfit +
@@ -138,7 +159,7 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
       concProfit +
       insulProfit +
       extrasProfit +
-      addOnProfit,
+      addOnProfitApplied,
   );
   const totalCogs = Math.round(
     bld.buildingCogs +
@@ -181,6 +202,7 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
     insulation,
     pembAddOns,
     pembAddOnTotals,
+    pembAddOnSellApplied,
     salesTax: tax,
     grandTotal,
     pricePerSf: sf > 0 ? (grandTotal / sf).toFixed(2) : "0",
@@ -258,8 +280,12 @@ const getStoragePricingSummaryLines = (sp = {}, options = {}) => {
   push("Doors & Hardware", sp.doorSell || 0, "doors");
   push("Erection / Installation", installSell, "install");
   push("Options & Add-ons", sp.extrasSell || 0, "extras");
-  const manualAddOnSell = Math.round(sp.pembAddOnTotals?.sell || 0);
-  if (manualAddOnSell) push("Manual add-on line items", manualAddOnSell, "pembAddOns");
+  const manualAddOnSell = Math.round(
+    sp.pembAddOnSellApplied ?? sp.pembAddOnTotals?.sell ?? 0,
+  );
+  if (manualAddOnSell > 0) {
+    push("Manual add-on line items", manualAddOnSell, "pembAddOns");
+  }
   push("Shipping & Freight", sp.shipping || 0, "shipping");
   push("Engineering Drawings", sp.drawings || 0, "drawings");
   if (concSell) {
@@ -296,4 +322,5 @@ const getStoragePricingSummaryLines = (sp = {}, options = {}) => {
 module.exports = {
   computeStoragePricing,
   getStoragePricingSummaryLines,
+  resolveStoragePembAddOnSell,
 };

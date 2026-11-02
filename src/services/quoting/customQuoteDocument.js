@@ -39,9 +39,9 @@ const generateCustomQuoteHtml = (cq = {}, opts = {}) => {
   const info = getCompanyInfo(opts.company || cq.company);
   const logoHtml = getLogoHtml(info);
   const c = computeCustomQuote(cq);
-  const mat = c.matCost;
-  const freight = c.freight;
-  const labor = c.laborCost;
+  const mat = c.matSell;
+  const freight = c.freightSell;
+  const labor = c.laborSell;
   const sell = c.sell;
   const profPct = c.profPct;
 
@@ -90,7 +90,7 @@ const generateCustomQuoteHtml = (cq = {}, opts = {}) => {
     </div>
     <div class="q-two-col">
       <div class="q-section">
-        <div class="q-section-title">Pricing Summary</div>
+        <div class="q-section-title">Pricing Summary (Sell values)</div>
         <div class="q-breakdown"><table>
           ${mat > 0 ? `<tr class="q-sub-row"><td>Material</td><td style="text-align:right">${money(mat)}</td></tr>` : ""}
           ${freight > 0 ? `<tr class="q-sub-row"><td>Freight</td><td style="text-align:right">${money(freight)}</td></tr>` : ""}

@@ -28,6 +28,8 @@ profit    = sell - totalCost
 profPct   = profit / sell * 100
 ```
 
+**Pricing Summary lines (document + UI):** use **sell** amounts (`matSell`, `freightSell`, `laborSell` from `POST …/preview` or saved doc fields) — they pro-rate `sell` across cost buckets so Material + Freight + Installation **equals** Total. Do **not** show raw `matCost` / `laborCost` in the customer-facing breakdown (those are internal costs).
+
 ---
 
 ## 2. Base URL & auth
