@@ -31,6 +31,7 @@ const {
   generateQuotePdf,
 } = require('../../services/quoting/quoteDocumentGenerator')
 const { rescalePaymentsForGrand } = require('../../services/quoting/changeOrderApply')
+const { saveEstimateQuoteWithRetry } = require('../../utils/saveEstimateQuoteWithRetry')
 
 const roundMoney2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -1060,7 +1061,7 @@ exports.createEstimateFromStorageCog = asyncHandler(async (req, res) => {
  * POST /estimates/:estimateId/compute
  */
 exports.computeEstimateById = asyncHandler(async (req, res) => {
-  const estimate = await EstimateQuote.findById(req.params.estimateId)
+  let estimate = await EstimateQuote.findById(req.params.estimateId)
   if (!estimate) return notFound(res, 'Estimate not found')
   const access = assertEstimateAccess(estimate, req.user)
   if (access.error) {
@@ -1194,7 +1195,7 @@ exports.computeEstimateById = asyncHandler(async (req, res) => {
     })
     applyStorageEstimateTotals(estimate, storagePricing)
     rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
-    await estimate.save()
+    estimate = await saveEstimateQuoteWithRetry(estimate)
     return success(res, {
       estimateId: estimate._id,
       estimate: withEstimateTotals(estimate.toObject()),
@@ -1213,7 +1214,7 @@ exports.computeEstimateById = asyncHandler(async (req, res) => {
   estimate.weightByCategory = payload.weightByCategory
   applyEstimateTotals(estimate, payload)
   rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
-  await estimate.save()
+  estimate = await saveEstimateQuoteWithRetry(estimate)
 
   return success(res, {
     estimateId: estimate._id,
@@ -1250,7 +1251,7 @@ exports.computeQuote = asyncHandler(async (req, res) => {
  * POST /estimates/:estimateId/compute-storage — recompute Storage draft from DB (+ optional body overrides).
  */
 exports.computeStorageEstimateById = asyncHandler(async (req, res) => {
-  const estimate = await EstimateQuote.findById(req.params.estimateId)
+  let estimate = await EstimateQuote.findById(req.params.estimateId)
   if (!estimate) return notFound(res, 'Estimate not found')
   const access = assertEstimateAccess(estimate, req.user)
   if (access.error) {
@@ -1268,7 +1269,7 @@ exports.computeStorageEstimateById = asyncHandler(async (req, res) => {
 
   if (estimate.jobType !== 'Storage' && estimate.storageData?.buildings?.length) {
     estimate.jobType = 'Storage'
-    await estimate.save()
+    estimate = await saveEstimateQuoteWithRetry(estimate)
   }
   if (estimate.jobType !== 'Storage') {
     return badRequest(res, 'Estimate is not a Storage quote. Use POST /:estimateId/compute for PEMB.')
