@@ -25,9 +25,6 @@ const COMPANIES = {
   },
   SBD: {
     key: 'SBD',
-    /** Public SVG on steelbuildingdepot.com — OK for PDF/HTML render; not for Gmail `<img>` (use wordmark in email body). */
-    defaultLogoUrl:
-      'https://www.steelbuildingdepot.com/_next/static/media/logo2.a736d8b0.svg',
     name: 'Steel Building Depot',
     shortName: 'Steel Building Depot',
     tagline: 'METAL BUILDINGS, ROOFING & COMPONENTS',
@@ -147,11 +144,7 @@ const getLogoHtml = (infoOrPayload = {}) => {
       .replace(/"/g, '&quot;')
       .replace(/</g, '&lt;')
     const safeSrc = String(src).replace(/"/g, '%22')
-    const tall = String(src).startsWith('data:image/png')
-    const style = tall
-      ? 'max-height:72px;height:auto;width:auto;display:block;max-width:320px;'
-      : 'height:40px;width:auto;display:block;max-width:240px;'
-    return `<img src="${safeSrc}" style="${style}" alt="${safeAlt}">`
+    return `<img src="${safeSrc}" style="height:40px;width:auto;display:block;max-width:240px;" alt="${safeAlt}">`
   }
   const left = info.logoLeft || info.name || 'STEEL BUILDING'
   const right = info.logoRight || ''
@@ -159,22 +152,6 @@ const getLogoHtml = (infoOrPayload = {}) => {
     return `<span class="q-logo-sm">${left}</span><span class="q-logo-mat">${right}</span>`
   }
   return `<div style="font-size:22px;font-weight:800;color:${info.accentColor || '#1e3a8a'};letter-spacing:-.5px;">${info.name || 'Storage Materials'}</div>`
-}
-
-const getDefaultBrandLogoUrl = (companyKey) => {
-  const key = resolveCompanyKey(companyKey) || companyKey
-  if (key === 'SBD') {
-    return (
-      process.env.INVOICE_SBD_LOGO_URL ||
-      process.env.INVOICE_LOGO_URL ||
-      COMPANIES.SBD.defaultLogoUrl ||
-      ''
-    )
-  }
-  if (key === 'SM') {
-    return process.env.INVOICE_SM_LOGO_URL || ''
-  }
-  return ''
 }
 
 const companySubline = (info, { short = false } = {}) => {
@@ -189,7 +166,6 @@ module.exports = {
   resolveCompanyKey,
   pickCompanyKeyFromPayload,
   getCompanyInfo,
-  getDefaultBrandLogoUrl,
   getLogoHtml,
   companySubline,
 }
