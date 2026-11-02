@@ -1930,11 +1930,15 @@ const resolveQuoteAmountWithoutMarkup = (quotation = {}, estimate = null) => {
 const buildQuoteInvoiceBreakdown = (quotation = {}, estimate = null) => {
   const picked = pickQuoteSalesTax(estimate || {});
   const tax = roundMoney(picked.tax);
-  const total = roundMoney(
-    toNumber(quotation.finalPrice, 0) ||
-      resolveEstimateGrandTotal(estimate || {}) ||
-      toNumber(quotation.basePrice, 0)
+  const estimateGrand = estimate
+    ? roundMoney(resolveEstimateGrandTotal(estimate))
+    : 0;
+  const quoteStoredTotal = roundMoney(
+    toNumber(quotation.finalPrice, 0) || toNumber(quotation.basePrice, 0),
   );
+  // Invoice + milestones must use the same contract grand as the approved estimate / quote PDF.
+  // quotation.finalPrice can lag after COG edits (shows COGS+small markup only).
+  const total = estimateGrand || quoteStoredTotal;
   const subtotal = roundMoney(Math.max(0, total - tax));
 
   let amountWithoutMarkup = roundMoney(resolveQuoteAmountWithoutMarkup(quotation, estimate));
@@ -1954,6 +1958,12 @@ const buildQuoteInvoiceBreakdown = (quotation = {}, estimate = null) => {
     taxRate: picked.taxRate,
     taxableBase: picked.taxableBase,
     taxNote: picked.taxNote,
+    estimateGrand,
+    quoteStoredTotal,
+    quotationTotalStale:
+      estimateGrand > 0 &&
+      quoteStoredTotal > 0 &&
+      Math.abs(estimateGrand - quoteStoredTotal) > 0.01,
   };
 };
 
@@ -2025,6 +2035,13 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
         Number(quoteMilestoneSuggested.totalAmount || 0),
     ) > 0.01;
 
+  const invoiceTotal = breakdown.total;
+  const scheduleTotal = Number(suggested.totalAmount || 0);
+  const paymentScheduleExceedsInvoiceTotal =
+    scheduleTotal > 0 &&
+    invoiceTotal > 0 &&
+    scheduleTotal - invoiceTotal > 0.01;
+
   return success(res, {
     leadId: quotation.leadId,
     quotationId: quotation._id,
@@ -2052,8 +2069,12 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     paymentScheduleTotal: suggested.totalAmount || 0,
     paymentScheduleSeededFromQuote,
     paymentScheduleOutOfSync,
+    paymentScheduleExceedsInvoiceTotal,
     quoteMilestoneStages: quoteMilestoneSuggested.stages || [],
     quoteMilestoneTotal: quoteMilestoneSuggested.totalAmount || 0,
+    quotationTotalStale: breakdown.quotationTotalStale || false,
+    estimateGrandTotal: breakdown.estimateGrand || breakdown.total,
+    quoteStoredTotal: breakdown.quoteStoredTotal || 0,
   });
 });
 
