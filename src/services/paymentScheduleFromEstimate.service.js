@@ -132,7 +132,10 @@ const ensurePaymentScheduleFromEstimate = async ({
   if (!lead?._id || !lead.customerId) return { schedule: null, seeded: false, reason: 'no_lead' }
 
   const existing = await PaymentSchedule.findOne({ leadId: lead._id })
-  if (existing && !force) {
+  const existingHasStages =
+    Array.isArray(existing?.stages) && existing.stages.length > 0
+
+  if (existing && !force && existingHasStages) {
     return { schedule: existing, seeded: false, reason: 'already_exists' }
   }
   if (existing && force) {
@@ -157,22 +160,36 @@ const ensurePaymentScheduleFromEstimate = async ({
     return { schedule: existing || null, seeded: false, reason: 'empty_stages' }
   }
 
-  if (existing && force) {
+  if (existing && (force || !existingHasStages)) {
     existing.stages = stages
     existing.totalAmount = totalAmount
     await existing.save()
-    return { schedule: existing, seeded: true, reason: 'updated', quotationId: quotation._id }
+    return {
+      schedule: existing,
+      seeded: true,
+      reason: existingHasStages ? 'updated' : 'filled_empty',
+      quotationId: quotation._id,
+    }
   }
 
-  const schedule = await PaymentSchedule.create({
-    leadId: lead._id,
-    customerId: lead.customerId,
-    stages,
-    totalAmount,
-    createdBy: userId,
-  })
-
-  return { schedule, seeded: true, reason: 'created', quotationId: quotation._id }
+  try {
+    const schedule = await PaymentSchedule.create({
+      leadId: lead._id,
+      customerId: lead.customerId,
+      stages,
+      totalAmount,
+      createdBy: userId,
+    })
+    return { schedule, seeded: true, reason: 'created', quotationId: quotation._id }
+  } catch (err) {
+    if (err?.code === 11000) {
+      const dup = await PaymentSchedule.findOne({ leadId: lead._id })
+      if (dup) {
+        return { schedule: dup, seeded: false, reason: 'already_exists' }
+      }
+    }
+    throw err
+  }
 }
 
 /** Suggested stages for invoice form prefill (no DB write). */
