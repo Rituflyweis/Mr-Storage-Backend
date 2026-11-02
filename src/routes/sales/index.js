@@ -23,7 +23,7 @@ const leadCtrl = require('../../controllers/sales/lead.controller')
 const followupCtrl = require('../../controllers/sales/followup.controller')
 const quotationCtrl = require('../../controllers/common/quotation.controller')
 const validate = require('../../middleware/validate')
-const { body, query } = require('express-validator')
+const { body, query, param } = require('express-validator')
 const {
   outboundSendBodyValidators,
   markSentBodyValidators,
@@ -39,9 +39,10 @@ router.get(
   followupCtrl.getMyQuotations
 )
 router.post('/quotations', [body('leadId').notEmpty()], validate, quotationCtrl.createQuotation)
-router.get('/quotations/:quotationId', quotationCtrl.getQuotation)
-router.put('/quotations/:quotationId', quotationCtrl.updateQuotation)
-router.delete('/quotations/:quotationId', quotationCtrl.deleteQuotation)
+const quotationIdParam = [param('quotationId').isMongoId()]
+router.get('/quotations/:quotationId', quotationIdParam, validate, quotationCtrl.getQuotation)
+router.put('/quotations/:quotationId', quotationIdParam, validate, quotationCtrl.updateQuotation)
+router.delete('/quotations/:quotationId', quotationIdParam, validate, quotationCtrl.deleteQuotation)
 router.post(
   '/quotations/:quotationId/send',
   [

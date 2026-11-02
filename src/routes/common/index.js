@@ -70,16 +70,24 @@ router.post(
   invoiceCtrl.createInvoice,
 );
 
-// Resource routes
+// Resource routes — non-ObjectId segments (stats, approval, …) fall through to quotation.routes.
+const quotationIdLooksLikeObjectId = (req) =>
+  /^[0-9a-fA-F]{24}$/.test(String(req.params.quotationId || ""));
 router.get(
   "/quotations/:quotationId/pdf",
   ...quotationReadGuard,
-  quotationCtrl.downloadQuotationPdf,
+  (req, res, next) => {
+    if (!quotationIdLooksLikeObjectId(req)) return next("route");
+    return quotationCtrl.downloadQuotationPdf(req, res, next);
+  },
 );
 router.get(
   "/quotations/:quotationId",
   ...quotationReadGuard,
-  quotationCtrl.getQuotation,
+  (req, res, next) => {
+    if (!quotationIdLooksLikeObjectId(req)) return next("route");
+    return quotationCtrl.getQuotation(req, res, next);
+  },
 );
 router.use("/quotations", ...guard, require("./quotation.routes"));
 // Account panel invoice forms — defaults must be readable by `account` (not only admin/sales).
