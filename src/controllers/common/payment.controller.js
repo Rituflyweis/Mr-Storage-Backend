@@ -6,6 +6,7 @@ const { success, created, notFound, badRequest, forbidden } = require('../../uti
 const asyncHandler = require('../../utils/asyncHandler')
 const {
   ensurePaymentScheduleFromEstimate,
+  suggestPaymentStagesFromEstimate,
 } = require('../../services/paymentScheduleFromEstimate.service')
 
 const checkLeadAccess = async (leadId, user) => {
@@ -156,10 +157,53 @@ exports.getScheduleByLead = asyncHandler(async (req, res) => {
           : seeded.schedule
       seededFromQuote = true
     }
+  } else if (schedule?.stages?.length) {
+    const quoteSuggested = await suggestPaymentStagesFromEstimate(
+      leadId,
+      req.query.quotationId || null,
+    )
+    const storedTotal = Number(schedule.totalAmount || stageAmountSum(schedule.stages))
+    const quoteTotal = Number(quoteSuggested.totalAmount || 0)
+    const outOfSync =
+      quoteSuggested.stages?.length > 0 &&
+      quoteTotal > 0 &&
+      Math.abs(storedTotal - quoteTotal) > 0.01
+    if (outOfSync) {
+      const seeded = await ensurePaymentScheduleFromEstimate({
+        lead,
+        userId: req.user._id,
+        quotationId: quoteSuggested.quotationId || req.query.quotationId || null,
+        force: true,
+      })
+      if (seeded.seeded && seeded.schedule) {
+        schedule =
+          typeof seeded.schedule.toObject === 'function'
+            ? seeded.schedule.toObject()
+            : seeded.schedule
+        seededFromQuote = true
+      }
+    }
   }
+  const quoteMilestoneSuggested = await suggestPaymentStagesFromEstimate(
+    leadId,
+    req.query.quotationId || null,
+  )
+  const scheduleTotal = schedule
+    ? Number(schedule.totalAmount || stageAmountSum(schedule.stages || []))
+    : 0
+  const quoteMilestoneTotal = Number(quoteMilestoneSuggested.totalAmount || 0)
+  const paymentScheduleOutOfSync =
+    Boolean(schedule?.stages?.length) &&
+    quoteMilestoneSuggested.stages?.length > 0 &&
+    quoteMilestoneTotal > 0 &&
+    Math.abs(scheduleTotal - quoteMilestoneTotal) > 0.01
+
   return success(res, {
     schedule: schedule || null,
     seededFromQuote,
+    paymentScheduleOutOfSync,
+    quoteMilestoneStages: quoteMilestoneSuggested.stages || [],
+    quoteMilestoneTotal,
   })
 })
 
