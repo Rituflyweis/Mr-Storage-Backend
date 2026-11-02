@@ -4,6 +4,7 @@
  */
 
 const ChangeOrder = require('../../models/ChangeOrder')
+const { saveEstimateQuoteWithRetry } = require('../../utils/saveEstimateQuoteWithRetry')
 const {
   computeDeposit,
   computeMilestones,
@@ -95,7 +96,7 @@ const syncEstimateFromChangeOrders = async (estimate) => {
       rescalePaymentsForGrand(estimate, restore)
     }
     estimate.originalContractValue = null
-    await estimate.save()
+    await saveEstimateQuoteWithRetry(estimate)
     return estimate
   }
 
@@ -135,7 +136,7 @@ const syncEstimateFromChangeOrders = async (estimate) => {
   }
 
   rescalePaymentsForGrand(estimate, revised)
-  await estimate.save()
+  await saveEstimateQuoteWithRetry(estimate)
   return estimate
 }
 

@@ -959,7 +959,7 @@ exports.createEstimateFromShipper = asyncHandler(async (req, res) => {
     fullQuote,
   })
   rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
-  await estimate.save()
+  await saveEstimateQuoteWithRetry(estimate)
 
   const estimateObj = withEstimateTotals(estimate.toObject())
   return created(
@@ -1039,7 +1039,7 @@ exports.createEstimateFromStorageCog = asyncHandler(async (req, res) => {
 
   applyStorageEstimateTotals(estimate, storagePricing)
   rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
-  await estimate.save()
+  await saveEstimateQuoteWithRetry(estimate)
 
   return created(
     res,
@@ -1931,7 +1931,7 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
     applyEstimateTotals(estimate, { pricing: pricingForSave, fullQuote })
   }
   rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
-  await estimate.save()
+  await saveEstimateQuoteWithRetry(estimate)
 
   return created(res, { estimate: withEstimateTotals(estimate.toObject()) })
 })
@@ -1987,7 +1987,7 @@ exports.getEstimateQuote = asyncHandler(async (req, res) => {
 })
 
 exports.updateEstimateQuote = asyncHandler(async (req, res) => {
-  const estimate = await EstimateQuote.findById(req.params.estimateId)
+  let estimate = await EstimateQuote.findById(req.params.estimateId)
   if (!estimate) return notFound(res, 'Estimate not found')
   const access = assertEstimateAccess(estimate, req.user)
   if (access.error) return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
@@ -2136,7 +2136,7 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     rescalePaymentsForGrand(estimate, resolveEstimateGrandTotal(estimate))
   }
 
-  await estimate.save()
+  estimate = await saveEstimateQuoteWithRetry(estimate)
   const quotationSync = await syncLinkedQuotationFromUpdatedEstimate({
     estimate,
     user: req.user,

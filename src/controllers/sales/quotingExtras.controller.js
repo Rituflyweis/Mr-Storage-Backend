@@ -18,6 +18,7 @@ const {
   syncLinkedQuotationFromUpdatedEstimate,
 } = require('../common/quotation.controller')
 const { resolveEstimateGrandTotal } = require('../../utils/quotationDocumentPayload')
+const { saveEstimateQuoteWithRetry } = require('../../utils/saveEstimateQuoteWithRetry')
 
 /** Prefer Storage grand over stale PEMB fullQuote when present. */
 const grandOf = (est = {}) => resolveEstimateGrandTotal(est) || 0
@@ -164,7 +165,7 @@ exports.updateEstimateDeposit = asyncHandler(async (req, res) => {
   est.milestoneSchedule = m.rows
   if (req.body.note) est.milestoneNote = req.body.note
 
-  await est.save()
+  await saveEstimateQuoteWithRetry(est)
   const quotationSync = await syncLinkedQuotationFromUpdatedEstimate({
     estimate: est,
     user: req.user,
@@ -199,7 +200,7 @@ exports.updateEstimateMilestones = asyncHandler(async (req, res) => {
   const m = computeMilestones({ grand, rows: req.body.rows || req.body.milestones || [] })
   est.milestoneSchedule = m.rows
   est.milestoneNote = req.body.note || ''
-  await est.save()
+  await saveEstimateQuoteWithRetry(est)
   const quotationSync = await syncLinkedQuotationFromUpdatedEstimate({
     estimate: est,
     user: req.user,
@@ -230,7 +231,7 @@ exports.updateEstimateMultiStory = asyncHandler(async (req, res) => {
     staircaseUnitCost: s.unitCost,
     staircaseSell: s.staircaseSell,
   }
-  await est.save()
+  await saveEstimateQuoteWithRetry(est)
   return success(res, est.multiStory, 'Multi-story settings saved')
 })
 

@@ -21,6 +21,16 @@ const errorHandler = (err, req, res, next) => {
     return res.status(400).json({ success: false, message: `Invalid ${err.path}: ${err.value}` })
   }
 
+  // Optimistic concurrency (parallel estimate saves)
+  if (err.name === 'VersionError') {
+    return res.status(409).json({
+      success: false,
+      message:
+        'Estimate was updated by another request. Refresh and retry (compute/preview).',
+      code: 'ESTIMATE_VERSION_CONFLICT',
+    })
+  }
+
   const statusCode = err.statusCode || 500
   const message = NODE_ENV === 'production' && statusCode === 500
     ? 'Internal server error'
