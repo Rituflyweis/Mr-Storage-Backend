@@ -26,7 +26,11 @@ const {
   getLogoHtml,
   getDefaultBrandLogoUrl,
 } = require("../quoting/companyInfo");
-const { getLocalInvoiceLogoDataUri } = require("../../utils/invoiceBrandAssets");
+const {
+  INVOICE_BRAND_LOGO_CID,
+  getLocalInvoiceLogoDataUri,
+  readLocalInvoiceLogoBuffer,
+} = require("../../utils/invoiceBrandAssets");
 const {
   formatExceptionsForEmailHtml,
   formatExceptionsForEmailText,
@@ -91,7 +95,15 @@ const normalizeAttachmentsForSendGrid = (attachments = []) =>
     if (Buffer.isBuffer(normalized.content)) {
       normalized.content = normalized.content.toString("base64");
     }
-    if (!normalized.disposition) {
+    const cid = normalized.content_id || normalized.cid;
+    if (cid) {
+      normalized.content_id = cid;
+      normalized.disposition = normalized.disposition || "inline";
+      if (normalized.contentType && !normalized.type) {
+        normalized.type = normalized.contentType;
+      }
+      delete normalized.cid;
+    } else if (!normalized.disposition) {
       normalized.disposition = "attachment";
     }
     return normalized;
@@ -222,7 +234,20 @@ const inferInvoiceBrandPayload = (invoiceLike = {}, company = {}, brandContext =
     .join(" ")
     .toLowerCase();
   if (!payload.companyBrand) {
-    if (hay.includes("storage materials") || hay.includes("storagematerials")) {
+    const billing = String(
+      invoiceLike?.billingAddress?.companyName || "",
+    ).toLowerCase();
+    if (
+      billing.includes("steel building") ||
+      billing.includes("steelbuilding")
+    ) {
+      payload.companyBrand = "SBD";
+    } else if (
+      billing.includes("storage materials") ||
+      billing.includes("storagematerials")
+    ) {
+      payload.companyBrand = "SM";
+    } else if (hay.includes("storage materials") || hay.includes("storagematerials")) {
       payload.companyBrand = "SM";
     } else if (
       hay.includes("steel building depot") ||
@@ -244,16 +269,34 @@ const inferInvoiceBrandPayload = (invoiceLike = {}, company = {}, brandContext =
 const buildInvoiceLogoBlock = (
   invoiceLike = null,
   brandContext = {},
-  { useTrustedLogo = false } = {},
+  { useTrustedLogo = false, forPdf = false } = {},
 ) => {
   const company = getInvoiceCompany();
   const brandPayload = inferInvoiceBrandPayload(invoiceLike, company, brandContext);
-  const keyHint = getCompanyInfo(brandPayload).key;
-  const localLogo = getLocalInvoiceLogoDataUri(keyHint);
+  const info = getCompanyInfo(brandPayload);
+  const keyHint = info.key;
+  const logoBuffer = readLocalInvoiceLogoBuffer(keyHint);
 
-  if (localLogo) {
-    brandPayload.companyLogoUrl = localLogo;
-  } else if (useTrustedLogo) {
+  if (logoBuffer && !forPdf) {
+    const safeAlt = String(info.name || "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;");
+    return {
+      html: `<img src="cid:${INVOICE_BRAND_LOGO_CID}" class="logo" style="max-height:72px;height:auto;width:auto;display:block;max-width:320px;" alt="${safeAlt}">`,
+      inlineAttachment: {
+        filename: "invoice-brand-logo.png",
+        content: logoBuffer,
+        contentType: "image/png",
+        cid: INVOICE_BRAND_LOGO_CID,
+        disposition: "inline",
+      },
+    };
+  }
+
+  if (logoBuffer && forPdf) {
+    brandPayload.companyLogoUrl = getLocalInvoiceLogoDataUri(keyHint);
+  } else if (useTrustedLogo && forPdf) {
     const candidate =
       brandPayload.companyLogoUrl ||
       getDefaultBrandLogoUrl(keyHint) ||
@@ -271,12 +314,11 @@ const buildInvoiceLogoBlock = (
     delete brandPayload.logoSrc;
   }
 
-  const info = getCompanyInfo(brandPayload);
-  const html = getLogoHtml(info);
-  return html.replace(
+  const html = getLogoHtml(getCompanyInfo(brandPayload)).replace(
     'style="height:40px',
     'class="logo" style="max-height:58px;height:40px',
   );
+  return { html, inlineAttachment: null };
 };
 
 const resolveInvoiceBrandFromQuotation = async (invoiceLike = {}) => {
@@ -323,13 +365,14 @@ const buildInvoiceCompanyTemplateFields = (
     ? `<div style="margin-top:12px;font-size:12px;color:#444"><strong>Bank details</strong><br />${formatMultilineAddressHtml(bankLines)}</div>`
     : "";
 
-  const logoBlock = buildInvoiceLogoBlock(invoiceLike, brandContext, logoOptions);
+  const logoResult = buildInvoiceLogoBlock(invoiceLike, brandContext, logoOptions);
 
   const companyName =
     invoiceLike?.billingAddress?.companyName?.trim() || company.name;
 
   return {
-    LOGO_BLOCK: logoBlock,
+    LOGO_BLOCK: logoResult.html,
+    inlineLogoAttachment: logoResult.inlineAttachment,
     COMPANY_NAME: escapeHtml(companyName),
     COMPANY_DETAILS_HTML: detailLines.join("<br />") + bankHtml,
     BANK_DETAILS_HTML: bankHtml,
@@ -736,11 +779,24 @@ const sendInvoice = async ({
     PAYMENT_SCHEDULE_SECTION: paymentScheduleSection,
   };
 
-  const companyFields = buildInvoiceCompanyTemplateFields(inv, brandContext, {
-    useTrustedLogo: true,
+  const companyFieldsEmail = buildInvoiceCompanyTemplateFields(inv, brandContext, {
+    useTrustedLogo: false,
+    forPdf: false,
   });
+  const { inlineLogoAttachment, ...companyTemplateEmail } = companyFieldsEmail;
   const html = fillTemplate(template, {
-    ...companyFields,
+    ...companyTemplateEmail,
+    ...invoiceTemplateFields,
+  });
+
+  const companyFieldsPdf = buildInvoiceCompanyTemplateFields(inv, brandContext, {
+    useTrustedLogo: true,
+    forPdf: true,
+  });
+  const { inlineLogoAttachment: _pdfInline, ...companyTemplatePdf } =
+    companyFieldsPdf;
+  const htmlForPdf = fillTemplate(template, {
+    ...companyTemplatePdf,
     ...invoiceTemplateFields,
   });
 
@@ -754,7 +810,7 @@ const sendInvoice = async ({
   let pdfBuffer = null;
   let pdfError = null;
   try {
-    pdfBuffer = await generateInvoicePdf(html, pdfDocument);
+    pdfBuffer = await generateInvoicePdf(htmlForPdf, pdfDocument);
   } catch (err) {
     pdfError = err.message;
     console.warn(
@@ -770,14 +826,16 @@ const sendInvoice = async ({
     html: prependCustomMessage(html, message),
   }, cc);
 
+  mailOptions.attachments = [];
+  if (inlineLogoAttachment) {
+    mailOptions.attachments.push(inlineLogoAttachment);
+  }
   if (pdfBuffer) {
-    mailOptions.attachments = [
-      {
-        filename: invoiceFilename,
-        content: pdfBuffer,
-        contentType: "application/pdf",
-      },
-    ];
+    mailOptions.attachments.push({
+      filename: invoiceFilename,
+      content: pdfBuffer,
+      contentType: "application/pdf",
+    });
   }
 
   await transporter.sendMail(mailOptions);
@@ -1613,8 +1671,13 @@ const generateInvoicePdfBuffer = async (invoice, customer, paymentSchedule = nul
   const template = loadTemplate('invoice')
   const hasDeposit = inv.depositAmount != null && Number(inv.depositAmount) !== 0
   const paymentScheduleSection = buildPaymentScheduleSection(paymentSchedule, inv)
+  const { inlineLogoAttachment: _omit, ...companyFieldsPdf } =
+    buildInvoiceCompanyTemplateFields(inv, brandContext, {
+      useTrustedLogo: true,
+      forPdf: true,
+    });
   const html = fillTemplate(template, {
-    ...buildInvoiceCompanyTemplateFields(inv, brandContext),
+    ...companyFieldsPdf,
     CUSTOMER_NAME: escapeHtml(customerName),
     CUSTOMER_ADDRESS_BLOCK: buildCustomerAddressBlock(recipientHtml),
     INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || '—'),
