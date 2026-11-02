@@ -147,7 +147,11 @@ const getLogoHtml = (infoOrPayload = {}) => {
       .replace(/"/g, '&quot;')
       .replace(/</g, '&lt;')
     const safeSrc = String(src).replace(/"/g, '%22')
-    return `<img src="${safeSrc}" style="height:40px;width:auto;display:block;max-width:240px;" alt="${safeAlt}">`
+    const tall = String(src).startsWith('data:image/png')
+    const style = tall
+      ? 'max-height:72px;height:auto;width:auto;display:block;max-width:320px;'
+      : 'height:40px;width:auto;display:block;max-width:240px;'
+    return `<img src="${safeSrc}" style="${style}" alt="${safeAlt}">`
   }
   const left = info.logoLeft || info.name || 'STEEL BUILDING'
   const right = info.logoRight || ''

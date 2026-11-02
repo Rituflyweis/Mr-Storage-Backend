@@ -26,6 +26,7 @@ const {
   getLogoHtml,
   getDefaultBrandLogoUrl,
 } = require("../quoting/companyInfo");
+const { getLocalInvoiceLogoDataUri } = require("../../utils/invoiceBrandAssets");
 const {
   formatExceptionsForEmailHtml,
   formatExceptionsForEmailText,
@@ -247,9 +248,12 @@ const buildInvoiceLogoBlock = (
 ) => {
   const company = getInvoiceCompany();
   const brandPayload = inferInvoiceBrandPayload(invoiceLike, company, brandContext);
+  const keyHint = getCompanyInfo(brandPayload).key;
+  const localLogo = getLocalInvoiceLogoDataUri(keyHint);
 
-  if (useTrustedLogo) {
-    const keyHint = getCompanyInfo(brandPayload).key;
+  if (localLogo) {
+    brandPayload.companyLogoUrl = localLogo;
+  } else if (useTrustedLogo) {
     const candidate =
       brandPayload.companyLogoUrl ||
       getDefaultBrandLogoUrl(keyHint) ||
@@ -262,7 +266,6 @@ const buildInvoiceLogoBlock = (
       delete brandPayload.logoSrc;
     }
   } else {
-    // Gmail/Outlook: SVG and private upload URLs break — CSS wordmark only in email body.
     delete brandPayload.companyLogoUrl;
     delete brandPayload.logoUrl;
     delete brandPayload.logoSrc;
@@ -733,17 +736,11 @@ const sendInvoice = async ({
     PAYMENT_SCHEDULE_SECTION: paymentScheduleSection,
   };
 
-  const htmlEmail = fillTemplate(template, {
-    ...buildInvoiceCompanyTemplateFields(inv, brandContext, {
-      useTrustedLogo: false,
-    }),
-    ...invoiceTemplateFields,
+  const companyFields = buildInvoiceCompanyTemplateFields(inv, brandContext, {
+    useTrustedLogo: true,
   });
-
-  const htmlPdf = fillTemplate(template, {
-    ...buildInvoiceCompanyTemplateFields(inv, brandContext, {
-      useTrustedLogo: true,
-    }),
+  const html = fillTemplate(template, {
+    ...companyFields,
     ...invoiceTemplateFields,
   });
 
@@ -757,7 +754,7 @@ const sendInvoice = async ({
   let pdfBuffer = null;
   let pdfError = null;
   try {
-    pdfBuffer = await generateInvoicePdf(htmlPdf, pdfDocument);
+    pdfBuffer = await generateInvoicePdf(html, pdfDocument);
   } catch (err) {
     pdfError = err.message;
     console.warn(
@@ -770,7 +767,7 @@ const sendInvoice = async ({
     from: resolvedMailFrom,
     to: toEmail,
     subject: `Invoice ${inv.invoiceNumber || ""}`,
-    html: prependCustomMessage(htmlEmail, message),
+    html: prependCustomMessage(html, message),
   }, cc);
 
   if (pdfBuffer) {
