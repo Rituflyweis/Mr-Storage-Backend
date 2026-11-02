@@ -43,6 +43,8 @@ const loadEstimateForChangeOrder = async (estimateId) => {
       error:
         'Change orders are only allowed after the estimate is final (client contract issued). Edit the draft quote to change price instead.',
       code: 400,
+      estimateStatus: est.status,
+      estimateId: String(est._id),
     }
   }
   return { est }
@@ -93,7 +95,17 @@ exports.createChangeOrder = asyncHandler(async (req, res) => {
   if (estimateId) {
     const loaded = await loadEstimateForChangeOrder(estimateId)
     if (loaded.error) {
-      return loaded.code === 404 ? notFound(res, loaded.error) : badRequest(res, loaded.error)
+      if (loaded.code === 404) return notFound(res, loaded.error)
+      return badRequest(res, loaded.error, {
+        estimateStatus: loaded.estimateStatus || 'draft',
+        estimateId: loaded.estimateId || estimateId,
+        finalize: {
+          method: 'PUT',
+          path: `/api/sales/estimates/${loaded.estimateId || estimateId}`,
+          body: { status: 'final' },
+          or: `POST /api/sales/estimates/${loaded.estimateId || estimateId}/finalize`,
+        },
+      })
     }
     linkedEstimate = loaded.est
   }

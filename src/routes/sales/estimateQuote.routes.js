@@ -54,6 +54,7 @@ router.post('/', ctrl.createEstimateQuote)
 // Recompute from stored parsedCategories / storageData (small options body only).
 router.post('/:estimateId/compute', ctrl.computeEstimateById)
 router.post('/:estimateId/compute-storage', ctrl.computeStorageEstimateById)
+router.post('/:estimateId/finalize', ctrl.finalizeEstimateQuote)
 router.get('/:estimateId', ctrl.getEstimateQuote)
 router.put('/:estimateId', ctrl.updateEstimateQuote)
 router.delete('/:estimateId', ctrl.deleteEstimateQuote)

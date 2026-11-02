@@ -555,6 +555,10 @@ const applyStorageEstimateTotals = (estimate, storagePricing) => {
   if (!storagePricing) return
   estimate.storagePricingResult = storagePricing
   estimate.totalSell = Math.round(storagePricing.grandTotal ?? 0)
+  estimate.totalCOGS = Math.round(storagePricing.totalCogs ?? 0)
+  if (storagePricing.totalSqft != null) {
+    estimate.squareFootage = Math.round(Number(storagePricing.totalSqft) || 0)
+  }
   estimate.pricePerSf = storagePricing.pricePerSf ? Number(storagePricing.pricePerSf) : null
   estimate.profit = storagePricing.profit ?? 0
   estimate.marginPercent = Number(storagePricing.marginPercent) || 0
@@ -2226,6 +2230,33 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
     return badRequest(res, result.message)
   }
   return success(res, result.data)
+})
+
+/** Lock contract price — required before POST /change-orders with estimateId. */
+exports.finalizeEstimateQuote = asyncHandler(async (req, res) => {
+  const estimate = await EstimateQuote.findById(req.params.estimateId)
+  if (!estimate) return notFound(res, 'Estimate not found')
+  const access = assertEstimateAccess(estimate, req.user)
+  if (access.error) {
+    return access.code === 404 ? notFound(res, access.error) : forbidden(res, access.error)
+  }
+  if (estimate.status === 'final') {
+    return success(
+      res,
+      { estimate: withEstimateTotals(estimate.toObject()) },
+      'Estimate is already final',
+    )
+  }
+  if (estimate.status !== 'draft') {
+    return badRequest(res, 'Only draft estimates can be finalized')
+  }
+  estimate.status = 'final'
+  await saveEstimateQuoteWithRetry(estimate)
+  return success(
+    res,
+    { estimate: withEstimateTotals(estimate.toObject()) },
+    'Estimate finalized — change orders are now allowed',
+  )
 })
 
 exports.deleteEstimateQuote = asyncHandler(async (req, res) => {
