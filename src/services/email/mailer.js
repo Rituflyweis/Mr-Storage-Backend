@@ -24,6 +24,7 @@ const { generateInvoicePdf } = require("./generateInvoiceHelper");
 const {
   getCompanyInfo,
   getLogoHtml,
+  getDefaultBrandLogoUrl,
 } = require("../quoting/companyInfo");
 const {
   formatExceptionsForEmailHtml,
@@ -188,6 +189,26 @@ const isEmbeddableInvoiceLogoUrl = (url) => {
   return true;
 };
 
+const TRUSTED_INVOICE_LOGO_HOSTS = new Set([
+  "steelbuildingdepot.com",
+  "www.steelbuildingdepot.com",
+  "storagematerials.com",
+  "www.storagematerials.com",
+]);
+
+/** HTTPS logos on our public marketing sites (or data URI). Used for invoice PDF HTML only. */
+const isTrustedInvoiceLogoUrl = (url) => {
+  if (!isEmbeddableInvoiceLogoUrl(url)) return false;
+  const u = url.trim();
+  if (u.startsWith("data:image/")) return true;
+  try {
+    const host = new URL(u).hostname.toLowerCase();
+    return TRUSTED_INVOICE_LOGO_HOSTS.has(host);
+  } catch {
+    return false;
+  }
+};
+
 const inferInvoiceBrandPayload = (invoiceLike = {}, company = {}, brandContext = {}) => {
   const payload = { ...brandContext };
   const hay = [
@@ -219,14 +240,34 @@ const inferInvoiceBrandPayload = (invoiceLike = {}, company = {}, brandContext =
   return payload;
 };
 
-const buildInvoiceLogoBlock = (invoiceLike = null, brandContext = {}) => {
+const buildInvoiceLogoBlock = (
+  invoiceLike = null,
+  brandContext = {},
+  { useTrustedLogo = false } = {},
+) => {
   const company = getInvoiceCompany();
   const brandPayload = inferInvoiceBrandPayload(invoiceLike, company, brandContext);
-  // Invoice email + PDF HTML: never hotlink logos (Render uploads, INVOICE_LOGO_URL, FE URLs often 404 in Gmail).
-  // Use the same CSS wordmark as quote documents (STEEL BUILDING | DEPOT / STORAGE | MATERIALS).
-  delete brandPayload.companyLogoUrl;
-  delete brandPayload.logoUrl;
-  delete brandPayload.logoSrc;
+
+  if (useTrustedLogo) {
+    const keyHint = getCompanyInfo(brandPayload).key;
+    const candidate =
+      brandPayload.companyLogoUrl ||
+      getDefaultBrandLogoUrl(keyHint) ||
+      (isTrustedInvoiceLogoUrl(company.logoUrl) ? company.logoUrl : "");
+    if (isTrustedInvoiceLogoUrl(candidate)) {
+      brandPayload.companyLogoUrl = candidate;
+    } else {
+      delete brandPayload.companyLogoUrl;
+      delete brandPayload.logoUrl;
+      delete brandPayload.logoSrc;
+    }
+  } else {
+    // Gmail/Outlook: SVG and private upload URLs break — CSS wordmark only in email body.
+    delete brandPayload.companyLogoUrl;
+    delete brandPayload.logoUrl;
+    delete brandPayload.logoSrc;
+  }
+
   const info = getCompanyInfo(brandPayload);
   const html = getLogoHtml(info);
   return html.replace(
@@ -260,6 +301,7 @@ const resolveInvoiceBrandFromQuotation = async (invoiceLike = {}) => {
 const buildInvoiceCompanyTemplateFields = (
   invoiceLike = null,
   brandContext = {},
+  logoOptions = {},
 ) => {
   const company = getInvoiceCompany();
   const billingLines =
@@ -278,7 +320,7 @@ const buildInvoiceCompanyTemplateFields = (
     ? `<div style="margin-top:12px;font-size:12px;color:#444"><strong>Bank details</strong><br />${formatMultilineAddressHtml(bankLines)}</div>`
     : "";
 
-  const logoBlock = buildInvoiceLogoBlock(invoiceLike, brandContext);
+  const logoBlock = buildInvoiceLogoBlock(invoiceLike, brandContext, logoOptions);
 
   const companyName =
     invoiceLike?.billingAddress?.companyName?.trim() || company.name;
@@ -667,8 +709,7 @@ const sendInvoice = async ({
   const recipientHtml = recipientLines.length
     ? formatMultilineAddressHtml(recipientLines)
     : customerAddressHtml
-  const html = fillTemplate(template, {
-    ...buildInvoiceCompanyTemplateFields(inv, brandContext),
+  const invoiceTemplateFields = {
     CUSTOMER_NAME: escapeHtml(customerName),
     CUSTOMER_ADDRESS_BLOCK: buildCustomerAddressBlock(recipientHtml),
     INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || "—"),
@@ -690,6 +731,20 @@ const sendInvoice = async ({
     TOTALS_ROWS: buildInvoiceTotalsRows(inv),
     DEPOSIT_NOTE: hasDeposit ? " (deposit shown separately)" : "",
     PAYMENT_SCHEDULE_SECTION: paymentScheduleSection,
+  };
+
+  const htmlEmail = fillTemplate(template, {
+    ...buildInvoiceCompanyTemplateFields(inv, brandContext, {
+      useTrustedLogo: false,
+    }),
+    ...invoiceTemplateFields,
+  });
+
+  const htmlPdf = fillTemplate(template, {
+    ...buildInvoiceCompanyTemplateFields(inv, brandContext, {
+      useTrustedLogo: true,
+    }),
+    ...invoiceTemplateFields,
   });
 
   const pdfDocument = buildInvoicePdfDocument(
@@ -702,7 +757,7 @@ const sendInvoice = async ({
   let pdfBuffer = null;
   let pdfError = null;
   try {
-    pdfBuffer = await generateInvoicePdf(html, pdfDocument);
+    pdfBuffer = await generateInvoicePdf(htmlPdf, pdfDocument);
   } catch (err) {
     pdfError = err.message;
     console.warn(
@@ -715,7 +770,7 @@ const sendInvoice = async ({
     from: resolvedMailFrom,
     to: toEmail,
     subject: `Invoice ${inv.invoiceNumber || ""}`,
-    html: prependCustomMessage(html, message),
+    html: prependCustomMessage(htmlEmail, message),
   }, cc);
 
   if (pdfBuffer) {
