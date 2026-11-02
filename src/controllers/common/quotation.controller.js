@@ -1886,10 +1886,15 @@ exports.deleteQuotation = asyncHandler(async (req, res) => {
 })
 
 const pickQuoteSalesTax = (source = {}) => {
+  const candidates = [
+    source.salesTax,
+    source.fullQuoteResult?.salesTax,
+    source.storagePricingResult?.salesTax,
+  ].filter((st) => st && typeof st === "object");
+  // Top-level salesTax often exists with amount 0 after edits; prefer nested quote tax when populated.
   const salesTax =
-    source.salesTax ||
-    source.fullQuoteResult?.salesTax ||
-    source.storagePricingResult?.salesTax ||
+    candidates.find((st) => toNumber(st.amount, 0) > 0) ||
+    candidates[0] ||
     {};
   return {
     tax: toNumber(salesTax.amount, 0),
