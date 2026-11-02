@@ -21,6 +21,23 @@ const checkLeadAccess = async (leadId, user) => {
 const stageAmountSum = (stages = []) =>
   stages.reduce((acc, s) => acc + Number(s.amount || 0), 0)
 
+/** Same $1 cap as quote milestone engine — pct rows rounded to $ can overshoot contract by 1. */
+const PAYMENT_STAGE_PENNY_TOLERANCE = 1
+
+const normalizeFixedStageTotals = (stages = [], totalAmount) => {
+  const allFixed = stages.length && stages.every((s) => s.amountType === 'fixed')
+  if (!allFixed) return stages
+  const target = Math.round(Number(totalAmount) || 0)
+  if (target <= 0) return stages
+  const sum = stageAmountSum(stages)
+  const drift = Math.round(target - sum)
+  if (drift === 0 || Math.abs(drift) > PAYMENT_STAGE_PENNY_TOLERANCE) return stages
+  const next = stages.map((s) => ({ ...s }))
+  const last = next[next.length - 1]
+  last.amount = Math.max(0, Math.round(Number(last.amount) + drift))
+  return next
+}
+
 const validateStages = (stages, totalAmount) => {
   const allPercentage = stages.every(s => s.amountType === 'percentage')
   const allFixed = stages.every(s => s.amountType === 'fixed')
@@ -34,8 +51,13 @@ const validateStages = (stages, totalAmount) => {
   if (allPercentage && Math.abs(sum - 100) > 0.01) {
     return { error: `Percentage stages must sum to 100. Got ${sum}` }
   }
-  if (allFixed && Math.abs(sum - totalAmount) > 0.01) {
-    return { error: `Fixed stages must sum to totalAmount (${totalAmount}). Got ${sum}` }
+  if (
+    allFixed &&
+    Math.abs(sum - totalAmount) > PAYMENT_STAGE_PENNY_TOLERANCE
+  ) {
+    return {
+      error: `Fixed stages must sum to totalAmount (${totalAmount}). Got ${sum}`,
+    }
   }
 
   return { allPercentage, allFixed, sum }
@@ -101,18 +123,28 @@ exports.createSchedule = asyncHandler(async (req, res) => {
 
   const { lead, error, code } = await checkLeadAccess(leadId, req.user)
   if (error) return code === 404 ? notFound(res, error) : forbidden(res, error)
-  const totalAmount = resolveScheduleTotalAmount(stages, req.body.totalAmount ?? lead.quoteValue)
+  const contractGrand =
+    req.body.contractGrand != null
+      ? Math.round(Number(req.body.contractGrand))
+      : req.body.grandTotal != null
+        ? Math.round(Number(req.body.grandTotal))
+        : null
+  const totalAmount = resolveScheduleTotalAmount(
+    stages,
+    contractGrand ?? req.body.totalAmount ?? lead.quoteValue,
+  )
+  const normalizedStages = normalizeFixedStageTotals(stages, totalAmount)
 
   const existing = await PaymentSchedule.findOne({ leadId })
   if (existing) return badRequest(res, 'Payment schedule already exists for this lead')
 
-  const stageValidation = validateStages(stages, totalAmount)
+  const stageValidation = validateStages(normalizedStages, totalAmount)
   if (stageValidation.error) return badRequest(res, stageValidation.error)
 
   const schedule = await PaymentSchedule.create({
     leadId,
     customerId: lead.customerId,
-    stages,
+    stages: normalizedStages,
     totalAmount,
     createdBy: req.user._id,
   })
@@ -217,14 +249,22 @@ exports.updateScheduleByLead = asyncHandler(async (req, res) => {
   const schedule = await PaymentSchedule.findOne({ leadId })
   if (!schedule) return notFound(res, 'Payment schedule not found for this lead')
 
+  const contractGrand =
+    req.body.contractGrand != null
+      ? Math.round(Number(req.body.contractGrand))
+      : req.body.grandTotal != null
+        ? Math.round(Number(req.body.grandTotal))
+        : null
   const totalAmount = resolveScheduleTotalAmount(
     stages,
-    req.body.totalAmount != null ? req.body.totalAmount : schedule.totalAmount,
+    contractGrand ??
+      (req.body.totalAmount != null ? req.body.totalAmount : schedule.totalAmount),
   )
-  const stageValidation = validateStages(stages, totalAmount)
+  const normalizedStages = normalizeFixedStageTotals(stages, totalAmount)
+  const stageValidation = validateStages(normalizedStages, totalAmount)
   if (stageValidation.error) return badRequest(res, stageValidation.error)
 
-  const mergeResult = mergePaymentScheduleStages(schedule.stages, stages)
+  const mergeResult = mergePaymentScheduleStages(schedule.stages, normalizedStages)
   if (mergeResult.error) return badRequest(res, mergeResult.error)
 
   schedule.totalAmount = totalAmount
