@@ -287,11 +287,15 @@ const buildQuoteContext = (payload = {}) => {
           ? payload.quoteControls.pembAddOns
           : []
   const pembAddOns = normalizePembAddOns(rawAddOns)
-  const fromFullTotals =
-    full.pembAddOnTotals && Number(full.pembAddOnTotals.sell) > 0
-      ? full.pembAddOnTotals
-      : null
-  const pembAddOnTotals = fromFullTotals || sumPembAddOnTotals(pembAddOns)
+  const summedAddOnTotals = sumPembAddOnTotals(pembAddOns)
+  // Never trust cached fullQuote.pembAddOnTotals when line items exist — stale totals (e.g. $625)
+  // shadow live rows (e.g. $6,250) until the next compute/save.
+  const pembAddOnTotals =
+    pembAddOns.length > 0
+      ? summedAddOnTotals
+      : full.pembAddOnTotals && Number(full.pembAddOnTotals.sell) > 0
+        ? full.pembAddOnTotals
+        : summedAddOnTotals
 
   const concSell =
     concrete && concrete.include !== false && Number(concrete.appliedSell) > 0

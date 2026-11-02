@@ -12,6 +12,7 @@ const { categoriesToWeightByCategory } = require('../../services/quoting/pricing
 const { extractDrawingPdfBuffer } = require('../../services/quoting/drawingPdfExtractor')
 const { parseStorageCogBuffer } = require('../../services/quoting/storageCogParser')
 const { buildAndComputeFullPembQuote, computeFullPembQuote } = require('../../services/quoting/quotePricingOrchestrator')
+const { sumPembAddOnTotals } = require('../../services/quoting/pembAddOns')
 const { computeStoragePricing } = require('../../services/quoting/storagePricingEngine')
 const {
   previewCogsOverride,
@@ -412,7 +413,9 @@ const estimateToDocumentPayload = (estimate) => {
   const savedAddOns = Array.isArray(estimate.pembAddOns) ? estimate.pembAddOns : []
   const full = estimate.fullQuoteResult || null
   const fullAddOns = Array.isArray(full?.pembAddOns) ? full.pembAddOns : []
-  const pembAddOns = fullAddOns.length ? fullAddOns : savedAddOns
+  // Persisted estimate add-ons win — fullQuoteResult is often from an earlier compute.
+  const pembAddOns = savedAddOns.length ? savedAddOns : fullAddOns
+  const pembAddOnTotalsFromLines = pembAddOns.length ? sumPembAddOnTotals(pembAddOns) : null
   const pricing = estimate.pricingResult || full?.pricing || null
   const controls = estimate.quoteControls || {}
   return {
@@ -441,7 +444,7 @@ const estimateToDocumentPayload = (estimate) => {
     }),
     // Always surface persisted add-ons (fullQuoteResult may have been computed before they were set)
     pembAddOns,
-    pembAddOnTotals: full?.pembAddOnTotals,
+    pembAddOnTotals: pembAddOnTotalsFromLines || full?.pembAddOnTotals,
   },
   pembAddOns,
   multiStory: estimate.multiStory || null,
@@ -1390,7 +1393,9 @@ const mergeLiveDocumentPayload = (savedPayload, body = {}) => {
       body.revisedContractTotal ?? savedPayload.revisedContractTotal ?? null,
     storagePricingResult: liveStorage || savedPayload.storagePricingResult,
     storagePricing: liveStorage || savedPayload.storagePricing,
-    pembAddOns: body.pembAddOns || savedPayload.pembAddOns,
+    pembAddOns: Array.isArray(body.pembAddOns)
+      ? body.pembAddOns
+      : savedPayload.pembAddOns,
     concrete: mergePreviewAddon(
       body,
       savedPayload.concreteAddon || savedPayload.concrete,
