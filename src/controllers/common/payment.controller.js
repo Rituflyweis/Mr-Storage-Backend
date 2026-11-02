@@ -72,10 +72,38 @@ const resolveScheduleTotalAmount = (stages, requestedTotal) => {
   return sum
 }
 
+const normalizeStageNameKey = (name) =>
+  String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+
+/** Invoice UI often PUTs quote milestone rows without Mongo `_id`; match by stage name so invoiced rows are not treated as removed. */
+const attachExistingStageIdsByName = (existingStages, incomingStages) => {
+  const usedExisting = new Set()
+  return incomingStages.map((incoming) => {
+    if (incoming._id) return incoming
+    const key = normalizeStageNameKey(incoming.stageName)
+    if (!key) return incoming
+    const match = existingStages.find(
+      (prev) =>
+        !usedExisting.has(String(prev._id)) &&
+        normalizeStageNameKey(prev.stageName) === key,
+    )
+    if (!match) return incoming
+    usedExisting.add(String(match._id))
+    return { ...incoming, _id: match._id }
+  })
+}
+
 const mergePaymentScheduleStages = (existingStages, incomingStages) => {
+  const incomingWithIds = attachExistingStageIdsByName(
+    existingStages,
+    incomingStages,
+  )
   const existingById = new Map(existingStages.map(s => [String(s._id), s]))
   const incomingIds = new Set(
-    incomingStages.filter(s => s._id).map(s => String(s._id))
+    incomingWithIds.filter(s => s._id).map(s => String(s._id))
   )
 
   for (const prev of existingStages) {
@@ -87,7 +115,7 @@ const mergePaymentScheduleStages = (existingStages, incomingStages) => {
     }
   }
 
-  const merged = incomingStages.map((incoming) => {
+  const merged = incomingWithIds.map((incoming) => {
     const prev = incoming._id ? existingById.get(String(incoming._id)) : null
     if (prev) {
       return {
