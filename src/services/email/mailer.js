@@ -21,7 +21,10 @@ const { computeInvoiceDueDate } = require("../../utils/invoiceDueDate");
 const path = require("path");
 const fs = require("fs");
 const { generateInvoicePdf } = require("./generateInvoiceHelper");
-const { getLogoHtml } = require("../quoting/quoteDocumentGenerator");
+const {
+  getCompanyInfo,
+  getLogoHtml,
+} = require("../quoting/companyInfo");
 const {
   formatExceptionsForEmailHtml,
   formatExceptionsForEmailText,
@@ -175,7 +178,84 @@ const formatMultilineAddressHtml = (lines = []) =>
     .map((line) => escapeHtml(line))
     .join("<br />");
 
-const buildInvoiceCompanyTemplateFields = (invoiceLike = null) => {
+/** Remote logo URLs often break in email (localhost, relative paths, auth). Quotations use CSS wordmark instead. */
+const isEmbeddableInvoiceLogoUrl = (url) => {
+  if (!url || typeof url !== "string") return false;
+  const u = url.trim();
+  if (u.startsWith("data:image/")) return true;
+  if (!/^https:\/\//i.test(u)) return false;
+  if (/localhost|127\.0\.0\.1|\.local\b/i.test(u)) return false;
+  return true;
+};
+
+const inferInvoiceBrandPayload = (invoiceLike = {}, company = {}, brandContext = {}) => {
+  const payload = { ...brandContext };
+  const hay = [
+    invoiceLike?.billingAddress?.companyName,
+    company.name,
+    company.website,
+    company.email,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (!payload.companyBrand) {
+    if (hay.includes("storage materials") || hay.includes("storagematerials")) {
+      payload.companyBrand = "SM";
+    } else if (
+      hay.includes("steel building depot") ||
+      hay.includes("steelbuildingdepot")
+    ) {
+      payload.companyBrand = "SBD";
+    }
+  }
+  const logoCandidate =
+    brandContext.companyLogoUrl ||
+    brandContext.logoUrl ||
+    company.logoUrl;
+  if (isEmbeddableInvoiceLogoUrl(logoCandidate)) {
+    payload.companyLogoUrl = logoCandidate;
+  }
+  return payload;
+};
+
+const buildInvoiceLogoBlock = (invoiceLike = null, brandContext = {}) => {
+  const company = getInvoiceCompany();
+  const brandPayload = inferInvoiceBrandPayload(invoiceLike, company, brandContext);
+  const info = getCompanyInfo(brandPayload);
+  const html = getLogoHtml(info);
+  return html.replace(
+    'style="height:40px',
+    'class="logo" style="max-height:58px;height:40px',
+  );
+};
+
+const resolveInvoiceBrandFromQuotation = async (invoiceLike = {}) => {
+  if (!invoiceLike?.quotationId) return {};
+  try {
+    const Quotation = require("../../models/Quotation");
+    const EstimateQuote = require("../../models/EstimateQuote");
+    const q = await Quotation.findById(invoiceLike.quotationId)
+      .select("sourceEstimateId")
+      .lean();
+    if (!q?.sourceEstimateId) return {};
+    const est = await EstimateQuote.findById(q.sourceEstimateId)
+      .select("companyBrand companyLogoUrl")
+      .lean();
+    if (!est) return {};
+    return {
+      companyBrand: est.companyBrand || undefined,
+      companyLogoUrl: est.companyLogoUrl || undefined,
+    };
+  } catch {
+    return {};
+  }
+};
+
+const buildInvoiceCompanyTemplateFields = (
+  invoiceLike = null,
+  brandContext = {},
+) => {
   const company = getInvoiceCompany();
   const billingLines =
     invoiceLike?.billingAddress && formatAddressLines(invoiceLike.billingAddress).length
@@ -193,9 +273,7 @@ const buildInvoiceCompanyTemplateFields = (invoiceLike = null) => {
     ? `<div style="margin-top:12px;font-size:12px;color:#444"><strong>Bank details</strong><br />${formatMultilineAddressHtml(bankLines)}</div>`
     : "";
 
-  const logoBlock = company.logoUrl
-    ? `<img src="${escapeHtml(company.logoUrl)}" alt="${escapeHtml(company.name)}" class="logo" />`
-    : getLogoHtml();
+  const logoBlock = buildInvoiceLogoBlock(invoiceLike, brandContext);
 
   const companyName =
     invoiceLike?.billingAddress?.companyName?.trim() || company.name;
@@ -572,6 +650,7 @@ const sendInvoice = async ({
   message = "",
 }) => {
   const inv = invoice?.toObject ? invoice.toObject() : invoice;
+  const brandContext = await resolveInvoiceBrandFromQuotation(inv);
   const template = loadTemplate("invoice");
   const hasDeposit =
     inv.depositAmount != null && Number(inv.depositAmount) !== 0;
@@ -584,7 +663,7 @@ const sendInvoice = async ({
     ? formatMultilineAddressHtml(recipientLines)
     : customerAddressHtml
   const html = fillTemplate(template, {
-    ...buildInvoiceCompanyTemplateFields(inv),
+    ...buildInvoiceCompanyTemplateFields(inv, brandContext),
     CUSTOMER_NAME: escapeHtml(customerName),
     CUSTOMER_ADDRESS_BLOCK: buildCustomerAddressBlock(recipientHtml),
     INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || "—"),
@@ -1461,6 +1540,7 @@ const sendDbBackupFailureNotification = async ({
 /** On-demand PDF for account/admin invoice download (same render as outbound email). */
 const generateInvoicePdfBuffer = async (invoice, customer, paymentSchedule = null) => {
   const inv = invoice?.toObject ? invoice.toObject() : invoice
+  const brandContext = await resolveInvoiceBrandFromQuotation(inv)
   const customerName =
     `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() ||
     customer?.firstName ||
@@ -1477,7 +1557,7 @@ const generateInvoicePdfBuffer = async (invoice, customer, paymentSchedule = nul
   const hasDeposit = inv.depositAmount != null && Number(inv.depositAmount) !== 0
   const paymentScheduleSection = buildPaymentScheduleSection(paymentSchedule, inv)
   const html = fillTemplate(template, {
-    ...buildInvoiceCompanyTemplateFields(inv),
+    ...buildInvoiceCompanyTemplateFields(inv, brandContext),
     CUSTOMER_NAME: escapeHtml(customerName),
     CUSTOMER_ADDRESS_BLOCK: buildCustomerAddressBlock(recipientHtml),
     INVOICE_NUMBER: escapeHtml(inv.invoiceNumber || '—'),
