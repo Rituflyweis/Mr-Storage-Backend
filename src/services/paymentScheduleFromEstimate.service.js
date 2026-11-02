@@ -41,12 +41,44 @@ const milestoneRowsToPaymentStages = (computed) => {
   }
 }
 
+const ESTIMATE_PAYMENT_SELECT =
+  'milestoneSchedule depositTerms revisedContractTotal fullQuoteResult totalSell pricingResult storagePricingResult leadId'
+
+/** Estimate for milestones — quotation link first, then latest estimate on lead with milestones. */
+const findEstimateForLeadPayment = async (leadId, quotation = null) => {
+  if (quotation?.sourceEstimateId) {
+    const linked = await EstimateQuote.findById(quotation.sourceEstimateId)
+      .select(ESTIMATE_PAYMENT_SELECT)
+      .lean()
+    if (linked) return linked
+  }
+  const withMilestones = await EstimateQuote.findOne({
+    leadId,
+    'milestoneSchedule.0': { $exists: true },
+  })
+    .sort({ updatedAt: -1 })
+    .select(ESTIMATE_PAYMENT_SELECT)
+    .lean()
+  if (withMilestones) return withMilestones
+  return EstimateQuote.findOne({ leadId })
+    .sort({ updatedAt: -1 })
+    .select(ESTIMATE_PAYMENT_SELECT)
+    .lean()
+}
+
 const findQuotationForLead = async (leadId, explicitQuotationId = null) => {
   if (explicitQuotationId) {
     const q = await Quotation.findOne({ _id: explicitQuotationId, leadId }).lean()
     if (q) return q
   }
   return (
+    (await Quotation.findOne({
+      leadId,
+      'approval.status': 'approved',
+      sourceEstimateId: { $ne: null },
+    })
+      .sort({ 'approval.reviewedAt': -1, createdAt: -1 })
+      .lean()) ||
     (await Quotation.findOne({ leadId, 'approval.status': 'approved' })
       .sort({ 'approval.reviewedAt': -1, createdAt: -1 })
       .lean()) ||
@@ -60,13 +92,10 @@ const findQuotationForLead = async (leadId, explicitQuotationId = null) => {
   )
 }
 
-const loadEstimateMilestones = async (quotation) => {
-  if (!quotation?.sourceEstimateId) return null
-  const est = await EstimateQuote.findById(quotation.sourceEstimateId)
-    .select(
-      'milestoneSchedule depositTerms revisedContractTotal fullQuoteResult totalSell pricingResult storagePricingResult',
-    )
-    .lean()
+const loadEstimateMilestones = async (quotation, leadId = null) => {
+  const resolvedLeadId = leadId || quotation?.leadId
+  if (!resolvedLeadId && !quotation?.sourceEstimateId) return null
+  const est = await findEstimateForLeadPayment(resolvedLeadId, quotation)
   if (!est) return null
   return resolveMilestoneRowsFromEstimate(est)
 }
@@ -99,7 +128,7 @@ const ensurePaymentScheduleFromEstimate = async ({
   const quotation = await findQuotationForLead(lead._id, quotationId)
   if (!quotation) return { schedule: existing || null, seeded: false, reason: 'no_quotation' }
 
-  const computed = await loadEstimateMilestones(quotation)
+  const computed = await loadEstimateMilestones(quotation, lead._id)
   if (!computed?.rows?.length) {
     return { schedule: existing || null, seeded: false, reason: 'no_milestones' }
   }
@@ -131,7 +160,7 @@ const ensurePaymentScheduleFromEstimate = async ({
 const suggestPaymentStagesFromEstimate = async (leadId, quotationId = null) => {
   const quotation = await findQuotationForLead(leadId, quotationId)
   if (!quotation) return { stages: [], totalAmount: 0, quotationId: null }
-  const computed = await loadEstimateMilestones(quotation)
+  const computed = await loadEstimateMilestones(quotation, leadId)
   if (!computed?.rows?.length) {
     return { stages: [], totalAmount: 0, quotationId: quotation._id }
   }
@@ -164,6 +193,8 @@ module.exports = {
   grandOfEstimate,
   resolveMilestoneRowsFromEstimate,
   milestoneRowsToPaymentStages,
+  findQuotationForLead,
+  findEstimateForLeadPayment,
   ensurePaymentScheduleFromEstimate,
   suggestPaymentStagesFromEstimate,
   syncPaymentScheduleFromQuoteForLead,

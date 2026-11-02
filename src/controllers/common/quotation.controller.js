@@ -1983,13 +1983,8 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     return notFound(res, "No approved quotation found for this lead");
   }
 
-  const estimate = quotation.sourceEstimateId
-    ? await EstimateQuote.findById(quotation.sourceEstimateId)
-        .select(
-          "jobType salesTax storagePricingResult fullQuoteResult totalSell pricingResult totalCOGS concreteAddon insulationAddon milestoneSchedule depositTerms revisedContractTotal"
-        )
-        .lean()
-    : null;
+  const { findEstimateForLeadPayment } = require("../../services/paymentScheduleFromEstimate.service");
+  const estimate = await findEstimateForLeadPayment(leadId, quotation);
 
   const breakdown = buildQuoteInvoiceBreakdown(quotation, estimate);
 
