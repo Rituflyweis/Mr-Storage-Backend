@@ -71,7 +71,10 @@ const computeStoragePricing = (storageData = {}, options = {}) => {
   const door = sumDoors(doors);
   const ext = sumExtras(extras);
 
-  const sf = options.totalSqft ?? bld.totalSqft;
+  // Do not let explicit 0 shadow building sqft sums (common when estimate.squareFootage unset).
+  const optedSf = Number(options.totalSqft);
+  const sf =
+    Number.isFinite(optedSf) && optedSf > 0 ? optedSf : bld.totalSqft;
   const shipping = Number(options.shipping ?? storageData.shipping ?? 0);
   const drawings = Number(options.drawings ?? storageData.drawings ?? 0);
   const installSellPerSf = Number(

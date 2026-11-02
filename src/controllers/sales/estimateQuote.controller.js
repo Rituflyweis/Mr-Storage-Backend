@@ -288,14 +288,27 @@ const toStoredScope = (value) => {
   return 'Both'
 }
 
-const { normalizeConcreteConfig } = require('../../services/quoting/addonPricing')
+const {
+  normalizeConcreteConfig,
+  resolveInsulationInclude,
+} = require('../../services/quoting/addonPricing')
+
+const mergeInsulationPayload = (body = {}) => {
+  const raw = body.insulation || body.insulationAddon
+  const base = raw && typeof raw === 'object' ? { ...raw } : {}
+  if (body.includeInsulation === true) base.include = true
+  if (body.includeInsulation === false) base.include = false
+  if (!Object.keys(base).length) return undefined
+  if (base.include == null && resolveInsulationInclude(base)) base.include = true
+  return base
+}
 
 const normalizeFullQuoteExtras = (body = {}, options = {}) => ({
   concrete: (() => {
     const raw = body.concrete || body.concreteAddon
     return raw ? normalizeConcreteConfig(raw) : undefined
   })(),
-  insulation: body.insulation || body.insulationAddon || undefined,
+  insulation: mergeInsulationPayload(body),
   salesTax: body.salesTax || undefined,
   // Material Sell Override (ex-freight) → cogsOverride.materialSellOverride; auto-applies.
   cogsOverride: normalizeCogsOverrideInput(body.cogsOverride, body) || undefined,

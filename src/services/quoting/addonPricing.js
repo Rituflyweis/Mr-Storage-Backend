@@ -112,9 +112,23 @@ const computeConcreteAddon = (config = {}, sf = 0) => {
   }
 }
 
+/** When FE sends sliders/R-values but omits include (checkbox only in UI state). */
+const resolveInsulationInclude = (cfg = {}) => {
+  if (cfg.include === false) return false
+  if (cfg.include === true || cfg.includeInsulation === true) return true
+  const userConfigured =
+    Object.prototype.hasOwnProperty.call(cfg, 'costSF') ||
+    Object.prototype.hasOwnProperty.call(cfg, 'costPerSf') ||
+    Object.prototype.hasOwnProperty.call(cfg, 'marginPct') ||
+    Object.prototype.hasOwnProperty.call(cfg, 'system') ||
+    Object.prototype.hasOwnProperty.call(cfg, 'rRoof') ||
+    Object.prototype.hasOwnProperty.call(cfg, 'rWall')
+  return cfg.include !== false && userConfigured
+}
+
 const computeInsulationAddon = (config = {}, sf = 0) => {
   const cfg = config || {}
-  const include = Boolean(cfg.include)
+  const include = resolveInsulationInclude(cfg)
   const system = cfg.system || 'vinyl'
   const rRoof = cfg.rRoof || 'R19'
   const rWall = cfg.rWall || 'R13'
@@ -166,6 +180,7 @@ module.exports = {
   pickPositiveNumber,
   normalizeConcreteConfig,
   coalesceConcrete,
+  resolveInsulationInclude,
   computeConcreteAddon,
   computeInsulationAddon,
 }
