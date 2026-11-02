@@ -56,6 +56,9 @@ const CUSTOMER_IN_TRANSIT_STATUSES = new Set([
 const { enrichLeadDocument } = require('../utils/leadProjectId')
 const customerQuotationService = require('../services/customerQuotation.service')
 const {
+  finalizeLinkedEstimateIfDraft,
+} = require('../services/quoting/finalizeEstimateFromQuotation')
+const {
   MEDIA_DOCUMENT_TYPES,
   isMediaType,
   buildLeadMediaPayload,
@@ -2339,6 +2342,8 @@ exports.approveProjectQuotation = asyncHandler(async (req, res) => {
   quotationDoc.status = 'accepted'
   await quotationDoc.save()
 
+  const estimateFinalize = await finalizeLinkedEstimateIfDraft(quotationDoc)
+
   await auditService.log({
     type: 'quotation',
     action: AUDIT_ACTIONS.QUOTATION_ACCEPTED,
@@ -2360,6 +2365,7 @@ exports.approveProjectQuotation = asyncHandler(async (req, res) => {
   return success(res, {
     message: 'Quotation accepted',
     quotation: { _id: quotationDoc._id, status: quotationDoc.status },
+    estimateFinalize,
   })
 })
 

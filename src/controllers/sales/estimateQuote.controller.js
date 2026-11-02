@@ -32,6 +32,9 @@ const {
   generateQuotePdf,
 } = require('../../services/quoting/quoteDocumentGenerator')
 const { rescalePaymentsForGrand } = require('../../services/quoting/changeOrderApply')
+const {
+  finalizeLinkedEstimateIfDraft,
+} = require('../../services/quoting/finalizeEstimateFromQuotation')
 const { saveEstimateQuoteWithRetry } = require('../../utils/saveEstimateQuoteWithRetry')
 const {
   debounceCoalescedEstimateWrite,
@@ -1951,7 +1954,7 @@ exports.createEstimateQuote = asyncHandler(async (req, res) => {
 
 exports.getEstimateQuote = asyncHandler(async (req, res) => {
   const id = req.params.estimateId
-  const estimate = await EstimateQuote.findById(id).lean()
+  let estimate = await EstimateQuote.findById(id)
   if (estimate) {
     const access = assertEstimateAccess(estimate, req.user)
     if (access.error) {
@@ -1961,10 +1964,15 @@ exports.getEstimateQuote = asyncHandler(async (req, res) => {
       .select(QUOTATION_LINK_SELECT)
       .sort({ createdAt: -1 })
       .lean()
+    if (quotation?.status === 'accepted' && estimate.status === 'draft') {
+      await finalizeLinkedEstimateIfDraft(quotation)
+      estimate = await EstimateQuote.findById(id)
+    }
+    const estimateOut = estimate.toObject ? estimate.toObject() : estimate
     return success(res, {
       quoteKind: 'estimate',
       estimate: {
-        ...withEstimateTotals(estimate),
+        ...withEstimateTotals(estimateOut),
         conversion: buildEstimateConversionMeta(quotation),
       },
     })
