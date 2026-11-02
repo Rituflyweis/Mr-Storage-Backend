@@ -2037,6 +2037,28 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     invoiceTotal > 0 &&
     scheduleTotal - invoiceTotal > 0.01;
 
+  const quoteLabel = quotation.quoteNumber || "Project Quote";
+  const invoicePrefill = {
+    description: `Project Quote — ${quoteLabel}`,
+    subtotal: breakdown.amountWithoutMarkup,
+    markupTotal: breakdown.markup,
+    tax: breakdown.tax,
+    discount: 0,
+    totalAmount: breakdown.total,
+    lineItems: [
+      {
+        description: `Project Quote — ${quoteLabel}`,
+        rate: breakdown.amountWithoutMarkup,
+        quantity: 1,
+        markup: breakdown.markup,
+        markupType: "amount",
+        tax: 0,
+        taxType: "amount",
+        total: breakdown.amountWithoutMarkup,
+      },
+    ],
+  };
+
   return success(res, {
     leadId: quotation.leadId,
     quotationId: quotation._id,
@@ -2048,6 +2070,7 @@ exports.getLatestApprovedQuotationTax = asyncHandler(async (req, res) => {
     subtotalWithMarkup: breakdown.subtotalWithMarkup,
     tax: breakdown.tax,
     total: breakdown.total,
+    invoicePrefill,
     taxRate: breakdown.taxRate,
     taxableBase: breakdown.taxableBase,
     taxNote:

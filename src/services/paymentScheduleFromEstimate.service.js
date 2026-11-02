@@ -42,9 +42,13 @@ const milestoneRowsToPaymentStages = (computed) => {
 }
 
 const ESTIMATE_PAYMENT_SELECT =
-  'milestoneSchedule depositTerms revisedContractTotal fullQuoteResult totalSell pricingResult storagePricingResult leadId'
+  'jobType milestoneSchedule depositTerms revisedContractTotal fullQuoteResult totalSell pricingResult storagePricingResult leadId salesTax concreteAddon insulationAddon totalCOGS'
 
-/** Estimate for milestones — quotation link first, then latest estimate on lead with milestones. */
+/**
+ * Estimate for invoice breakdown + milestones.
+ * Prefer quotation.sourceEstimateId, then latest priced estimate (Storage/PEMB),
+ * then milestone-only rows — avoids payment schedule from one estimate and $0 lines from another.
+ */
 const findEstimateForLeadPayment = async (leadId, quotation = null) => {
   if (quotation?.sourceEstimateId) {
     const linked = await EstimateQuote.findById(quotation.sourceEstimateId)
@@ -52,6 +56,20 @@ const findEstimateForLeadPayment = async (leadId, quotation = null) => {
       .lean()
     if (linked) return linked
   }
+
+  const priced = await EstimateQuote.findOne({
+    leadId,
+    $or: [
+      { 'storagePricingResult.grandTotal': { $gt: 0 } },
+      { 'fullQuoteResult.grandTotal': { $gt: 0 } },
+      { totalSell: { $gt: 0 } },
+    ],
+  })
+    .sort({ updatedAt: -1 })
+    .select(ESTIMATE_PAYMENT_SELECT)
+    .lean()
+  if (priced) return priced
+
   const withMilestones = await EstimateQuote.findOne({
     leadId,
     'milestoneSchedule.0': { $exists: true },
@@ -60,6 +78,7 @@ const findEstimateForLeadPayment = async (leadId, quotation = null) => {
     .select(ESTIMATE_PAYMENT_SELECT)
     .lean()
   if (withMilestones) return withMilestones
+
   return EstimateQuote.findOne({ leadId })
     .sort({ updatedAt: -1 })
     .select(ESTIMATE_PAYMENT_SELECT)
