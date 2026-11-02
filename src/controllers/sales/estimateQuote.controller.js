@@ -2070,6 +2070,20 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
   if (isStorageJob && (req.body.storageData || estimate.storageData || req.body.storagePricingResult)) {
     const storageData = req.body.storageData || estimate.storageData
     const priorSp = estimate.storagePricingResult || {}
+    const mergedConcrete = mergePreviewAddon(req.body, estimate.concreteAddon, [
+      'concrete',
+      'concreteAddon',
+    ])
+    const mergedInsulation = mergePreviewAddon(req.body, estimate.insulationAddon, [
+      'insulation',
+      'insulationAddon',
+    ])
+    if (mergedConcrete !== undefined) {
+      estimate.concreteAddon = normalizeConcreteConfig(mergedConcrete)
+    }
+    if (mergedInsulation !== undefined) {
+      estimate.insulationAddon = mergedInsulation
+    }
     let storagePricing
     if (storageData?.buildings?.length) {
       storagePricing = computeStoragePricing(storageData, {
@@ -2090,17 +2104,14 @@ exports.updateEstimateQuote = asyncHandler(async (req, res) => {
           req.body.installCostPerSf ??
           storageData.installCostPerSf ??
           priorSp.installCostPerSf,
-        salesTax: req.body.salesTax ?? estimate.salesTax ?? storageData.salesTax,
-        concrete:
-          req.body.concrete ||
-          req.body.concreteAddon ||
-          estimate.concreteAddon ||
-          storageData.concrete,
-        insulation:
-          req.body.insulation ||
-          req.body.insulationAddon ||
-          estimate.insulationAddon ||
-          storageData.insulation,
+        salesTax: mergePreviewSalesTax(req.body, estimate.salesTax ?? storageData.salesTax),
+        concrete: estimate.concreteAddon || fullExtras.concrete,
+        insulation: estimate.insulationAddon || fullExtras.insulation,
+        pembAddOns:
+          estimate.pembAddOns ??
+          req.body.pembAddOns ??
+          fullExtras.pembAddOns ??
+          storageData.pembAddOns,
         totalSqft:
           req.body.squareFootage ??
           req.body.sf ??
