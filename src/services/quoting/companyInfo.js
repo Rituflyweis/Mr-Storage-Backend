@@ -139,7 +139,12 @@ const getLogoHtml = (infoOrPayload = {}) => {
       : getCompanyInfo(infoOrPayload)
   const src = info.logoSrc || info.logoUrl || info.companyLogoUrl
   if (src) {
-    return `<img src="${src}" style="height:40px;width:auto;display:block;max-width:240px;" alt="${info.name || ''}">`
+    const safeAlt = String(info.name || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+    const safeSrc = String(src).replace(/"/g, '%22')
+    return `<img src="${safeSrc}" style="height:40px;width:auto;display:block;max-width:240px;" alt="${safeAlt}">`
   }
   const left = info.logoLeft || info.name || 'STEEL BUILDING'
   const right = info.logoRight || ''

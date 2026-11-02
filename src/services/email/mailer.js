@@ -222,6 +222,11 @@ const inferInvoiceBrandPayload = (invoiceLike = {}, company = {}, brandContext =
 const buildInvoiceLogoBlock = (invoiceLike = null, brandContext = {}) => {
   const company = getInvoiceCompany();
   const brandPayload = inferInvoiceBrandPayload(invoiceLike, company, brandContext);
+  // Invoice email + PDF HTML: never hotlink logos (Render uploads, INVOICE_LOGO_URL, FE URLs often 404 in Gmail).
+  // Use the same CSS wordmark as quote documents (STEEL BUILDING | DEPOT / STORAGE | MATERIALS).
+  delete brandPayload.companyLogoUrl;
+  delete brandPayload.logoUrl;
+  delete brandPayload.logoSrc;
   const info = getCompanyInfo(brandPayload);
   const html = getLogoHtml(info);
   return html.replace(
