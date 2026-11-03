@@ -1164,6 +1164,8 @@ const WIPProfit = require('../../models/WIPProfit')
 const {
   buildPeriodPL,
   marginPct,
+  variance,
+  resolvePeriodRange,
 } = require('../../utils/profitLossPeriod.util')
 
 exports.getFinancialOverview = asyncHandler(async (req, res) => {
@@ -1698,58 +1700,6 @@ exports.getExpenseBudgetVsActualTrend = asyncHandler(async (req, res) => {
     note: 'Budget per month = sum of ProjectBudget.totalBudget for budgets created that month (proxy for "budget allocated"); ProjectBudget has no per-month breakdown of its own. Confirm this matches the intended definition.',
   })
 })
-
-// Splits total expenses across the 4 "Expenses" rows in the Figma P&L table. Same caveat as
-// Financial Overview's profitability breakdown — expense categories are free-text/dynamic, not a
-// fixed Direct/Indirect/Admin/Other taxonomy, so this is a best-effort mapping by category name.
-const splitExpenseBreakdown = (byCategory) => {
-  const get = (names) => byCategory.filter(c => names.includes(c._id)).reduce((s, c) => s + c.total, 0)
-  const directCosts = get(['Vendor/Freight'])
-  const indirectCosts = get(['Operations'])
-  const administrativeExpenses = get(['Salaries', 'Marketing'])
-  const known = directCosts + indirectCosts + administrativeExpenses
-  const total = byCategory.reduce((s, c) => s + c.total, 0)
-  const otherExpenses = Math.max(0, total - known)
-  return { directCosts, indirectCosts, administrativeExpenses, otherExpenses, totalExpenses: total }
-}
-
-const buildPeriodPL = async (filter, dateFilter) => {
-  const [incomeAgg, otherIncomeAgg, expenseByCategory, taxAgg] = await Promise.all([
-    Invoice.aggregate([{ $match: { ...filter, ...dateFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Promise.resolve([{ total: 0 }]), // no "other income" data source exists in the schema yet
-    Expense.aggregate([{ $match: { ...filter, ...dateFilter, isActive: true } }, { $group: { _id: '$category', total: { $sum: '$amount' } } }]),
-    Tax.aggregate([{ $match: { ...dateFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
-  ])
-
-  const projectRevenue = incomeAgg[0]?.total || 0
-  const otherIncome = otherIncomeAgg[0]?.total || 0
-  const totalIncome = projectRevenue + otherIncome
-  const expenseBreakdown = splitExpenseBreakdown(expenseByCategory)
-  const operatingProfit = totalIncome - expenseBreakdown.totalExpenses
-  const taxExpense = taxAgg[0]?.total || 0
-  const netProfit = operatingProfit - taxExpense
-
-  return { projectRevenue, otherIncome, totalIncome, expenseBreakdown, operatingProfit, taxExpense, netProfit }
-}
-
-const variance = (current, previous) => {
-  const amount = current - previous
-  const pct = previous !== 0 ? Math.round((amount / Math.abs(previous)) * 100 * 100) / 100 : 0
-  return { amount, pct }
-}
-
-// Resolves a "period" shorthand (monthly/quarterly/yearly) to a concrete date range for the
-// *current* calendar month/quarter/year. Ignored if explicit startDate/endDate are given —
-// those always take precedence.
-const resolvePeriodRange = (period, now) => {
-  if (period === 'yearly') return { start: new Date(now.getFullYear(), 0, 1), end: now }
-  if (period === 'quarterly') {
-    const qStartMonth = Math.floor(now.getMonth() / 3) * 3
-    return { start: new Date(now.getFullYear(), qStartMonth, 1), end: now }
-  }
-  if (period === 'monthly') return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now }
-  return null
-}
 
 exports.getProfitLoss = asyncHandler(async (req, res) => {
   const { projectId, startDate, endDate, period } = req.query
