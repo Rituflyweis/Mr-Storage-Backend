@@ -114,6 +114,11 @@ See `docs/frontend-handoff/multi-panel-backlog-api.md` for a route map.
 
 Set on the same Render service (see `render.yaml` for names): `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `SENDGRID_API_KEY`, AWS S3 keys, etc. **Staff/customer JWTs** come from login responses, not from env.
 
+| Variable | UAT default | Effect |
+|----------|-------------|--------|
+| `LEAD_ENQUIRY_EMAIL_ENABLED` | `false` (omit or unset) | When `true`, Nodemailer sends new-lead emails (AI chat / form) to active admin emails. **Does not** affect in-app admin notifications for new leads. |
+| `ALLOW_MAIL_TO_INFO_STEELBUILDING` | `false` | When `false`, drops outbound mail to `info@steelbuildingdepot.com` even if other mail is enabled. |
+
 ---
 
 ## Security

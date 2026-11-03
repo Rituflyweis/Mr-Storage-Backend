@@ -14,6 +14,7 @@ const {
   SALES_LOGIN_URL,
   PLANT_LOGIN_URL,
   DB_BACKUP_NOTIFY_EMAIL,
+  LEAD_ENQUIRY_EMAIL_ENABLED,
 } = require("../../config/env");
 const { getInvoiceCompany, getDefaultBankDetails } = require("../../config/invoiceCompany");
 const { formatAddressLines, formatBankDetailsLines } = require("../../utils/invoiceBilling.util");
@@ -52,7 +53,8 @@ const isEmailConfigured = () =>
   Boolean(SENDGRID_API_KEY && (SENDGRID_FROM || MAIL_FROM));
 const isEnquiryNotificationConfigured = () =>
   Boolean(
-    SMTP_HOST &&
+    LEAD_ENQUIRY_EMAIL_ENABLED &&
+      SMTP_HOST &&
       SMTP_USER &&
       SMTP_PASS &&
       (MAIL_FROM_NODE_MAILER || SMTP_MAIL_FROM),

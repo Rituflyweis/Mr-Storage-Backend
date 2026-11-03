@@ -201,6 +201,7 @@ const customerId = json.data.customer._id
 
 | Action | Endpoint |
 |--------|----------|
+| Sales — same basic create | `POST /api/sales/customers/basic` (sales auth) |
 | List customers | `GET /api/admin/customers` |
 | Customer detail | `GET /api/admin/customers/:customerId` |
 | Add project to customer | `POST /api/admin/customers/:customerId/leads` |

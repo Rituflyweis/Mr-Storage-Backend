@@ -127,6 +127,10 @@ module.exports = {
   /** When false (default), outbound mail to info@steelbuildingdepot.com is dropped in mailer. */
   ALLOW_MAIL_TO_INFO_STEELBUILDING:
     process.env.ALLOW_MAIL_TO_INFO_STEELBUILDING === "true",
+  /** Nodemailer new-lead alerts (AI chat / website form) to active admin emails. Off unless true. */
+  LEAD_ENQUIRY_EMAIL_ENABLED:
+    process.env.LEAD_ENQUIRY_EMAIL_ENABLED === "true" ||
+    process.env.LEAD_ENQUIRY_EMAIL_ENABLED === "1",
   DB_BACKUP_S3_PREFIX:
     (process.env.DB_BACKUP_S3_PREFIX || "").trim() ||
     `db-backups/${process.env.NODE_ENV || "development"}`,
