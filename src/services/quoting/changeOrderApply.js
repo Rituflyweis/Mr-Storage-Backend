@@ -10,6 +10,10 @@ const {
   computeMilestones,
   syncDepositIntoMilestoneRows,
 } = require('./depositMilestoneEngine')
+const {
+  synthesizePricingForDocument,
+  scalePricingResultToContractTotal,
+} = require('./estimateDocumentPricing.util')
 
 const round = (n) => Math.round(Number(n) || 0)
 
@@ -106,24 +110,11 @@ const syncEstimateFromChangeOrders = async (estimate) => {
 
   const latest = cos.reduce((a, b) => (Number(b.coNum) > Number(a.coNum) ? b : a))
   const revised = round(latest.newTotal)
+  const previousContract = round(
+    estimate.revisedContractTotal ?? estimate.totalSell ?? base,
+  )
   estimate.revisedContractTotal = revised
   estimate.totalSell = revised
-
-  if (estimate.fullQuoteResult && typeof estimate.fullQuoteResult === 'object') {
-    estimate.fullQuoteResult = {
-      ...(estimate.fullQuoteResult.toObject
-        ? estimate.fullQuoteResult.toObject()
-        : estimate.fullQuoteResult),
-      grandTotal: revised,
-      originalGrandTotal: estimate.originalContractValue,
-    }
-    estimate.markModified('fullQuoteResult')
-  } else {
-    estimate.fullQuoteResult = {
-      grandTotal: revised,
-      originalGrandTotal: estimate.originalContractValue,
-    }
-  }
 
   if (estimate.storagePricingResult && typeof estimate.storagePricingResult === 'object') {
     estimate.storagePricingResult = {
@@ -134,6 +125,34 @@ const syncEstimateFromChangeOrders = async (estimate) => {
     }
     estimate.markModified('storagePricingResult')
   }
+
+  if (estimate.pricingResult && typeof estimate.pricingResult === 'object') {
+    estimate.pricingResult = scalePricingResultToContractTotal(
+      estimate.pricingResult.toObject
+        ? estimate.pricingResult.toObject()
+        : { ...estimate.pricingResult },
+      previousContract || base,
+      revised,
+    )
+    estimate.markModified('pricingResult')
+  } else {
+    estimate.pricingResult = synthesizePricingForDocument(estimate, revised)
+    estimate.markModified('pricingResult')
+  }
+
+  const fullPlain =
+    estimate.fullQuoteResult && typeof estimate.fullQuoteResult === 'object'
+      ? estimate.fullQuoteResult.toObject
+        ? estimate.fullQuoteResult.toObject()
+        : { ...estimate.fullQuoteResult }
+      : {}
+  estimate.fullQuoteResult = {
+    ...fullPlain,
+    grandTotal: revised,
+    originalGrandTotal: estimate.originalContractValue,
+    pricing: estimate.pricingResult,
+  }
+  estimate.markModified('fullQuoteResult')
 
   rescalePaymentsForGrand(estimate, revised)
   await saveEstimateQuoteWithRetry(estimate)

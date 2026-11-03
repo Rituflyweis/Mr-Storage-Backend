@@ -32,6 +32,7 @@ const {
   generateQuotePdf,
 } = require('../../services/quoting/quoteDocumentGenerator')
 const { rescalePaymentsForGrand } = require('../../services/quoting/changeOrderApply')
+const { synthesizePricingForDocument } = require('../../services/quoting/estimateDocumentPricing.util')
 const {
   finalizeLinkedEstimateIfDraft,
   quotationQualifiesForEstimateFinalize,
@@ -424,7 +425,10 @@ const estimateToDocumentPayload = (estimate) => {
   // Persisted estimate add-ons win — fullQuoteResult is often from an earlier compute.
   const pembAddOns = savedAddOns.length ? savedAddOns : fullAddOns
   const pembAddOnTotalsFromLines = pembAddOns.length ? sumPembAddOnTotals(pembAddOns) : null
-  const pricing = estimate.pricingResult || full?.pricing || null
+  let pricing = estimate.pricingResult || full?.pricing || null
+  if (!pricing) {
+    pricing = synthesizePricingForDocument(estimate, grandTotal)
+  }
   const controls = estimate.quoteControls || {}
   return {
   estimateId: estimate._id,
@@ -437,13 +441,15 @@ const estimateToDocumentPayload = (estimate) => {
   squareFootage: estimate.squareFootage,
   quoteDate: estimate.quoteDate,
   additionalInfo: estimate.additionalInfo,
-  pricingResult: estimate.pricingResult,
+  pricingResult: pricing,
+  pricing,
+  totalSell: estimate.totalSell ?? grandTotal,
   storageData: estimate.storageData,
   storagePricingResult: estimate.storagePricingResult,
   grandTotal,
   fullQuote: {
     ...(full || {
-      pricing: estimate.pricingResult,
+      pricing,
       concrete: estimate.concreteAddon,
       insulation: estimate.insulationAddon,
       salesTax: estimate.salesTax,
