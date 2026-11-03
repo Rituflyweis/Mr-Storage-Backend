@@ -43,8 +43,9 @@ Authorization: Bearer <token>
 
 | UI area | Respects `startDate` / `endDate`? |
 |---------|-----------------------------------|
-| Top 5 KPI cards | Yes |
-| Payment status distribution (donut) | Yes |
+| Top KPI: Total Payments / Received | Yes (`createdAt`) |
+| Top KPI: Outstanding / Overdue / Overdue YTD | No — all open **customer** receivables (same basis as Expected Payments and Payment Status) |
+| Payment status distribution (donut) | Yes (`createdAt`; open `sent`/`overdue` outside the range may not appear in the donut) |
 | Recent payments table | Yes |
 | Revenue trend (bar chart) | No — always last **6 calendar months** (customer invoices) |
 | Expected payments (aging list) | No — all open customer invoices |
@@ -102,8 +103,8 @@ Additional fields (same object, use if needed):
 
 - **Total Payments:** Sum of customer invoice `totalAmount` in date range; excludes `draft` and `cancelled`.
 - **Total Received:** Sum where `status === 'paid'`.
-- **Total Outstanding:** Sum where `status` is `sent` or `overdue`.
-- **Total Overdue:** Outstanding invoices whose due date is before now (`dueDate` or `date + daysToPay`).
+- **Total Outstanding:** Sum of customer receivable `totalAmount` where `status` is `sent` or `overdue` (not limited to PO/plant projects; ignores dashboard date range).
+- **Total Overdue:** That open balance whose effective due date is before now (`dueDate` or `date + daysToPay`).
 - **Total Overdue (YTD):** Overdue amount with due date in the current calendar year; `totalOverdueYTDPct` = share of `totalPayments` in range.
 
 ---

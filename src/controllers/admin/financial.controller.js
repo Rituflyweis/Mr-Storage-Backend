@@ -22,7 +22,12 @@ const {
   resolveCategoryLabel,
 } = require('../../utils/paymentApprovalPresentation.util')
 const { appendPaymentApprovalActivity } = require('../../services/paymentApprovalDetail.service')
-const { computePaymentsDashboard } = require('../../services/adminPaymentsDashboard.service')
+const {
+  computePaymentsDashboard,
+  buildCustomerInvoiceMatch,
+  buildCustomerOpenReceivablesMatch,
+  invoiceDueDateAddFields,
+} = require('../../services/adminPaymentsDashboard.service')
 const {
   resolveTotalBudget,
   budgetVarianceStatus,
@@ -1031,7 +1036,7 @@ exports.reviewPaymentApproval = asyncHandler(async (req, res) => {
 
 // Shared by getPaymentStatus and exportPaymentStatus.
 const buildPaymentHistoryFilter = async ({ paymentMethod, status, search }) => {
-  const filter = {}
+  const filter = { ...buildCustomerInvoiceMatch() }
   if (status) filter.status = status
   if (paymentMethod) filter.paymentMethod = paymentMethod
 
@@ -1074,22 +1079,34 @@ exports.getPaymentStatus = asyncHandler(async (req, res) => {
     Invoice.countDocuments(invoiceFilter),
   ])
 
-  const overdueInvoices = await Invoice.find({ status: 'overdue' })
+  const openReceivablesMatch = buildCustomerOpenReceivablesMatch()
+
+  const overdueInvoices = await Invoice.find({ ...openReceivablesMatch, status: 'overdue' })
     .populate('leadId', 'projectName').populate('customerId', 'firstName lastName')
     .sort({ createdAt: 1 }).limit(5).lean()
 
   const dueSoon = await Invoice.aggregate([
-    { $match: { status: { $in: ['sent', 'overdue'] } } },
-    { $addFields: { dueDate: { $add: ['$date', { $multiply: ['$daysToPay', 86400000] }] } } },
-    { $match: { dueDate: { $gte: now, $lte: new Date(now.getTime() + 30 * 86400000) } } },
-    { $sort: { dueDate: 1 } },
-    { $limit: 5 }
+    { $match: openReceivablesMatch },
+    { $addFields: invoiceDueDateAddFields },
+    {
+      $match: {
+        effectiveDue: { $gte: now, $lte: new Date(now.getTime() + 30 * 86400000) },
+      },
+    },
+    { $sort: { effectiveDue: 1 } },
+    { $limit: 5 },
   ])
 
   const [totalOutstanding, totalPaid, overdueCount, vendorAgg, carrierAgg] = await Promise.all([
-    Invoice.aggregate([{ $match: { status: { $in: ['sent', 'overdue'] } } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.aggregate([{ $match: { status: 'paid', paidAt: { $gte: thisMonthStart } } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Invoice.countDocuments({ status: 'overdue' }),
+    Invoice.aggregate([
+      { $match: openReceivablesMatch },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+    ]),
+    Invoice.aggregate([
+      { $match: { ...buildCustomerInvoiceMatch(), status: 'paid', paidAt: { $gte: thisMonthStart } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+    ]),
+    Invoice.countDocuments({ ...openReceivablesMatch, status: 'overdue' }),
     PaymentApproval.aggregate([
       { $match: { payeeType: 'vendor', status: 'approved' } },
       { $group: { _id: null, total: { $sum: '$amount' }, vendors: { $addToSet: '$payee' } } },

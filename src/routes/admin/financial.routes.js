@@ -101,6 +101,10 @@ router.get('/project-wise-tax/export', projectWiseTaxQuery, validate, ctrl.expor
 const paymentApprovalQuery = [
   query('status').optional({ checkFalsy: true }).isIn(['pending', 'under_review', 'approved', 'disputed', 'rejected']),
   query('category').optional({ checkFalsy: true }).isIn(['vendor_payment', 'shipper_payment', 'equipment', 'other_expenses']),
+  query('payeeType').optional({ checkFalsy: true }).isIn(['vendor', 'carrier', 'shipper']),
+  query('paymentStatus').optional({ checkFalsy: true }).isIn(['vendor', 'carrier', 'shipper']),
+  query('project').optional({ checkFalsy: true }).isMongoId(),
+  query('search').optional().trim(),
   query('requestedBy').optional({ checkFalsy: true }).isMongoId(),
   query('startDate').optional({ checkFalsy: true }).isISO8601(),
   query('endDate').optional({ checkFalsy: true }).isISO8601(),
@@ -108,7 +112,7 @@ const paymentApprovalQuery = [
 router.get('/payment-approvals',
   [...paymentApprovalQuery, query('page').optional({ checkFalsy: true }).isInt({ min: 1 }), query('limit').optional({ checkFalsy: true }).isInt({ min: 1, max: 200 })],
   validate,
-  ctrl.getPaymentApprovals
+  accountFinancialCtrl.getPaymentApprovals
 )
 router.get('/payment-approvals/filters', ctrl.getPaymentApprovalFilters)
 router.get('/payment-approvals/export', paymentApprovalQuery, validate, ctrl.exportPaymentApprovals)

@@ -1,7 +1,6 @@
 const Invoice = require('../models/Invoice')
 const PaymentSchedule = require('../models/PaymentSchedule')
 const { buildDateFilter } = require('../utils/dateRange')
-const { distinctFinancialLeadIds } = require('../utils/financialProjectScope')
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -22,6 +21,10 @@ const buildCustomerInvoiceMatch = (dateFilter = {}) => ({
     { invoiceType: null },
   ],
 })
+
+/** Open client AR — point-in-time; not scoped to PO/plant leads or dashboard date range. */
+const buildCustomerOpenReceivablesMatch = () =>
+  buildCustomerInvoiceMatch({ status: { $in: ['sent', 'overdue'] } })
 
 const invoiceDueDateAddFields = {
   effectiveDue: {
@@ -115,12 +118,12 @@ const computePaymentsDashboard = async (query = {}) => {
   const base = buildDateFilter(query)
   const now = new Date()
   const yearStart = new Date(now.getFullYear(), 0, 1)
-  const financialLeadIds = await distinctFinancialLeadIds()
-  const customerBase = { ...buildCustomerInvoiceMatch(base), leadId: { $in: financialLeadIds } }
+  const customerBase = buildCustomerInvoiceMatch(base)
   const customerRecorded = {
     ...customerBase,
     status: { $nin: ['draft', 'cancelled'] },
   }
+  const openReceivablesMatch = buildCustomerOpenReceivablesMatch()
 
   const parsedPage = Math.max(parseInt(query.page, 10) || 1, 1)
   const parsedLimit = Math.min(parseInt(query.limit, 10) || 10, 100)
@@ -148,17 +151,17 @@ const computePaymentsDashboard = async (query = {}) => {
       { $group: { _id: null, total: { $sum: '$totalAmount' } } },
     ]),
     Invoice.aggregate([
-      { $match: { ...customerRecorded, status: { $in: ['sent', 'overdue'] } } },
+      { $match: openReceivablesMatch },
       { $group: { _id: null, total: { $sum: '$totalAmount' } } },
     ]),
     Invoice.aggregate([
-      { $match: { ...customerRecorded, status: { $in: ['sent', 'overdue'] } } },
+      { $match: openReceivablesMatch },
       { $addFields: invoiceDueDateAddFields },
       { $match: { effectiveDue: { $lt: now } } },
       { $group: { _id: null, total: { $sum: '$totalAmount' } } },
     ]),
     Invoice.aggregate([
-      { $match: { ...customerRecorded, status: { $in: ['sent', 'overdue'] } } },
+      { $match: openReceivablesMatch },
       { $addFields: invoiceDueDateAddFields },
       {
         $match: {
@@ -215,11 +218,7 @@ const computePaymentsDashboard = async (query = {}) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
     Invoice.aggregate([
-      {
-        $match: buildCustomerInvoiceMatch({
-          status: { $in: ['sent', 'overdue'] },
-        }),
-      },
+      { $match: openReceivablesMatch },
       { $addFields: invoiceDueDateAddFields },
       {
         $addFields: {
@@ -351,5 +350,8 @@ const computePaymentsDashboard = async (query = {}) => {
 module.exports = {
   computePaymentsDashboard,
   mapRecentPaymentRow,
+  buildCustomerInvoiceMatch,
+  buildCustomerOpenReceivablesMatch,
+  invoiceDueDateAddFields,
   STATUS_LABELS,
 }
