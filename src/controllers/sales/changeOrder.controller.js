@@ -9,6 +9,7 @@ const {
   syncEstimateFromChangeOrders,
   estimateRevisionSummary,
 } = require('../../services/quoting/changeOrderApply')
+const { ensureEstimateFinalForChangeOrders } = require('../../services/quoting/finalizeEstimateFromQuotation')
 
 const parentFilter = (req) => {
   const { estimateId, parentQuoteRef } = { ...req.query, ...req.body, ...req.params }
@@ -33,21 +34,10 @@ const baseQuoteTotal = async (estimateId) => {
   )
 }
 
-/** Change orders attach to a finalized contract — draft quotes should be edited instead. */
+/** Change orders attach to a finalized contract — sync final from linked quotation when eligible. */
 const loadEstimateForChangeOrder = async (estimateId) => {
   if (!estimateId) return { est: null }
-  const est = await EstimateQuote.findById(estimateId)
-  if (!est) return { error: 'Estimate not found', code: 404 }
-  if (est.status !== 'final') {
-    return {
-      error:
-        'Change orders are only allowed after the estimate is final (client contract issued). Edit the draft quote to change price instead.',
-      code: 400,
-      estimateStatus: est.status,
-      estimateId: String(est._id),
-    }
-  }
-  return { est }
+  return ensureEstimateFinalForChangeOrders(estimateId)
 }
 
 const loadChangeOrderForDocument = async (coId, userId) => {
@@ -99,6 +89,8 @@ exports.createChangeOrder = asyncHandler(async (req, res) => {
       return badRequest(res, loaded.error, {
         estimateStatus: loaded.estimateStatus || 'draft',
         estimateId: loaded.estimateId || estimateId,
+        quotationStatus: loaded.quotationStatus ?? undefined,
+        approvalStatus: loaded.approvalStatus ?? undefined,
         finalize: {
           method: 'PUT',
           path: `/api/sales/estimates/${loaded.estimateId || estimateId}`,

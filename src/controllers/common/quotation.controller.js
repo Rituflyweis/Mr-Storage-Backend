@@ -33,6 +33,7 @@ const asyncHandler = require("../../utils/asyncHandler");
 const { buildDateFilter } = require("../../utils/dateRange");
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require("../../config/constants");
 const { resolveOutboundRecipients } = require("../../utils/outboundEmail");
+const { finalizeLinkedEstimateIfDraft } = require("../../services/quoting/finalizeEstimateFromQuotation");
 const QUOTATION_APPROVAL_STATUSES = ["not_submitted", "pending_approval", "approved", "rejected"];
 const QUOTATION_STATUS_FILTERS = ["draft", "pending", "pending_approval", "approved", "rejected", "sent", "accepted"];
 const QUOTATION_SORT_VALUES = ["latest", "oldest"];
@@ -1435,6 +1436,7 @@ exports.sendQuotation = asyncHandler(async (req, res) => {
       by: req.user._id,
     });
     await quotation.save();
+    await finalizeLinkedEstimateIfDraft(quotation.toObject ? quotation.toObject() : quotation);
     await advanceLeadToProposalSent(quotation.leadId, req.user._id);
 
     await queueEmailSendJob({
@@ -1503,6 +1505,7 @@ exports.markQuotationSent = asyncHandler(async (req, res) => {
     at: sentAt,
   });
   await quotation.save();
+  await finalizeLinkedEstimateIfDraft(quotation.toObject ? quotation.toObject() : quotation);
   await advanceLeadToProposalSent(quotation.leadId, req.user._id);
 
   await auditService.log({
@@ -1641,6 +1644,7 @@ exports.approveQuotation = asyncHandler(async (req, res) => {
     by: req.user._id,
   });
   await quotation.save();
+  await finalizeLinkedEstimateIfDraft(quotation.toObject ? quotation.toObject() : quotation);
 
   await auditService.log({
     type: "quotation",

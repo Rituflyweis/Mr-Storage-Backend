@@ -34,6 +34,7 @@ const {
 const { rescalePaymentsForGrand } = require('../../services/quoting/changeOrderApply')
 const {
   finalizeLinkedEstimateIfDraft,
+  quotationQualifiesForEstimateFinalize,
 } = require('../../services/quoting/finalizeEstimateFromQuotation')
 const { saveEstimateQuoteWithRetry } = require('../../utils/saveEstimateQuoteWithRetry')
 const {
@@ -1964,7 +1965,7 @@ exports.getEstimateQuote = asyncHandler(async (req, res) => {
       .select(QUOTATION_LINK_SELECT)
       .sort({ createdAt: -1 })
       .lean()
-    if (quotation?.status === 'accepted' && estimate.status === 'draft') {
+    if (estimate.status === 'draft' && quotationQualifiesForEstimateFinalize(quotation)) {
       await finalizeLinkedEstimateIfDraft(quotation)
       estimate = await EstimateQuote.findById(id)
     }

@@ -18,7 +18,7 @@ Change orders are only allowed after the estimate is final (client contract issu
 
 That is **intentional validation**, not a server bug.
 
-**Update (auto-finalize):** When the **customer accepts** the quotation (`POST` customer portal approve), the backend sets linked `EstimateQuote.status` to **`final`**. Loading the estimate via `GET /api/sales/estimates/:id` also syncs **`final`** if the quotation is already **`accepted`** but the estimate was still **`draft`** (older data).
+**Update (auto-finalize):** Linked `EstimateQuote.status` becomes **`final`** when the quotation is **customer accepted**, **sent**, or **admin approved** (`approval.status === "approved"`). That runs on admin approve / send, customer accept, `GET /api/sales/estimates/:id`, and **`POST /api/sales/change-orders`** (sync before create).
 
 ---
 
