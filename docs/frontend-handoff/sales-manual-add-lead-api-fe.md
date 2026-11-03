@@ -179,7 +179,7 @@ Display `jobId` or `projectId` from the response (year + sequence, e.g. `2026001
 | Use case | Endpoint |
 |----------|----------|
 | Create customer (no project) | `POST /api/sales/customers/basic` |
-| List / pick customer | `GET /api/sales/customers` |
+| List / pick customer | `GET /api/sales/customers` — includes your assigned leads (pre-PO too) and customers you created via `/customers/basic` |
 | Add project from customer detail (portfolio required) | `POST /api/sales/customers/:customerId/projects` — same auto-assign-to-self; **403** if customer not in portfolio |
 | Admin add lead + optional assign | `POST /api/admin/leads` |
 | Edit lead after create | `PUT /api/sales/leads/:leadId` |

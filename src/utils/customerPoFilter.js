@@ -15,8 +15,19 @@ const getSalesCustomerIdsWithRaisedPO = async (salesId) => {
   return getCustomerIdsWithRaisedPO({ assignedSales: salesId })
 }
 
+/** Non-deleted leads assigned to this sales user (any lifecycle, incl. pre-PO). */
+const SALES_ASSIGNED_LEAD_MATCH = { isDeleted: { $ne: true } }
+
+const getSalesPortfolioCustomerIds = async (salesId) => {
+  return Lead.find({ assignedSales: salesId, ...SALES_ASSIGNED_LEAD_MATCH }).distinct(
+    'customerId'
+  )
+}
+
 module.exports = {
   PO_PROJECT_MATCH,
+  SALES_ASSIGNED_LEAD_MATCH,
   getCustomerIdsWithRaisedPO,
   getSalesCustomerIdsWithRaisedPO,
+  getSalesPortfolioCustomerIds,
 }

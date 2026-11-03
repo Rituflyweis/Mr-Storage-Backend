@@ -14,14 +14,24 @@ const { withProjectIdFields, enrichLeadDocument } = require('../../utils/leadPro
 const { buildLeadCreatePayload, escapeRegex } = require('../../utils/leadPayload')
 const { applyBusinessUnitFilter, businessUnitFields } = require('../../utils/businessUnit')
 const {
-  PO_PROJECT_MATCH,
-  getSalesCustomerIdsWithRaisedPO,
+  SALES_ASSIGNED_LEAD_MATCH,
+  getSalesPortfolioCustomerIds,
 } = require('../../utils/customerPoFilter')
 const { applyCustomerSourceScope } = require('../../utils/customerImportScope')
 const { startOfMonth, endOfMonth } = require('date-fns')
 
-const getOwnCustomerIds = async (salesId) => {
-  return Lead.find({ assignedSales: salesId }).distinct('customerId')
+/** Assigned leads + customers created via sales basic create (may have no lead yet). */
+const getSalesVisibleCustomerIds = async (salesId) => {
+  const [portfolioIds, createdIds] = await Promise.all([
+    getSalesPortfolioCustomerIds(salesId),
+    Customer.find({ createdBySales: salesId }).distinct('_id'),
+  ])
+  return [...new Set([...portfolioIds.map(String), ...createdIds.map(String)])]
+}
+
+const salesCanAccessCustomer = async (salesId, customerId) => {
+  const visible = await getSalesVisibleCustomerIds(salesId)
+  return visible.some((id) => String(id) === String(customerId))
 }
 
 exports.getCustomerStats = asyncHandler(async (req, res) => {
@@ -30,8 +40,8 @@ exports.getCustomerStats = asyncHandler(async (req, res) => {
   const monthStart = startOfMonth(now)
   const monthEnd = endOfMonth(now)
 
-  const poCustomerIds = await getSalesCustomerIdsWithRaisedPO(salesId)
-  const scopeBase = applyCustomerSourceScope({ _id: { $in: poCustomerIds } }, req.query)
+  const visibleCustomerIds = await getSalesVisibleCustomerIds(salesId)
+  const scopeBase = applyCustomerSourceScope({ _id: { $in: visibleCustomerIds } }, req.query)
 
   const [total, active, newThisMonth, returningAgg] = await Promise.all([
     Customer.countDocuments(scopeBase),
@@ -41,7 +51,7 @@ exports.getCustomerStats = asyncHandler(async (req, res) => {
       createdAt: { $gte: monthStart, $lte: monthEnd },
     }),
     Lead.aggregate([
-      { $match: { assignedSales: salesId, ...PO_PROJECT_MATCH } },
+      { $match: { assignedSales: salesId, ...SALES_ASSIGNED_LEAD_MATCH } },
       { $group: { _id: '$customerId', count: { $sum: 1 } } },
       { $match: { count: { $gt: 1 } } },
       {
@@ -73,9 +83,9 @@ exports.getCustomers = asyncHandler(async (req, res) => {
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
   const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
 
-  const poCustomerIds = await getSalesCustomerIdsWithRaisedPO(req.user._id)
+  const visibleCustomerIds = await getSalesVisibleCustomerIds(req.user._id)
 
-  const filter = applyCustomerSourceScope({ _id: { $in: poCustomerIds } }, req.query)
+  const filter = applyCustomerSourceScope({ _id: { $in: visibleCustomerIds } }, req.query)
   if (search && search.trim()) {
     const regex = new RegExp(search.trim(), 'i')
     filter.$or = [{ firstName: regex }, { email: regex }, { customerId: regex }]
@@ -96,7 +106,13 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
   const customerIds = customers.map(c => c._id)
   const projectCounts = await Lead.aggregate([
-    { $match: { customerId: { $in: customerIds }, assignedSales: req.user._id, ...PO_PROJECT_MATCH } },
+    {
+      $match: {
+        customerId: { $in: customerIds },
+        assignedSales: req.user._id,
+        ...SALES_ASSIGNED_LEAD_MATCH,
+      },
+    },
     { $group: { _id: '$customerId', count: { $sum: 1 } } },
   ])
   const countMap = new Map(projectCounts.map(p => [String(p._id), p.count]))
@@ -123,6 +139,7 @@ exports.createCustomerBasic = asyncHandler(async (req, res) => {
     phone: { number: phoneNumber, countryCode: countryCode?.trim() || '' },
     password: hashed,
     source: 'manual',
+    createdBySales: req.user._id,
   })
 
   await auditService.log({
@@ -149,9 +166,9 @@ exports.getCustomerDetail = asyncHandler(async (req, res) => {
   )
   if (!customer) return notFound(res, 'Customer not found')
 
-  const ownCustomerIds = await getOwnCustomerIds(req.user._id)
-  const isOwn = ownCustomerIds.some((id) => String(id) === String(customer._id))
-  if (!isOwn) return forbidden(res, 'Access denied')
+  if (!(await salesCanAccessCustomer(req.user._id, customer._id))) {
+    return forbidden(res, 'Access denied')
+  }
 
   const financialPayload = await buildCustomerDetailFinancials(customer._id)
 
@@ -172,9 +189,9 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
     return badRequest(res, 'At least one of firstName, email, or phone is required')
   }
 
-  const ownCustomerIds = await getOwnCustomerIds(req.user._id)
-  const isOwn = ownCustomerIds.some(id => String(id) === customerId)
-  if (!isOwn) return forbidden(res, 'Access denied')
+  if (!(await salesCanAccessCustomer(req.user._id, customerId))) {
+    return forbidden(res, 'Access denied')
+  }
 
   const customer = await Customer.findById(customerId)
   if (!customer) return notFound(res, 'Customer not found')
@@ -226,11 +243,11 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
 exports.getCustomerProjects = asyncHandler(async (req, res) => {
   const { customerId } = req.params
 
-  const poCustomerIds = await getSalesCustomerIdsWithRaisedPO(req.user._id)
-  const isOwn = poCustomerIds.some(id => String(id) === customerId)
-  if (!isOwn) return forbidden(res, 'Access denied')
+  if (!(await salesCanAccessCustomer(req.user._id, customerId))) {
+    return forbidden(res, 'Access denied')
+  }
 
-  const leadFilter = { customerId, assignedSales: req.user._id, ...PO_PROJECT_MATCH }
+  const leadFilter = { customerId, assignedSales: req.user._id, ...SALES_ASSIGNED_LEAD_MATCH }
   applyBusinessUnitFilter(leadFilter, req.query.businessUnit)
   const leads = await Lead.find(leadFilter)
     .sort({ createdAt: -1 })
@@ -271,9 +288,9 @@ exports.createProject = asyncHandler(async (req, res) => {
   const customer = await Customer.findById(customerId).lean()
   if (!customer) return notFound(res, 'Customer not found')
 
-  const ownCustomerIds = await getOwnCustomerIds(req.user._id)
-  const isOwn = ownCustomerIds.some(id => String(id) === customerId)
-  if (!isOwn) return forbidden(res, 'Access denied — customer not in your portfolio')
+  if (!(await salesCanAccessCustomer(req.user._id, customerId))) {
+    return forbidden(res, 'Access denied — customer not in your portfolio')
+  }
 
   const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
     customerId,
