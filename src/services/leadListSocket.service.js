@@ -7,6 +7,13 @@ const { businessUnitFields } = require('../utils/businessUnit')
 
 const getIo = () => global.io?.of('/admin')
 
+/** Skip personal-room push when the actor is already the assignee (e.g. sales manual add). */
+const shouldPushLeadEventToAssignee = (assigneeId, { actorUserId } = {}) => {
+  if (!assigneeId) return false
+  if (actorUserId && String(actorUserId) === String(assigneeId)) return false
+  return true
+}
+
 const getLeadForAdminList = async (leadId, { includeDeleted = false } = {}) => {
   const lead = await Lead.findById(leadId)
     .populate('customerId')
@@ -92,7 +99,7 @@ const emitLeadListCreated = async (leadId, options = {}) => {
   const io = getIo()
   if (!io) return
 
-  const { trigger = 'created', includeScoreRow = false } = options
+  const { trigger = 'created', includeScoreRow = false, actorUserId = null } = options
   const adminLead = await getLeadForAdminList(leadId)
   if (!adminLead) return
 
@@ -105,7 +112,10 @@ const emitLeadListCreated = async (leadId, options = {}) => {
 
   io.to('admin_room').emit('lead_list_created', payload)
 
-  if (adminLead.assignedSales?._id) {
+  if (
+    adminLead.assignedSales?._id &&
+    shouldPushLeadEventToAssignee(adminLead.assignedSales._id, { actorUserId })
+  ) {
     const salesLead = await getLeadForSalesList(leadId)
     if (salesLead) {
       io.to(`user:${adminLead.assignedSales._id}`).emit('lead_list_created', {
@@ -156,6 +166,7 @@ const emitLeadListUpdated = async (leadId, options = {}) => {
     trigger = 'updated',
     includeScoreRow = false,
     notifySales = true,
+    actorUserId = null,
   } = options
 
   // Soft-deleted leads are hidden by default; include them so clients can remove the row
@@ -183,7 +194,11 @@ const emitLeadListUpdated = async (leadId, options = {}) => {
   io.to('admin_room').emit('lead_list_updated', payload)
 
   // Notify assigned sales only when required
-  if (notifySales && adminLead.assignedSales?._id) {
+  if (
+    notifySales &&
+    adminLead.assignedSales?._id &&
+    shouldPushLeadEventToAssignee(adminLead.assignedSales._id, { actorUserId })
+  ) {
     const salesLead = await getLeadForSalesList(leadId, { includeDeleted })
 
     if (salesLead) {

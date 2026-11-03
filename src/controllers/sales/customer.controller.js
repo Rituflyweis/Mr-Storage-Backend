@@ -333,6 +333,12 @@ exports.createProject = asyncHandler(async (req, res) => {
     metadata: { source: lead.source, projectName: lead.projectName },
   })
 
+  const leadListSocket = require('../../services/leadListSocket.service')
+  await leadListSocket.emitLeadListCreated(lead._id, {
+    trigger: 'sales_create_project',
+    actorUserId: req.user._id,
+  })
+
   await syncLeadBuildings(lead, { createdBy: req.user._id })
 
   return created(res, { lead: enrichLeadDocument(lead) })

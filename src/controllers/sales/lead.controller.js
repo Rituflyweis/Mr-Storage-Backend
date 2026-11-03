@@ -229,7 +229,10 @@ exports.createLead = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { source: lead.source, projectName: lead.projectName },
   })
-  await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'sales_create_lead' })
+  await leadListSocket.emitLeadListCreated(lead._id, {
+    trigger: 'sales_create_lead',
+    actorUserId: req.user._id,
+  })
 
   await syncLeadBuildings(lead, { createdBy: req.user._id })
 

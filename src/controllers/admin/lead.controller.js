@@ -454,7 +454,10 @@ exports.createLead = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { source: lead.source, projectName: lead.projectName, assignedSales: lead.assignedSales },
   })
-  await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'admin_create_lead' })
+  await leadListSocket.emitLeadListCreated(lead._id, {
+    trigger: 'admin_create_lead',
+    actorUserId: req.user._id,
+  })
 
   await syncLeadBuildings(lead, { createdBy: req.user._id })
 
@@ -566,21 +569,27 @@ exports.assignLead = asyncHandler(async (req, res) => {
 
   const fullLead = await Lead.findById(leadId).populate('customerId').populate('assignedSales').lean()
 
-  if (global.io) {
-    global.io.of('/admin').to(`user:${employeeId}`).emit('lead_assigned', { leadId, lead: fullLead })
+  const isSelfAssign = String(employeeId) === String(req.user._id)
+  if (!isSelfAssign) {
+    if (global.io) {
+      global.io.of('/admin').to(`user:${employeeId}`).emit('lead_assigned', { leadId, lead: fullLead })
+    }
+
+    await notifyStaffUser(employeeId, {
+      leadId,
+      title: 'Lead assigned to you',
+      body: `${fullLead?.projectName || 'Lead'}${fullLead?.jobId ? ` (${fullLead.jobId})` : ''} was assigned to you.`,
+      type: 'lead',
+      priority: 'high',
+      refId: leadId,
+      refModel: 'Lead',
+    })
   }
 
-  await notifyStaffUser(employeeId, {
-    leadId,
-    title: 'Lead assigned to you',
-    body: `${fullLead?.projectName || 'Lead'}${fullLead?.jobId ? ` (${fullLead.jobId})` : ''} was assigned to you.`,
-    type: 'lead',
-    priority: 'high',
-    refId: leadId,
-    refModel: 'Lead',
+  await leadListSocket.emitLeadListUpdated(leadId, {
+    trigger: 'assigned',
+    actorUserId: req.user._id,
   })
-
-  await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'assigned' })
 
   return success(res, { lead: enrichLeadDocument(fullLead) }, 'Lead assigned successfully')
 })
@@ -1127,7 +1136,10 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { source: lead.source, projectName: lead.projectName, assignedSales: salesEmployeeId },
   })
-  await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'admin_create_project' })
+  await leadListSocket.emitLeadListCreated(lead._id, {
+    trigger: 'admin_create_project',
+    actorUserId: req.user._id,
+  })
 
   await syncLeadBuildings(lead, { createdBy: req.user._id })
 

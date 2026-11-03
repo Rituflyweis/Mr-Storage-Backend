@@ -60,6 +60,7 @@ Common triggers:
 Notes:
 - Unassigned leads are visible to admin via events, but not pushed to sales.
 - Once assigned, sales starts receiving `lead_list_updated` for that lead.
+- When the **same user** creates and is assigned the lead (e.g. `POST /api/sales/leads`), no event is sent to that user’s personal room — refresh from the API response instead; do not show “assigned to you” modals for `meta.trigger` `sales_create_lead` / `sales_create_project` on self.
 
 ---
 

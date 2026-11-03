@@ -168,7 +168,7 @@ Display `jobId` or `projectId` from the response (year + sequence, e.g. `2026001
 
 ## Realtime & side effects
 
-- **Socket:** `lead_list_created` on namespace `/admin` (sales receives in room `user:{salesId}`). See [lead-list-socket-frontend-guide.md](../lead-list-socket-frontend-guide.md).
+- **Socket:** `lead_list_created` on namespace `/admin` for list refresh. When **you** create the lead (`POST /api/sales/leads`), the server **does not** push `lead_list_created` / assignment toasts to your own `user:{salesId}` room (avoids “New Lead Assigned” on self-add). Admin assigning someone else is unchanged. See [lead-list-socket-frontend-guide.md](../lead-list-socket-frontend-guide.md).
 - **Audit:** `lead.created`
 - **Buildings:** default building row(s) synced from `numberOfBuildings` (default 1)
 
