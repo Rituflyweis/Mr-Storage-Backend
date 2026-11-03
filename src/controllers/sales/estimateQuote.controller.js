@@ -546,14 +546,28 @@ const nonEmptyMilestoneRows = (...candidates) => {
   return []
 }
 
-const hasDocumentPricing = (payload = {}) =>
-  Boolean(
+const hasDocumentPricing = (payload = {}) => {
+  if (
     payload.pricingResult ||
-      payload.fullQuote?.pricing ||
-      payload.storagePricingResult ||
-      payload.storagePricing ||
-      payload.jobType === 'Storage'
+    payload.fullQuote?.pricing ||
+    payload.storagePricingResult ||
+    payload.storagePricing
+  ) {
+    return true
+  }
+  // Final / converted estimates may only persist contract totals (no pricingResult blob).
+  const contractTotal = firstDefined(
+    payload.revisedContractTotal,
+    payload.grandTotal,
+    payload.fullQuote?.grandTotal,
+    payload.fullQuoteResult?.grandTotal,
+    payload.totalSell,
   )
+  if (contractTotal != null && Number.isFinite(Number(contractTotal)) && Number(contractTotal) > 0) {
+    return true
+  }
+  return payload.jobType === 'Storage'
+}
 
 const applyStorageEstimateTotals = (estimate, storagePricing) => {
   if (!storagePricing) return
@@ -1740,10 +1754,10 @@ exports.previewDocuments = asyncHandler(async (req, res) => {
   payload = await applyLiveDocumentRebuild(req.user._id, payload, req.body)
 
   if (!hasDocumentPricing(payload)) {
-    return badRequest(res, 'pricingResult, storagePricingResult, fullQuote, or estimateId required')
+    return badRequest(res, 'pricingResult, storagePricingResult, fullQuote, saved contract total, or estimateId required')
   }
 
-  const sections = req.body.sections || ['quote', 'sow', 'contract', 'drawings']
+  const sections = req.body?.sections || ['quote', 'sow', 'contract', 'drawings']
   const milestoneSchedule = nonEmptyMilestoneRows(
     payload.milestoneSchedule,
     payload.milestones,
@@ -1793,7 +1807,7 @@ exports.generateQuotePdf = asyncHandler(async (req, res) => {
   payload = await applyLiveDocumentRebuild(req.user._id, payload, req.body)
 
   if (!hasDocumentPricing(payload)) {
-    return badRequest(res, 'pricingResult, storagePricingResult, or estimateId required')
+    return badRequest(res, 'pricingResult, storagePricingResult, saved contract total, or estimateId required')
   }
 
   try {
