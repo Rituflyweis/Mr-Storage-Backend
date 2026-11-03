@@ -152,6 +152,18 @@ const updateMapping = async (id, patch = {}, actor, reason = '') => {
   const action = patch.approval_status && patch.approval_status !== before.approval_status ? 'approve' : 'update'
   await writeAudit({ actor, action, before, after, reason })
 
+  if (patch.approval_status === 'PENDING' && before.approval_status !== 'PENDING') {
+    const { notifyAdmins } = require('../../utils/staffRequestNotifications.util')
+    await notifyAdmins({
+      title: 'Tax mapping pending approval',
+      body: `${mapping.item_type || 'Category'} mapping needs admin approval before use in Avalara.`,
+      type: 'system',
+      priority: 'medium',
+      refId: mapping._id,
+      refModel: 'TaxCategoryMapping',
+    })
+  }
+
   return { ok: true, mapping: after }
 }
 

@@ -237,3 +237,4 @@ Applied on:
 
 - Existing financial status (`draft/sent/paid/overdue/cancelled`) is preserved for backward compatibility.
 - Approval flow is tracked in `approval.*` and `workflowStatus`.
+- **In-app notifications:** When sales creates or submits an invoice with `approval.status = pending_approval`, every active **admin** user gets a notification (`type: invoice`, filter tab **Invoices**). Admin approve/reject notifies the submitting sales user. List: `GET /api/notifications`; realtime: socket `/admin` event `notification`.

@@ -1,31 +1,18 @@
-const Lead = require('../../models/Lead')
-const { buildDateFilter } = require('../../utils/dateRange')
 const { success, notFound } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const accountProjectService = require('../../services/accountProject.service')
-const { buildFinancialLeadMatch } = require('../../utils/financialProjectScope')
 
 exports.getProjects = asyncHandler(async (req, res) => {
-  const dateFilter = buildDateFilter(req.query)
-  const { status, search } = req.query
+  const projects = await accountProjectService.listAccountProjects(req.query)
+  return success(res, { projects })
+})
 
-  // Default: PO / plant projects only; optional `status` narrows lifecycle within that scope.
-  const filter = status
-    ? { $and: [buildFinancialLeadMatch(), { lifecycleStatus: status }], ...dateFilter }
-    : { ...buildFinancialLeadMatch(), ...dateFilter }
-  if (search?.trim()) {
-    const regex = { $regex: search.trim(), $options: 'i' }
-    filter.$or = [{ projectName: regex }, { jobId: regex }]
-  }
-
-  const projects = await Lead.find(filter)
-    .populate('customerId')
-    .populate('assignedSales', 'name email role')
-    .sort({ updatedAt: -1 })
-    .lean()
-
-  return success(res, { projects: projects.map(enrichLeadDocument) })
+/** Same as GET /projects, but only leads with at least one customer invoice (non-cancelled). */
+exports.getConfirmedProjects = asyncHandler(async (req, res) => {
+  const projects = await accountProjectService.listAccountProjects(req.query, {
+    confirmedInvoicedOnly: true,
+  })
+  return success(res, { projects })
 })
 
 exports.getProjectDetail = asyncHandler(async (req, res) => {

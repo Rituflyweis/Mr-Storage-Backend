@@ -43,6 +43,12 @@ const generateMaterialRequestId = require('../utils/generateMaterialRequestId')
 const auditService = require('../services/audit.service')
 const notificationService = require('../services/notification.service')
 const {
+  notifyAdminsApprovalRequest,
+  notifyAccountsApprovalRequest,
+  notifyLeadOwner,
+} = require('../utils/staffRequestNotifications.util')
+const { notifyMaterialRequestCreated } = require('../utils/materialRequestNotifications.util')
+const {
   alertPlantUsersForLead,
   notifyPlantUsersForLead,
 } = require('../utils/notifyPlantUsers')
@@ -1028,6 +1034,28 @@ exports.submitPaymentProof = asyncHandler(async (req, res) => {
       leadId: String(invoice.leadId),
     })
   }
+
+  const proofPayload = {
+    title: 'Payment proof submitted',
+    entityLabel: 'Invoice',
+    entityRef: invoice.invoiceNumber || '',
+    leadId: invoice.leadId,
+    refId: invoice._id,
+    refModel: 'Invoice',
+    type: 'payment',
+    note: 'Customer uploaded a receipt for review.',
+    priority: 'high',
+  }
+  await notifyAdminsApprovalRequest(proofPayload)
+  await notifyAccountsApprovalRequest(proofPayload)
+  await notifyLeadOwner(invoice.leadId, {
+    title: 'Payment proof submitted',
+    body: `Customer submitted payment proof for invoice ${invoice.invoiceNumber}.`,
+    type: 'payment',
+    priority: 'medium',
+    refId: invoice._id,
+    refModel: 'Invoice',
+  })
 
   return success(res, { invoice }, 'Receipt submitted — pending review')
 })
@@ -2760,6 +2788,8 @@ exports.createProjectOrder = asyncHandler(async (req, res) => {
     performedBy: req.customer._id,
     metadata: { requestId: order.requestId },
   })
+
+  await notifyMaterialRequestCreated(order)
 
   return created(res, { order }, 'Order request submitted')
 })

@@ -14,6 +14,11 @@ const {
 } = require('../utils/payableInvoice.util')
 const { INVOICE_TYPES, INVOICE_CATEGORIES, PAYABLE_WORKFLOW_STATUSES } = require('../config/constants')
 const { applyInvoiceBillingFields } = require('../utils/invoiceBilling.util')
+const {
+  notifyVendorPayablePendingAdmin,
+  notifyVendorPayableApprovedForAccounts,
+  notifyVendorPayableRejected,
+} = require('../utils/staffRequestNotifications.util')
 
 const PAYABLE_TYPES = INVOICE_TYPES.filter((t) => t !== 'customer')
 
@@ -106,6 +111,8 @@ const createManualPayable = async (req, res, invoiceType) => {
     bankDetails,
   })
 
+  await notifyVendorPayablePendingAdmin(invoice)
+
   const detail = await populatePayableQuery(Invoice.findById(invoice._id)).lean()
   return created(res, { invoice: detail }, 'Payable invoice submitted for admin approval')
 }
@@ -153,6 +160,8 @@ exports.approvePayable = asyncHandler(async (req, res) => {
   syncTopLevelStatusFromPayable(invoice)
   await invoice.save()
 
+  await notifyVendorPayableApprovedForAccounts(invoice)
+
   const detail = await populatePayableQuery(Invoice.findById(invoice._id)).lean()
   return success(res, { invoice: detail }, 'Approved for account payment')
 })
@@ -174,6 +183,8 @@ exports.rejectPayable = asyncHandler(async (req, res) => {
   invoice.payableWorkflow.adminRejectionReason = reason
   syncTopLevelStatusFromPayable(invoice)
   await invoice.save()
+
+  await notifyVendorPayableRejected(invoice, reason)
 
   const detail = await populatePayableQuery(Invoice.findById(invoice._id)).lean()
   return success(res, { invoice: detail }, 'Payable invoice rejected')

@@ -12,6 +12,7 @@ const {
   ESCALATION_LEAD_POPULATE,
   loadEscalationWithRelations,
 } = require('../../utils/escalationLeadRow')
+const { notifyStaffUser } = require('../../utils/staffRequestNotifications.util')
 
 exports.getAllEscalations = asyncHandler(async (req, res) => {
   const { status, assignedSales, search, page = 1, limit = 20 } = req.query
@@ -75,6 +76,18 @@ exports.resolveEscalation = asyncHandler(async (req, res) => {
     metadata: { escalationId: escalation._id, note: req.body.note || '' }
   })
 
+  if (escalation.raisedBy) {
+    await notifyStaffUser(escalation.raisedBy, {
+      leadId: escalation.leadId,
+      title: 'Escalation resolved',
+      body: 'Your escalated lead was marked resolved by admin.',
+      type: 'escalation',
+      priority: 'medium',
+      refId: escalation._id,
+      refModel: 'Escalation',
+    })
+  }
+
   const populated = await loadEscalationWithRelations(escalation._id)
   return success(res, { lead: mapEscalationLeadRow(populated) }, 'Escalation resolved')
 })
@@ -129,6 +142,28 @@ exports.assignEscalation = asyncHandler(async (req, res) => {
       lead: fullLead,
     })
   }
+
+  await notifyStaffUser(employeeId, {
+    leadId: escalation.leadId,
+    title: 'Escalation assigned to you',
+    body: `${fullLead?.projectName || 'Lead'}${fullLead?.jobId ? ` (${fullLead.jobId})` : ''} was reassigned from an escalation.`,
+    type: 'escalation',
+    priority: 'high',
+    refId: escalation._id,
+    refModel: 'Escalation',
+  })
+  if (escalation.raisedBy && String(escalation.raisedBy) !== String(employeeId)) {
+    await notifyStaffUser(escalation.raisedBy, {
+      leadId: escalation.leadId,
+      title: 'Escalation resolved',
+      body: 'Your escalation was resolved and the lead was reassigned.',
+      type: 'escalation',
+      priority: 'medium',
+      refId: escalation._id,
+      refModel: 'Escalation',
+    })
+  }
+
   await leadListSocket.emitLeadListUpdated(escalation.leadId, { trigger: 'escalation_reassign' })
 
   const populated = await loadEscalationWithRelations(escalation._id)

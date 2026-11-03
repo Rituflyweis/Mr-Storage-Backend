@@ -6,7 +6,10 @@ const Lead = require('../../models/Lead')
 const ExcelJS = require('exceljs')
 const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
-const notificationService = require('../../services/notification.service')
+const {
+  notifyMaterialRequestCreated,
+  notifyMaterialRequestReviewed,
+} = require('../../utils/materialRequestNotifications.util')
 const generateMaterialRequestId = require('../../utils/generateMaterialRequestId')
 const generateOrderQuotationNumber = require('../../utils/generateOrderQuotationNumber')
 const materialRequestList = require('../../services/materialRequestList.service')
@@ -258,17 +261,7 @@ exports.createMaterialRequest = asyncHandler(async (req, res) => {
     priority,
   })
 
-  const lead = await Lead.findById(leadId).select('projectName jobId').lean()
-  const projectLabel = lead?.jobId || lead?.projectName || 'a project'
-  await notificationService.notifyRole('plant', {
-    leadId,
-    title: 'New material request',
-    body: `${mr.requestId} submitted for ${projectLabel} (${requestedItems.length} item(s)).`,
-    type: 'material_request',
-    priority: priority === 'critical' || priority === 'high' ? 'high' : 'medium',
-    refId: mr._id,
-    refModel: 'MaterialRequest',
-  })
+  await notifyMaterialRequestCreated(mr)
 
   return created(res, { materialRequest: mr }, 'Material request created')
 })
@@ -296,17 +289,8 @@ exports.updateMaterialRequestStatus = asyncHandler(async (req, res) => {
   if (reviewNotes) mr.reviewNotes = reviewNotes
   await mr.save()
 
-  if (mr.requestedBy && ['approved', 'rejected', 'fulfilled'].includes(status)) {
-    await notificationService.notify({
-      userId: mr.requestedBy,
-      leadId: mr.leadId,
-      title: `Material request ${status}`,
-      body: `Request ${mr.requestId || mr._id} was ${status}${reviewNotes ? `: ${reviewNotes}` : '.'}`,
-      type: 'material_request',
-      priority: status === 'rejected' ? 'high' : 'medium',
-      refId: mr._id,
-      refModel: 'MaterialRequest',
-    })
+  if (['approved', 'rejected', 'fulfilled', 'cancelled'].includes(status)) {
+    await notifyMaterialRequestReviewed(mr, status, reviewNotes)
   }
 
   return success(res, { requestId: mr._id, status: mr.status }, 'Material request updated')

@@ -5,6 +5,7 @@ const PaymentApproval = require('../models/PaymentApproval')
 const Invoice = require('../models/Invoice')
 const generatePaymentApprovalId = require('../utils/generatePaymentApprovalId')
 const costsPanel = require('./accountCostsPanel.service')
+const { notifyPaymentApprovalCreated } = require('../utils/staffRequestNotifications.util')
 
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100
 
@@ -48,6 +49,7 @@ const ensureFreightApproval = async (bidId, userId) => {
       invoiceNumber: `FR-${String(bidId).slice(-5).toUpperCase()}`,
       status: 'under_review',
     })
+    await notifyPaymentApprovalCreated(approval, { note: 'Freight bid awarded — review payment.' })
   }
   return { bid, approval }
 }

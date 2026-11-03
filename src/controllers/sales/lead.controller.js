@@ -23,6 +23,10 @@ const {
   mapLeadByScoreRow,
 } = require('../../utils/leadQueryFilter')
 const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
+const {
+  notifyAdminsApprovalRequest,
+  notifyAdmins,
+} = require('../../utils/staffRequestNotifications.util')
 const { setLeadLifecycleStage } = require('../../utils/leadLifecycle.util')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
 const {
@@ -896,6 +900,18 @@ exports.escalateLead = asyncHandler(async (req, res) => {
     global.io.of('/admin').to('admin_room').emit('new_escalation', { escalation, leadId, raisedBy: req.user.name })
   }
 
+  await notifyAdminsApprovalRequest({
+    title: 'Lead escalated',
+    entityLabel: lead.projectName || lead.jobId || 'Lead',
+    entityRef: lead.jobId || '',
+    leadId,
+    refId: escalation._id,
+    refModel: 'Escalation',
+    type: 'escalation',
+    note: note ? `Note: ${note}` : 'Sales needs admin attention.',
+    priority: 'high',
+  })
+
   return success(res, { escalation }, 'Lead escalated successfully')
 })
 
@@ -946,6 +962,16 @@ exports.raisePOOrder = asyncHandler(async (req, res) => {
   await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'po_raised', includeScoreRow: true })
 
   if (global.io) global.io.of('/admin').to('admin_room').emit('new_po_order', { order, leadId })
+
+  await notifyAdmins({
+    title: 'PO order raised',
+    body: `${lead.projectName || 'Project'}${lead.jobId ? ` (${lead.jobId})` : ''} — PO ${latestInvoice.poNumber || order.poNumber || ''} needs admin processing.`,
+    type: 'system',
+    priority: 'high',
+    leadId,
+    refId: order._id,
+    refModel: 'POOrder',
+  })
 
   await auditService.log({
     type: 'po', action: AUDIT_ACTIONS.LEAD_PO_RAISED,

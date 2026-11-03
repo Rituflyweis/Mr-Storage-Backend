@@ -125,3 +125,11 @@ GET /api/account/projects?search=&status=payment_done&startDate=&endDate=
 ```
 
 Returns `{ projects: [...] }` for account project lists.
+
+### Confirmed (customer invoice created)
+
+Same query params and **identical** `{ projects: [...] }` shape as the list above, but only leads that have at least one **customer** receivable invoice (`status` ≠ `cancelled`; draft/sent/paid all count).
+
+```http
+GET /api/account/projects/confirmed?search=&status=&startDate=&endDate=
+```

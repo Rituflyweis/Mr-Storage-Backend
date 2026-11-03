@@ -11,8 +11,6 @@ const generateCustomerId = require('../../utils/generateCustomerId')
 const { AUDIT_ACTIONS } = require('../../config/constants')
 
 const CUSTOMER_PANEL_MESSAGE = 'You have an existing customer panel, please visit there to create a new project'
-const ENQUIRY_NOTIFY_EMAIL = 'info@steelbuildingdepot.com'
-
 const resolveBuildingTypeName = async (buildingTypeId) => {
   const id = String(buildingTypeId || '').trim()
   if (!id) return ''
@@ -38,7 +36,6 @@ const sendFormEnquiryEmail = async ({ customerName, customerEmail, customerPhone
 
   try {
     await mailer.sendNewCustomerEnquiryNotification({
-      toEmail: ENQUIRY_NOTIFY_EMAIL,
       customerName,
       customerEmail,
       customerPhone,

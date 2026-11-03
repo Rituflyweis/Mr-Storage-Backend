@@ -46,6 +46,7 @@ const logBlockedSteelInfoEmail = (mailOptions = {}, provider = 'email') => {
 module.exports = {
   INFO_STEELBUILDING_EMAIL,
   allowMailToInfoSteelbuilding,
+  isInfoSteelbuildingAddress,
   isOutboundMailBlockedForSteelInfo,
   logBlockedSteelInfoEmail,
 }

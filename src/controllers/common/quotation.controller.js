@@ -33,6 +33,10 @@ const asyncHandler = require("../../utils/asyncHandler");
 const { buildDateFilter } = require("../../utils/dateRange");
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES } = require("../../config/constants");
 const { resolveOutboundRecipients } = require("../../utils/outboundEmail");
+const {
+  notifyAdminsApprovalRequest,
+  notifySubmitterOutcome,
+} = require("../../utils/staffRequestNotifications.util");
 const { finalizeLinkedEstimateIfDraft } = require("../../services/quoting/finalizeEstimateFromQuotation");
 const QUOTATION_APPROVAL_STATUSES = ["not_submitted", "pending_approval", "approved", "rejected"];
 const QUOTATION_STATUS_FILTERS = ["draft", "pending", "pending_approval", "approved", "rejected", "sent", "accepted"];
@@ -1613,6 +1617,17 @@ exports.submitQuotationForApproval = asyncHandler(async (req, res) => {
     metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, versionNumber: quotation.versionNumber },
   });
 
+  await notifyAdminsApprovalRequest({
+    title: "Quotation pending approval",
+    entityLabel: "Quotation",
+    entityRef: quotation.quoteNumber || "",
+    leadId: quotation.leadId,
+    refId: quotation._id,
+    refModel: "Quotation",
+    type: "quotation",
+    note: req.body?.note ? String(req.body.note).trim() : "",
+  });
+
   return success(
     res,
     {
@@ -1653,6 +1668,17 @@ exports.approveQuotation = asyncHandler(async (req, res) => {
     customerId: quotation.customerId,
     performedBy: req.user._id,
     metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, approvedVersionNumber: quotation.approval.approvedVersionNumber },
+  });
+
+  await notifySubmitterOutcome({
+    userId: quotation.approval.submittedBy,
+    leadId: quotation.leadId,
+    title: "Quotation approved",
+    body: `Quotation ${quotation.quoteNumber} was approved. You can send it to the customer.`,
+    type: "quotation",
+    priority: "medium",
+    refId: quotation._id,
+    refModel: "Quotation",
   });
 
   return success(
@@ -1697,6 +1723,17 @@ exports.rejectQuotationApproval = asyncHandler(async (req, res) => {
     customerId: quotation.customerId,
     performedBy: req.user._id,
     metadata: { quotationId: quotation._id, quoteNumber: quotation.quoteNumber, reason },
+  });
+
+  await notifySubmitterOutcome({
+    userId: quotation.approval.submittedBy,
+    leadId: quotation.leadId,
+    title: "Quotation rejected",
+    body: `Quotation ${quotation.quoteNumber} was rejected: ${reason}`,
+    type: "quotation",
+    priority: "high",
+    refId: quotation._id,
+    refModel: "Quotation",
   });
 
   return success(

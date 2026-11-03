@@ -37,6 +37,9 @@ const {
   isOutboundMailBlockedForSteelInfo,
   logBlockedSteelInfoEmail,
 } = require("../../utils/emailRecipientGuard.util");
+const {
+  resolveEnquiryNotificationRecipients,
+} = require("../../utils/adminEnquiryEmailRecipients.util");
 
 if (SENDGRID_API_KEY) {
   sgMail.setApiKey(SENDGRID_API_KEY);
@@ -891,7 +894,7 @@ const sendEmployeePasswordUpdated = async ({
 };
 
 const sendNewCustomerEnquiryNotification = async ({
-  toEmail = "info@steelbuildingdepot.com",
+  toEmail = null,
   customerName,
   customerEmail,
   customerPhone,
@@ -929,9 +932,21 @@ const sendNewCustomerEnquiryNotification = async ({
     );
   }
 
+  let recipients = toEmail
+    ? [String(toEmail).trim().toLowerCase()].filter(Boolean)
+    : await resolveEnquiryNotificationRecipients();
+  if (!recipients.length) {
+    console.warn(
+      `[Nodemailer] Enquiry email skipped — no admin recipients (and info@ blocked in this env). source=${source}`,
+    );
+    return { skipped: true, reason: "no_recipients" };
+  }
+
+  const toField = recipients.join(", ");
+
   const info = await enquiryTransporter.sendMail({
     from: MAIL_FROM_NODE_MAILER || SMTP_MAIL_FROM,
-    to: toEmail,
+    to: toField,
     subject,
     html,
     text: [
@@ -943,9 +958,12 @@ const sendNewCustomerEnquiryNotification = async ({
     ].join("\n"),
   });
 
+  if (info?.blocked) return info;
+
   console.log(
-    `[Nodemailer] Email sent successfully | to=${toEmail} | subject=${subject} | source=${source} | messageId=${info.messageId || "-"} | response=${info.response || "-"} | customer=${customerName || "N/A"} <${customerEmail || "N/A"}>`,
+    `[Nodemailer] Email sent successfully | to=${toField} | subject=${subject} | source=${source} | messageId=${info.messageId || "-"} | response=${info.response || "-"} | customer=${customerName || "N/A"} <${customerEmail || "N/A"}>`,
   );
+  return info;
 };
 
 const sendConsolidatedBOMToVendor = async ({

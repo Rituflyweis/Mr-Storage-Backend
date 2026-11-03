@@ -3,6 +3,7 @@ const User = require('../models/User')
 const RoundRobinTracker = require('../models/RoundRobinTracker')
 const auditService = require('./audit.service')
 const leadListSocket = require('./leadListSocket.service')
+const { notifyStaffUser } = require('../utils/staffRequestNotifications.util')
 const { AUDIT_ACTIONS } = require('../config/constants')
 
 /**
@@ -98,6 +99,15 @@ const assignNextSales = async (leadId, customerId, options = {}) => {
         lead: fullLead,
       })
     }
+    await notifyStaffUser(employeeId, {
+      leadId,
+      title: 'Lead assigned to you',
+      body: `${fullLead?.projectName || 'New lead'}${fullLead?.jobId ? ` (${fullLead.jobId})` : ''} was auto-assigned to you.`,
+      type: 'lead',
+      priority: 'high',
+      refId: leadId,
+      refModel: 'Lead',
+    })
     await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'assigned' })
   }
 

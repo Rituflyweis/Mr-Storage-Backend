@@ -24,6 +24,7 @@ const {
   addPaymentApprovalRemark,
   addPaymentApprovalAttachment,
 } = require('../../services/paymentApprovalDetail.service')
+const { notifyPaymentApprovalReviewed } = require('../../utils/staffRequestNotifications.util')
 
 // ── Delivery Finance (dashboard card) ────────────────────────────────────────
 
@@ -618,6 +619,10 @@ exports.reviewPaymentApproval = asyncHandler(async (req, res) => {
     })
   }
   await approval.save()
+
+  if (['approved', 'rejected', 'disputed'].includes(action)) {
+    await notifyPaymentApprovalReviewed(approval, action, reviewNotes)
+  }
 
   return success(res, { approval }, `Payment marked ${action.replace('_', ' ')}`)
 })

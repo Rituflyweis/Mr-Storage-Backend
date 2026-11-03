@@ -45,6 +45,7 @@ const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
 const { formatLeadNotes, appendLeadNote, updateLeadNote, deleteLeadNote } = require('../../services/leadNotes.service')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
+const { notifyStaffUser } = require('../../utils/staffRequestNotifications.util')
 const {
   normalizeBusinessUnit,
   businessUnitFields,
@@ -568,6 +569,17 @@ exports.assignLead = asyncHandler(async (req, res) => {
   if (global.io) {
     global.io.of('/admin').to(`user:${employeeId}`).emit('lead_assigned', { leadId, lead: fullLead })
   }
+
+  await notifyStaffUser(employeeId, {
+    leadId,
+    title: 'Lead assigned to you',
+    body: `${fullLead?.projectName || 'Lead'}${fullLead?.jobId ? ` (${fullLead.jobId})` : ''} was assigned to you.`,
+    type: 'lead',
+    priority: 'high',
+    refId: leadId,
+    refModel: 'Lead',
+  })
+
   await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'assigned' })
 
   return success(res, { lead: enrichLeadDocument(fullLead) }, 'Lead assigned successfully')

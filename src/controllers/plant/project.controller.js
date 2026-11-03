@@ -12,6 +12,10 @@ const ConsolidatedBOM = require('../../models/ConsolidatedBOM')
 const AuditLog = require('../../models/AuditLog')
 const auditService = require('../../services/audit.service')
 const { notifyCustomerDrawingUploaded } = require('../../services/customerNotification.service')
+const {
+  notifyAdmins,
+  notifyDrawingReviewedForUploader,
+} = require('../../utils/staffRequestNotifications.util')
 const { formatLeadNotes, appendLeadNote } = require('../../services/leadNotes.service')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
 const { businessUnitFields, applyBusinessUnitFilter } = require('../../utils/businessUnit')
@@ -648,6 +652,16 @@ exports.uploadProjectDrawings = asyncHandler(async (req, res) => {
       buildingNumber: item.buildingNumber,
       refId: item.buildingId,
     })
+
+    await notifyAdmins({
+      leadId,
+      title: 'Drawing awaiting review',
+      body: `${lead.jobId || lead.projectName || 'Project'} — ${item.drawing.fileName || 'drawing'} uploaded (building ${item.buildingNumber}).`,
+      type: 'drawing',
+      priority: 'medium',
+      refId: item.buildingId,
+      refModel: 'Building',
+    })
   }
 
   const allBuildings = await Building.find({ leadId }).select('drawings').lean()
@@ -780,6 +794,18 @@ exports.requestProjectDrawingRevision = asyncHandler(async (req, res) => {
     metadata: { docId: drawing._id, name: drawing.name, note, source: drawing.source },
   })
 
+  const uploaderId =
+    ref.source === 'document' ? ref.doc?.uploadedBy : ref.drawing?.uploadedBy
+  await notifyDrawingReviewedForUploader({
+    uploadedBy: uploaderId,
+    leadId,
+    fileName: drawing.name || drawing.fileName,
+    status: 'rejected',
+    note,
+    refId: drawing._id,
+    refModel: ref.source === 'document' ? 'DrawingDocument' : 'Building',
+  })
+
   return success(res, { message: 'Revision requested', drawing })
 })
 
@@ -819,6 +845,18 @@ exports.reviewProjectDrawing = asyncHandler(async (req, res) => {
       source: drawing.source,
       ...(status === 'rejected' ? { note: pickRevisionNote(req.body) } : {}),
     },
+  })
+
+  const uploaderId =
+    ref.source === 'document' ? ref.doc?.uploadedBy : ref.drawing?.uploadedBy
+  await notifyDrawingReviewedForUploader({
+    uploadedBy: uploaderId,
+    leadId,
+    fileName: drawing.name || drawing.fileName,
+    status: status === 'approved' ? 'approved' : 'rejected',
+    note: status === 'rejected' ? pickRevisionNote(req.body) : '',
+    refId: drawing._id,
+    refModel: ref.source === 'document' ? 'DrawingDocument' : 'Building',
   })
 
   return success(res, {

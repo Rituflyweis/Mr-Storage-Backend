@@ -14,7 +14,7 @@ const mailer = require('../services/email/mailer')
 const generateCustomerId = require('../utils/generateCustomerId')
 const { success, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
-const { notifyPlantUsersForLead } = require('../utils/notifyPlantUsers')
+const { alertPlantUsersForLead } = require('../utils/notifyPlantUsers')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../config/constants')
 const env = require('../config/env')
 
@@ -90,7 +90,6 @@ exports.chatInit = asyncHandler(async (req, res) => {
     if (mailer.isEnquiryNotificationConfigured()) {
       try {
         await mailer.sendNewCustomerEnquiryNotification({
-          toEmail: 'info@steelbuildingdepot.com',
           customerName: firstName.trim(),
           customerEmail: normalizedEmail,
           customerPhone: normalizedPhone,
@@ -294,13 +293,25 @@ exports.submitVendorUpload = asyncHandler(async (req, res) => {
     },
   })
 
-  await notifyPlantUsersForLead(request.leadId._id, 'shipper_file_submitted', {
-    leadId: request.leadId._id,
-    requestId: request._id,
-    vendorId: request.vendorId._id,
-    vendorName: request.vendorId.vendorName,
-    submittedAt: request.submittedAt,
-    quoteValue: request.quoteValue,
+  const shipperNotify = {
+    title: 'Shipper file submitted',
+    body: `${request.vendorId?.vendorName || 'Vendor'} submitted a shipper file for review.`,
+    type: 'material_request',
+    priority: 'medium',
+    refId: request._id,
+    refModel: 'ShipperRequest',
+  }
+  await alertPlantUsersForLead(request.leadId._id, {
+    eventName: 'shipper_file_submitted',
+    socketPayload: {
+      leadId: request.leadId._id,
+      requestId: request._id,
+      vendorId: request.vendorId._id,
+      vendorName: request.vendorId.vendorName,
+      submittedAt: request.submittedAt,
+      quoteValue: request.quoteValue,
+    },
+    notification: shipperNotify,
   })
 
   if (allVendorsSubmitted && consolidatedBOM && consolidatedBOM.status !== 'vendor_submitted') {
@@ -318,10 +329,21 @@ exports.submitVendorUpload = asyncHandler(async (req, res) => {
       },
     })
 
-    await notifyPlantUsersForLead(request.leadId._id, 'all_shipper_files_submitted', {
-      leadId: request.leadId._id,
-      consolidatedBOMId: consolidatedBOM._id,
-      vendorCount: requestedVendorIds.length,
+    await alertPlantUsersForLead(request.leadId._id, {
+      eventName: 'all_shipper_files_submitted',
+      socketPayload: {
+        leadId: request.leadId._id,
+        consolidatedBOMId: consolidatedBOM._id,
+        vendorCount: requestedVendorIds.length,
+      },
+      notification: {
+        title: 'All shipper files submitted',
+        body: `All ${requestedVendorIds.length} vendor shipper files are in — ready for review.`,
+        type: 'material_request',
+        priority: 'high',
+        refId: consolidatedBOM._id,
+        refModel: 'ConsolidatedBOM',
+      },
     })
   }
 

@@ -5,6 +5,7 @@ const Customer = require('../models/Customer')
 const Quotation = require('../models/Quotation')
 const { buildDateFilter } = require('../utils/dateRange')
 const { buildPayableListRow, createPayableInvoice, populatePayableQuery } = require('../utils/payableInvoice.util')
+const { notifyVendorPayablePendingAdmin } = require('../utils/staffRequestNotifications.util')
 const { aggregateProjectExpensesForLead } = require('../utils/projectExpenseAggregate.util')
 const { marginPct } = require('../utils/profitLossPeriod.util')
 const { resolveCustomerInvoiceDocuments } = require('../utils/customerInvoiceDocument.util')
@@ -515,6 +516,10 @@ exports.createMiscellaneousInvoice = async (body, userId) => {
   if (dueDate) {
     invoice.dueDate = new Date(dueDate)
     await invoice.save()
+  }
+
+  if (invoice.payableWorkflow?.status === 'pending_admin_approval') {
+    await notifyVendorPayablePendingAdmin(invoice)
   }
 
   const detail = await populatePayableQuery(Invoice.findById(invoice._id)).lean()

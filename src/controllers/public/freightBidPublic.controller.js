@@ -5,7 +5,7 @@ const Lead = require('../../models/Lead')
 const auditService = require('../../services/audit.service')
 const { loadFreightLoadDetailsByLeadId } = require('../../services/plant/freightLoadDetails.service')
 const { mapPublicFreightBidInfo } = require('../../utils/freightBidDisplay')
-const { notifyPlantUsersForLead } = require('../../utils/notifyPlantUsers')
+const { alertPlantUsersForLead } = require('../../utils/notifyPlantUsers')
 const { success, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS } = require('../../config/constants')
@@ -118,17 +118,28 @@ exports.submitFreightBid = asyncHandler(async (req, res) => {
       },
     })
 
-    await notifyPlantUsersForLead(leadId, 'freight_bid_submitted', {
-      leadId,
-      deliveryId: delivery._id,
-      deliveryNumber: delivery.deliveryNumber || '',
-      bidId: bid._id,
-      carrierId: bid.carrierId,
-      carrierName: carrier?.carrierName || '',
-      submittedAt: bid.submittedAt,
-      quotedAmount: bid.quotedAmount,
-      projectName: lead?.projectName || '',
-      jobId: lead?.jobId || '',
+    await alertPlantUsersForLead(leadId, {
+      eventName: 'freight_bid_submitted',
+      socketPayload: {
+        leadId,
+        deliveryId: delivery._id,
+        deliveryNumber: delivery.deliveryNumber || '',
+        bidId: bid._id,
+        carrierId: bid.carrierId,
+        carrierName: carrier?.carrierName || '',
+        submittedAt: bid.submittedAt,
+        quotedAmount: bid.quotedAmount,
+        projectName: lead?.projectName || '',
+        jobId: lead?.jobId || '',
+      },
+      notification: {
+        title: 'Freight bid submitted',
+        body: `${carrier?.carrierName || 'Carrier'} submitted a bid on ${delivery.deliveryNumber || 'delivery'}.`,
+        type: 'freight_bid',
+        priority: 'medium',
+        refId: bid._id,
+        refModel: 'FreightBid',
+      },
     })
 
     if (allFreightBidsSubmitted) {
@@ -145,13 +156,24 @@ exports.submitFreightBid = asyncHandler(async (req, res) => {
         },
       })
 
-      await notifyPlantUsersForLead(leadId, 'all_freight_bids_submitted', {
-        leadId,
-        deliveryId: delivery._id,
-        deliveryNumber: delivery.deliveryNumber || '',
-        bidCount: allBids.length,
-        projectName: lead?.projectName || '',
-        jobId: lead?.jobId || '',
+      await alertPlantUsersForLead(leadId, {
+        eventName: 'all_freight_bids_submitted',
+        socketPayload: {
+          leadId,
+          deliveryId: delivery._id,
+          deliveryNumber: delivery.deliveryNumber || '',
+          bidCount: allBids.length,
+          projectName: lead?.projectName || '',
+          jobId: lead?.jobId || '',
+        },
+        notification: {
+          title: 'All freight bids in',
+          body: `${allBids.length} carrier bid(s) received for ${delivery.deliveryNumber || 'delivery'}.`,
+          type: 'freight_bid',
+          priority: 'high',
+          refId: delivery._id,
+          refModel: 'Delivery',
+        },
       })
     }
   }

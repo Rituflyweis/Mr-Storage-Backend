@@ -9,6 +9,7 @@ const deliveryIdParam = [param('deliveryId').notEmpty().trim()]
 const quotationIdParam = [param('quotationId').notEmpty().trim()]
 
 router.get('/', ctrl.getProjects)
+router.get('/confirmed', ctrl.getConfirmedProjects)
 
 // Nested project sub-pages (must stay before/alongside /:projectId — multi-segment paths)
 router.get(

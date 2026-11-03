@@ -24,6 +24,11 @@ const { notifyCustomerDrawingUploadedForLabel } = require('../../services/custom
 const generateDeliveryNumber = require('../../utils/generateDeliveryNumber')
 const generateMaterialRequestId = require('../../utils/generateMaterialRequestId')
 const {
+  notifyMaterialRequestCreated,
+  notifyMaterialRequestReviewed,
+} = require('../../utils/materialRequestNotifications.util')
+const { notifyDrawingReviewedForUploader } = require('../../utils/staffRequestNotifications.util')
+const {
   parseTaskScheduleFromBody,
   applyTaskStatusAndCompletion,
 } = require('../../utils/constructionTaskFields.util')
@@ -584,6 +589,16 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
       global.io.of('/admin').to(`lead:${doc.leadId}`).emit('drawing_status_updated', payload)
     }
 
+    await notifyDrawingReviewedForUploader({
+      uploadedBy: doc.uploadedBy,
+      leadId: doc.leadId,
+      fileName: doc.name,
+      status: doc.status === 'approved' ? 'approved' : 'rejected',
+      note: req.body.notes || '',
+      refId: doc._id,
+      refModel: 'DrawingDocument',
+    })
+
     return success(res, { document: doc })
   }
 
@@ -603,6 +618,16 @@ exports.approveDrawing = asyncHandler(async (req, res) => {
     global.io.of('/chat').to(`lead:${building.leadId}`).emit('drawing_status_updated', payload)
     global.io.of('/admin').to(`lead:${building.leadId}`).emit('drawing_status_updated', payload)
   }
+
+  await notifyDrawingReviewedForUploader({
+    uploadedBy: drawing.uploadedBy,
+    leadId: building.leadId,
+    fileName: drawing.fileName,
+    status: drawing.status === 'approved' ? 'approved' : 'rejected',
+    note: req.body.notes || drawing.rejectionReason || '',
+    refId: drawing._id,
+    refModel: 'Building',
+  })
 
   return success(res, { document: mapPlantDrawing(building, drawing, building.leadId) })
 })
@@ -896,6 +921,8 @@ exports.createMaterialRequest = asyncHandler(async (req, res) => {
     priority: priority || 'medium', totalAmount: totalAmount || 0,
   })
 
+  await notifyMaterialRequestCreated(request)
+
   return created(res, { request })
 })
 
@@ -918,6 +945,8 @@ exports.reviewMaterialRequest = asyncHandler(async (req, res) => {
   request.reviewedAt = new Date()
   request.reviewNotes = reviewNotes || ''
   await request.save()
+
+  await notifyMaterialRequestReviewed(request, action, reviewNotes)
 
   return success(res, { request })
 })

@@ -23,6 +23,10 @@ const {
 } = require('../../utils/paymentApprovalPresentation.util')
 const { appendPaymentApprovalActivity } = require('../../services/paymentApprovalDetail.service')
 const {
+  notifyPaymentApprovalCreated,
+  notifyPaymentApprovalReviewed,
+} = require('../../utils/staffRequestNotifications.util')
+const {
   computePaymentsDashboard,
   buildCustomerInvoiceMatch,
   buildCustomerOpenReceivablesMatch,
@@ -992,6 +996,9 @@ exports.createPaymentApproval = asyncHandler(async (req, res) => {
       user: req.user._id,
     }],
   })
+  await notifyPaymentApprovalCreated(approval, {
+    note: `Requested by ${req.user.name || 'Admin'}.`,
+  })
   return created(res, { approval }, 'Payment request created')
 })
 
@@ -1028,6 +1035,8 @@ exports.reviewPaymentApproval = asyncHandler(async (req, res) => {
     })
   }
   await approval.save()
+
+  await notifyPaymentApprovalReviewed(approval, action, reviewNotes)
 
   return success(res, { approval }, `Payment ${action}`)
 })

@@ -410,6 +410,26 @@ const handleQuoteReady = async (leadId, customerId, quoteData, options = {}) => 
       if (global.io) {
         global.io.of('/admin').to('admin_room').emit('lead_quote_ready', { leadId, customerId })
       }
+      const { notifyAdmins, notifyLeadOwner } = require('../utils/staffRequestNotifications.util')
+      await notifyAdmins({
+        leadId,
+        title: 'Quote ready',
+        body: 'A lead is quote-ready from customer chat.',
+        type: 'lead',
+        priority: 'medium',
+        refId: leadId,
+        refModel: 'Lead',
+      })
+      if (existing.assignedSales) {
+        await notifyLeadOwner(leadId, {
+          title: 'Quote ready',
+          body: 'Your assigned lead is quote-ready.',
+          type: 'lead',
+          priority: 'medium',
+          refId: leadId,
+          refModel: 'Lead',
+        })
+      }
       await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'quote_ready', includeScoreRow: true })
     } else if (quoteValue > 0 && !existing.quoteValue) {
       await Lead.findByIdAndUpdate(leadId, { quoteValue, aiQuoteData: quoteData })

@@ -11,6 +11,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, PO_STATUSES } = require('../../config/constants')
 const { enrichLeadDocument } = require('../../utils/leadProjectId')
+const { notifyPoOrderStatus } = require('../../utils/staffRequestNotifications.util')
 
 const syncLeadOnPOStatus = async (order, status, adminUserId, adminNotes) => {
   const update = { $set: { poStatus: status } }
@@ -240,6 +241,7 @@ exports.approveAndAssignPOOrder = asyncHandler(async (req, res) => {
     if (adminNotes) order.adminNotes = adminNotes
     await order.save()
     await syncLeadOnPOStatus(order, 'approved', req.user._id, adminNotes)
+    await notifyPoOrderStatus(order, 'approved', adminNotes)
   } else if (adminNotes) {
     order.adminNotes = adminNotes
     await order.save()
@@ -275,6 +277,7 @@ exports.updatePOStatus = asyncHandler(async (req, res) => {
   await order.save()
 
   await syncLeadOnPOStatus(order, status, req.user._id, adminNotes)
+  await notifyPoOrderStatus(order, status, adminNotes)
 
   return success(res, { order }, `PO Order ${status}`)
 })

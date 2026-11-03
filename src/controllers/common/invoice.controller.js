@@ -35,6 +35,11 @@ const { shouldBlockOnTaxFailure } = require("../../config/taxEngine");
 const {
   ensurePaymentScheduleFromEstimate,
 } = require("../../services/paymentScheduleFromEstimate.service");
+const {
+  notifyAdminsApprovalRequest,
+  notifySubmitterOutcome,
+  notifyCustomer,
+} = require("../../utils/staffRequestNotifications.util");
 
 // Skip reasons that mean "tax genuinely could not be confirmed" and must block
 // finalization when the active provider is Avalara (spec §9, §10).
@@ -239,6 +244,37 @@ const pushApprovalHistory = (
     revision: revision != null ? revision : Number(invoice.revision || 1),
   });
 };
+
+const notifyAdminsInvoicePendingApproval = async (invoice, { note } = {}) => {
+  if (!invoice?._id || invoice.approval?.status !== "pending_approval") return;
+  const amt =
+    invoice.totalAmount != null
+      ? `$${Number(invoice.totalAmount).toLocaleString(undefined, {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        })}`
+      : "";
+  await notifyAdminsApprovalRequest({
+    title: "Invoice pending approval",
+    entityLabel: "Invoice",
+    entityRef: [invoice.invoiceNumber, amt].filter(Boolean).join(" "),
+    leadId: invoice.leadId,
+    refId: invoice._id,
+    refModel: "Invoice",
+    type: "invoice",
+    note: note || "",
+  });
+};
+
+const notifyInvoiceSubmitterReviewed = (invoice, opts) =>
+  notifySubmitterOutcome({
+    userId: invoice.approval?.submittedBy,
+    leadId: invoice.leadId,
+    refId: invoice._id,
+    refModel: "Invoice",
+    type: "invoice",
+    ...opts,
+  });
 
 const buildApprovalRequests = (invoice) => {
   const history = Array.isArray(invoice.approval?.history)
@@ -838,6 +874,7 @@ exports.createInvoice = asyncHandler(async (req, res) => {
         source: "create_invoice",
       },
     });
+    await notifyAdminsInvoicePendingApproval(invoice);
   } else {
     await auditService.log({
       type: "invoice",
@@ -1065,6 +1102,7 @@ exports.updateInvoice = asyncHandler(async (req, res) => {
         source: "edit_pending_invoice",
       },
     });
+    await notifyAdminsInvoicePendingApproval(invoice);
   }
 
   return success(res, { invoice: decorateInvoiceForResponse(invoice) });
@@ -1326,6 +1364,10 @@ exports.submitInvoiceForApproval = asyncHandler(async (req, res) => {
     },
   });
 
+  await notifyAdminsInvoicePendingApproval(invoice, {
+    note: req.body?.note ? String(req.body.note).trim() : "",
+  });
+
   return success(
     res,
     { invoice: decorateInvoiceForResponse(invoice) },
@@ -1373,6 +1415,12 @@ exports.approveInvoice = asyncHandler(async (req, res) => {
       invoiceNumber: invoice.invoiceNumber,
       approvedRevision: invoice.approval.approvedRevision,
     },
+  });
+
+  await notifyInvoiceSubmitterReviewed(invoice, {
+    title: "Invoice approved",
+    body: `Invoice ${invoice.invoiceNumber} was approved. You can send it to the customer.`,
+    priority: "medium",
   });
 
   return success(
@@ -1425,6 +1473,12 @@ exports.rejectInvoice = asyncHandler(async (req, res) => {
       invoiceNumber: invoice.invoiceNumber,
       reason,
     },
+  });
+
+  await notifyInvoiceSubmitterReviewed(invoice, {
+    title: "Invoice rejected",
+    body: `Invoice ${invoice.invoiceNumber} was rejected: ${reason}`,
+    priority: "high",
   });
 
   return success(
@@ -1596,6 +1650,19 @@ exports.verifyPaymentProof = asyncHandler(async (req, res) => {
     metadata: { invoiceId: invoice._id },
   });
 
+  if (invoice.customerId) {
+    await notifyCustomer({
+      customerId: invoice.customerId,
+      leadId: invoice.leadId,
+      title: "Payment confirmed",
+      body: `Your payment for invoice ${invoice.invoiceNumber} was verified. Thank you.`,
+      type: "payment",
+      priority: "medium",
+      refId: invoice._id,
+      refModel: "Invoice",
+    });
+  }
+
   return success(
     res,
     { invoice: decorateInvoiceForResponse(invoice) },
@@ -1627,6 +1694,20 @@ exports.rejectPaymentProof = asyncHandler(async (req, res) => {
     performedBy: req.user._id,
     metadata: { invoiceId: invoice._id, reason: req.body.reviewNotes },
   });
+
+  const reviewNotes = pickPaymentProofReviewNotes(req.body);
+  if (invoice.customerId) {
+    await notifyCustomer({
+      customerId: invoice.customerId,
+      leadId: invoice.leadId,
+      title: "Payment proof needs update",
+      body: `Invoice ${invoice.invoiceNumber}: we could not verify your receipt${reviewNotes ? ` — ${reviewNotes}` : ''}. Please resubmit.`,
+      type: "payment",
+      priority: "high",
+      refId: invoice._id,
+      refModel: "Invoice",
+    });
+  }
 
   return success(
     res,

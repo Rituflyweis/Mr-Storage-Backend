@@ -9,6 +9,7 @@ const env = require('../../config/env')
 const asyncHandler = require('../../utils/asyncHandler')
 const { success, created, badRequest } = require('../../utils/apiResponse')
 const { createPayableInvoice, buildPayableListRow } = require('../../utils/payableInvoice.util')
+const { notifyVendorPayablePendingAdmin } = require('../../utils/staffRequestNotifications.util')
 const {
   buildVendorPayablePublicBootstrap,
   buildFreightPayablePublicBootstrap,
@@ -133,6 +134,7 @@ exports.submitPayableUpload = asyncHandler(async (req, res) => {
     })
 
     await ShipperRequest.updateOne({ _id: shipper._id }, { payableInvoiceId: invoice._id })
+    await notifyVendorPayablePendingAdmin(invoice)
 
     return created(
       res,
@@ -170,6 +172,7 @@ exports.submitPayableUpload = asyncHandler(async (req, res) => {
   })
 
   await FreightBid.updateOne({ _id: bid._id }, { payableInvoiceId: invoice._id })
+  await notifyVendorPayablePendingAdmin(invoice)
 
   return created(
     res,

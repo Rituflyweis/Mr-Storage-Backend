@@ -10,7 +10,9 @@ const { SALES_LIFECYCLE_STAGES } = require('../config/constants')
 const { findLatestContractDocument } = require('../utils/leadAgreement')
 const { formatLifecycleStatusLabel } = require('../utils/employeeProfile.util')
 const { isInvoiceOverdue } = require('../utils/invoiceScope')
-const { withProjectIdFields } = require('../utils/leadProjectId')
+const { withProjectIdFields, enrichLeadDocument } = require('../utils/leadProjectId')
+const { buildDateFilter } = require('../utils/dateRange')
+const { buildFinancialLeadMatch } = require('../utils/financialProjectScope')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -315,4 +317,44 @@ exports.getProjectDetail = async (projectIdOrJobId) => {
     },
     lead: withProjectIdFields(lead, lead.jobId),
   }
+}
+
+/** Customer receivable invoices only (excludes vendor/freight); any non-cancelled status counts as "invoice created". */
+const CUSTOMER_INVOICE_LEAD_MATCH = {
+  leadId: { $exists: true, $ne: null },
+  status: { $ne: 'cancelled' },
+  $or: [
+    { invoiceType: 'customer' },
+    { invoiceType: { $exists: false } },
+    { invoiceType: null },
+  ],
+}
+
+exports.buildAccountProjectListFilter = (query = {}) => {
+  const dateFilter = buildDateFilter(query)
+  const { status, search } = query
+  const filter = status
+    ? { $and: [buildFinancialLeadMatch(), { lifecycleStatus: status }], ...dateFilter }
+    : { ...buildFinancialLeadMatch(), ...dateFilter }
+  if (search?.trim()) {
+    const regex = { $regex: search.trim(), $options: 'i' }
+    filter.$or = [{ projectName: regex }, { jobId: regex }]
+  }
+  return filter
+}
+
+exports.listAccountProjects = async (query = {}, { confirmedInvoicedOnly = false } = {}) => {
+  const filter = exports.buildAccountProjectListFilter(query)
+  if (confirmedInvoicedOnly) {
+    const leadIds = await Invoice.distinct('leadId', CUSTOMER_INVOICE_LEAD_MATCH)
+    filter._id = { $in: leadIds }
+  }
+
+  const projects = await Lead.find(filter)
+    .populate('customerId')
+    .populate('assignedSales', 'name email role')
+    .sort({ updatedAt: -1 })
+    .lean()
+
+  return projects.map(enrichLeadDocument)
 }
