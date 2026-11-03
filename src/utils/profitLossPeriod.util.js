@@ -34,6 +34,21 @@ const sumCogsFromCategories = (byCategory) =>
     .filter((c) => COGS_CATEGORY_NAMES.includes(c._id))
     .reduce((s, c) => s + c.total, 0)
 
+/** Paid sales-tax filings in the same calendar window as invoice/expense `date` filters. */
+const buildTaxPaidMatch = (dateFilter = {}) => {
+  const range = dateFilter.date
+  const base = { status: 'paid' }
+  if (!range) return base
+  return {
+    ...base,
+    $or: [
+      { paidAt: range },
+      { paidAt: null, dueDate: range },
+      { paidAt: { $exists: false }, dueDate: range },
+    ],
+  }
+}
+
 const buildPeriodPL = async (filter, dateFilter) => {
   const [incomeAgg, expenseByCategory, taxAgg, invoiceCountAgg] = await Promise.all([
     Invoice.aggregate([
@@ -45,8 +60,13 @@ const buildPeriodPL = async (filter, dateFilter) => {
       { $group: { _id: '$category', total: { $sum: '$amount' } } },
     ]),
     Tax.aggregate([
-      { $match: { ...dateFilter, status: 'paid' } },
-      { $group: { _id: null, total: { $sum: '$amount' } } },
+      { $match: buildTaxPaidMatch(dateFilter) },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: { $ifNull: ['$paidFiled', '$amount'] } },
+        },
+      },
     ]),
     Invoice.aggregate([
       { $match: { ...filter, ...dateFilter, status: 'paid' } },

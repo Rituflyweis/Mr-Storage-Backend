@@ -1161,6 +1161,10 @@ const { EXPENSE_STATUSES, EXPENSE_PAYMENT_METHODS, EXPENSE_DEPARTMENTS } = Expen
 const ExpenseCategory = require('../../models/ExpenseCategory')
 const FreightBid = require('../../models/FreightBid')
 const WIPProfit = require('../../models/WIPProfit')
+const {
+  buildPeriodPL,
+  marginPct,
+} = require('../../utils/profitLossPeriod.util')
 
 exports.getFinancialOverview = asyncHandler(async (req, res) => {
   const { projectId } = req.query
@@ -1171,9 +1175,9 @@ exports.getFinancialOverview = asyncHandler(async (req, res) => {
   const now = new Date()
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
-  const [revenueAgg, expenseAgg, revenueTrend, topCustomers, expenseTrend, expenseByCategory] = await Promise.all([
-    Invoice.aggregate([{ $match: { ...dateFilter, ...projectFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Expense.aggregate([{ $match: { ...dateFilter, ...projectFilter, isActive: true } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+  const periodPL = await buildPeriodPL(projectFilter, dateFilter)
+
+  const [revenueTrend, topCustomers, expenseTrend] = await Promise.all([
     Invoice.aggregate([
       { $match: { ...projectFilter, status: 'paid', date: { $gte: sixMonthsAgo } } },
       { $group: { _id: { year: { $year: '$date' }, month: { $month: '$date' } }, revenue: { $sum: '$totalAmount' } } },
@@ -1193,18 +1197,17 @@ exports.getFinancialOverview = asyncHandler(async (req, res) => {
       { $group: { _id: { year: { $year: '$date' }, month: { $month: '$date' } }, expense: { $sum: '$amount' } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
-    Expense.aggregate([
-      { $match: { ...dateFilter, ...projectFilter } },
-      { $group: { _id: '$category', total: { $sum: '$amount' } } },
-    ]),
   ])
 
-  const totalRevenue = revenueAgg[0]?.total || 0
-  const totalExpenses = expenseAgg[0]?.total || 0
-  const grossProfit = totalRevenue - totalExpenses
-  const grossMargin = totalRevenue > 0 ? Math.round((grossProfit / totalRevenue) * 100) : 0
-  const netProfit = grossProfit * 0.85
-  const operatingCashFlow = netProfit * 0.9
+  const totalRevenue = periodPL.totalIncome
+  const totalExpenses = periodPL.expenseBreakdown.totalExpenses
+  const grossProfit = periodPL.grossProfit
+  const operatingProfit = periodPL.operatingProfit
+  const taxExpense = periodPL.taxExpense
+  const netProfit = periodPL.netProfit
+  const grossMargin = marginPct(grossProfit, totalRevenue)
+  const netProfitMargin = marginPct(netProfit, totalRevenue)
+  const operatingCashFlow = netProfit
 
   // "Income vs Expense" bar chart — merge revenue-by-month and expense-by-month into one series.
   const monthKey = (y, m) => `${y}-${m}`
@@ -1220,20 +1223,25 @@ exports.getFinancialOverview = asyncHandler(async (req, res) => {
   // free-text/dynamic (see ExpenseCategory), not a fixed COGS/Operating taxonomy. "Vendor/Freight"
   // is treated as cost-of-goods-sold, everything else as operating expense. No "other income"
   // tracked anywhere in the schema, so that's always 0 — flag if that needs a real data source.
-  const costOfGoodsSold = expenseByCategory.filter(c => c._id === 'Vendor/Freight').reduce((s, c) => s + c.total, 0)
-  const operatingExpenses = expenseByCategory.filter(c => c._id !== 'Vendor/Freight').reduce((s, c) => s + c.total, 0)
   const profitabilityBreakdown = {
-    costOfGoodsSold,
-    operatingExpenses,
-    otherIncome: 0,
+    costOfGoodsSold: periodPL.cogs,
+    operatingExpenses: periodPL.operatingExpenses,
+    otherIncome: periodPL.otherIncome,
+    taxExpense,
+    grossProfit,
+    operatingProfit,
     netProfit: Math.round(netProfit),
-    note: 'costOfGoodsSold/operatingExpenses is a best-effort split (Vendor/Freight category = COGS, everything else = operating) since expense categories are free-text, not a fixed COGS/Operating taxonomy. otherIncome is always 0 — no such data source exists in the schema yet.',
+    note:
+      'Gross profit = revenue − COGS (Vendor/Freight, materials, labour, plus bid costs). Net profit = operating profit − tax paid in period (Tax records with status paid, filtered by paidAt/dueDate). Other income is 0 until a data source exists.',
   }
 
   return success(res, {
     totalRevenue,
     grossProfit,
     grossMargin,
+    operatingProfit,
+    taxExpense,
+    netProfitMargin,
     netProfit: Math.round(netProfit),
     operatingCashFlow: Math.round(operatingCashFlow),
     revenueTrend,
@@ -1252,18 +1260,14 @@ exports.exportFinancialOverview = asyncHandler(async (req, res) => {
     projectId ? { leadId: projectId } : {}
   )
 
-  const [revenueAgg, expenseAgg, invoices] = await Promise.all([
-    Invoice.aggregate([{ $match: { ...dateFilter, ...projectFilter, status: 'paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Expense.aggregate([{ $match: { ...dateFilter, ...projectFilter, isActive: true } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+  const [plExport, invoices] = await Promise.all([
+    buildPeriodPL(projectFilter, dateFilter),
     Invoice.find({ ...dateFilter, ...projectFilter, status: 'paid' })
       .populate('leadId', 'projectName jobId')
       .populate('customerId', 'firstName lastName')
       .sort({ date: -1 })
       .lean(),
   ])
-
-  const totalRevenue = revenueAgg[0]?.total || 0
-  const totalExpenses = expenseAgg[0]?.total || 0
 
   const rows = invoices.map((inv) => ({
     invoiceNumber: inv.invoiceNumber,
@@ -1274,7 +1278,13 @@ exports.exportFinancialOverview = asyncHandler(async (req, res) => {
     date: inv.date,
   }))
 
-  const buffer = await generateFinancialOverviewExcel(rows, { totalRevenue, totalExpenses, grossProfit: totalRevenue - totalExpenses })
+  const buffer = await generateFinancialOverviewExcel(rows, {
+    totalRevenue: plExport.totalIncome,
+    totalExpenses: plExport.expenseBreakdown.totalExpenses,
+    grossProfit: plExport.grossProfit,
+    taxExpense: plExport.taxExpense,
+    netProfit: plExport.netProfit,
+  })
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   res.setHeader('Content-Disposition', 'attachment; filename="financial-overview.xlsx"')
   return res.send(buffer)

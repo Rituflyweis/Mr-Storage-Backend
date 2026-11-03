@@ -7,6 +7,12 @@ const generateFinancialOverviewExcel = async (rows, summary) => {
   summarySheet.addRow({ metric: 'Total Revenue', value: summary.totalRevenue })
   summarySheet.addRow({ metric: 'Total Expenses', value: summary.totalExpenses })
   summarySheet.addRow({ metric: 'Gross Profit', value: summary.grossProfit })
+  if (summary.taxExpense != null) {
+    summarySheet.addRow({ metric: 'Tax Expense (paid)', value: summary.taxExpense })
+  }
+  if (summary.netProfit != null) {
+    summarySheet.addRow({ metric: 'Net Profit', value: summary.netProfit })
+  }
   summarySheet.getRow(1).font = { bold: true }
 
   const sheet = workbook.addWorksheet('Paid Invoices')
