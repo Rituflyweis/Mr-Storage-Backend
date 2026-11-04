@@ -73,18 +73,34 @@ const formatLeadBudgetPayload = (budgetDoc, lead) => {
   }
 }
 
+const {
+  syncCustomBudgetLinesWithCategories,
+  ensureDefaultPresetExpenseCategories,
+} = require('../../services/budgetExpenseCategorySync.service')
+
 const saveProjectBudgetForLead = async ({ leadId, lead, userId, patch }) => {
   const existing = await ProjectBudget.findOne({ leadId }).lean()
+
+  await ensureDefaultPresetExpenseCategories(userId).catch((err) => {
+    console.warn('[budget] ensureDefaultPresetExpenseCategories:', err.message)
+  })
+
+  const rawCustomLines =
+    patch.customLines === undefined
+      ? existing?.customLines || []
+      : patch.customLines
+  const customLines = await syncCustomBudgetLinesWithCategories(
+    normalizeCustomLines(rawCustomLines),
+    userId
+  )
+
   const payload = {
     materialBudget: patch.materialBudget ?? existing?.materialBudget ?? 0,
     logisticBudget: patch.logisticBudget ?? existing?.logisticBudget ?? 0,
     productionBudget: patch.productionBudget ?? existing?.productionBudget ?? 0,
     shipperBudget: patch.shipperBudget ?? existing?.shipperBudget ?? 0,
     otherCost: patch.otherCost ?? existing?.otherCost ?? 0,
-    customLines:
-      patch.customLines === undefined
-        ? existing?.customLines || []
-        : normalizeCustomLines(patch.customLines),
+    customLines,
   }
   const totalBudget = computeStoredTotalBudget(payload)
   const budget = await ProjectBudget.findOneAndUpdate(

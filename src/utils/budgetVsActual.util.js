@@ -1,6 +1,7 @@
 /** Shared budget vs actual helpers (admin + account). */
 
 const crypto = require('crypto')
+const { PRESET_KEY_TO_CANONICAL } = require('../config/budgetExpenseCategoryRegistry')
 
 const BUDGET_PART_FIELDS = [
   'materialBudget',
@@ -46,17 +47,17 @@ BUDGET_PRESET_KEY_TO_FIELD.other = 'otherCost'
 const COST_HEAD_CATEGORY_MAP = [
   {
     head: 'Material Cost',
-    categories: ['Vendor/Freight', 'materials', 'Materials', 'Material'],
+    categories: ['Material', 'Vendor/Freight', 'materials', 'Materials'],
     budgetField: 'materialBudget',
   },
   {
     head: 'Carrier/Freight Cost',
-    categories: ['Freight', 'Logistics', 'transport', 'Transport', 'Carrier'],
+    categories: ['Logistics', 'Freight', 'transport', 'Transport', 'Carrier'],
     budgetField: 'logisticBudget',
   },
   {
     head: 'Manpower/Labor Cost',
-    categories: ['Salaries', 'Operations', 'labour', 'Labor', 'Manpower'],
+    categories: ['Manpower', 'Salaries', 'Operations', 'labour', 'Labor'],
     budgetField: 'productionBudget',
   },
   {
@@ -66,7 +67,7 @@ const COST_HEAD_CATEGORY_MAP = [
   },
   {
     head: 'Subcontractor Cost',
-    categories: ['Subcontractor', 'subcontractor'],
+    categories: ['Subcontractor', 'subcontractor', 'Shipper'],
     budgetField: 'shipperBudget',
   },
   {
@@ -104,9 +105,10 @@ const normalizeCustomLines = (lines) => {
     if (!key) key = `custom_${crypto.randomBytes(4).toString('hex')}`
     if (seen.has(key)) continue
     seen.add(key)
-    const expenseCategories = Array.isArray(raw.expenseCategories)
+    let expenseCategories = Array.isArray(raw.expenseCategories)
       ? [...new Set(raw.expenseCategories.map((c) => String(c || '').trim()).filter(Boolean))]
       : []
+    if (!expenseCategories.length) expenseCategories = [label]
     out.push({
       key,
       label,
@@ -248,7 +250,9 @@ const buildBudgetPlanningCards = (budget) => {
     amount: Math.max(0, Number(budget?.[preset.amountField]) || 0),
     isPreset: true,
     canDelete: false,
-    expenseCategories: [],
+    expenseCategories: PRESET_KEY_TO_CANONICAL[preset.key]
+      ? [PRESET_KEY_TO_CANONICAL[preset.key]]
+      : [],
   }))
 
   const otherAmount = Math.max(0, Number(budget?.otherCost) || 0)
@@ -260,7 +264,9 @@ const buildBudgetPlanningCards = (budget) => {
       amount: otherAmount,
       isPreset: true,
       canDelete: false,
-      expenseCategories: [],
+      expenseCategories: PRESET_KEY_TO_CANONICAL.other
+        ? [PRESET_KEY_TO_CANONICAL.other]
+        : [],
     })
   }
 

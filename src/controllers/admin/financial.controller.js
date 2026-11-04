@@ -1582,11 +1582,28 @@ exports.importExpenses = asyncHandler(async (req, res) => {
 exports.createExpense = asyncHandler(async (req, res) => {
   const { category, subcategory, date, amount, description, leadId, buildingLabel, department, paymentMethod, status, receiptFile } = req.body
 
+  const { ensureExpenseCategory } = require('../../services/budgetExpenseCategorySync.service')
+  const resolvedCategory =
+    category != null && String(category).trim()
+      ? (await ensureExpenseCategory(category, req.user._id)) || String(category).trim()
+      : category
+
   const expenseId = await generateExpenseId()
 
   const expense = await Expense.create({
-    expenseId, category, subcategory, date, amount, description, leadId: leadId || null,
-    buildingLabel, department, paymentMethod, status, receiptFile, createdBy: req.user._id,
+    expenseId,
+    category: resolvedCategory,
+    subcategory,
+    date,
+    amount,
+    description,
+    leadId: leadId || null,
+    buildingLabel,
+    department,
+    paymentMethod,
+    status,
+    receiptFile,
+    createdBy: req.user._id,
   })
 
   return success(res, { expense })
