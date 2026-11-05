@@ -32,100 +32,12 @@ const {
   parseTaskScheduleFromBody,
   applyTaskStatusAndCompletion,
 } = require('../../utils/constructionTaskFields.util')
-const { enrichConstructionTaskForCard } = require('../../utils/constructionTaskCard.util')
+const {
+  loadUpcomingConstructionTasks,
+  mapUpcomingScheduleRows,
+} = require('../../utils/constructionTimeline.util')
 // Granular fulfillment steps still roll up into "inTransit" for this coarse dashboard stat.
 const IN_TRANSIT_ROLLUP_STATUSES = DELIVERY_FULFILLMENT_STATUSES.filter(s => s !== 'delivered')
-
-const MS_PER_DAY = 86400000
-const startOfLocalDay = (d = new Date()) => {
-  const x = new Date(d)
-  x.setHours(0, 0, 0, 0)
-  return x
-}
-
-/**
- * Open construction timeline tasks for Admin Overview "Upcoming Project Deadlines".
- * Same Task records as Construction Panel cards (start / est end / completed / badge).
- */
-const loadUpcomingConstructionTasks = async ({
-  leadFilter = {},
-  projectId = null,
-  daysAhead = 30,
-  limit = 10,
-} = {}) => {
-  const now = new Date()
-  const windowEnd = new Date(now.getTime() + Math.max(1, daysAhead) * MS_PER_DAY)
-
-  let leadIds = null
-  if (projectId) {
-    leadIds = [projectId]
-  } else if (Object.keys(leadFilter).length) {
-    const leads = await Lead.find(leadFilter).select('_id').lean()
-    leadIds = leads.map((l) => l._id)
-    if (!leadIds.length) {
-      return { tasks: [], count: 0 }
-    }
-  }
-
-  const taskFilter = {
-    status: { $ne: 'done' },
-    dueDate: { $ne: null, $lte: windowEnd },
-  }
-  if (leadIds) taskFilter.leadId = { $in: leadIds }
-
-  const [rawTasks, count] = await Promise.all([
-    Task.find(taskFilter)
-      .select('title description leadId assignedTo priority status startDate dueDate completedAt notes createdAt updatedAt')
-      .populate('assignedTo', 'name email')
-      .sort({ dueDate: 1 })
-      .limit(Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50))
-      .lean(),
-    Task.countDocuments(taskFilter),
-  ])
-
-  const taskLeadIds = [...new Set(rawTasks.map((t) => String(t.leadId)))]
-  const projects = taskLeadIds.length
-    ? await Lead.find({ _id: { $in: taskLeadIds } })
-        .select('projectName jobId location lifecycleStatus')
-        .lean()
-    : []
-  const projectMap = Object.fromEntries(projects.map((p) => [String(p._id), p]))
-  const today = startOfLocalDay(now)
-
-  const tasks = rawTasks.map((t) => {
-    const card = enrichConstructionTaskForCard(t)
-    const project = projectMap[String(t.leadId)] || null
-    const est = card.estimatedEndDate ? startOfLocalDay(card.estimatedEndDate) : null
-    const daysLeft = est ? Math.round((est - today) / MS_PER_DAY) : null
-    return {
-      taskId: t._id,
-      title: card.title,
-      status: card.status,
-      priority: card.priority,
-      startDate: card.startDate,
-      estimatedEndDate: card.estimatedEndDate,
-      completedDate: card.completedDate,
-      timelineBadge: card.timelineBadge,
-      timelineStatusLine: card.timelineStatusLine,
-      onTimeStatus: card.onTimeStatus,
-      daysLeft,
-      assignedTo: t.assignedTo
-        ? { _id: t.assignedTo._id, name: t.assignedTo.name, email: t.assignedTo.email }
-        : null,
-      project: project
-        ? {
-            leadId: project._id,
-            projectName: project.projectName || '',
-            jobId: project.jobId || '',
-            location: project.location || '',
-            lifecycleStatus: project.lifecycleStatus || '',
-          }
-        : { leadId: t.leadId, projectName: '', jobId: '', location: '', lifecycleStatus: '' },
-    }
-  })
-
-  return { tasks, count }
-}
 
 // The 5-phase "Project Timeline" bucket shown in Figma (Planning/Design/Procurement/
 // Execution/Handover) mapped onto the real Lead.lifecycleStatus enum (sales + plant stages).
@@ -309,23 +221,7 @@ exports.getOverview = asyncHandler(async (req, res) => {
      */
     upcomingConstructionTasks,
     // Figma "Upcoming Schedule" — same rows as upcomingConstructionTasks (task-shaped).
-    upcomingSchedule: upcomingConstructionTasks.map((t) => ({
-      taskId: t.taskId,
-      title: t.title,
-      projectName: t.project.projectName,
-      location: t.project.location || '',
-      startDate: t.startDate,
-      estimatedEndDate: t.estimatedEndDate,
-      completedDate: t.completedDate,
-      endDate: t.estimatedEndDate,
-      expectedCloseDate: t.estimatedEndDate,
-      timelineBadge: t.timelineBadge,
-      timelineStatusLine: t.timelineStatusLine,
-      daysLeft: t.daysLeft,
-      status: t.status,
-      assignedTo: t.assignedTo,
-      project: t.project,
-    })),
+    upcomingSchedule: mapUpcomingScheduleRows(upcomingConstructionTasks),
     // Legacy project-level expectedCloseDate list (not task cards). Prefer upcomingConstructionTasks.
     upcomingDeadlines: upcomingProjectCloseDates,
     upcomingProjectCloseDates,

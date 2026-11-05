@@ -25,6 +25,7 @@ const businessUnitQuery = [businessUnitQueryValidator(), validate]
 router.get('/dashboard', businessUnitQuery, dashCtrl.getDashboard)
 router.get('/dashboard/export', businessUnitQuery, dashCtrl.exportDashboard)
 router.get('/dashboard/filters', dashCtrl.getDashboardFilters)
+router.get('/timeline/overall', businessUnitQuery, dashCtrl.getTimelineOverall)
 
 // Projects & Calendar (static routes before param routes)
 router.get('/projects', businessUnitQuery, projectCtrl.getProjects)
@@ -37,6 +38,7 @@ router.get(
 router.use('/customers', require('../common/customerDocumentsRead.routes'))
 router.use('/projects', require('./projectManufacturing.routes'))
 router.get('/projects/:leadId/phases', taskCtrl.getProjectPhases)
+router.get('/projects/:leadId/timeline', taskCtrl.getProjectTimeline)
 router.get('/projects/:leadId/timeline-tasks', taskCtrl.getProjectTimelineTasks)
 router.get('/projects/:leadId/progress', taskCtrl.getProjectProgress)
 router.post('/projects/:leadId/milestones', taskCtrl.createMilestone)

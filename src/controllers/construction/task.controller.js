@@ -14,6 +14,11 @@ const { listConstructionTasks } = require('../../services/constructionTasksQuery
 const { PLANT_LIFECYCLE_STAGES } = require('../../config/constants')
 const { enrichConstructionTaskForCard } = require('../../utils/constructionTaskCard.util')
 const {
+  buildProjectTimelineBreakdown,
+  buildOverallTimelineFromLeads,
+} = require('../../utils/constructionTimeline.util')
+const { CONSTRUCTION_STAGES } = require('../../utils/constructionProjectScope')
+const {
   parseTaskScheduleFromBody,
   applyTaskStatusAndCompletion,
 } = require('../../utils/constructionTaskFields.util')
@@ -303,6 +308,36 @@ exports.getProjectPhases = asyncHandler(async (req, res) => {
     currentStepNumber: scopedCurrentStepNumber,
     totalSteps: scopedTotalSteps,
     currentStepLabel: scopedCurrentLabel,
+  })
+})
+
+/** GET /projects/:leadId/timeline — 5-phase breakdown (Planning → Handover), same shape as dashboard `projectTimelineOverall`. */
+exports.getProjectTimeline = asyncHandler(async (req, res) => {
+  const lead = await Lead.findById(req.params.leadId)
+    .select('projectName jobId location lifecycleStatus lifecycleHistory')
+    .lean()
+  if (!lead) return notFound(res, 'Project not found')
+  if (!CONSTRUCTION_STAGES.includes(lead.lifecycleStatus)) {
+    return badRequest(res, 'Project is not in construction panel scope')
+  }
+
+  const stepDetails = await ProjectStepDetail.find({ leadId: lead._id }).lean()
+  const breakdown = buildProjectTimelineBreakdown(lead, stepDetails)
+
+  return success(res, {
+    project: {
+      leadId: lead._id,
+      projectName: lead.projectName,
+      jobId: lead.jobId,
+      location: lead.location,
+      lifecycleStatus: lead.lifecycleStatus,
+    },
+    projectTimelineOverall: breakdown.timeline,
+    timeline: breakdown.timeline,
+    steps: breakdown.steps,
+    overallProgressPct: breakdown.overallProgressPct,
+    currentStepLabel: breakdown.currentStepLabel,
+    timelineTasksEndpoint: `/api/construction/projects/${lead._id}/timeline-tasks`,
   })
 })
 

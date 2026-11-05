@@ -1,5 +1,8 @@
 # Construction dashboard — Frontend integration
 
+> **Timeline + Upcoming Schedule (5-phase strip & task cards):**  
+> **[`docs/frontend-handoff/construction-timeline-api-fe.md`](./frontend-handoff/construction-timeline-api-fe.md)**
+
 > **Full Construction Panel fixes (dashboard + projects scope + material export) with complete request/response examples:**  
 > **[`docs/frontend-construction-panel-fixes-api.md`](./frontend-construction-panel-fixes-api.md)**
 

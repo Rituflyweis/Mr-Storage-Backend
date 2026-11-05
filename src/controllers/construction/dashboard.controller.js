@@ -25,6 +25,12 @@ const {
   buildAllProjectsExportRows,
 } = require('../../utils/constructionProjectStats')
 const { generateConstructionDashboardExcel } = require('../../utils/exportConstructionAdmin')
+const {
+  loadUpcomingConstructionTasks,
+  mapUpcomingScheduleRows,
+  buildOverallTimelineFromLeads,
+} = require('../../utils/constructionTimeline.util')
+const { buildDashboardScopeFilter } = require('../../utils/constructionProjectScope')
 
 const IN_TRANSIT_ROLLUP_STATUSES = new Set(
   DELIVERY_FULFILLMENT_STATUSES.filter((s) => s !== 'delivered')
@@ -32,35 +38,6 @@ const IN_TRANSIT_ROLLUP_STATUSES = new Set(
 const OUT_FOR_DELIVERY_STATUSES = new Set(['scheduled', 'confirmed', 'dispatched_to_site'])
 
 const CONSTRUCTION_STAGES = [...PLANT_LIFECYCLE_STAGES]
-
-/** Figma overall timeline buckets mapped from plant lifecycle stages. */
-const OVERALL_TIMELINE_PHASES = [
-  {
-    key: 'planning',
-    label: 'Planning',
-    stages: ['released_to_plant', 'drawings_received'],
-  },
-  {
-    key: 'design',
-    label: 'Design',
-    stages: ['bom_received', 'bom_review', 'material_check'],
-  },
-  {
-    key: 'procurement',
-    label: 'Procurement',
-    stages: ['production_planning', 'shipper_prepared'],
-  },
-  {
-    key: 'execution',
-    label: 'Execution',
-    stages: ['fabrication_started', 'quality_inspection', 'packing_bundling', 'ready_for_delivery'],
-  },
-  {
-    key: 'handover',
-    label: 'Handover',
-    stages: ['dispatched', 'delivered'],
-  },
-]
 
 const startOfDay = (d = new Date()) => {
   const x = new Date(d)
@@ -75,13 +52,6 @@ const endOfDay = (d = new Date()) => {
 }
 
 const pct = (part, total) => (total ? Math.round((part / total) * 1000) / 10 : 0)
-
-const historyDateForStage = (history, stage) => {
-  const entries = (history || [])
-    .filter((h) => h.stage === stage)
-    .sort((a, b) => new Date(a.changedAt) - new Date(b.changedAt))
-  return entries.length ? entries[entries.length - 1].changedAt : null
-}
 
 const resolveDeliveryStatusLabel = (statuses) => {
   if (!statuses.length) return 'On Track'
@@ -154,55 +124,6 @@ const resolveDeliveryScopeForDashboard = (parsed, now = new Date()) => {
   }
 }
 
-const buildOverallTimeline = (leads) => {
-  const now = Date.now()
-  return OVERALL_TIMELINE_PHASES.map((phase) => {
-    let earliestDate = null
-    let anyReached = false
-    let anyCurrent = false
-    let allPast = leads.length > 0
-
-    for (const lead of leads) {
-      const idx = PLANT_LIFECYCLE_STAGES.indexOf(lead.lifecycleStatus)
-      const firstStageIdx = PLANT_LIFECYCLE_STAGES.indexOf(phase.stages[0])
-      const lastStageIdx = PLANT_LIFECYCLE_STAGES.indexOf(phase.stages[phase.stages.length - 1])
-
-      const reached = idx >= firstStageIdx
-      const past = idx > lastStageIdx
-      const current = idx >= firstStageIdx && idx <= lastStageIdx
-
-      if (reached) anyReached = true
-      if (current) anyCurrent = true
-      if (!past) allPast = false
-
-      for (const stage of phase.stages) {
-        const d = historyDateForStage(lead.lifecycleHistory, stage)
-        if (d && (!earliestDate || new Date(d) < new Date(earliestDate))) {
-          earliestDate = d
-        }
-      }
-    }
-
-    let status = 'Upcoming'
-    if (!leads.length) status = 'Upcoming'
-    else if (allPast) status = 'Completed'
-    else if (anyCurrent || (anyReached && !allPast)) status = 'Inprogress'
-    else status = 'Upcoming'
-
-    // If date is in the past and phase still in progress, keep Inprogress; if completed use date.
-    if (status === 'Upcoming' && earliestDate && new Date(earliestDate).getTime() > now) {
-      status = 'Upcoming'
-    }
-
-    return {
-      key: phase.key,
-      label: phase.label,
-      date: earliestDate,
-      status,
-    }
-  })
-}
-
 const formatActivityMessage = (log) => {
   const meta = log.metadata || {}
   if (meta.message) return String(meta.message)
@@ -218,6 +139,8 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   if (parsed.error) return badRequest(res, parsed.error)
 
   const leadIds = await getConstructionLeadIds(parsed)
+  const parsedTaskDays = Math.min(Math.max(parseInt(req.query.taskDeadlineDays, 10) || 30, 1), 90)
+  const parsedTaskLimit = Math.min(Math.max(parseInt(req.query.taskLimit, 10) || 10, 1), 50)
   const now = new Date()
   const todayStart = startOfDay(now)
   const todayEnd = endOfDay(now)
@@ -275,8 +198,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       taskOverview: { total: 0, todo: 0, inProgress: 0, done: 0, overdue: 0 },
       activeSites: [],
       upcomingDeadlines: [],
+      upcomingConstructionTasks: [],
       upcomingSchedule: [],
-      projectTimelineOverall: buildOverallTimeline([]),
+      projectTimelineOverall: buildOverallTimelineFromLeads([]),
       freightCarriers: {
         rows: [],
         totals: { totalLoadsToday: 0, onTime: 0, onTimePct: 0, delayed: 0, delayedPct: 0 },
@@ -288,6 +212,8 @@ exports.getDashboard = asyncHandler(async (req, res) => {
 
   const leadFilter = { _id: { $in: leadIds } }
 
+  const scopeFilter = await buildDashboardScopeFilter(parsed)
+
   const [
     leads,
     projectsAddedToScopeToday,
@@ -295,6 +221,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     allScopedDeliveries,
     tasks,
     upcomingDeadlineLeads,
+    upcomingConstruction,
     materialRequests,
     shipperRecent,
     auditLogs,
@@ -342,6 +269,13 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       .sort({ endDate: 1 })
       .limit(10)
       .lean(),
+    loadUpcomingConstructionTasks({
+      projectId: parsed.projectId || null,
+      leadFilter: scopeFilter && !parsed.projectId ? scopeFilter : {},
+      leadIds: parsed.projectId ? leadIds : null,
+      daysAhead: parsedTaskDays,
+      limit: parsedTaskLimit,
+    }),
     MaterialRequest.find({ leadId: { $in: leadIds } })
       .select('status priority')
       .lean(),
@@ -427,7 +361,8 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     daysLeft: Math.ceil((new Date(l.endDate) - now) / (1000 * 60 * 60 * 24)),
   }))
 
-  const projectTimelineOverall = buildOverallTimeline(leads)
+  const projectTimelineOverall = buildOverallTimelineFromLeads(leads)
+  const upcomingConstructionTasks = upcomingConstruction.tasks
 
   // Freight carriers — loads in delivery scope (all scoped deliveries unless date range set).
   const bidIds = deliveriesInRange.map((d) => d.selectedCarrierBidId).filter(Boolean)
@@ -548,11 +483,46 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     taskOverview,
     activeSites,
     upcomingDeadlines,
-    upcomingSchedule: upcomingDeadlines,
+    upcomingConstructionTasks,
+    /** Task-based schedule (same as Admin → Construction overview). Falls back to project end dates when empty. */
+    upcomingSchedule: upcomingConstructionTasks.length
+      ? mapUpcomingScheduleRows(upcomingConstructionTasks)
+      : upcomingDeadlines,
+    upcomingScheduleMeta: {
+      source: upcomingConstructionTasks.length ? 'timeline_tasks' : 'project_end_dates',
+      openTaskCount: upcomingConstruction.count,
+      taskDeadlineDays: parsedTaskDays,
+    },
     projectTimelineOverall,
     freightCarriers,
     recentActivity: recentActivity.slice(0, 15),
     recentDeliveries,
+  })
+})
+
+/** GET /timeline/overall — Project Timeline (Overall) widget; optional dashboard filters. */
+exports.getTimelineOverall = asyncHandler(async (req, res) => {
+  const parsed = parseDashboardFilters(req.query)
+  if (parsed.error) return badRequest(res, parsed.error)
+
+  const leadIds = await getConstructionLeadIds(parsed)
+  if (!leadIds.length) {
+    return success(res, { projectTimelineOverall: buildOverallTimelineFromLeads([]), projectCount: 0 })
+  }
+
+  const leads = await Lead.find({ _id: { $in: leadIds } })
+    .select('lifecycleStatus lifecycleHistory')
+    .lean()
+
+  return success(res, {
+    filtersApplied: {
+      projectId: parsed.projectId,
+      buildingId: parsed.buildingId,
+      status: parsed.status,
+      businessUnit: parsed.businessUnit ?? null,
+    },
+    projectCount: leads.length,
+    projectTimelineOverall: buildOverallTimelineFromLeads(leads),
   })
 })
 
