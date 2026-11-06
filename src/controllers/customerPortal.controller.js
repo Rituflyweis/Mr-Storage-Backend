@@ -3158,7 +3158,9 @@ exports.confirmDeliverySiteReady = asyncHandler(async (req, res) => {
   const full = await Delivery.findByIdAndUpdate(
     delivery._id,
     { $set: { siteReadyConfirmation } },
-    { new: true, runValidators: true }
+    // Do not runValidators: full-doc validation fails when legacy delivery.status /
+    // statusHistory strings are not in current DELIVERY_STATUSES (e.g. arrived_at_plant).
+    { new: true }
   )
 
   return success(res, { deliveryId: full._id, siteReadyConfirmation: full.siteReadyConfirmation }, 'Site ready confirmed')
@@ -3185,7 +3187,7 @@ exports.confirmDeliveryEquipment = asyncHandler(async (req, res) => {
   const full = await Delivery.findByIdAndUpdate(
     delivery._id,
     { $set: { equipmentConfirmation } },
-    { new: true, runValidators: true }
+    { new: true }
   )
 
   return success(res, { deliveryId: full._id, equipmentConfirmation: full.equipmentConfirmation }, 'Equipment confirmed')
