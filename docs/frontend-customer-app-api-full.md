@@ -319,7 +319,7 @@ Upload file with `PUT` to `uploadUrl`, then send `fileUrl` in payment-proof or c
 GET /api/customer/dashboard
 ```
 
-**`drawingsApprovalsBreakdown`** sums two sources: (1) **`DrawingDocument`** rows (plant drawing workflow: `pending` / `under_review` → pendingReview, `approved` → approved, `revisionRequestedAt` → revisionReceived); (2) **`lead.documents`** entries with **`type`** `drawing` or `approval`, using **`approvalStatus`** (`pending` vs `approved`). `pendingReviewSubtitle` prefers the latest pending **DrawingDocument** label, else the **name** of the latest pending lead document.
+**`drawingsApprovalsBreakdown`** merges three sources: (1) **`DrawingDocument`** (`pending` / `under_review` → pendingReview, `approved` → approved, `revisionRequestedAt` → revisionReceived); (2) **`lead.documents`** with **`type`** `drawing` or `approval` and **`approvalStatus`**; (3) **`Building.drawings`** (`pending_review` and **`rejected`** → pendingReview, **`approved`** → approved). **`drawingsAndApprovals`** (header total) counts lead drawing/approval docs plus every **`Building.drawings`** row. `pendingReviewSubtitle` prefers the latest pending **DrawingDocument** label, else pending lead document **name**, else latest pending/rejected building drawing **fileName** or `Building N`.
 
 **Response `data` (abbreviated)**
 

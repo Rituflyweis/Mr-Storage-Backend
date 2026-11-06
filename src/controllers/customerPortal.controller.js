@@ -299,7 +299,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const activeProjects = leads.filter(l => !CLOSED_STAGES.includes(l.lifecycleStatus)).length
   const closedProjects = leads.filter(l => CLOSED_STAGES.includes(l.lifecycleStatus)).length
 
-  const drawingsAndApprovals = leads.reduce((sum, l) =>
+  const leadDrawingDocCount = leads.reduce((sum, l) =>
     sum + l.documents.filter(d => d.type === 'drawing' || d.type === 'approval').length, 0)
 
   const totalProjectValue = leads.reduce((sum, l) => sum + (l.quoteValue || 0), 0)
@@ -329,6 +329,27 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const leadIds = leads.map(l => l._id)
   const nowTs = new Date()
   const weekFromNow = new Date(nowTs.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+  const buildingsForDrawingKpi = leadIds.length
+    ? await Building.find({ leadId: { $in: leadIds }, customerId })
+        .select('buildingNumber drawings')
+        .lean()
+    : []
+
+  let buildingDrawingPendingReview = 0
+  let buildingDrawingApproved = 0
+  let buildingDrawingRejected = 0
+  const buildingDrawingRowsFlat = []
+  for (const b of buildingsForDrawingKpi) {
+    for (const dr of (b.drawings || [])) {
+      buildingDrawingRowsFlat.push({ ...dr, buildingNumber: b.buildingNumber })
+      if (dr.status === 'pending_review') buildingDrawingPendingReview += 1
+      else if (dr.status === 'approved') buildingDrawingApproved += 1
+      else if (dr.status === 'rejected') buildingDrawingRejected += 1
+    }
+  }
+  const buildingDrawingTotalCount = buildingDrawingRowsFlat.length
+  const drawingsAndApprovals = leadDrawingDocCount + buildingDrawingTotalCount
 
   const deliveries = leadIds.length
     ? await Delivery.find({
@@ -407,8 +428,8 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     }
   }
 
-  // Item 3: "Drawings & Approvals" breakdown — DrawingDocument rows (plant drawing workflow) plus
-  // lead.documents with type drawing|approval (sales uploads on the lead).
+  // Item 3: "Drawings & Approvals" breakdown — DrawingDocument, lead.documents (drawing|approval),
+  // and Building.drawings (construction uploads; notifications use refModel Building).
   const drawingStatusAgg = leadIds.length
     ? await DrawingDocument.aggregate([
         { $match: { leadId: { $in: leadIds } } },
@@ -438,18 +459,31 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       .sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0))[0]
     pendingReviewSubtitle = pendingLeadDoc?.name || ''
   }
+  if (!pendingReviewSubtitle) {
+    const pendingBuildingDrawing = buildingDrawingRowsFlat
+      .filter(d => d.status === 'pending_review' || d.status === 'rejected')
+      .sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0))[0]
+    pendingReviewSubtitle = pendingBuildingDrawing?.fileName
+      || (pendingBuildingDrawing?.buildingNumber != null ? `Building ${pendingBuildingDrawing.buildingNumber}` : '')
+  }
+
+  const buildingDrawingNeedsAttention = buildingDrawingPendingReview + buildingDrawingRejected
 
   const drawingsApprovalsBreakdown = {
     pendingReview:
       (drawingStatusMap.pending || 0) +
       (drawingStatusMap.under_review || 0) +
-      leadPendingApproval,
+      leadPendingApproval +
+      buildingDrawingNeedsAttention,
     pendingReviewSubtitle,
-    approved: (drawingStatusMap.approved || 0) + leadApproved,
+    approved:
+      (drawingStatusMap.approved || 0) +
+      leadApproved +
+      buildingDrawingApproved,
     revisionReceived: revisionReceivedCount,
     itemsNeedingClarification: 0,
     note:
-      'Counts merge (1) DrawingDocument by status and (2) lead.documents with type drawing or approval using approvalStatus (pending vs approved). itemsNeedingClarification stays 0 until an RFI model exists. revisionReceived counts DrawingDocument.revisionRequestedAt only.',
+      'Counts merge (1) DrawingDocument by workflow status, (2) lead.documents type drawing|approval by approvalStatus, (3) Building.drawings: pending_review and rejected → pendingReview, approved → approved. revisionReceived is DrawingDocument.revisionRequestedAt only. itemsNeedingClarification stays 0 until an RFI model exists.',
   }
 
   const [rawOrders, notificationsFeed, recentMessages] = await Promise.all([
