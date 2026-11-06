@@ -407,7 +407,8 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     }
   }
 
-  // Item 3: "Drawings & Approvals" breakdown — replaces the flat count with real per-status data.
+  // Item 3: "Drawings & Approvals" breakdown — DrawingDocument rows (plant drawing workflow) plus
+  // lead.documents with type drawing|approval (sales uploads on the lead).
   const drawingStatusAgg = leadIds.length
     ? await DrawingDocument.aggregate([
         { $match: { leadId: { $in: leadIds } } },
@@ -425,13 +426,30 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         .lean()
     : null
 
+  const isDrawingOrApprovalLeadDoc = (d) => d && (d.type === 'drawing' || d.type === 'approval')
+  const leadDrawingDocs = leads.flatMap((l) => (l.documents || []).filter(isDrawingOrApprovalLeadDoc))
+  const leadPendingApproval = leadDrawingDocs.filter((d) => (d.approvalStatus || 'pending') === 'pending').length
+  const leadApproved = leadDrawingDocs.filter((d) => d.approvalStatus === 'approved').length
+
+  let pendingReviewSubtitle = latestPendingDrawing?.buildingLabel || latestPendingDrawing?.documentType || ''
+  if (!pendingReviewSubtitle) {
+    const pendingLeadDoc = leadDrawingDocs
+      .filter((d) => (d.approvalStatus || 'pending') === 'pending')
+      .sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0))[0]
+    pendingReviewSubtitle = pendingLeadDoc?.name || ''
+  }
+
   const drawingsApprovalsBreakdown = {
-    pendingReview: (drawingStatusMap.pending || 0) + (drawingStatusMap.under_review || 0),
-    pendingReviewSubtitle: latestPendingDrawing?.buildingLabel || latestPendingDrawing?.documentType || '',
-    approved: drawingStatusMap.approved || 0,
+    pendingReview:
+      (drawingStatusMap.pending || 0) +
+      (drawingStatusMap.under_review || 0) +
+      leadPendingApproval,
+    pendingReviewSubtitle,
+    approved: (drawingStatusMap.approved || 0) + leadApproved,
     revisionReceived: revisionReceivedCount,
     itemsNeedingClarification: 0,
-    note: 'There is no RFI / clarification-request data model in the backend yet, so itemsNeedingClarification is always 0 until that feature exists. revisionReceived is a best-effort proxy (count of drawings with a non-null revisionRequestedAt) — confirm this matches the intended definition.',
+    note:
+      'Counts merge (1) DrawingDocument by status and (2) lead.documents with type drawing or approval using approvalStatus (pending vs approved). itemsNeedingClarification stays 0 until an RFI model exists. revisionReceived counts DrawingDocument.revisionRequestedAt only.',
   }
 
   const [rawOrders, notificationsFeed, recentMessages] = await Promise.all([
