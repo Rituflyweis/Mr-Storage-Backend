@@ -14,6 +14,7 @@ const {
   resolveQuotationFinancials,
   getLatestQuotationByLead,
 } = require('../utils/quotationMargin.util')
+const { aggregateProjectExpensesByLeadMap } = require('../utils/projectExpenseAggregate.util')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -414,6 +415,171 @@ exports.listOrders = async (query = {}) => {
 exports.listOrdersForExport = async (query = {}) => {
   const data = await exports.listOrders({ ...query, page: 1, limit: 5000 })
   return data.orders
+}
+
+/**
+ * Admin Financial → WIP Profits (derived):
+ * - Project in PO/plant scope (buildFinancialLeadMatch)
+ * - At least one paid customer invoice
+ * - WIP profit = sum(paid invoices) − total expense (manual Expense + vendor quotes + freight bids)
+ */
+const loadAdminWipEligibleLeads = async (query = {}) => {
+  const { clientId, search } = query
+  const filter = buildFinancialLeadMatch()
+  if (clientId) filter._id = clientId
+
+  if (search?.trim()) {
+    const regex = new RegExp(search.trim(), 'i')
+    const customers = await Customer.find({
+      $or: [{ firstName: regex }, { lastName: regex }, { email: regex }],
+    })
+      .select('_id')
+      .lean()
+    const customerIds = customers.map((c) => c._id)
+    filter.$and = [
+      ...(filter.$and || []),
+      {
+        $or: [
+          { projectName: regex },
+          { jobId: regex },
+          { location: regex },
+          ...(customerIds.length ? [{ customerId: { $in: customerIds } }] : []),
+        ],
+      },
+    ]
+  }
+
+  const leads = await Lead.find(filter)
+    .populate('customerId', 'firstName lastName email')
+    .select('projectName jobId location customerId lifecycleStatus quoteValue updatedAt createdAt')
+    .sort({ updatedAt: -1 })
+    .lean()
+
+  if (!leads.length) return []
+
+  const paidLeadIds = new Set(
+    (
+      await Invoice.distinct('leadId', {
+        leadId: { $in: leads.map((l) => l._id) },
+        ...CUSTOMER_INVOICE_MATCH,
+        status: 'paid',
+      })
+    ).map(String)
+  )
+
+  return leads.filter((l) => paidLeadIds.has(String(l._id)))
+}
+
+const applyCombinedExpensesToWipRows = async (rows) => {
+  if (!rows.length) return rows
+  const expenseMap = await aggregateProjectExpensesByLeadMap(rows.map((r) => r.leadId))
+  return rows.map((r) => {
+    const bucket = expenseMap.get(String(r.leadId)) || {}
+    const currentCost = round2(bucket.totalExpense || 0)
+    const profit = round2((r.totalReceived || 0) - currentCost)
+    const orderValue = r.orderValue || 0
+    return {
+      ...r,
+      currentCost,
+      profit,
+      marginPct: orderValue > 0 ? round2((profit / orderValue) * 100) : 0,
+      expenseBreakdown: {
+        manualExpenseTotal: round2(bucket.manualExpenseTotal || 0),
+        vendorMaterialFromBids: round2(bucket.vendorMaterialFromBids || 0),
+        freightFromBids: round2(bucket.freightFromBids || 0),
+      },
+    }
+  })
+}
+
+const mapAdminWipRowToLegacyDocument = (row) => {
+  const lead = row._lead || {}
+  return {
+    _id: row.leadId,
+    leadId: {
+      _id: lead._id || row.leadId,
+      projectName: lead.projectName || row.projectName || '',
+      jobId: lead.jobId || row.orderDetails?.orderId || '',
+      location: lead.location || row.orderDetails?.location || '',
+      customerId: lead.customerId || null,
+    },
+    orderValue: round2(row.orderValue),
+    currentCost: round2(row.currentCost),
+    depositPaid: round2(row.paymentBreakdown?.deposit),
+    progressPaid: round2(row.paymentBreakdown?.progress),
+    finalPaid: round2(row.paymentBreakdown?.final),
+    outstanding: round2(row.outstanding),
+    wipProfit: round2(row.profit),
+    marginPct: row.marginPct,
+    status: row.statusCode || 'in_progress',
+    notes: row.notes || '',
+    payments: row.payments || [],
+    expenseBreakdown: row.expenseBreakdown || null,
+    totalReceived: round2(row.totalReceived),
+    dataSource: 'derived',
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+exports.listAdminWipProfits = async (query = {}) => {
+  const { page = 1, limit = 20 } = query
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100)
+  const skip = (parsedPage - 1) * parsedLimit
+
+  const leads = await loadAdminWipEligibleLeads(query)
+  let rows = await buildOverviewRows(leads, query)
+  rows = await applyCombinedExpensesToWipRows(rows)
+  rows = rows.filter((r) => (r.totalReceived || 0) > 0)
+  rows.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+
+  let totalOrderValue = 0
+  let totalReceived = 0
+  let outstanding = 0
+  let wipProfit = 0
+  for (const r of rows) {
+    totalOrderValue += r.orderValue || 0
+    totalReceived += r.totalReceived || 0
+    outstanding += r.outstanding || 0
+    wipProfit += r.profit || 0
+  }
+
+  const pageRows = rows.slice(skip, skip + parsedLimit).map(mapAdminWipRowToLegacyDocument)
+
+  return {
+    stats: {
+      totalOrderValue: round2(totalOrderValue),
+      totalReceived: round2(totalReceived),
+      outstanding: round2(outstanding),
+      wipProfit: round2(wipProfit),
+    },
+    wips: pageRows,
+    total: rows.length,
+    page: parsedPage,
+    limit: parsedLimit,
+    dataSource: 'derived',
+    note:
+      'WIP rows are derived: PO/plant projects with at least one paid customer invoice. wipProfit = paid invoice total − (manual expenses + vendor/material bids + selected freight bids).',
+  }
+}
+
+exports.listAdminWipProfitsForExport = async (query = {}) => {
+  const data = await exports.listAdminWipProfits({ ...query, page: 1, limit: 10000 })
+  return data.wips.map((w) => ({
+    projectName: w.leadId?.projectName || '',
+    jobId: w.leadId?.jobId || '',
+    customerName: w.leadId?.customerId
+      ? [w.leadId.customerId.firstName, w.leadId.customerId.lastName].filter(Boolean).join(' ')
+      : '',
+    orderValue: w.orderValue,
+    currentCost: w.currentCost,
+    totalReceived: w.totalReceived ?? w.depositPaid + w.progressPaid + w.finalPaid,
+    outstanding: w.outstanding,
+    wipProfit: w.wipProfit,
+    marginPct: w.marginPct,
+    status: w.status,
+  }))
 }
 
 exports.resolveWip = async (idOrLeadId) => {

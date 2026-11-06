@@ -1302,38 +1302,15 @@ exports.exportFinancialOverview = asyncHandler(async (req, res) => {
 })
 
 exports.getWIPProfits = asyncHandler(async (req, res) => {
-  const { clientId, page = 1, limit = 20 } = req.query
-  const filter = await applyFinancialLeadScopeToProjectFilter(
-    clientId ? { leadId: clientId } : {}
-  )
-
-  const [wips, total, statsAgg] = await Promise.all([
-    WIPProfit.find(filter)
-      .populate({ path: 'leadId', select: 'projectName jobId location customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
-      .sort({ createdAt: -1 })
-      .skip((parseInt(page) - 1) * parseInt(limit))
-      .limit(parseInt(limit))
-      .lean(),
-    WIPProfit.countDocuments(filter),
-    WIPProfit.aggregate([
-      { $match: filter },
-      { $group: {
-        _id: null,
-        totalOrderValue: { $sum: '$orderValue' },
-        totalReceived:   { $sum: { $add: ['$depositPaid', '$progressPaid', '$finalPaid'] } },
-        outstanding:     { $sum: '$outstanding' },
-        wipProfit:       { $sum: '$wipProfit' },
-      }},
-    ]),
-  ])
-
-  return success(res, {
-    stats: statsAgg[0] || { totalOrderValue: 0, totalReceived: 0, outstanding: 0, wipProfit: 0 },
-    wips,
-    total,
-    page: parseInt(page),
-    limit: parseInt(limit),
+  const accountPaymentsService = require('../../services/accountPayments.service')
+  const { clientId, search, page = 1, limit = 20 } = req.query
+  const data = await accountPaymentsService.listAdminWipProfits({
+    clientId,
+    search,
+    page,
+    limit,
   })
+  return success(res, data)
 })
 
 exports.createWIPEntry = asyncHandler(async (req, res) => {
@@ -1401,28 +1378,9 @@ exports.addWIPPayment = asyncHandler(async (req, res) => {
 
 // GET /wip-profits/export — "Export" button on WIP & Project Profitability screen
 exports.exportWIPProfits = asyncHandler(async (req, res) => {
-  const { clientId } = req.query
-  const filter = await applyFinancialLeadScopeToProjectFilter(
-    clientId ? { leadId: clientId } : {}
-  )
-
-  const wips = await WIPProfit.find(filter)
-    .populate({ path: 'leadId', select: 'projectName jobId location customerId', populate: { path: 'customerId', select: 'firstName lastName' } })
-    .sort({ createdAt: -1 })
-    .lean()
-
-  const rows = wips.map((w) => ({
-    projectName: w.leadId?.projectName || '',
-    jobId: w.leadId?.jobId || '',
-    customerName: `${w.leadId?.customerId?.firstName || ''} ${w.leadId?.customerId?.lastName || ''}`.trim(),
-    orderValue: w.orderValue,
-    currentCost: w.currentCost,
-    totalReceived: w.depositPaid + w.progressPaid + w.finalPaid,
-    outstanding: w.outstanding,
-    wipProfit: w.wipProfit,
-    marginPct: w.marginPct,
-    status: w.status,
-  }))
+  const accountPaymentsService = require('../../services/accountPayments.service')
+  const { clientId, search } = req.query
+  const rows = await accountPaymentsService.listAdminWipProfitsForExport({ clientId, search })
 
   const buffer = await generateWIPProfitsExcel(rows)
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

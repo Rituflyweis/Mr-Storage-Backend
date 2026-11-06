@@ -3143,8 +3143,7 @@ exports.confirmDeliverySiteReady = asyncHandler(async (req, res) => {
 
   const { siteCleared, accessRouteAvailable, safetyMeasuresInPlace, personnelReady, confirmedBy } = req.body
 
-  const full = await Delivery.findById(delivery._id)
-  full.siteReadyConfirmation = {
+  const siteReadyConfirmation = {
     confirmed: true,
     confirmedAt: new Date(),
     confirmedBy: confirmedBy || req.customer.firstName || 'Customer',
@@ -3155,7 +3154,12 @@ exports.confirmDeliverySiteReady = asyncHandler(async (req, res) => {
       personnelReady: !!personnelReady,
     },
   }
-  await full.save()
+  // $set only — avoid full-document save() when legacy statusHistory rows use retired status strings.
+  const full = await Delivery.findByIdAndUpdate(
+    delivery._id,
+    { $set: { siteReadyConfirmation } },
+    { new: true, runValidators: true }
+  )
 
   return success(res, { deliveryId: full._id, siteReadyConfirmation: full.siteReadyConfirmation }, 'Site ready confirmed')
 })
@@ -3168,8 +3172,7 @@ exports.confirmDeliveryEquipment = asyncHandler(async (req, res) => {
 
   const { forkliftAvailable, craneOrHeavyMachineryAvailable, storageAreaReady, toolsAndAccessoriesOnSite } = req.body
 
-  const full = await Delivery.findById(delivery._id)
-  full.equipmentConfirmation = {
+  const equipmentConfirmation = {
     confirmed: true,
     confirmedAt: new Date(),
     checklist: {
@@ -3179,7 +3182,11 @@ exports.confirmDeliveryEquipment = asyncHandler(async (req, res) => {
       toolsAndAccessoriesOnSite: !!toolsAndAccessoriesOnSite,
     },
   }
-  await full.save()
+  const full = await Delivery.findByIdAndUpdate(
+    delivery._id,
+    { $set: { equipmentConfirmation } },
+    { new: true, runValidators: true }
+  )
 
   return success(res, { deliveryId: full._id, equipmentConfirmation: full.equipmentConfirmation }, 'Equipment confirmed')
 })
