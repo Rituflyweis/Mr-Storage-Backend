@@ -103,8 +103,12 @@ const buildOverviewRows = async (leads, query = {}) => {
   // When period/startDate set, also accept invoice.date if paidAt missing.
   const hasDateScope = Boolean(query.period || query.startDate || query.endDate)
 
-  const [quotationByLead, schedules, invoices, expenseAgg, estimates] = await Promise.all([
-    getLatestQuotationByLead(leadIds),
+  const quotationByLead = await getLatestQuotationByLead(leadIds)
+  const estimateIds = [...quotationByLead.values()]
+    .map((q) => q.sourceEstimateId)
+    .filter(Boolean)
+
+  const [schedules, invoices, expenseAgg, estimates] = await Promise.all([
     PaymentSchedule.find({ leadId: { $in: leadIds } }).select('leadId stages').lean(),
     Invoice.find({
       leadId: { $in: leadIds },
@@ -118,17 +122,13 @@ const buildOverviewRows = async (leads, query = {}) => {
       { $match: { leadId: { $in: leadIds }, isActive: true } },
       { $group: { _id: '$leadId', total: { $sum: '$amount' } } },
     ]),
-    EstimateQuote.find({
-      _id: {
-        $in: [...quotationByLead.values()]
-          .map((q) => q.sourceEstimateId)
-          .filter(Boolean),
-      },
-    })
-      .select(
-        'totalSell totalCOGS materialCost freightCost installCost marginPercent revisedContractTotal originalContractValue fullQuoteResult pricingResult'
-      )
-      .lean(),
+    estimateIds.length
+      ? EstimateQuote.find({ _id: { $in: estimateIds } })
+          .select(
+            'totalSell totalCOGS materialCost freightCost installCost marginPercent revisedContractTotal originalContractValue fullQuoteResult pricingResult'
+          )
+          .lean()
+      : Promise.resolve([]),
   ])
 
   const estimateById = new Map(estimates.map((e) => [String(e._id), e]))
