@@ -48,6 +48,10 @@ router.delete('/tasks/:taskId',      [param('taskId').isMongoId()], validate, ct
 router.get('/work-logs',             ctrl.getWorkLogs)
 router.post('/work-logs',            [body('leadId').isMongoId(), body('date').notEmpty()], validate, ctrl.createWorkLog)
 
+const mismatchOrderCtrl = require('../../controllers/plant/mismatchOrder.controller')
+
+router.get('/mismatch-orders',       mismatchOrderCtrl.listAllMismatchOrders)
+
 router.get('/material-requests',     ctrl.getMaterialRequests)
 router.get('/material-requests/export', ctrl.exportMaterialRequests)
 router.get('/material-requests/filters', ctrl.getMaterialRequestFilters)

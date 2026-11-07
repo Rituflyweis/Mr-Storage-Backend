@@ -2,8 +2,9 @@ const BundleMismatchOrder = require('../../models/BundleMismatchOrder')
 const { MISMATCH_ORDER_STATUSES } = require('../../models/BundleMismatchOrder')
 const MaterialRequest = require('../../models/MaterialRequest')
 const Lead = require('../../models/Lead')
-const { getScopedLeadIds } = require('../../utils/plantAccessScope')
+const { getScopedLeadIds, getConstructionScopedLeadIds } = require('../../utils/plantAccessScope')
 const materialRequestList = require('../../services/materialRequestList.service')
+const mismatchOrderList = require('../../services/mismatchOrderList.service')
 const { success, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 
@@ -13,29 +14,29 @@ const assertPlantProjectAccess = async (req, leadId) => {
   return scoped.includes(String(leadId))
 }
 
-const mapMismatchRow = (row) => ({
-  mismatchId: row._id,
-  mismatchOrderId: row.mismatchOrderId,
-  status: row.status,
-  reason: row.reason,
-  notes: row.notes,
-  actionNotes: row.actionNotes || '',
-  items: row.items || [],
-  photos: row.photos || [],
-  bundleId: row.bundleId?._id || row.bundleId,
-  bundleNo: row.bundleNo || row.bundleId?.bundleNo || '',
-  leadId: row.leadId?._id || row.leadId,
-  projectName: row.leadId?.projectName || '',
-  jobId: row.leadId?.jobId || '',
-  reportedBy: row.reportedBy
-    ? { _id: row.reportedBy._id, name: row.reportedBy.name, email: row.reportedBy.email }
-    : null,
-  reviewedBy: row.reviewedBy
-    ? { _id: row.reviewedBy._id, name: row.reviewedBy.name, email: row.reviewedBy.email }
-    : null,
-  resolvedAt: row.resolvedAt,
-  createdAt: row.createdAt,
-  updatedAt: row.updatedAt,
+const mapMismatchRow = mismatchOrderList.mapMismatchRow
+
+const resolveListScopedLeadIds = async (req) => {
+  if (req.plantAccessScope === 'admin' || req.plantAccessScope === 'construction') {
+    return (await getScopedLeadIds(req)).map(String)
+  }
+  if (req.user?.role === 'plant') {
+    return (await getScopedLeadIds(req)).map(String)
+  }
+  if (req.user?.role === 'construction') {
+    return (await getConstructionScopedLeadIds(req.query)).map(String)
+  }
+  return null
+}
+
+exports.listAllMismatchOrders = asyncHandler(async (req, res) => {
+  const scopedLeadIds = await resolveListScopedLeadIds(req)
+  const data = await mismatchOrderList.listMismatchOrders(req.query, {
+    page: req.query.page,
+    limit: req.query.limit,
+    scopedLeadIds,
+  })
+  return success(res, data)
 })
 
 exports.listProjectMismatchOrders = asyncHandler(async (req, res) => {

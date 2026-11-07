@@ -77,6 +77,9 @@ router.get('/work-logs', taskCtrl.getWorkLogs)
 router.post('/work-logs', taskCtrl.createWorkLog)
 
 // Material Requests
+const mismatchOrderCtrl = require('../../controllers/plant/mismatchOrder.controller')
+
+router.get('/mismatch-orders', mismatchOrderCtrl.listAllMismatchOrders)
 router.get('/material-requests', materialRequestCtrl.getMaterialRequests)
 router.get('/material-requests/filters', materialRequestCtrl.getMaterialRequestFilters)
 router.get('/material-requests/export/csv', materialRequestCtrl.exportMaterialRequests)
