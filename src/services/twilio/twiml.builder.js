@@ -26,7 +26,7 @@ const sayGather = ({ message, gatherActionUrl, voice = 'Polly.Joanna' }) => {
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<Response>` +
     `<Say voice="${escapeXml(voice)}">${say}</Say>` +
-    `<Gather input="speech" action="${action}" method="POST" speechTimeout="auto" timeout="6" />` +
+    `<Gather input="speech" action="${action}" method="POST" speechTimeout="auto" timeout="3" />` +
     `<Say voice="${escapeXml(voice)}">I did not hear anything. Goodbye.</Say>` +
     `<Hangup/>` +
     `</Response>`

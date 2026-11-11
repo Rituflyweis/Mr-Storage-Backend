@@ -412,14 +412,17 @@ const handleGather = async (body = {}, query = {}, req = null) => {
   const needsContact =
     session.needsContactDetails || customerNeedsContactDetails(customer)
 
+  const tChat = Date.now()
   const { text, quoteReadyData, chatMeta, contactUpdate } = await chatService.chat(
     messagesBeforeAi,
     {
       customer,
       currentConversationSummary: leadFresh.aiContextSummary || '',
       needsContactDetails: needsContact,
+      voiceMode: true,
     },
   )
+  console.log(`[VoiceCall] claude_ms=${Date.now() - tChat} callSid=${callSid || ''}`)
 
   // Persist name/email collected on this first-contact call
   if (needsContact || contactUpdate) {
@@ -451,48 +454,61 @@ const handleGather = async (body = {}, query = {}, req = null) => {
   const stillNeedsContact =
     session.needsContactDetails || customerNeedsContactDetails(customer)
 
-  // Scoring + quote handoff only after contact is complete (same as chat otherwise)
-  const messagesAfterAi = await Message.find({ leadId: session.leadId })
-    .sort({ createdAt: 1 })
-    .select('senderType content createdAt')
-    .lean()
+  // Do NOT await scoring here — a second Claude call was adding ~4–10s of dead air
+  // and risking Twilio's ~15s webhook timeout ("application error").
+  const readyForHandoff =
+    !stillNeedsContact &&
+    isReadyForSalesHandoff(chatMeta, text, quoteReadyData, null)
 
-  const leadForScore = await Lead.findById(session.leadId)
-  if (leadForScore && !stillNeedsContact) {
-    const scoreData = await scoringService.scoreLead(
-      messagesAfterAi,
-      customer?.firstName || '',
-    )
-    scoringService.applyScoreToLead(leadForScore, scoreData)
-    await Lead.findByIdAndUpdate(session.leadId, { $set: { leadScoring: leadForScore.leadScoring } })
-    await syncLeadProjectFieldsFromScore(session.leadId, scoreData)
-    await syncPlannedStartFromMessages(session.leadId, messagesAfterAi)
-
-    if (canAdvanceLifecycle(messagesAfterAi) && isRequirementsGatheredFromChat(chatMeta, scoreData)) {
-      await advanceLifecycleIfNeeded(session.leadId, 'requirements_gathered')
-    }
-
-    const readyForHandoff = isReadyForSalesHandoff(chatMeta, text, quoteReadyData, scoreData)
-    if (readyForHandoff) {
-      const quoteData =
-        quoteReadyData || buildFallbackQuoteData(leadForScore, scoreData, messagesAfterAi)
-      await handleQuoteReady(session.leadId, session.customerId, quoteData, {
-        messages: messagesAfterAi,
-        scoreData,
+  const runPostTurnJobs = async () => {
+    try {
+      const messagesAfterAi = await Message.find({ leadId: session.leadId })
+        .sort({ createdAt: 1 })
+        .select('senderType content createdAt')
+        .lean()
+      const leadForScore = await Lead.findById(session.leadId)
+      if (!leadForScore || stillNeedsContact) {
+        await chatService.refreshContextSummary(session.leadId)
+        return
+      }
+      const scoreData = await scoringService.scoreLead(
+        messagesAfterAi,
+        customer?.firstName || '',
+      )
+      scoringService.applyScoreToLead(leadForScore, scoreData)
+      await Lead.findByIdAndUpdate(session.leadId, {
+        $set: { leadScoring: leadForScore.leadScoring },
       })
-      session.isHandedToSales = true
-      await session.save()
-
-      chatService.refreshContextSummary(session.leadId).catch(() => {})
-
-      const closing =
-        `${twiml.sanitizeForSpeech(text)} ` +
-        'A sales representative will follow up with your quote shortly. Thank you for calling. Goodbye.'
-      return twiml.sayHangup({ message: closing })
+      await syncLeadProjectFieldsFromScore(session.leadId, scoreData)
+      await syncPlannedStartFromMessages(session.leadId, messagesAfterAi)
+      if (canAdvanceLifecycle(messagesAfterAi) && isRequirementsGatheredFromChat(chatMeta, scoreData)) {
+        await advanceLifecycleIfNeeded(session.leadId, 'requirements_gathered')
+      }
+      if (readyForHandoff || isReadyForSalesHandoff(chatMeta, text, quoteReadyData, scoreData)) {
+        const quoteData =
+          quoteReadyData || buildFallbackQuoteData(leadForScore, scoreData, messagesAfterAi)
+        await handleQuoteReady(session.leadId, session.customerId, quoteData, {
+          messages: messagesAfterAi,
+          scoreData,
+        })
+      }
+      await chatService.refreshContextSummary(session.leadId)
+    } catch (err) {
+      console.error('[VoiceCall] post-turn jobs:', err.message)
     }
   }
+  setImmediate(() => {
+    runPostTurnJobs().catch(() => {})
+  })
 
-  chatService.refreshContextSummary(session.leadId).catch(() => {})
+  if (readyForHandoff) {
+    session.isHandedToSales = true
+    await session.save()
+    const closing =
+      `${twiml.sanitizeForSpeech(text)} ` +
+      'A sales representative will follow up with your quote shortly. Thank you for calling. Goodbye.'
+    return twiml.sayHangup({ message: closing })
+  }
 
   return twiml.sayGather({
     message: text,

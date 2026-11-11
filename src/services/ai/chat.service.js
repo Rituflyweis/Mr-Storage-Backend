@@ -281,15 +281,28 @@ const refreshContextSummary = async (leadId) => {
 
 // ─── MAIN CHAT FUNCTION ────────────────────────────────────────────────────────
 const chat = async (currentMessages, options = {}) => {
-  const { customer, currentConversationSummary = '', needsContactDetails = false } = options
+  const {
+    customer,
+    currentConversationSummary = '',
+    needsContactDetails = false,
+    voiceMode = false,
+  } = options
 
   const systemPrompt =
-    buildSalesSystemPrompt() + buildContactBlock(customer, { needsContactDetails })
-  const claudeMessages = buildMessages(currentMessages, currentConversationSummary)
+    buildSalesSystemPrompt() +
+    buildContactBlock(customer, { needsContactDetails }) +
+    (voiceMode
+      ? '\n\nVOICE CALL MODE: Keep every spoken reply under 2 short sentences. No markdown, bullets, or lists.\n'
+      : '')
+
+  // Voice: smaller prompt window so Twilio webhook returns before ~15s timeout
+  const claudeMessages = voiceMode
+    ? buildMessages(currentMessages.slice(-10), currentConversationSummary)
+    : buildMessages(currentMessages, currentConversationSummary)
 
   const response = await client.messages.create({
     model: env.ANTHROPIC_MODEL,
-    max_tokens: 1024,
+    max_tokens: voiceMode ? 220 : 1024,
     system: systemPrompt,
     messages: claudeMessages,
   })
