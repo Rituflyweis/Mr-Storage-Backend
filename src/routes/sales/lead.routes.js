@@ -70,6 +70,9 @@ router.get('/:leadId/chat-status', chatCtrl.getChatStatus)
 router.put('/:leadId/chat/end', chatCtrl.endChat)
 router.put('/:leadId/chat/reopen', chatCtrl.reopenChat)
 
+const callHistoryCtrl = require('../../controllers/common/callHistory.controller')
+router.get('/:leadId/calls', callHistoryCtrl.listLeadCalls)
+
 router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
 router.get('/:leadId/detail', ctrl.getLeadDetail)
 router.get('/:leadId/media',

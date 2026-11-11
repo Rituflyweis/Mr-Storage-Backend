@@ -165,7 +165,7 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
   const messages = await Message.find({ leadId })
     .sort({ createdAt: 1 })
     .populate('senderId', 'name')
-    .select('senderType senderId content createdAt isRead')
+    .select('senderType senderId content createdAt isRead origin callSessionId')
     .lean()
 
   const rows = messages.map((m) => ({
@@ -173,6 +173,8 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
     content: m.content,
     createdAt: m.createdAt,
     isRead: m.isRead,
+    origin: m.origin || 'chat',
+    callSessionId: m.callSessionId || null,
     senderName: m.senderType === 'sales'
       ? m.senderId?.name || 'Sales'
       : m.senderType === 'admin'

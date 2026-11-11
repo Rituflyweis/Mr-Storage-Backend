@@ -1,0 +1,608 @@
+const bcrypt = require('bcryptjs')
+const CallSession = require('../../models/CallSession')
+const CallTurn = require('../../models/CallTurn')
+const Customer = require('../../models/Customer')
+const Lead = require('../../models/Lead')
+const Message = require('../../models/Message')
+const { CLOSED_STAGES, AUDIT_ACTIONS } = require('../../config/constants')
+const { normalizePhoneForLookup, digitsOnly } = require('../../utils/normalizePhone')
+const generateCustomerId = require('../../utils/generateCustomerId')
+const twiml = require('./twiml.builder')
+const chatService = require('../ai/chat.service')
+const scoringService = require('../ai/scoring.service')
+const auditService = require('../audit.service')
+const leadListSocket = require('../leadListSocket.service')
+const mailer = require('../email/mailer')
+const {
+  handleQuoteReady,
+  buildFallbackQuoteData,
+  advanceLifecycleIfNeeded,
+  syncLeadProjectFieldsFromScore,
+  syncPlannedStartFromMessages,
+} = require('../leadQuoteReady.service')
+const {
+  isRequirementsGatheredFromChat,
+  isReadyForSalesHandoff,
+  canAdvanceLifecycle,
+} = require('../ai/requirementsChecklist.service')
+const env = require('../../config/env')
+
+const PENDING_VOICE_EMAIL_DOMAIN = 'pending.voice.local'
+
+const phonePartsFromTwilioFrom = (from) => {
+  const { e164Digits, nationalNumber } = normalizePhoneForLookup(from)
+  let countryCode = '+1'
+  const raw = String(from || '')
+  if (raw.startsWith('+') && e164Digits && nationalNumber && e164Digits.length > nationalNumber.length) {
+    countryCode = `+${e164Digits.slice(0, e164Digits.length - nationalNumber.length)}`
+  } else if (e164Digits.length === 12 && e164Digits.startsWith('91')) {
+    countryCode = '+91'
+  }
+  return {
+    number: nationalNumber || e164Digits || digitsOnly(from),
+    countryCode,
+  }
+}
+
+const pendingEmailForPhone = (nationalNumber) =>
+  `call.${digitsOnly(nationalNumber) || 'unknown'}@${PENDING_VOICE_EMAIL_DOMAIN}`
+
+const customerNeedsContactDetails = (customer) => {
+  if (!customer) return true
+  if (chatService.isPendingVoiceEmail(customer.email)) return true
+  const name = String(customer.firstName || '').trim().toLowerCase()
+  if (!name || name === 'caller' || name === 'guest') return true
+  return false
+}
+
+/**
+ * First-contact: create CRM customer from caller ID so the AI call can collect name/email.
+ */
+const createCustomerFromInboundCall = async (from) => {
+  const phone = phonePartsFromTwilioFrom(from)
+  const existing = await findCustomerByTwilioFrom(from)
+  if (existing) return { customer: existing, created: false }
+
+  const customerId = await generateCustomerId()
+  const hashedPassword = await bcrypt.hash(phone.number || String(Date.now()), 12)
+  const customer = await Customer.create({
+    customerId,
+    firstName: 'Caller',
+    lastName: '',
+    email: pendingEmailForPhone(phone.number),
+    phone: { number: phone.number, countryCode: phone.countryCode },
+    password: hashedPassword,
+    source: 'call',
+  })
+  return { customer, created: true }
+}
+
+const looksLikeEmail = (value) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+
+const applyContactUpdateFromCall = async (customerId, contactUpdate, speechText = '') => {
+  if (!customerId) return { updated: false, contactComplete: false }
+
+  const customer = await Customer.findById(customerId)
+  if (!customer) return { updated: false, contactComplete: false }
+
+  const patch = {}
+  const fromAi = contactUpdate || {}
+  const speechEmailMatch = String(speechText || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)
+
+  const nextFirst = fromAi.firstName || ''
+  const nextLast = fromAi.lastName || ''
+  let nextEmail = fromAi.email || ''
+  if (!looksLikeEmail(nextEmail) && speechEmailMatch) {
+    nextEmail = speechEmailMatch[0].toLowerCase()
+  }
+
+  if (nextFirst && !['caller', 'guest'].includes(nextFirst.toLowerCase())) {
+    if (customer.firstName === 'Caller' || !customer.firstName || customerNeedsContactDetails(customer)) {
+      patch.firstName = nextFirst
+    }
+  }
+  if (nextLast) patch.lastName = nextLast
+
+  if (looksLikeEmail(nextEmail) && !nextEmail.endsWith(`@${PENDING_VOICE_EMAIL_DOMAIN}`)) {
+    const clash = await Customer.findOne({
+      email: nextEmail.toLowerCase(),
+      _id: { $ne: customer._id },
+    })
+      .select('_id')
+      .lean()
+    if (!clash) {
+      patch.email = nextEmail.toLowerCase()
+    }
+  }
+
+  if (Object.keys(patch).length) {
+    Object.assign(customer, patch)
+    await customer.save()
+  }
+
+  const refreshed = await Customer.findById(customerId).lean()
+  const contactComplete =
+    Boolean(fromAi.contactComplete) ||
+    (!customerNeedsContactDetails(refreshed) && !chatService.isPendingVoiceEmail(refreshed.email))
+
+  if (contactComplete && patch.email && mailer.isEnquiryNotificationConfigured?.()) {
+    try {
+      await mailer.sendNewCustomerEnquiryNotification({
+        customerName: refreshed.firstName,
+        customerEmail: refreshed.email,
+        customerPhone: refreshed.phone?.number,
+        countryCode: refreshed.phone?.countryCode,
+        source: 'ai_voice_call',
+      })
+    } catch (err) {
+      console.warn('[VoiceCall] enquiry notify failed:', err.message)
+    }
+  }
+
+  return { updated: Object.keys(patch).length > 0, contactComplete, customer: refreshed }
+}
+
+const webhookBase = () => (env.TWILIO_WEBHOOK_BASE_URL || '').replace(/\/$/, '')
+
+const gatherUrl = (sessionId) => {
+  const base = webhookBase()
+  const path = `/api/twilio/voice/gather?sessionId=${encodeURIComponent(String(sessionId))}`
+  return base ? `${base}${path}` : path
+}
+
+const emitAdmin = (event, payload) => {
+  try {
+    if (global.io) global.io.of('/admin').emit(event, payload)
+    if (global.io && payload?.leadId) {
+      global.io.of('/admin').to(`lead:${payload.leadId}`).emit(event, payload)
+    }
+  } catch (err) {
+    console.warn('[VoiceCall] socket emit failed:', err.message)
+  }
+}
+
+const findCustomerByTwilioFrom = async (from) => {
+  const { lookupCandidates, nationalNumber, e164Digits } = normalizePhoneForLookup(from)
+  const customer = await Customer.findOne({
+    $or: [
+      { 'phone.number': { $in: lookupCandidates } },
+      { 'phone.number': nationalNumber },
+      { 'phone.number': e164Digits },
+    ],
+  })
+  return customer
+}
+
+const resolveActiveLead = async (customerId, { createIfMissing = true } = {}) => {
+  let lead = await Lead.findOne({
+    customerId,
+    lifecycleStatus: { $nin: CLOSED_STAGES },
+  })
+    .sort({ createdAt: -1 })
+
+  if (!lead && createIfMissing) {
+    lead = await Lead.create({
+      customerId,
+      source: 'call',
+      lifecycleStatus: 'initial_contact',
+      lifecycleHistory: [{ stage: 'initial_contact', changedAt: new Date(), changedBy: null }],
+    })
+    await auditService.log({
+      type: 'lead',
+      action: AUDIT_ACTIONS.LEAD_CREATED,
+      leadId: lead._id,
+      customerId,
+      performedBy: null,
+      metadata: { source: 'call' },
+    })
+    await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'voice_inbound' }).catch(() => {})
+  }
+
+  return lead
+}
+
+const saveTurnAndMessage = async ({
+  session,
+  role,
+  transcript,
+  twilioGatherSid = '',
+}) => {
+  const senderType = role === 'customer' ? 'customer' : role === 'ai' ? 'ai' : 'ai'
+  let messageId = null
+
+  if (session.leadId && session.customerId && (role === 'customer' || role === 'ai')) {
+    const msg = await Message.create({
+      leadId: session.leadId,
+      customerId: session.customerId,
+      senderType,
+      content: transcript,
+      origin: 'call',
+      callSessionId: session._id,
+    })
+    messageId = msg._id
+  }
+
+  const turn = await CallTurn.create({
+    callSessionId: session._id,
+    leadId: session.leadId,
+    customerId: session.customerId,
+    role,
+    transcript,
+    twilioGatherSid,
+    messageId,
+  })
+
+  emitAdmin('call_turn', {
+    callSessionId: session._id,
+    leadId: session.leadId,
+    customerId: session.customerId,
+    role,
+    transcript,
+    createdAt: turn.createdAt,
+  })
+
+  return turn
+}
+
+const handleInbound = async (body = {}) => {
+  const callSid = body.CallSid
+  const from = body.From || ''
+  const to = body.To || ''
+
+  if (!callSid) {
+    return twiml.sayHangup({ message: 'We could not start this call. Please try again.' })
+  }
+
+  let session = await CallSession.findOne({ twilioCallSid: callSid })
+  if (session) {
+    if (!session.leadId || !session.customerId) {
+      return twiml.sayHangup({
+        message: 'We lost your call session. Please call again. Goodbye.',
+      })
+    }
+    const lead = await Lead.findById(session.leadId).select('isHandedToSales isStaffChatActive').lean()
+    if (lead?.isHandedToSales || lead?.isStaffChatActive) {
+      return twiml.sayHangup({
+        message: 'Your sales representative will follow up with you shortly. Thank you for calling. Goodbye.',
+      })
+    }
+    return twiml.sayGather({
+      message: 'Welcome back. How can I help you?',
+      gatherActionUrl: gatherUrl(session._id),
+    })
+  }
+
+  // Returning customer OR first-contact — create CRM record from caller ID if needed
+  let customer = await findCustomerByTwilioFrom(from)
+  let isNewFromCall = false
+  if (!customer) {
+    const created = await createCustomerFromInboundCall(from)
+    customer = created.customer
+    isNewFromCall = created.created
+  }
+
+  const needsContact = customerNeedsContactDetails(customer)
+  const lead = await resolveActiveLead(customer._id, { createIfMissing: true })
+  session = await CallSession.create({
+    twilioCallSid: callSid,
+    customerId: customer._id,
+    leadId: lead._id,
+    fromNumber: from,
+    toNumber: to,
+    status: 'in-progress',
+    isHandedToSales: Boolean(lead.isHandedToSales),
+    needsContactDetails: needsContact || isNewFromCall,
+    unknownCaller: false,
+  })
+
+  emitAdmin('call_started', {
+    callSessionId: session._id,
+    leadId: lead._id,
+    customerId: customer._id,
+    fromNumber: from,
+    firstContact: Boolean(session.needsContactDetails),
+  })
+
+  if (lead.isHandedToSales || lead.isStaffChatActive) {
+    session.status = 'completed'
+    session.endedAt = new Date()
+    await session.save()
+    emitAdmin('call_ended', {
+      callSessionId: session._id,
+      leadId: lead._id,
+      durationSeconds: 0,
+      status: 'completed',
+      reason: 'handed_to_sales',
+    })
+    return twiml.sayHangup({
+      message: 'Your sales representative will follow up with you shortly. Thank you for calling. Goodbye.',
+    })
+  }
+
+  const greeting = session.needsContactDetails
+    ? `Thanks for calling. I'm Alex from our sales team. To get started, may I have your name please?`
+    : `Hi ${customer.firstName || 'there'}, thanks for calling. I'm Alex from our sales team. What can I help you with today?`
+
+  await saveTurnAndMessage({
+    session,
+    role: 'ai',
+    transcript: greeting,
+  })
+
+  return twiml.sayGather({
+    message: greeting,
+    gatherActionUrl: gatherUrl(session._id),
+  })
+}
+
+const handleGather = async (body = {}, query = {}) => {
+  const sessionId = query.sessionId || body.sessionId
+  const speech = String(body.SpeechResult || body.UnstableSpeechResult || '').trim()
+  const callSid = body.CallSid
+
+  let session = null
+  if (sessionId) session = await CallSession.findById(sessionId)
+  if (!session && callSid) session = await CallSession.findOne({ twilioCallSid: callSid })
+
+  if (!session || !session.leadId || !session.customerId) {
+    return twiml.sayHangup({
+      message: 'We lost your call session. Please call again. Goodbye.',
+    })
+  }
+
+  if (!speech) {
+    return twiml.sayGather({
+      message: "Sorry, I didn't catch that. Could you say it again?",
+      gatherActionUrl: gatherUrl(session._id),
+    })
+  }
+
+  const fingerprint = `${callSid || ''}|${speech}`.slice(0, 500)
+  if (session.lastSpeechFingerprint === fingerprint) {
+    // Twilio retry — replay last AI turn if any
+    const lastAi = await CallTurn.findOne({ callSessionId: session._id, role: 'ai' })
+      .sort({ createdAt: -1 })
+      .lean()
+    return twiml.sayGather({
+      message: lastAi?.transcript || 'Please continue.',
+      gatherActionUrl: gatherUrl(session._id),
+    })
+  }
+  session.lastSpeechFingerprint = fingerprint
+  await session.save()
+
+  const leadFresh = await Lead.findById(session.leadId)
+    .select('isHandedToSales isStaffChatActive aiContextSummary')
+    .populate('customerId')
+  if (!leadFresh) {
+    return twiml.sayHangup({ message: 'We could not find your project. Goodbye.' })
+  }
+
+  if (leadFresh.isHandedToSales || leadFresh.isStaffChatActive) {
+    return twiml.sayHangup({
+      message: 'Your sales representative will follow up with you shortly. Thank you. Goodbye.',
+    })
+  }
+
+  await saveTurnAndMessage({
+    session,
+    role: 'customer',
+    transcript: speech,
+    twilioGatherSid: body.CallSid || '',
+  })
+
+  const messagesBeforeAi = await Message.find({ leadId: session.leadId })
+    .sort({ createdAt: 1 })
+    .select('senderType content createdAt')
+    .lean()
+
+  let customer = leadFresh.customerId
+  const needsContact =
+    session.needsContactDetails || customerNeedsContactDetails(customer)
+
+  const { text, quoteReadyData, chatMeta, contactUpdate } = await chatService.chat(
+    messagesBeforeAi,
+    {
+      customer,
+      currentConversationSummary: leadFresh.aiContextSummary || '',
+      needsContactDetails: needsContact,
+    },
+  )
+
+  // Persist name/email collected on this first-contact call
+  if (needsContact || contactUpdate) {
+    const applied = await applyContactUpdateFromCall(session.customerId, contactUpdate, speech)
+    if (applied.contactComplete) {
+      session.needsContactDetails = false
+      await session.save()
+    } else if (applied.updated) {
+      await session.save()
+    }
+    if (applied.customer) customer = applied.customer
+  }
+
+  const leadAfterAi = await Lead.findById(session.leadId)
+    .select('isStaffChatActive isHandedToSales')
+    .lean()
+  if (leadAfterAi?.isStaffChatActive || leadAfterAi?.isHandedToSales) {
+    return twiml.sayHangup({
+      message: 'Your sales representative will follow up with you shortly. Thank you. Goodbye.',
+    })
+  }
+
+  await saveTurnAndMessage({
+    session,
+    role: 'ai',
+    transcript: text,
+  })
+
+  const stillNeedsContact =
+    session.needsContactDetails || customerNeedsContactDetails(customer)
+
+  // Scoring + quote handoff only after contact is complete (same as chat otherwise)
+  const messagesAfterAi = await Message.find({ leadId: session.leadId })
+    .sort({ createdAt: 1 })
+    .select('senderType content createdAt')
+    .lean()
+
+  const leadForScore = await Lead.findById(session.leadId)
+  if (leadForScore && !stillNeedsContact) {
+    const scoreData = await scoringService.scoreLead(
+      messagesAfterAi,
+      customer?.firstName || '',
+    )
+    scoringService.applyScoreToLead(leadForScore, scoreData)
+    await Lead.findByIdAndUpdate(session.leadId, { $set: { leadScoring: leadForScore.leadScoring } })
+    await syncLeadProjectFieldsFromScore(session.leadId, scoreData)
+    await syncPlannedStartFromMessages(session.leadId, messagesAfterAi)
+
+    if (canAdvanceLifecycle(messagesAfterAi) && isRequirementsGatheredFromChat(chatMeta, scoreData)) {
+      await advanceLifecycleIfNeeded(session.leadId, 'requirements_gathered')
+    }
+
+    const readyForHandoff = isReadyForSalesHandoff(chatMeta, text, quoteReadyData, scoreData)
+    if (readyForHandoff) {
+      const quoteData =
+        quoteReadyData || buildFallbackQuoteData(leadForScore, scoreData, messagesAfterAi)
+      await handleQuoteReady(session.leadId, session.customerId, quoteData, {
+        messages: messagesAfterAi,
+        scoreData,
+      })
+      session.isHandedToSales = true
+      await session.save()
+
+      chatService.refreshContextSummary(session.leadId).catch(() => {})
+
+      const closing =
+        `${twiml.sanitizeForSpeech(text)} ` +
+        'A sales representative will follow up with your quote shortly. Thank you for calling. Goodbye.'
+      return twiml.sayHangup({ message: closing })
+    }
+  }
+
+  chatService.refreshContextSummary(session.leadId).catch(() => {})
+
+  return twiml.sayGather({
+    message: text,
+    gatherActionUrl: gatherUrl(session._id),
+  })
+}
+
+const handleStatus = async (body = {}) => {
+  const callSid = body.CallSid
+  if (!callSid) return { ok: true }
+
+  const session = await CallSession.findOne({ twilioCallSid: callSid })
+  if (!session) return { ok: true }
+
+  const twilioStatus = String(body.CallStatus || '').toLowerCase()
+  const map = {
+    completed: 'completed',
+    busy: 'busy',
+    failed: 'failed',
+    'no-answer': 'no-answer',
+    canceled: 'canceled',
+    cancelled: 'canceled',
+  }
+  if (map[twilioStatus]) session.status = map[twilioStatus]
+  else if (session.status === 'in-progress') session.status = 'completed'
+
+  session.endedAt = new Date()
+  const duration = parseInt(body.CallDuration || body.Duration || '', 10)
+  if (Number.isFinite(duration)) session.durationSeconds = duration
+  else if (session.startedAt) {
+    session.durationSeconds = Math.max(
+      0,
+      Math.round((session.endedAt - session.startedAt) / 1000),
+    )
+  }
+  await session.save()
+
+  emitAdmin('call_ended', {
+    callSessionId: session._id,
+    leadId: session.leadId,
+    durationSeconds: session.durationSeconds,
+    status: session.status,
+  })
+
+  return { ok: true, callSessionId: session._id }
+}
+
+const handleFallback = () =>
+  twiml.sayHangup({
+    message: 'We are having trouble with this call. Please try again later. Goodbye.',
+  })
+
+const listCallsForLead = async (leadId, { page = 1, limit = 20 } = {}) => {
+  const parsedPage = Math.max(1, Number(page) || 1)
+  const parsedLimit = Math.min(100, Math.max(1, Number(limit) || 20))
+  const skip = (parsedPage - 1) * parsedLimit
+  const filter = { leadId, unknownCaller: { $ne: true } }
+
+  const [rows, total] = await Promise.all([
+    CallSession.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parsedLimit).lean(),
+    CallSession.countDocuments(filter),
+  ])
+
+  return {
+    calls: rows.map((s) => ({
+      callSessionId: s._id,
+      twilioCallSid: s.twilioCallSid,
+      status: s.status,
+      fromNumber: s.fromNumber,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      durationSeconds: s.durationSeconds,
+      isHandedToSales: s.isHandedToSales,
+    })),
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  }
+}
+
+const getCallDetail = async (callSessionId) => {
+  const session = await CallSession.findById(callSessionId).lean()
+  if (!session) return null
+
+  const turns = await CallTurn.find({ callSessionId })
+    .sort({ createdAt: 1 })
+    .lean()
+
+  return {
+    call: {
+      callSessionId: session._id,
+      twilioCallSid: session.twilioCallSid,
+      leadId: session.leadId,
+      customerId: session.customerId,
+      status: session.status,
+      fromNumber: session.fromNumber,
+      toNumber: session.toNumber,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      durationSeconds: session.durationSeconds,
+      isHandedToSales: session.isHandedToSales,
+    },
+    turns: turns.map((t) => ({
+      turnId: t._id,
+      role: t.role,
+      transcript: t.transcript,
+      createdAt: t.createdAt,
+      messageId: t.messageId,
+    })),
+  }
+}
+
+module.exports = {
+  handleInbound,
+  handleGather,
+  handleStatus,
+  handleFallback,
+  listCallsForLead,
+  getCallDetail,
+  findCustomerByTwilioFrom,
+  createCustomerFromInboundCall,
+  customerNeedsContactDetails,
+  gatherUrl,
+}

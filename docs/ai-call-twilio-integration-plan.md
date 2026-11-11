@@ -1,8 +1,8 @@
 # AI Voice Call via Twilio — Implementation Reference
 
-> **Status:** Not implemented. This document captures the demo behaviour and maps it onto the existing Mr Storage backend so we can implement it later without re-discovering requirements.
+> **Status:** Implemented (Nov 2026). Voice webhooks live at `/api/twilio/voice/*`; FE/ops handoff: [frontend-handoff/ai-voice-call-twilio-fe.md](./frontend-handoff/ai-voice-call-twilio-fe.md).
 >
-> **Related docs:** [sales_lead_chat_integration.md](./sales_lead_chat_integration.md) · [ai_script_socket.md](./ai_script_socket.md)
+> **Related docs:** [sales_lead_chat_integration.md](./sales_lead_chat_integration.md) · [ai_script_socket.md](./ai_script_socket.md) · [frontend-handoff/ai-voice-call-twilio-fe.md](./frontend-handoff/ai-voice-call-twilio-fe.md)
 
 ---
 
@@ -20,18 +20,19 @@ This is **not** a sales-rep live call — it is AI-first, identical lifecycle to
 
 ---
 
-## 2. Current State (as of May 2026)
+## 2. Current State (as of Nov 2026)
 
 | Area | Status |
 |---|---|
-| Twilio SDK / webhooks | ❌ Not present |
-| Voice / SMS env vars | ❌ Not in `.env.example` |
-| AI (Claude) chat | ✅ `src/services/ai/chat.service.js` |
-| Customer match by phone | ✅ `POST /api/public/chat/init` and `Customer.phone.number` index |
-| Message storage | ✅ `src/models/Message.js` (`customer` \| `ai` \| `sales`) |
-| Rolling AI summary | ✅ `Lead.aiContextSummary` |
-| Quote ready + round-robin | ✅ `src/services/socket/chat.handler.js` → `handleQuoteReady` |
-| Lead scoring | ✅ `src/services/ai/scoring.service.js` |
+| Twilio SDK / voice webhooks | ✅ `/api/twilio/voice/inbound\|gather\|status\|fallback` |
+| Voice / SMS env vars | ✅ `.env.example` + `env.js` |
+| AI (Claude) chat | ✅ `src/services/ai/chat.service.js` (reused on calls) |
+| Customer match by phone | ✅ `normalizePhone.js` + chat init |
+| Message storage | ✅ `Message.origin` `chat` \| `call` + `callSessionId` |
+| CallSession / CallTurn | ✅ models + staff list/detail APIs |
+| Rolling AI summary | ✅ `Lead.aiContextSummary` refreshed after call turns |
+| Quote ready + round-robin | ✅ `leadQuoteReady.service.js` → `handleQuoteReady` |
+| Lead scoring | ✅ same path as chat |
 
 **Reuse as much chat infrastructure as possible.** The voice layer is new; the brain is not.
 
@@ -152,9 +153,9 @@ Reuse logic from `src/controllers/public.controller.js` → `chatInit`:
 
 1. Normalize incoming `From` number to match `Customer.phone.number` storage format.
 2. `Customer.findOne({ 'phone.number': normalizedPhone })`.
-3. If **no customer** → play TwiML: "We don't recognize this number. Please start on our website chat first." → hang up. (Or optionally create customer via IVR — out of demo scope.)
+3. If **no customer** → **create** Customer from Twilio caller ID (`source: 'call'`, pending email `call.{phone}@pending.voice.local`) and start first-contact AI flow (collect name + email, then project details).
 4. If customer exists → `Lead.findOne({ customerId, lifecycleStatus: { $nin: CLOSED_STAGES } }).sort({ createdAt: -1 })`.
-5. If no active lead → create lead (same as chatInit step 4) with `source: 'call'` (add to `LEAD_SOURCES` in `constants.js` if needed).
+5. If no active lead → create lead with `source: 'call'`.
 
 Attach `callSession.leadId` and `callSession.customerId` for all subsequent turns.
 
@@ -368,4 +369,4 @@ postman_collection.json         # optional Twilio webhook simulation notes
 
 ---
 
-*Last updated: May 2026 — planning doc only, no code changes.*
+*Last updated: Nov 2026 — implementation live; keep this doc as architecture reference.*

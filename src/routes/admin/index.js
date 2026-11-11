@@ -30,6 +30,16 @@ router.use("/invoices", require("./invoice.routes"));
 router.use("/construction", require("./construction.routes"));
 router.use("/project-drawings", require("../common/mergedDrawings.routes"));
 router.use("/chat", require("./chat.routes"));
+
+const callHistoryCtrl = require("../../controllers/common/callHistory.controller");
+const { param } = require("express-validator");
+const callValidate = require("../../middleware/validate");
+router.get(
+  "/calls/:callSessionId",
+  [param("callSessionId").isMongoId()],
+  callValidate,
+  callHistoryCtrl.getCallDetail
+);
 router.use("/estimates", require("../sales/estimateQuote.routes"));
 router.use("/change-orders", require("../sales/changeOrder.routes"));
 router.use("/custom-quotes", require("../sales/customQuote.routes"));

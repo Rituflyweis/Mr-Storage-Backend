@@ -1,5 +1,5 @@
 const USER_ROLES = ["admin", "sales", "construction", "plant", "account"];
-const LEAD_SOURCES = ["chat", "manual", "import", "customer_portal"];
+const LEAD_SOURCES = ["chat", "manual", "import", "customer_portal", "call"];
 const LEAD_TEMPERATURES = ["hot", "warm", "cold"];
 
 /** Which of the client's businesses a project (lead) belongs to. */
@@ -138,6 +138,8 @@ const AUDIT_ACTIONS = {
   LEAD_ASSIGNED_MANUAL: "lead.assigned.manual",
   LEAD_QUOTE_READY: "lead.quote_ready",
   LEAD_HANDED_TO_SALES: "lead.handed_to_sales",
+  CALL_STARTED: "call.started",
+  CALL_ENDED: "call.ended",
   LEAD_LIFECYCLE_UPDATED: "lead.lifecycle_updated",
   LEAD_RELEASED_TO_PLANT: "lead.released_to_plant",
   LEAD_ESCALATED: "lead.escalated",

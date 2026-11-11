@@ -96,9 +96,44 @@ RULES:
 - Never skip the CHAT_INTERNAL line`
 }
 
+const isPendingVoiceEmail = (email) =>
+  String(email || '').toLowerCase().endsWith('@pending.voice.local')
+
+const buildFirstContactVoicePromptExtra = (customer) => {
+  const phone =
+    customer?.phone?.number
+      ? `${customer.phone.countryCode || ''} ${customer.phone.number}`.trim()
+      : 'on this call'
+  return `
+
+FIRST-CONTACT PHONE CALL — collect identity before project details:
+- This caller has NOT registered on the website yet. Their phone (${phone}) is already known from caller ID.
+- You MUST collect, one at a time: (1) their full name, (2) a working email address (spell-check verbally if unclear).
+- Do NOT ask for their phone number — we already have it.
+- Until you have BOTH a real name and a real email, do NOT dig into building/project quote fields beyond a light "what brings you in today" opener.
+- After name + email are confirmed, continue with the normal 10 project items.
+- NEVER invent an email or name.
+
+On EVERY reply, also include this internal line (customer never hears it) BEFORE CHAT_INTERNAL:
+CONTACT_INTERNAL:{"firstName":"...","lastName":"","email":"...","contactComplete":true|false}
+- Put firstName/lastName/email only when the customer clearly stated them (empty string if unknown).
+- contactComplete = true only when you have a plausible personal/business email AND a real first name (not "Caller"/"Guest").
+- requirementsGathered / isQuoteReady must stay false until contactComplete is true AND the 10 project items are done.
+`
+}
+
 // ─── CONTACT SNAPSHOT (injected into system prompt) ────────────────────────────
-const buildContactBlock = (customer) => {
+const buildContactBlock = (customer, { needsContactDetails = false } = {}) => {
   if (!customer) return ''
+  if (needsContactDetails || isPendingVoiceEmail(customer.email)) {
+    return (
+      '\n\n--- CALLER ID (PARTIAL) ---\n' +
+      `Phone on file: ${customer.phone?.countryCode || ''} ${customer.phone?.number || ''}\n`.replace(/\s+/g, ' ').trim() +
+      '\nName/email: NOT YET COLLECTED — ask for them (see FIRST-CONTACT rules).\n' +
+      '---\n' +
+      buildFirstContactVoicePromptExtra(customer)
+    )
+  }
   return (
     '\n\n--- ON-FILE CONTACT ---\n' +
     `Name: ${customer.firstName || 'on file'}\n` +
@@ -246,9 +281,10 @@ const refreshContextSummary = async (leadId) => {
 
 // ─── MAIN CHAT FUNCTION ────────────────────────────────────────────────────────
 const chat = async (currentMessages, options = {}) => {
-  const { customer, currentConversationSummary = '' } = options
+  const { customer, currentConversationSummary = '', needsContactDetails = false } = options
 
-  const systemPrompt = buildSalesSystemPrompt() + buildContactBlock(customer)
+  const systemPrompt =
+    buildSalesSystemPrompt() + buildContactBlock(customer, { needsContactDetails })
   const claudeMessages = buildMessages(currentMessages, currentConversationSummary)
 
   const response = await client.messages.create({
@@ -301,7 +337,19 @@ const chat = async (currentMessages, options = {}) => {
 
   let quoteReadyData = null
   let chatMeta = { requirementsGathered: false, isQuoteReady: false }
+  let contactUpdate = null
   let cleanText = fullText
+
+  const contactInternal = extractInternalMarker(cleanText, 'CONTACT_INTERNAL:')
+  if (contactInternal.parsed) {
+    contactUpdate = {
+      firstName: String(contactInternal.parsed.firstName || '').trim(),
+      lastName: String(contactInternal.parsed.lastName || '').trim(),
+      email: String(contactInternal.parsed.email || '').trim().toLowerCase(),
+      contactComplete: parseChatBool(contactInternal.parsed.contactComplete),
+    }
+    cleanText = contactInternal.cleanText
+  }
 
   const chatInternal = extractInternalMarker(cleanText, 'CHAT_INTERNAL:')
   if (chatInternal.parsed) {
@@ -324,7 +372,13 @@ const chat = async (currentMessages, options = {}) => {
     }
   }
 
-  return { text: cleanText, quoteReadyData, chatMeta }
+  // Block quote handoff until contact is complete on first-contact calls
+  if (needsContactDetails && (!contactUpdate || !contactUpdate.contactComplete)) {
+    chatMeta = { ...chatMeta, requirementsGathered: false, isQuoteReady: false }
+    quoteReadyData = null
+  }
+
+  return { text: cleanText, quoteReadyData, chatMeta, contactUpdate }
 }
 
 module.exports = {
@@ -332,4 +386,5 @@ module.exports = {
   refreshContextSummary,
   mergeContextSummary,
   buildMessages,
+  isPendingVoiceEmail,
 }

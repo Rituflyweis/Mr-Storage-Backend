@@ -19,6 +19,16 @@ router.use('/custom-quotes', require('./customQuote.routes'))
 router.use('/quotes-store', require('./quotesStore.routes'))
 router.use('/pricing-rules', require('../common/pricingRules.routes'))
 
+const callHistoryCtrl = require('../../controllers/common/callHistory.controller')
+const { param: callParam } = require('express-validator')
+const callValidate = require('../../middleware/validate')
+router.get(
+  '/calls/:callSessionId',
+  [callParam('callSessionId').isMongoId()],
+  callValidate,
+  callHistoryCtrl.getCallDetail
+)
+
 const leadCtrl = require('../../controllers/sales/lead.controller')
 const followupCtrl = require('../../controllers/sales/followup.controller')
 const quotationCtrl = require('../../controllers/common/quotation.controller')

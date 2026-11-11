@@ -85,6 +85,13 @@ module.exports = {
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
   TWILIO_FROM_PHONE: process.env.TWILIO_FROM_PHONE || '',
+  /** Inbound AI voice number (defaults to SMS from-number if unset). */
+  TWILIO_PHONE_NUMBER:
+    process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_FROM_PHONE || '',
+  /** Public HTTPS origin Twilio posts to, e.g. https://api.example.com (no trailing slash). */
+  TWILIO_WEBHOOK_BASE_URL: (process.env.TWILIO_WEBHOOK_BASE_URL || '').replace(/\/$/, ''),
+  /** Set "true" to enforce X-Twilio-Signature; production defaults to validating when unset. */
+  TWILIO_VALIDATE_SIGNATURE: process.env.TWILIO_VALIDATE_SIGNATURE,
 
   CLIENT_URL: process.env.CLIENT_URL || "https://steelbuildingdepot.com",
   MASTER_OTP:
