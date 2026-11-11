@@ -186,12 +186,17 @@ const findCustomerByTwilioFrom = async (from) => {
 }
 
 const resolveActiveLead = async (customerId, { createIfMissing = true } = {}) => {
+  // Prefer a lead the AI can still talk on (not handed to sales / staff takeover).
   let lead = await Lead.findOne({
     customerId,
     lifecycleStatus: { $nin: CLOSED_STAGES },
+    isHandedToSales: { $ne: true },
+    isStaffChatActive: { $ne: true },
   })
     .sort({ createdAt: -1 })
 
+  // Returning callers whose only open lead is already with sales/plant get a NEW call lead
+  // so AI does not immediately say "your sales rep will contact you" and hang up.
   if (!lead && createIfMissing) {
     lead = await Lead.create({
       customerId,
@@ -205,7 +210,7 @@ const resolveActiveLead = async (customerId, { createIfMissing = true } = {}) =>
       leadId: lead._id,
       customerId,
       performedBy: null,
-      metadata: { source: 'call' },
+      metadata: { source: 'call', reason: 'voice_new_conversation' },
     })
     await leadListSocket.emitLeadListCreated(lead._id, { trigger: 'voice_inbound' }).catch(() => {})
   }
