@@ -4,6 +4,7 @@ const env = require('../config/env')
 /**
  * Validate X-Twilio-Signature for form-urlencoded webhooks.
  * Skip when TWILIO_VALIDATE_SIGNATURE is false (local/dev).
+ * Tries several public URL shapes (Render proxy + WEBHOOK_BASE_URL).
  */
 const validateTwilioSignature = (req, res, next) => {
   const shouldValidate =
@@ -27,12 +28,22 @@ const validateTwilioSignature = (req, res, next) => {
   }
 
   const base = (env.TWILIO_WEBHOOK_BASE_URL || '').replace(/\/$/, '')
-  const url = base
-    ? `${base}${req.originalUrl}`
-    : `${req.protocol}://${req.get('host')}${req.originalUrl}`
+  const host = req.get('host') || ''
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim()
+  const originalUrl = req.originalUrl || req.url || ''
 
-  const valid = twilio.validateRequest(authToken, signature, url, req.body || {})
+  const candidates = [
+    base ? `${base}${originalUrl}` : null,
+    `${proto}://${host}${originalUrl}`,
+    `https://${host}${originalUrl}`,
+    `http://${host}${originalUrl}`,
+  ].filter(Boolean)
+
+  const params = req.body || {}
+  const valid = candidates.some((url) => twilio.validateRequest(authToken, signature, url, params))
+
   if (!valid) {
+    console.warn('[TwilioSignature] validation failed for urls:', candidates.join(' | '))
     return res.status(403).type('text/xml').send(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Unauthorized.</Say><Hangup/></Response>',
     )
