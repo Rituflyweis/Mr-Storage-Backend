@@ -349,8 +349,22 @@ const handleInbound = async (body = {}, req = null) => {
 
 const handleGather = async (body = {}, query = {}, req = null) => {
   const sessionId = query.sessionId || body.sessionId
-  const speech = String(body.SpeechResult || body.UnstableSpeechResult || '').trim()
+  // Twilio field names vary slightly by speech product / region
+  const speech = String(
+    body.SpeechResult ||
+      body.speechResult ||
+      body.UnstableSpeechResult ||
+      body.StableSpeechResult ||
+      body.TranscriptionText ||
+      '',
+  ).trim()
   const callSid = body.CallSid
+  if (speech) {
+    console.log(
+      `[VoiceCall] heard callSid=${callSid || ''} conf=${body.Confidence || body.confidence || ''} ` +
+        `"${speech.slice(0, 120)}"`,
+    )
+  }
 
   let session = null
   if (sessionId) session = await CallSession.findById(sessionId)
@@ -363,10 +377,31 @@ const handleGather = async (body = {}, query = {}, req = null) => {
   }
 
   if (!speech) {
+    const emptyCount = Number(session.emptyGatherCount || 0) + 1
+    session.emptyGatherCount = emptyCount
+    await session.save()
+    console.warn(
+      `[VoiceCall] empty speech #${emptyCount} callSid=${callSid || ''} session=${session._id} ` +
+        `keys=${Object.keys(body || {}).join(',')}`,
+    )
+    if (emptyCount >= 3) {
+      return twiml.sayHangup({
+        message:
+          "I'm still having trouble hearing you. Please try calling again from a quieter place. Goodbye.",
+      })
+    }
     return twiml.sayGather({
-      message: "Sorry, I didn't catch that. Could you say it again?",
+      message:
+        emptyCount === 1
+          ? "Sorry, I didn't catch that. Please say that again after the tone."
+          : 'Still did not hear you. Speak a little louder and closer to the phone.',
       gatherActionUrl: gatherUrl(session._id, req),
     })
+  }
+
+  // Got speech — reset empty counter
+  if (session.emptyGatherCount) {
+    session.emptyGatherCount = 0
   }
 
   const fingerprint = `${callSid || ''}|${speech}`.slice(0, 500)

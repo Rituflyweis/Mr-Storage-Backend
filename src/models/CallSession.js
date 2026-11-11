@@ -19,6 +19,8 @@ const CallSessionSchema = new mongoose.Schema(
     /** @deprecated unknown callers are now onboarded on-call; kept for old rows */
     unknownCaller: { type: Boolean, default: false },
     lastSpeechFingerprint: { type: String, default: '' },
+    /** Consecutive empty Gather results — re-prompt then hang up. */
+    emptyGatherCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 )
