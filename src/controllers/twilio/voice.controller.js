@@ -7,12 +7,12 @@ const sendTwiml = (res, xml) => {
 }
 
 exports.inbound = asyncHandler(async (req, res) => {
-  const xml = await voiceCall.handleInbound(req.body)
+  const xml = await voiceCall.handleInbound(req.body, req)
   return sendTwiml(res, xml)
 })
 
 exports.gather = asyncHandler(async (req, res) => {
-  const xml = await voiceCall.handleGather(req.body, req.query)
+  const xml = await voiceCall.handleGather(req.body, req.query, req)
   return sendTwiml(res, xml)
 })
 

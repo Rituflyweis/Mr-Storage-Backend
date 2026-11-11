@@ -143,10 +143,21 @@ const applyContactUpdateFromCall = async (customerId, contactUpdate, speechText 
   return { updated: Object.keys(patch).length > 0, contactComplete, customer: refreshed }
 }
 
-const webhookBase = () => (env.TWILIO_WEBHOOK_BASE_URL || '').replace(/\/$/, '')
+const webhookBase = (req) => {
+  const configured = (env.TWILIO_WEBHOOK_BASE_URL || '').replace(/\/$/, '')
+  if (configured) return configured
+  if (req) {
+    const host = req.get?.('host') || ''
+    const proto = (req.get?.('x-forwarded-proto') || req.protocol || 'https')
+      .split(',')[0]
+      .trim()
+    if (host) return `${proto}://${host}`
+  }
+  return ''
+}
 
-const gatherUrl = (sessionId) => {
-  const base = webhookBase()
+const gatherUrl = (sessionId, req) => {
+  const base = webhookBase(req)
   const path = `/api/twilio/voice/gather?sessionId=${encodeURIComponent(String(sessionId))}`
   return base ? `${base}${path}` : path
 }
@@ -245,7 +256,7 @@ const saveTurnAndMessage = async ({
   return turn
 }
 
-const handleInbound = async (body = {}) => {
+const handleInbound = async (body = {}, req = null) => {
   const callSid = body.CallSid
   const from = body.From || ''
   const to = body.To || ''
@@ -269,7 +280,7 @@ const handleInbound = async (body = {}) => {
     }
     return twiml.sayGather({
       message: 'Welcome back. How can I help you?',
-      gatherActionUrl: gatherUrl(session._id),
+      gatherActionUrl: gatherUrl(session._id, req),
     })
   }
 
@@ -332,11 +343,11 @@ const handleInbound = async (body = {}) => {
 
   return twiml.sayGather({
     message: greeting,
-    gatherActionUrl: gatherUrl(session._id),
+    gatherActionUrl: gatherUrl(session._id, req),
   })
 }
 
-const handleGather = async (body = {}, query = {}) => {
+const handleGather = async (body = {}, query = {}, req = null) => {
   const sessionId = query.sessionId || body.sessionId
   const speech = String(body.SpeechResult || body.UnstableSpeechResult || '').trim()
   const callSid = body.CallSid
@@ -354,7 +365,7 @@ const handleGather = async (body = {}, query = {}) => {
   if (!speech) {
     return twiml.sayGather({
       message: "Sorry, I didn't catch that. Could you say it again?",
-      gatherActionUrl: gatherUrl(session._id),
+      gatherActionUrl: gatherUrl(session._id, req),
     })
   }
 
@@ -366,7 +377,7 @@ const handleGather = async (body = {}, query = {}) => {
       .lean()
     return twiml.sayGather({
       message: lastAi?.transcript || 'Please continue.',
-      gatherActionUrl: gatherUrl(session._id),
+      gatherActionUrl: gatherUrl(session._id, req),
     })
   }
   session.lastSpeechFingerprint = fingerprint
@@ -485,7 +496,7 @@ const handleGather = async (body = {}, query = {}) => {
 
   return twiml.sayGather({
     message: text,
-    gatherActionUrl: gatherUrl(session._id),
+    gatherActionUrl: gatherUrl(session._id, req),
   })
 }
 
