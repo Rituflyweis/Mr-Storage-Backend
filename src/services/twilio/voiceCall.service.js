@@ -493,7 +493,7 @@ const handleGather = async (body = {}, query = {}, req = null) => {
   // and risking Twilio's ~15s webhook timeout ("application error").
   const readyForHandoff =
     !stillNeedsContact &&
-    isReadyForSalesHandoff(chatMeta, text, quoteReadyData, null)
+    isReadyForSalesHandoff(chatMeta, text, quoteReadyData, {})
 
   const runPostTurnJobs = async () => {
     try {

@@ -36,19 +36,21 @@ const aiIndicatesSalesHandoff = (text = '') => {
  * Sales handoff — when Alex marks both requirementsGathered and isQuoteReady in CHAT_INTERNAL.
  */
 const isReadyForSalesHandoff = (chatMeta = {}, aiText = '', quoteReadyData, scoreData = {}) => {
-  if (chatMeta.requirementsGathered === true && chatMeta.isQuoteReady === true) {
+  const meta = chatMeta || {}
+  const score = scoreData || {}
+  if (meta.requirementsGathered === true && meta.isQuoteReady === true) {
     return true
   }
-  if (chatMeta.isQuoteReady === true) {
+  if (meta.isQuoteReady === true) {
     return true
   }
-  if (chatMeta.requirementsGathered === true && aiIndicatesSalesHandoff(aiText)) {
+  if (meta.requirementsGathered === true && aiIndicatesSalesHandoff(aiText)) {
     return true
   }
   if (Boolean(quoteReadyData)) {
     return true
   }
-  if (scoreData.requirementsComplete === true && aiIndicatesSalesHandoff(aiText)) {
+  if (score.requirementsComplete === true && aiIndicatesSalesHandoff(aiText)) {
     return true
   }
   return false
@@ -57,8 +59,11 @@ const isReadyForSalesHandoff = (chatMeta = {}, aiText = '', quoteReadyData, scor
 /**
  * Lifecycle requirements_gathered — driven by CHAT_INTERNAL from Alex.
  */
-const isRequirementsGatheredFromChat = (chatMeta = {}, scoreData = {}) =>
-  chatMeta.requirementsGathered === true || scoreData.requirementsComplete === true
+const isRequirementsGatheredFromChat = (chatMeta = {}, scoreData = {}) => {
+  const meta = chatMeta || {}
+  const score = scoreData || {}
+  return meta.requirementsGathered === true || score.requirementsComplete === true
+}
 
 const canAdvanceLifecycle = (messages = []) =>
   countCustomerMessages(messages) >= MIN_CUSTOMER_MESSAGES_FOR_LIFECYCLE
