@@ -208,16 +208,35 @@ GET /api/sales/leads/:leadId/transcripts?channel=call
 
 ---
 
-## Chat history badge
+## Public chat history (separate chat and call)
 
-`GET /api/public/chat/history/:leadId` messages now include:
+`GET /api/public/chat/history/:leadId`
 
-| Field | Values |
-|-------|--------|
-| `origin` | `chat` (default) \| `call` |
-| `callSessionId` | set for call-originated rows |
+`messages` and `chat.messages` are the widget chat only. Call lines are not mixed in. Use `call.sessions[].turns` for the call tab and `summary.text` for the summary tab.
 
-FE can badge call turns inside the existing transcript UI.
+```json
+{
+  "messages": [{ "senderType": "customer", "content": "I need a quote", "origin": "chat" }],
+  "chat": { "messageCount": 1, "messages": [] },
+  "call": {
+    "sessionCount": 1,
+    "turnCount": 2,
+    "sessions": [
+      {
+        "callSessionId": "…",
+        "fromNumber": "+91…",
+        "startedAt": "…",
+        "durationSeconds": 95,
+        "turns": [
+          { "role": "ai", "transcript": "Hi…", "createdAt": "…" },
+          { "role": "customer", "transcript": "I need a garage", "createdAt": "…" }
+        ]
+      }
+    ]
+  },
+  "summary": { "text": "Garage in Nebraska, 20,000 sq ft…", "updatedAt": "…" }
+}
+```
 
 ---
 

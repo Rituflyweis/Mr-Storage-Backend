@@ -5,6 +5,8 @@ const bcrypt = require('bcryptjs')
 const Customer = require('../models/Customer')
 const Lead = require('../models/Lead')
 const Message = require('../models/Message')
+const CallSession = require('../models/CallSession')
+const CallTurn = require('../models/CallTurn')
 const ShipperRequest = require('../models/ShipperRequest')
 const ConsolidatedBOM = require('../models/ConsolidatedBOM')
 const auditService = require('../services/audit.service')
@@ -158,17 +160,22 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
   const { leadId } = req.params
 
   const lead = await Lead.findById(leadId)
-    .select('isChatEnded chatEndedAt isStaffChatActive isHandedToSales')
+    .select('isChatEnded chatEndedAt isStaffChatActive isHandedToSales aiContextSummary aiContextSummaryUpdatedAt')
     .lean()
   if (!lead) return badRequest(res, 'Lead not found')
 
-  const messages = await Message.find({ leadId })
-    .sort({ createdAt: 1 })
-    .populate('senderId', 'name')
-    .select('senderType senderId content createdAt isRead origin callSessionId')
-    .lean()
+  const [messages, callSessions] = await Promise.all([
+    Message.find({ leadId, origin: { $ne: 'call' } })
+      .sort({ createdAt: 1 })
+      .populate('senderId', 'name')
+      .select('senderType senderId content createdAt isRead origin callSessionId')
+      .lean(),
+    CallSession.find({ leadId, unknownCaller: { $ne: true } })
+      .sort({ createdAt: 1 })
+      .lean(),
+  ])
 
-  const rows = messages.map((m) => ({
+  const mapRow = (m) => ({
     senderType: m.senderType,
     content: m.content,
     createdAt: m.createdAt,
@@ -180,10 +187,41 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
       : m.senderType === 'admin'
         ? m.senderId?.name || 'Admin'
         : undefined,
-  }))
+  })
+
+  const chatMessages = messages.map(mapRow)
+  const sessionIds = callSessions.map((s) => s._id)
+  const turns = sessionIds.length
+    ? await CallTurn.find({ callSessionId: { $in: sessionIds } }).sort({ createdAt: 1 }).lean()
+    : []
+  const turnsBySession = new Map()
+  for (const t of turns) {
+    const key = String(t.callSessionId)
+    if (!turnsBySession.has(key)) turnsBySession.set(key, [])
+    turnsBySession.get(key).push({
+      turnId: t._id,
+      role: t.role,
+      transcript: t.transcript,
+      createdAt: t.createdAt,
+    })
+  }
+  const sessions = callSessions.map((s) => {
+    const sessionTurns = turnsBySession.get(String(s._id)) || []
+    return {
+      callSessionId: s._id,
+      status: s.status,
+      fromNumber: s.fromNumber,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      durationSeconds: s.durationSeconds,
+      turnCount: sessionTurns.length,
+      turns: sessionTurns,
+    }
+  })
 
   const isStaffChatActive = Boolean(lead.isStaffChatActive)
   const isHandedToSales = Boolean(lead.isHandedToSales)
+  const summaryText = lead.aiContextSummary || ''
 
   return success(res, {
     isChatEnded: lead.isChatEnded || false,
@@ -192,7 +230,20 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
     isHandedToSales,
     isAiActive: !lead.isChatEnded && !isStaffChatActive && !isHandedToSales,
     canCustomerSend: !lead.isChatEnded,
-    messages: rows,
+    messages: chatMessages,
+    chat: {
+      messageCount: chatMessages.length,
+      messages: chatMessages,
+    },
+    call: {
+      sessionCount: sessions.length,
+      turnCount: turns.length,
+      sessions,
+    },
+    summary: {
+      text: summaryText,
+      updatedAt: lead.aiContextSummaryUpdatedAt || null,
+    },
   })
 })
 
