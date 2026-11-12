@@ -53,6 +53,7 @@ const attachConversationRelay = (server) => {
       endAfterSpeech: false,
       ended: false,
       heardSpeaker: false,
+      speakGen: 0,
     }
 
     const clearSilence = () => {
@@ -65,15 +66,23 @@ const attachConversationRelay = (server) => {
       state.fallbackTimer = null
     }
 
+    const stopSpeaking = () => {
+      state.speakGen += 1
+      state.abort?.abort()
+    }
+
     const sendText = (token, last = true) => {
+      const gen = state.speakGen
       if (ws.readyState !== 1 || state.ended) return
+      if (gen !== state.speakGen) return
       const safe = String(token || '')
       if (!safe.trim()) return
       ws.send(JSON.stringify({
         type: 'text',
         token: safe,
         last: Boolean(last),
-        interruptible: !state.endAfterSpeech,
+        interruptible: true,
+        preemptible: true,
       }))
     }
 
@@ -160,12 +169,14 @@ const attachConversationRelay = (server) => {
         if (active) {
           clearSilence()
           state.silenceChecks = 0
+          if (state.agentSpeaking || state.busy) stopSpeaking()
         }
         return
       }
 
       if (msg.type === 'interrupt') {
-        state.abort?.abort()
+        console.log(`[VoiceRelay] interrupt callSid=${state.callSid}`)
+        stopSpeaking()
         clearSilence()
         if (state.busy && !state.savedAi) {
           recordSafe(state.callSid, msg.utteranceUntilInterrupt || '')
@@ -182,7 +193,7 @@ const attachConversationRelay = (server) => {
         if (!state.callSid || state.ended) return
         clearSilence()
         state.silenceChecks = 0
-        if (state.busy) state.abort?.abort()
+        if (state.busy) stopSpeaking()
         state.busy = true
         state.savedAi = false
         const controller = new AbortController()

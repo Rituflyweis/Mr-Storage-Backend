@@ -62,7 +62,10 @@ const conversationRelay = ({
     `<ConversationRelay url="${escapeXml(websocketUrl)}" ` +
     `ttsProvider="ElevenLabs" voice="${escapeXml(voice)}" ` +
     `transcriptionProvider="Deepgram" language="${escapeXml(language)}" ` +
-    `interruptible="any" elevenlabsTextNormalization="on" ` +
+    `interruptible="any" interruptSensitivity="high" ` +
+    `welcomeGreetingInterruptible="any" ` +
+    `reportInputDuringAgentSpeech="speech" preemptible="true" ` +
+    `elevenlabsTextNormalization="on" ` +
     `events="speaker-events" ` +
     `welcomeGreeting="${greeting}" />` +
     `</Connect></Response>`
