@@ -63,6 +63,7 @@ const conversationRelay = ({
     `ttsProvider="ElevenLabs" voice="${escapeXml(voice)}" ` +
     `transcriptionProvider="Deepgram" language="${escapeXml(language)}" ` +
     `interruptible="any" elevenlabsTextNormalization="on" ` +
+    `events="speaker-events" ` +
     `welcomeGreeting="${greeting}" />` +
     `</Connect></Response>`
   )

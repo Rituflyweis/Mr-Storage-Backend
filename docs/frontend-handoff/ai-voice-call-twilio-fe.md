@@ -57,6 +57,8 @@ Set `VOICE_ENGINE=gather` to roll back to the older Polly `<Gather>` loop.
 
 WebSocket (Twilio connects, not the browser): `wss://{host}/api/twilio/voice/relay`
 
+If the caller stays silent for `VOICE_SILENCE_MS` (default 8s) after Alex finishes speaking, Alex asks if they are still there. That happens `VOICE_SILENCE_CHECKS` times (default 3). If there is still no reply, the call ends.
+
 ---
 
 ## Behaviour summary

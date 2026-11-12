@@ -102,6 +102,10 @@ module.exports = {
   /** ConversationRelay model suffix. v4 is Twilio's low-latency ElevenLabs voice. */
   ELEVENLABS_TTS_MODEL: (process.env.ELEVENLABS_TTS_MODEL || 'v4').trim(),
   VOICE_LANGUAGE: (process.env.VOICE_LANGUAGE || 'en-US').trim(),
+  /** Silence after the agent finishes speaking before we ask if the caller is still there. */
+  VOICE_SILENCE_MS: parseInt(process.env.VOICE_SILENCE_MS || '8000', 10),
+  /** How many "are you still there?" checks before the call is ended. */
+  VOICE_SILENCE_CHECKS: parseInt(process.env.VOICE_SILENCE_CHECKS || '3', 10),
 
   CLIENT_URL: process.env.CLIENT_URL || "https://steelbuildingdepot.com",
   MASTER_OTP:
