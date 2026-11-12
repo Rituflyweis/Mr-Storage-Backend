@@ -279,8 +279,7 @@ const refreshContextSummary = async (leadId) => {
   }
 }
 
-// ─── MAIN CHAT FUNCTION ────────────────────────────────────────────────────────
-const chat = async (currentMessages, options = {}) => {
+const buildChatRequest = (currentMessages, options = {}) => {
   const {
     customer,
     currentConversationSummary = '',
@@ -295,21 +294,21 @@ const chat = async (currentMessages, options = {}) => {
       ? '\n\nVOICE CALL MODE: Keep every spoken reply under 2 short sentences. No markdown, bullets, or lists.\n'
       : '')
 
-  // Voice: smaller prompt window so Twilio webhook returns before ~15s timeout
+  // Voice: smaller prompt window so the first spoken token arrives quickly
   const claudeMessages = voiceMode
     ? buildMessages(currentMessages.slice(-10), currentConversationSummary)
     : buildMessages(currentMessages, currentConversationSummary)
 
-  const response = await client.messages.create({
+  return {
     model: env.ANTHROPIC_MODEL,
     max_tokens: voiceMode ? 220 : 1024,
     system: systemPrompt,
     messages: claudeMessages,
-  })
+    needsContactDetails,
+  }
+}
 
-  const fullText = response.content[0].text
-
-  const extractInternalMarker = (text, marker) => {
+const extractInternalMarker = (text, marker) => {
     const startIdx = text.indexOf(marker)
     if (startIdx === -1) return { parsed: null, cleanText: text }
 
@@ -348,6 +347,7 @@ const chat = async (currentMessages, options = {}) => {
     return Boolean(val)
   }
 
+const parseAssistantTurn = (fullText, { needsContactDetails = false } = {}) => {
   let quoteReadyData = null
   let chatMeta = { requirementsGathered: false, isQuoteReady: false }
   let contactUpdate = null
@@ -394,10 +394,62 @@ const chat = async (currentMessages, options = {}) => {
   return { text: cleanText, quoteReadyData, chatMeta, contactUpdate }
 }
 
+// ─── MAIN CHAT FUNCTION ────────────────────────────────────────────────────────
+const chat = async (currentMessages, options = {}) => {
+  const request = buildChatRequest(currentMessages, options)
+  const response = await client.messages.create({
+    model: request.model,
+    max_tokens: request.max_tokens,
+    system: request.system,
+    messages: request.messages,
+  })
+  const fullText = response.content[0].text
+  return parseAssistantTurn(fullText, { needsContactDetails: request.needsContactDetails })
+}
+
+/**
+ * Stream a voice reply. `onText` receives speakable chunks as Claude generates them.
+ * Internal CRM markers are held back and never spoken.
+ */
+const streamChat = async (currentMessages, options = {}) => {
+  const { onText, signal } = options
+  const request = buildChatRequest(currentMessages, options)
+  const { pullSpeakable } = require('./speechChunker')
+  let pending = ''
+  let full = ''
+
+  const stream = client.messages.stream(
+    {
+      model: request.model,
+      max_tokens: request.max_tokens,
+      system: request.system,
+      messages: request.messages,
+    },
+    signal ? { signal } : undefined,
+  )
+
+  for await (const event of stream) {
+    const delta = event?.delta?.text
+    if (event?.type !== 'content_block_delta' || !delta) continue
+    full += delta
+    pending += delta
+    const pulled = pullSpeakable(pending)
+    pending = pulled.rest
+    if (pulled.emit && onText) await onText(pulled.emit)
+  }
+
+  const flushed = pullSpeakable(pending, { flush: true })
+  if (flushed.emit && onText) await onText(flushed.emit)
+
+  return parseAssistantTurn(full, { needsContactDetails: request.needsContactDetails })
+}
+
 module.exports = {
   chat,
+  streamChat,
   refreshContextSummary,
   mergeContextSummary,
   buildMessages,
   isPendingVoiceEmail,
+  parseAssistantTurn,
 }

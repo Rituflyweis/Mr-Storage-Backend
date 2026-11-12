@@ -162,6 +162,41 @@ const gatherUrl = (sessionId, req) => {
   return base ? `${base}${path}` : path
 }
 
+const useElevenLabsRelay = () => !['gather', 'polly'].includes(env.VOICE_ENGINE || 'elevenlabs')
+
+const elevenLabsVoiceAttribute = () => {
+  const raw = String(env.ELEVENLABS_VOICE_ID || 'UgBBYS2sOqTuMpoF3BR0').trim()
+  if (raw.includes('-')) return raw
+  const model = String(env.ELEVENLABS_TTS_MODEL || 'v4').trim() || 'v4'
+  return `${raw}-${model}`
+}
+
+const relayWebsocketUrl = (req) => {
+  const base = webhookBase(req)
+  if (!base) return ''
+  const wsBase = base.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:')
+  return `${wsBase}/api/twilio/voice/relay`
+}
+
+/** Speak a turn. ElevenLabs path uses ConversationRelay; welcomeGreeting is the first line only. */
+const respondWithVoice = (req, session, message) => {
+  if (useElevenLabsRelay()) {
+    const url = relayWebsocketUrl(req)
+    if (url) {
+      return twiml.conversationRelay({
+        websocketUrl: url,
+        welcomeGreeting: message,
+        voice: elevenLabsVoiceAttribute(),
+        language: env.VOICE_LANGUAGE || 'en-US',
+      })
+    }
+  }
+  return twiml.sayGather({
+    message,
+    gatherActionUrl: gatherUrl(session._id, req),
+  })
+}
+
 const emitAdmin = (event, payload) => {
   try {
     if (global.io) global.io.of('/admin').emit(event, payload)
@@ -283,10 +318,7 @@ const handleInbound = async (body = {}, req = null) => {
         message: 'Your sales representative will follow up with you shortly. Thank you for calling. Goodbye.',
       })
     }
-    return twiml.sayGather({
-      message: 'Welcome back. How can I help you?',
-      gatherActionUrl: gatherUrl(session._id, req),
-    })
+    return respondWithVoice(req, session, 'Welcome back. How can I help you?')
   }
 
   // Returning customer OR first-contact — create CRM record from caller ID if needed
@@ -346,10 +378,7 @@ const handleInbound = async (body = {}, req = null) => {
     transcript: greeting,
   })
 
-  return twiml.sayGather({
-    message: greeting,
-    gatherActionUrl: gatherUrl(session._id, req),
-  })
+  return respondWithVoice(req, session, greeting)
 }
 
 const handleGather = async (body = {}, query = {}, req = null) => {
@@ -500,7 +529,41 @@ const handleGather = async (body = {}, query = {}, req = null) => {
     !stillNeedsContact &&
     isReadyForSalesHandoff(chatMeta, text, quoteReadyData, {})
 
-  const runPostTurnJobs = async () => {
+  scheduleVoiceFollowUp({
+    session,
+    customer,
+    text,
+    chatMeta,
+    quoteReadyData,
+    stillNeedsContact,
+    readyForHandoff,
+  })
+
+  if (readyForHandoff) {
+    session.isHandedToSales = true
+    await session.save()
+    const closing =
+      `${twiml.sanitizeForSpeech(text)} ` +
+      'A sales representative will follow up with your quote shortly. Thank you for calling. Goodbye.'
+    return twiml.sayHangup({ message: closing })
+  }
+
+  return twiml.sayGather({
+    message: text,
+    gatherActionUrl: gatherUrl(session._id, req),
+  })
+}
+
+const scheduleVoiceFollowUp = ({
+  session,
+  customer,
+  text,
+  chatMeta,
+  quoteReadyData,
+  stillNeedsContact,
+  readyForHandoff,
+}) => {
+  const run = async () => {
     try {
       const messagesAfterAi = await Message.find({ leadId: session.leadId })
         .sort({ createdAt: 1 })
@@ -538,22 +601,157 @@ const handleGather = async (body = {}, query = {}, req = null) => {
     }
   }
   setImmediate(() => {
-    runPostTurnJobs().catch(() => {})
+    run().catch(() => {})
+  })
+}
+
+const SALES_GOODBYE =
+  'Your sales representative will follow up with you shortly. Thank you for calling. Goodbye.'
+
+/**
+ * One ConversationRelay caller turn. `sendText(token, last)` streams ElevenLabs speech.
+ * Returns { endCall } when the call should hang up.
+ */
+const handleRelayPrompt = async ({ callSid, speech, signal, sendText }) => {
+  const finish = async (token) => {
+    const clean = String(token || '').replace(/[*_`#~>]+/g, '')
+    if (clean.trim()) await sendText(clean, true)
+  }
+
+  const session = await CallSession.findOne({ twilioCallSid: callSid })
+  if (!session?.leadId || !session.customerId) {
+    await finish('We lost this call session. Please call again. Goodbye.')
+    return { endCall: true }
+  }
+
+  const leadFresh = await Lead.findById(session.leadId)
+    .select('isHandedToSales isStaffChatActive aiContextSummary')
+    .populate('customerId')
+  if (!leadFresh) {
+    await finish('We could not find your project. Goodbye.')
+    return { endCall: true }
+  }
+  if (leadFresh.isHandedToSales || leadFresh.isStaffChatActive) {
+    await finish(SALES_GOODBYE)
+    return { endCall: true }
+  }
+
+  const heard = String(speech || '').trim()
+  if (!heard) {
+    await finish('Sorry, I did not catch that. Could you please repeat?')
+    return { endCall: false }
+  }
+
+  await saveTurnAndMessage({
+    session,
+    role: 'customer',
+    transcript: heard,
+    twilioGatherSid: callSid,
+  })
+
+  const messagesBeforeAi = await Message.find({ leadId: session.leadId })
+    .sort({ createdAt: 1 })
+    .select('senderType content createdAt')
+    .lean()
+
+  let customer = leadFresh.customerId
+  const needsContact = session.needsContactDetails || customerNeedsContactDetails(customer)
+
+  let held = ''
+  const push = async (token, last) => {
+    if (signal?.aborted) return
+    const clean = String(token || '').replace(/[*_`#~>]+/g, '')
+    if (!last) {
+      if (held.trim()) await sendText(held, false)
+      held = clean
+      return
+    }
+    const merged = `${held}${clean}`
+    held = ''
+    if (merged.trim()) await sendText(merged, true)
+  }
+
+  let result
+  try {
+    result = await chatService.streamChat(messagesBeforeAi, {
+      customer,
+      currentConversationSummary: leadFresh.aiContextSummary || '',
+      needsContactDetails: needsContact,
+      voiceMode: true,
+      signal,
+      onText: (chunk) => push(chunk, false),
+    })
+  } catch (err) {
+    if (signal?.aborted || err?.name === 'AbortError' || err?.name === 'APIUserAbortError') {
+      return { endCall: false, aborted: true }
+    }
+    console.error('[VoiceCall] relay claude:', err.message)
+    await finish('Sorry, I had a brief glitch. Could you please repeat that?')
+    return { endCall: false }
+  }
+
+  if (signal?.aborted) return { endCall: false, aborted: true }
+
+  const spoken = String(result.text || '').trim()
+  await push('', true)
+  if (!spoken) await finish('Could you say that one more time?')
+
+  if (needsContact || result.contactUpdate) {
+    const applied = await applyContactUpdateFromCall(session.customerId, result.contactUpdate, heard)
+    if (applied.contactComplete) {
+      session.needsContactDetails = false
+      await session.save()
+    } else if (applied.updated) {
+      await session.save()
+    }
+    if (applied.customer) customer = applied.customer
+  }
+
+  await saveTurnAndMessage({
+    session,
+    role: 'ai',
+    transcript: spoken || 'Could you say that one more time?',
+  })
+
+  const leadAfterAi = await Lead.findById(session.leadId)
+    .select('isStaffChatActive isHandedToSales')
+    .lean()
+  if (leadAfterAi?.isStaffChatActive || leadAfterAi?.isHandedToSales) {
+    await finish(SALES_GOODBYE)
+    return { endCall: true }
+  }
+
+  const stillNeedsContact = session.needsContactDetails || customerNeedsContactDetails(customer)
+  const readyForHandoff =
+    !stillNeedsContact &&
+    isReadyForSalesHandoff(result.chatMeta, result.text, result.quoteReadyData, {})
+
+  scheduleVoiceFollowUp({
+    session,
+    customer,
+    text: result.text,
+    chatMeta: result.chatMeta,
+    quoteReadyData: result.quoteReadyData,
+    stillNeedsContact,
+    readyForHandoff,
   })
 
   if (readyForHandoff) {
     session.isHandedToSales = true
     await session.save()
-    const closing =
-      `${twiml.sanitizeForSpeech(text)} ` +
-      'A sales representative will follow up with your quote shortly. Thank you for calling. Goodbye.'
-    return twiml.sayHangup({ message: closing })
+    await finish('A sales representative will follow up with your quote shortly. Thank you for calling. Goodbye.')
+    return { endCall: true }
   }
 
-  return twiml.sayGather({
-    message: text,
-    gatherActionUrl: gatherUrl(session._id, req),
-  })
+  return { endCall: false }
+}
+
+const recordInterruptedReply = async (callSid, transcript) => {
+  const text = String(transcript || '').trim()
+  if (!callSid || !text) return
+  const session = await CallSession.findOne({ twilioCallSid: callSid })
+  if (!session) return
+  await saveTurnAndMessage({ session, role: 'ai', transcript: text })
 }
 
 const handleStatus = async (body = {}) => {
@@ -664,6 +862,8 @@ const getCallDetail = async (callSessionId) => {
 module.exports = {
   handleInbound,
   handleGather,
+  handleRelayPrompt,
+  recordInterruptedReply,
   handleStatus,
   handleFallback,
   listCallsForLead,

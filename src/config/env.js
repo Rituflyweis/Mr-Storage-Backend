@@ -92,6 +92,16 @@ module.exports = {
   TWILIO_WEBHOOK_BASE_URL: (process.env.TWILIO_WEBHOOK_BASE_URL || '').replace(/\/$/, ''),
   /** Set "true" to enforce X-Twilio-Signature; production defaults to validating when unset. */
   TWILIO_VALIDATE_SIGNATURE: process.env.TWILIO_VALIDATE_SIGNATURE,
+  /**
+   * elevenlabs = ConversationRelay (Deepgram STT + ElevenLabs TTS, streaming).
+   * gather = legacy <Gather> + Polly (higher latency).
+   */
+  VOICE_ENGINE: (process.env.VOICE_ENGINE || 'elevenlabs').trim().toLowerCase(),
+  /** ElevenLabs voice id. Twilio speaks it; no ElevenLabs key is required on this server. */
+  ELEVENLABS_VOICE_ID: (process.env.ELEVENLABS_VOICE_ID || 'UgBBYS2sOqTuMpoF3BR0').trim(),
+  /** ConversationRelay model suffix. v4 is Twilio's low-latency ElevenLabs voice. */
+  ELEVENLABS_TTS_MODEL: (process.env.ELEVENLABS_TTS_MODEL || 'v4').trim(),
+  VOICE_LANGUAGE: (process.env.VOICE_LANGUAGE || 'en-US').trim(),
 
   CLIENT_URL: process.env.CLIENT_URL || "https://steelbuildingdepot.com",
   MASTER_OTP:

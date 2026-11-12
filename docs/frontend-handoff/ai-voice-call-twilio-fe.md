@@ -36,6 +36,29 @@ TWILIO_VALIDATE_SIGNATURE=true
 
 ---
 
+## Voice engine (ElevenLabs)
+
+The same Twilio number stays on `POST /api/twilio/voice/inbound`. Default engine is **ConversationRelay**:
+
+- Deepgram listens (streaming)
+- Claude streams the reply (same chat memory and summary as the widget)
+- ElevenLabs v4 speaks it on the Twilio number
+
+No ElevenLabs API key is stored in this backend. Twilio calls ElevenLabs. Optional env:
+
+```env
+VOICE_ENGINE=elevenlabs
+ELEVENLABS_VOICE_ID=UgBBYS2sOqTuMpoF3BR0
+ELEVENLABS_TTS_MODEL=v4
+VOICE_LANGUAGE=en-US
+```
+
+Set `VOICE_ENGINE=gather` to roll back to the older Polly `<Gather>` loop.
+
+WebSocket (Twilio connects, not the browser): `wss://{host}/api/twilio/voice/relay`
+
+---
+
 ## Behaviour summary
 
 1. Caller dials Twilio number → `inbound` looks up `Customer` by phone (normalized).

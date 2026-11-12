@@ -21,6 +21,9 @@ const io = new Server(server, {
 
 initSocket(io);
 
+const { attachConversationRelay } = require("./src/services/twilio/conversationRelay.server");
+attachConversationRelay(server);
+
 connectDB().then(async () => {
   try {
     const { markStaleJobsFailed } = require('./src/services/leadImportJob.service')

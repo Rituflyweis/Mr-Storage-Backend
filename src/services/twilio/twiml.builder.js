@@ -45,6 +45,29 @@ const sayGather = ({
   )
 }
 
+/**
+ * Twilio ConversationRelay — Deepgram STT + ElevenLabs TTS, tokens streamed over WebSocket.
+ * welcomeGreeting is spoken by ElevenLabs as soon as the socket connects.
+ */
+const conversationRelay = ({
+  websocketUrl,
+  welcomeGreeting = '',
+  voice = 'UgBBYS2sOqTuMpoF3BR0-v4',
+  language = 'en-US',
+}) => {
+  const greeting = escapeXml(sanitizeForSpeech(welcomeGreeting))
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<Response><Connect>` +
+    `<ConversationRelay url="${escapeXml(websocketUrl)}" ` +
+    `ttsProvider="ElevenLabs" voice="${escapeXml(voice)}" ` +
+    `transcriptionProvider="Deepgram" language="${escapeXml(language)}" ` +
+    `interruptible="any" elevenlabsTextNormalization="on" ` +
+    `welcomeGreeting="${greeting}" />` +
+    `</Connect></Response>`
+  )
+}
+
 const sayHangup = ({ message, voice = 'Polly.Joanna' }) => {
   const say = escapeXml(sanitizeForSpeech(message))
   return (
@@ -61,4 +84,5 @@ module.exports = {
   sanitizeForSpeech,
   sayGather,
   sayHangup,
+  conversationRelay,
 }
