@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { body, query } = require('express-validator')
+const { body, query, param } = require('express-validator')
 const leadImportUpload = require('../../middleware/leadImportUpload')
 const { LEAD_TEMPERATURES } = require('../../config/constants')
 const ctrl = require('../../controllers/sales/lead.controller')
@@ -71,7 +71,17 @@ router.put('/:leadId/chat/end', chatCtrl.endChat)
 router.put('/:leadId/chat/reopen', chatCtrl.reopenChat)
 
 const callHistoryCtrl = require('../../controllers/common/callHistory.controller')
+const leadTranscriptCtrl = require('../../controllers/common/leadTranscript.controller')
 router.get('/:leadId/calls', callHistoryCtrl.listLeadCalls)
+router.get(
+  '/:leadId/transcripts',
+  [
+    param('leadId').isMongoId(),
+    query('channel').optional().isIn(['all', 'chat', 'call', 'summary']),
+  ],
+  validate,
+  leadTranscriptCtrl.getLeadTranscripts
+)
 
 router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
 router.get('/:leadId/detail', ctrl.getLeadDetail)

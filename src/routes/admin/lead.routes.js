@@ -57,7 +57,17 @@ router.put('/:leadId/chat/end', chatCtrl.endChat)
 router.put('/:leadId/chat/reopen', chatCtrl.reopenChat)
 
 const callHistoryCtrl = require('../../controllers/common/callHistory.controller')
+const leadTranscriptCtrl = require('../../controllers/common/leadTranscript.controller')
 router.get('/:leadId/calls', callHistoryCtrl.listLeadCalls)
+router.get(
+  '/:leadId/transcripts',
+  [
+    param('leadId').isMongoId(),
+    query('channel').optional().isIn(['all', 'chat', 'call', 'summary']),
+  ],
+  validate,
+  leadTranscriptCtrl.getLeadTranscripts
+)
 
 router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
 router.get('/:leadId/detail', ctrl.getLeadDetail)

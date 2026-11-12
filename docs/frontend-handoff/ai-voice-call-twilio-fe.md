@@ -51,14 +51,95 @@ TWILIO_VALIDATE_SIGNATURE=true
 ## Staff APIs
 
 ```http
+GET /api/admin/leads/:leadId/transcripts?channel=all
 GET /api/admin/leads/:leadId/calls?page=1&limit=20
 GET /api/admin/calls/:callSessionId
 
+GET /api/sales/leads/:leadId/transcripts?channel=all
 GET /api/sales/leads/:leadId/calls?page=1&limit=20
 GET /api/sales/calls/:callSessionId
 ```
 
 Auth: Bearer JWT (`admin` / `sales`). Sales scoped to assigned leads.
+
+### Lead transcripts (Chat / Call / Summary tabs)
+
+One round-trip for switchable UI tabs. Pass `leadId`.
+
+| Query | Values | Default |
+|-------|--------|---------|
+| `channel` | `all` \| `chat` \| `call` \| `summary` | `all` |
+
+```http
+GET /api/admin/leads/:leadId/transcripts
+GET /api/sales/leads/:leadId/transcripts?channel=call
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "leadId": "…",
+    "customerId": "…",
+    "projectName": "Garage LLC",
+    "jobId": "PRO-011",
+    "tabs": {
+      "hasChat": true,
+      "hasCall": true,
+      "hasSummary": true
+    },
+    "summary": {
+      "text": "Customer needs a 40x60 garage in Texas…",
+      "updatedAt": "2026-11-11T11:40:00.000Z"
+    },
+    "chat": {
+      "messageCount": 12,
+      "messages": [
+        {
+          "messageId": "…",
+          "senderType": "customer",
+          "content": "I need a quote",
+          "createdAt": "…",
+          "isRead": true,
+          "origin": "chat",
+          "callSessionId": null,
+          "channel": "project"
+        }
+      ]
+    },
+    "call": {
+      "sessionCount": 1,
+      "turnCount": 8,
+      "sessions": [
+        {
+          "callSessionId": "…",
+          "twilioCallSid": "CA…",
+          "status": "completed",
+          "fromNumber": "+9195…",
+          "toNumber": "+1618…",
+          "startedAt": "…",
+          "endedAt": "…",
+          "durationSeconds": 95,
+          "isHandedToSales": false,
+          "turnCount": 8,
+          "turns": [
+            { "turnId": "…", "role": "ai", "transcript": "Hi…", "createdAt": "…", "messageId": "…" },
+            { "turnId": "…", "role": "customer", "transcript": "I need a warehouse…", "createdAt": "…", "messageId": "…" }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+**FE usage**
+
+- Tab **Chat** → `data.chat.messages` (excludes call-origin rows)
+- Tab **Call** → `data.call.sessions[].turns` (grouped per call)
+- Tab **Summary** → `data.summary.text`
+- Use `data.tabs.hasChat / hasCall / hasSummary` to disable empty tabs
+- Optional: fetch only one tab with `?channel=chat` (or `call` / `summary`)
 
 ### List response
 
@@ -129,7 +210,8 @@ Also emitted to room `lead:{leadId}` when `leadId` is present.
 
 ## FE checklist
 
-- [ ] Lead detail → **Calls** tab using list + detail APIs  
-- [ ] Chat transcript → badge `origin === "call"`  
+- [ ] Lead detail → switchable **Chat / Call / Summary** tabs via `GET …/transcripts`  
+- [ ] Lead detail → **Calls** list/detail still available for per-session drill-down  
+- [ ] Chat transcript → badge `origin === "call"` (public history)  
 - [ ] Live monitor: listen for `call_*` on `/admin`  
 - [ ] Ops: configure Twilio Voice webhooks + `TWILIO_WEBHOOK_BASE_URL`  
