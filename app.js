@@ -7,6 +7,10 @@ const errorHandler = require('./src/middleware/errorHandler')
 
 const app = express()
 
+// Nginx / Render terminate TLS and set X-Forwarded-For. Without this,
+// express-rate-limit throws and Twilio webhooks return 500.
+app.set('trust proxy', 1)
+
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet())
 

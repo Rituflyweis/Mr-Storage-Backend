@@ -148,9 +148,11 @@ const webhookBase = (req) => {
   if (configured) return configured
   if (req) {
     const host = req.get?.('host') || ''
-    const proto = (req.get?.('x-forwarded-proto') || req.protocol || 'https')
+    let proto = (req.get?.('x-forwarded-proto') || req.protocol || 'https')
       .split(',')[0]
       .trim()
+    // Twilio ConversationRelay requires wss. Behind nginx, req.protocol is http.
+    if (host && !/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) proto = 'https'
     if (host) return `${proto}://${host}`
   }
   return ''
@@ -183,6 +185,7 @@ const respondWithVoice = (req, session, message) => {
   if (useElevenLabsRelay()) {
     const url = relayWebsocketUrl(req)
     if (url) {
+      console.log(`[VoiceCall] relay url=${url}`)
       return twiml.conversationRelay({
         websocketUrl: url,
         welcomeGreeting: message,
