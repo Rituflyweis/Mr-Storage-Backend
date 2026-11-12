@@ -144,6 +144,29 @@ const buildContactBlock = (customer, { needsContactDetails = false } = {}) => {
   )
 }
 
+const buildProjectMemoryBlock = (lead) => {
+  if (!lead) return ''
+  const where = [lead.city, lead.state, lead.location].filter(Boolean).join(', ')
+  const lines = []
+  if (lead.projectName) lines.push(`Project name: ${lead.projectName}`)
+  if (lead.buildingType) lines.push(`Building type: ${lead.buildingType}`)
+  if (lead.sqft) lines.push(`Size: ${lead.sqft} sq ft`)
+  if (where) lines.push(`Location: ${where}`)
+  if (lead.roofStyle) lines.push(`Roof: ${lead.roofStyle}`)
+  const requirements = String(lead.leadScoring?.requirements || '').trim()
+  const summary = String(lead.aiContextSummary || '').trim()
+  if (!lines.length && !requirements && !summary) return ''
+  return (
+    '\n\n--- PROJECT ALREADY ON FILE ---\n' +
+    (lines.length ? `${lines.join('\n')}\n` : '') +
+    (requirements ? `Known so far: ${requirements}\n` : '') +
+    (summary ? 'A full conversation summary is included with the messages. Use it.\n' : '') +
+    'You already have this history. Never say you cannot remember, that nothing is on file, or that this is a fresh start.\n' +
+    'Continue this project. Do not re-ask facts listed here. Check how planning is going, then ask only for the next missing detail.\n' +
+    '---\n'
+  )
+}
+
 // ─── MESSAGE ALTERNATION (Anthropic requires user/assistant alternation) ────────
 const ensureAlternation = (messages) => {
   const out = []
@@ -205,13 +228,14 @@ const buildMessages = (currentMessages, currentConversationSummary = '') => {
   }))
 
   let summaryPrefix = []
+  const summary = String(currentConversationSummary || '').trim()
+  if (summary) {
+    summaryPrefix = [{
+      role: 'user',
+      content: `[Earlier in this conversation — summary. These facts are already known. Do not claim you have no memory of them.]\n${summary}`,
+    }]
+  }
   if (verbatimCount > 0 && liveMessages.length > verbatimCount) {
-    if (currentConversationSummary) {
-      summaryPrefix = [{
-        role: 'user',
-        content: `[Earlier in this conversation — summary]\n${currentConversationSummary}`,
-      }]
-    }
     liveMessages = liveMessages.slice(-verbatimCount)
   }
 
@@ -285,13 +309,15 @@ const buildChatRequest = (currentMessages, options = {}) => {
     currentConversationSummary = '',
     needsContactDetails = false,
     voiceMode = false,
+    projectLead = null,
   } = options
 
   const systemPrompt =
     buildSalesSystemPrompt() +
     buildContactBlock(customer, { needsContactDetails }) +
+    buildProjectMemoryBlock(projectLead || { aiContextSummary: currentConversationSummary }) +
     (voiceMode
-      ? '\n\nVOICE CALL MODE: Keep every spoken reply under 2 short sentences. No markdown, bullets, or lists.\n'
+      ? '\n\nVOICE CALL MODE: Keep every spoken reply under 2 short sentences. No markdown, bullets, or lists. If a project is already on file, continue that project out loud. Never tell the caller you have no previous conversation.\n'
       : '')
 
   // Voice: smaller prompt window so the first spoken token arrives quickly
@@ -452,4 +478,5 @@ module.exports = {
   buildMessages,
   isPendingVoiceEmail,
   parseAssistantTurn,
+  buildProjectMemoryBlock,
 }

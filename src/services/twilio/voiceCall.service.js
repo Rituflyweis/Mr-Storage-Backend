@@ -197,6 +197,38 @@ const respondWithVoice = (req, session, message) => {
   })
 }
 
+const LEAD_MEMORY_FIELDS = 'isHandedToSales isStaffChatActive aiContextSummary buildingType sqft location city state roofStyle projectName leadScoring.requirements'
+
+const formatSqft = (sqft) => {
+  const n = Number(String(sqft || '').replace(/,/g, ''))
+  if (!Number.isFinite(n) || n <= 0) return String(sqft || '').trim()
+  return n.toLocaleString('en-US')
+}
+
+/** Returning caller with a project on file: check in, instead of starting from scratch. */
+const buildReturningGreeting = (customer, lead) => {
+  const rawName = String(customer?.firstName || '').trim()
+  const name = rawName && !['caller', 'guest'].includes(rawName.toLowerCase()) ? rawName : ''
+  const hi = name ? `Hi ${name}, this is Alex.` : 'Hi, this is Alex.'
+  const type = String(lead?.buildingType || '').trim()
+  const sqft = formatSqft(lead?.sqft)
+  const where = [lead?.city, lead?.state, lead?.location].filter(Boolean).join(', ')
+  const project = String(lead?.projectName || '').trim()
+  const hasProject = Boolean(
+    type || sqft || where || project || lead?.aiContextSummary || lead?.leadScoring?.requirements,
+  )
+  if (!hasProject) {
+    return `${hi} Thanks for calling. What can I help you with today?`
+  }
+  let subject = 'the project we have been planning'
+  if (sqft && type && where) subject = `your ${sqft} square foot ${type} in ${where}`
+  else if (sqft && type) subject = `your ${sqft} square foot ${type}`
+  else if (type && where) subject = `your ${type} project in ${where}`
+  else if (type) subject = `your ${type} project`
+  else if (project) subject = `your ${project} project`
+  return `${hi} I'm checking in on ${subject}. How is the planning going? Is everything okay?`
+}
+
 const emitAdmin = (event, payload) => {
   try {
     if (global.io) global.io.of('/admin').emit(event, payload)
@@ -312,13 +344,14 @@ const handleInbound = async (body = {}, req = null) => {
         message: 'We lost your call session. Please call again. Goodbye.',
       })
     }
-    const lead = await Lead.findById(session.leadId).select('isHandedToSales isStaffChatActive').lean()
+    const lead = await Lead.findById(session.leadId).select(LEAD_MEMORY_FIELDS).lean()
     if (lead?.isHandedToSales || lead?.isStaffChatActive) {
       return twiml.sayHangup({
         message: 'Your sales representative will follow up with you shortly. Thank you for calling. Goodbye.',
       })
     }
-    return respondWithVoice(req, session, 'Welcome back. How can I help you?')
+    const customer = await Customer.findById(session.customerId).select('firstName').lean()
+    return respondWithVoice(req, session, buildReturningGreeting(customer, lead))
   }
 
   // Returning customer OR first-contact — create CRM record from caller ID if needed
@@ -370,7 +403,7 @@ const handleInbound = async (body = {}, req = null) => {
 
   const greeting = session.needsContactDetails
     ? `Thanks for calling. I'm Alex from our sales team. To get started, may I have your name please?`
-    : `Hi ${customer.firstName || 'there'}, thanks for calling. I'm Alex from our sales team. What can I help you with today?`
+    : buildReturningGreeting(customer, lead)
 
   await saveTurnAndMessage({
     session,
@@ -453,7 +486,7 @@ const handleGather = async (body = {}, query = {}, req = null) => {
   await session.save()
 
   const leadFresh = await Lead.findById(session.leadId)
-    .select('isHandedToSales isStaffChatActive aiContextSummary')
+    .select(LEAD_MEMORY_FIELDS)
     .populate('customerId')
   if (!leadFresh) {
     return twiml.sayHangup({ message: 'We could not find your project. Goodbye.' })
@@ -489,6 +522,7 @@ const handleGather = async (body = {}, query = {}, req = null) => {
       currentConversationSummary: leadFresh.aiContextSummary || '',
       needsContactDetails: needsContact,
       voiceMode: true,
+      projectLead: leadFresh,
     },
   )
   console.log(`[VoiceCall] claude_ms=${Date.now() - tChat} callSid=${callSid || ''}`)
@@ -625,7 +659,7 @@ const handleRelayPrompt = async ({ callSid, speech, signal, sendText }) => {
   }
 
   const leadFresh = await Lead.findById(session.leadId)
-    .select('isHandedToSales isStaffChatActive aiContextSummary')
+    .select(LEAD_MEMORY_FIELDS)
     .populate('customerId')
   if (!leadFresh) {
     await finish('We could not find your project. Goodbye.')
@@ -678,6 +712,7 @@ const handleRelayPrompt = async ({ callSid, speech, signal, sendText }) => {
       currentConversationSummary: leadFresh.aiContextSummary || '',
       needsContactDetails: needsContact,
       voiceMode: true,
+      projectLead: leadFresh,
       signal,
       onText: (chunk) => push(chunk, false),
     })
@@ -872,4 +907,5 @@ module.exports = {
   createCustomerFromInboundCall,
   customerNeedsContactDetails,
   gatherUrl,
+  buildReturningGreeting,
 }
