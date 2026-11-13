@@ -489,6 +489,7 @@ const startOutboundRunner = () => {
 
 module.exports = {
   enqueueInquiryCallback,
+  wantsCallNow,
   requestCallFromChat,
   noteCallResult,
   markInProgress,

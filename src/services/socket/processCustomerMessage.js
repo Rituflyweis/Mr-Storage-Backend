@@ -48,8 +48,25 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
     })
   }
 
-  // Staff (admin/sales) has taken over — AI stays silent; admin assigns sales manually.
-  if (leadForChat?.isStaffChatActive || leadForChat?.isHandedToSales) {
+  const { requestCallFromChat, wantsCallNow } = require('../twilio/outboundCall.service')
+  const askedForCall = wantsCallNow(content)
+  const staffHasChat = Boolean(leadForChat?.isStaffChatActive)
+  // A sales handoff still leaves the customer in this chat. "Call me" has to dial
+  // and get a reply. A live staff takeover stays silent.
+  if (askedForCall && !staffHasChat) {
+    const leadForDial = await Lead.findById(leadId).populate('customerId')
+    if (leadForDial?.customerId) {
+      requestCallFromChat({
+        lead: leadForDial,
+        customer: leadForDial.customerId,
+        text: content,
+      }).catch((err) => {
+        console.warn('[VoiceOutbound] chat call request failed:', err.message)
+      })
+    }
+  }
+
+  if (staffHasChat || (leadForChat?.isHandedToSales && !askedForCall)) {
     return
   }
 
@@ -74,7 +91,7 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
   const leadAfterAi = await Lead.findById(leadId)
     .select('isStaffChatActive isHandedToSales')
     .lean()
-  if (leadAfterAi?.isStaffChatActive || leadAfterAi?.isHandedToSales) {
+  if (leadAfterAi?.isStaffChatActive || (leadAfterAi?.isHandedToSales && !askedForCall)) {
     chatNS.to(`lead:${leadId}`).emit('ai_typing', { isTyping: false })
     return
   }
@@ -99,11 +116,6 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
   if (global.io) {
     global.io.of('/admin').to(`lead:${leadId}`).emit('new_message', msgPayload)
   }
-
-  const { requestCallFromChat } = require('../twilio/outboundCall.service')
-  requestCallFromChat({ lead, customer, text: content }).catch((err) => {
-    console.warn('[VoiceOutbound] chat call request failed:', err.message)
-  })
 
   const messagesAfterAi = await Message.find({ leadId })
     .sort({ createdAt: 1 })
