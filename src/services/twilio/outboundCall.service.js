@@ -137,6 +137,58 @@ const loadCustomer = async (customerOrId) => {
   return Customer.findById(customerOrId)
 }
 
+const wantsCallNow = (text) => {
+  const s = String(text || '').toLowerCase().replace(/\s+/g, ' ')
+  if (/\b(don'?t|do not|never|stop)\b.{0,30}\b(call|phone|ring)\b/.test(s)) return false
+  return (
+    /\b(call me|phone me|ring me|give me a call|call me back|call back|callback)\b/.test(s) ||
+    /\b(can|could|would|please|pls)\b.{0,30}\b(call|phone|ring)\b/.test(s) ||
+    /\b(i want|i need|want you to|need you to)\b.{0,20}\b(a call|call)\b/.test(s)
+  )
+}
+
+/** Customer asked in chat to be called. Dial the number on file now, skipping the 30-minute wait. */
+const requestCallFromChat = async ({ lead, customer, text }) => {
+  if (!env.VOICE_OUTBOUND_ENABLED) return null
+  if (!wantsCallNow(text)) return null
+
+  const leadId = lead?._id || lead
+  const person = await loadCustomer(customer || lead?.customerId)
+  if (!person || person.voiceOptOut) return null
+  const toNumber = toE164(person)
+  if (!toNumber) return null
+
+  const busy = await VoiceOutreach.findOne({
+    leadId,
+    status: { $in: ['dialing', 'in-progress'] },
+  }).select('_id')
+  if (busy) return busy
+
+  const leadDoc = lead?.state !== undefined ? lead : await Lead.findById(leadId).select('state').lean()
+  const timezone = timezoneFor({ e164: toNumber, state: leadDoc?.state })
+  let row = await VoiceOutreach.findOne({ leadId, status: 'scheduled' })
+  if (row) {
+    row.nextAttemptAt = new Date()
+    row.source = 'chat_request'
+    row.timezone = timezone
+    await row.save()
+  } else {
+    row = await VoiceOutreach.create({
+      leadId,
+      customerId: person._id,
+      toNumber,
+      timezone,
+      status: 'scheduled',
+      maxAttempts: maxAttempts(),
+      nextAttemptAt: new Date(),
+      source: 'chat_request',
+    })
+  }
+
+  console.log(`[VoiceOutbound] chat asked for a call lead=${leadId} to=${toNumber}`)
+  return dialOutreach(row, { ignoreHours: true, detectMachine: false })
+}
+
 const enqueueInquiryCallback = async ({ lead, customer, customerId }) => {
   if (!env.VOICE_OUTBOUND_ENABLED) return null
   const leadId = lead?._id || lead
@@ -437,6 +489,7 @@ const startOutboundRunner = () => {
 
 module.exports = {
   enqueueInquiryCallback,
+  requestCallFromChat,
   noteCallResult,
   markInProgress,
   handleAmd,

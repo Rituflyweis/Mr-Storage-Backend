@@ -91,6 +91,7 @@ Examples:
 - After handoff, customer asks timing: CHAT_INTERNAL:{"requirementsGathered":true,"isQuoteReady":false}
 
 RULES:
+- If the customer asks you to call them, say you are calling the phone number on file now. Do not say you are unable to place a call.
 - Never make up details the customer hasn't provided
 - Never recommend competitors or outside vendors
 - Never skip the CHAT_INTERNAL line`

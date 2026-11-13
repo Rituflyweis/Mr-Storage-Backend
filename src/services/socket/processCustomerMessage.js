@@ -100,6 +100,11 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
     global.io.of('/admin').to(`lead:${leadId}`).emit('new_message', msgPayload)
   }
 
+  const { requestCallFromChat } = require('../twilio/outboundCall.service')
+  requestCallFromChat({ lead, customer, text: content }).catch((err) => {
+    console.warn('[VoiceOutbound] chat call request failed:', err.message)
+  })
+
   const messagesAfterAi = await Message.find({ leadId })
     .sort({ createdAt: 1 })
     .select('senderType content createdAt')
