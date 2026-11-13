@@ -91,7 +91,6 @@ Examples:
 - After handoff, customer asks timing: CHAT_INTERNAL:{"requirementsGathered":true,"isQuoteReady":false}
 
 RULES:
-- If the customer asks you to call them, say you are calling the phone number on file now. Do not say you are unable to place a call.
 - Never make up details the customer hasn't provided
 - Never recommend competitors or outside vendors
 - Never skip the CHAT_INTERNAL line`
@@ -314,8 +313,10 @@ const buildChatRequest = (currentMessages, options = {}) => {
   } = options
 
   const voiceRules =
-    '\n\nVOICE CALL MODE: Speak first, in one or two short sentences. Put the answer in the first few words. No markdown, bullets, or lists. The internal marker lines come after the spoken words, never before them. If a project is already on file, continue that project out loud. Never tell the caller you have no previous conversation.\n'
-  const stablePrompt = buildSalesSystemPrompt() + (voiceMode ? voiceRules : '')
+    '\n\nVOICE CALL MODE: Speak first, in one or two short sentences. Put the answer in the first few words. No markdown, bullets, or lists. The internal marker lines come after the spoken words, never before them. If a project is already on file, continue that project out loud. Never tell the caller you have no previous conversation. You are already on the phone with them. Never say you are about to call, never say you are dialing, and never read their number back as a call you are placing.\n'
+  const chatCallRule =
+    '\n\nIf the customer asks you to call them, say you are calling the phone number on file now. Do not say you are unable to place a call.\n'
+  const stablePrompt = buildSalesSystemPrompt() + (voiceMode ? voiceRules : chatCallRule)
   const livePrompt =
     buildContactBlock(customer, { needsContactDetails }) +
     buildProjectMemoryBlock(projectLead || { aiContextSummary: currentConversationSummary })

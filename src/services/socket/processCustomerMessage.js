@@ -55,18 +55,44 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
   // and get a reply. A live staff takeover stays silent.
   if (askedForCall && !staffHasChat) {
     const leadForDial = await Lead.findById(leadId).populate('customerId')
-    if (leadForDial?.customerId) {
-      requestCallFromChat({
-        lead: leadForDial,
-        customer: leadForDial.customerId,
-        text: content,
-      }).catch((err) => {
+    let reply = 'Calling the number on file now.'
+    if (!leadForDial?.customerId) {
+      reply = "I can't place that call right now."
+    } else {
+      try {
+        const row = await requestCallFromChat({
+          lead: leadForDial,
+          customer: leadForDial.customerId,
+          text: content,
+        })
+        if (!row) reply = "I can't place that call from the phone number on file."
+      } catch (err) {
         console.warn('[VoiceOutbound] chat call request failed:', err.message)
-      })
+        reply = "I couldn't place the call just now. Please try again in a moment."
+      }
     }
+
+    const aiMsg = await Message.create({
+      leadId,
+      customerId,
+      senderType: 'ai',
+      content: reply,
+    })
+    const msgPayload = {
+      _id: aiMsg._id,
+      senderType: 'ai',
+      content: reply,
+      createdAt: aiMsg.createdAt,
+      leadId,
+    }
+    chatNS.to(`lead:${leadId}`).emit('new_message', msgPayload)
+    if (global.io) {
+      global.io.of('/admin').to(`lead:${leadId}`).emit('new_message', msgPayload)
+    }
+    return
   }
 
-  if (staffHasChat || (leadForChat?.isHandedToSales && !askedForCall)) {
+  if (staffHasChat || leadForChat?.isHandedToSales) {
     return
   }
 
