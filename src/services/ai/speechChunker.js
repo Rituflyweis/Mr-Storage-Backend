@@ -37,16 +37,22 @@ const pullSpeakable = (buffer, { flush = false } = {}) => {
   if (!visible) return { emit: '', rest: held }
   if (flush) return { emit: visible, rest: held }
 
-  const matches = [...visible.matchAll(/[.!?]["']?\s+/g)]
-  if (matches.length) {
-    const last = matches[matches.length - 1]
-    const end = last.index + last[0].length
+  // Speak as soon as a clause is ready. Waiting for the full reply is the pause the caller hears.
+  const clause = visible.match(/^[\s\S]{6,}?[,;:](?:\s+|$)/)
+  if (clause) {
+    const end = clause[0].length
     return { emit: visible.slice(0, end), rest: visible.slice(end) + held }
   }
 
-  if (visible.length >= 160) {
-    const space = visible.lastIndexOf(' ', 140)
-    if (space > 40) {
+  const sentence = visible.match(/^[\s\S]{6,}?(?:(?<![0-9])[.!?]["']?)(?:\s+|$)/)
+  if (sentence) {
+    const end = sentence[0].length
+    return { emit: visible.slice(0, end), rest: visible.slice(end) + held }
+  }
+
+  if (visible.length >= 70) {
+    const space = visible.lastIndexOf(' ')
+    if (space > 24) {
       return {
         emit: visible.slice(0, space + 1),
         rest: visible.slice(space + 1) + held,

@@ -312,23 +312,30 @@ const buildChatRequest = (currentMessages, options = {}) => {
     projectLead = null,
   } = options
 
-  const systemPrompt =
-    buildSalesSystemPrompt() +
+  const voiceRules =
+    '\n\nVOICE CALL MODE: Speak first, in one or two short sentences. Put the answer in the first few words. No markdown, bullets, or lists. The internal marker lines come after the spoken words, never before them. If a project is already on file, continue that project out loud. Never tell the caller you have no previous conversation.\n'
+  const stablePrompt = buildSalesSystemPrompt() + (voiceMode ? voiceRules : '')
+  const livePrompt =
     buildContactBlock(customer, { needsContactDetails }) +
-    buildProjectMemoryBlock(projectLead || { aiContextSummary: currentConversationSummary }) +
-    (voiceMode
-      ? '\n\nVOICE CALL MODE: Keep every spoken reply under 2 short sentences. No markdown, bullets, or lists. If a project is already on file, continue that project out loud. Never tell the caller you have no previous conversation.\n'
-      : '')
+    buildProjectMemoryBlock(projectLead || { aiContextSummary: currentConversationSummary })
 
-  // Voice: smaller prompt window so the first spoken token arrives quickly
+  // Voice: smaller prompt window so the first spoken token arrives quickly.
+  // The standing instructions are cached so later turns in the same call start faster.
   const claudeMessages = voiceMode
-    ? buildMessages(currentMessages.slice(-10), currentConversationSummary)
+    ? buildMessages(currentMessages.slice(-6), currentConversationSummary)
     : buildMessages(currentMessages, currentConversationSummary)
 
+  const system = voiceMode
+    ? [
+        { type: 'text', text: stablePrompt, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: livePrompt },
+      ]
+    : stablePrompt + livePrompt
+
   return {
-    model: env.ANTHROPIC_MODEL,
-    max_tokens: voiceMode ? 220 : 1024,
-    system: systemPrompt,
+    model: voiceMode && env.VOICE_ANTHROPIC_MODEL ? env.VOICE_ANTHROPIC_MODEL : env.ANTHROPIC_MODEL,
+    max_tokens: voiceMode ? 180 : 1024,
+    system,
     messages: claudeMessages,
     needsContactDetails,
   }

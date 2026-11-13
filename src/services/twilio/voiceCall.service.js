@@ -738,33 +738,29 @@ const handleRelayPrompt = async ({ callSid, speech, signal, sendText }) => {
     return { endCall: false }
   }
 
-  await saveTurnAndMessage({
+  const messagesBeforeAi = await Message.find({ leadId: session.leadId })
+    .sort({ createdAt: 1 })
+    .select('senderType content createdAt')
+    .lean()
+  messagesBeforeAi.push({
+    senderType: 'customer',
+    content: heard,
+    createdAt: new Date(),
+  })
+  const savedCustomerTurn = saveTurnAndMessage({
     session,
     role: 'customer',
     transcript: heard,
     twilioGatherSid: callSid,
   })
 
-  const messagesBeforeAi = await Message.find({ leadId: session.leadId })
-    .sort({ createdAt: 1 })
-    .select('senderType content createdAt')
-    .lean()
-
   let customer = leadFresh.customerId
   const needsContact = session.needsContactDetails || customerNeedsContactDetails(customer)
 
-  let held = ''
   const push = async (token, last) => {
     if (signal?.aborted) return
     const clean = String(token || '').replace(/[*_`#~>]+/g, '')
-    if (!last) {
-      if (held.trim()) await sendText(held, false)
-      held = clean
-      return
-    }
-    const merged = `${held}${clean}`
-    held = ''
-    if (merged.trim()) await sendText(merged, true)
+    if (clean.trim()) await sendText(clean, last)
   }
 
   let result
@@ -780,6 +776,7 @@ const handleRelayPrompt = async ({ callSid, speech, signal, sendText }) => {
     })
   } catch (err) {
     if (signal?.aborted || err?.name === 'AbortError' || err?.name === 'APIUserAbortError') {
+      savedCustomerTurn.catch(() => {})
       return { endCall: false, aborted: true }
     }
     console.error('[VoiceCall] relay claude:', err.message)
@@ -787,7 +784,12 @@ const handleRelayPrompt = async ({ callSid, speech, signal, sendText }) => {
     return { endCall: false }
   }
 
-  if (signal?.aborted) return { endCall: false, aborted: true }
+  if (signal?.aborted) {
+    savedCustomerTurn.catch(() => {})
+    return { endCall: false, aborted: true }
+  }
+
+  await savedCustomerTurn
 
   const spoken = String(result.text || '').trim()
   await push('', true)

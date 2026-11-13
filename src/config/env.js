@@ -29,6 +29,8 @@ module.exports = {
 
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
+  /** Faster model for live phone turns. Empty uses ANTHROPIC_MODEL. */
+  VOICE_ANTHROPIC_MODEL: (process.env.VOICE_ANTHROPIC_MODEL || "claude-haiku-4-5").trim(),
 
   CLAUDE_MAX_PRIOR_CONTEXT_CHARS: parseInt(
     process.env.CLAUDE_MAX_PRIOR_CONTEXT_CHARS || "45000",

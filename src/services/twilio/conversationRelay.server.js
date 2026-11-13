@@ -76,7 +76,7 @@ const attachConversationRelay = (server) => {
       if (ws.readyState !== 1 || state.ended) return
       if (gen !== state.speakGen) return
       const safe = String(token || '')
-      if (!safe.trim()) return
+      if (!safe.trim() && !last) return
       ws.send(JSON.stringify({
         type: 'text',
         token: safe,
