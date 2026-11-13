@@ -238,9 +238,8 @@ const dialOutreach = async (outreach, { ignoreHours = false, detectMachine = env
   await outreach.save()
 
   const id = encodeURIComponent(String(outreach._id))
-  const call = await sdk.calls.create({
+  const payload = {
     to: outreach.toNumber,
-    from,
     url: `${base}/api/twilio/voice/outbound?outreachId=${id}`,
     method: 'POST',
     statusCallback: `${base}/api/twilio/voice/status`,
@@ -253,7 +252,29 @@ const dialOutreach = async (outreach, { ignoreHours = false, detectMachine = env
       : undefined,
     asyncAmdStatusCallbackMethod: 'POST',
     timeout: 25,
-  })
+  }
+  const callerIds = [...new Set([env.TWILIO_PHONE_NUMBER, env.TWILIO_FROM_PHONE].map((n) => String(n || '').trim()).filter(Boolean))]
+  let call = null
+  let lastError = null
+  for (const from of callerIds) {
+    try {
+      call = await sdk.calls.create({ ...payload, from })
+      break
+    } catch (err) {
+      lastError = err
+      const unverified = /not yet verified|unable to create record/i.test(err.message || '')
+      if (!unverified || callerIds[callerIds.length - 1] === from) break
+      console.warn(`[VoiceOutbound] ${from} cannot place calls, trying the next Twilio number`)
+    }
+  }
+  if (!call) {
+    outreach.attemptCount = Math.max(0, outreach.attemptCount - 1)
+    outreach.status = 'scheduled'
+    outreach.lastResult = 'error'
+    outreach.nextAttemptAt = new Date(Date.now() + 15 * 60 * 1000)
+    await outreach.save()
+    throw lastError || new Error('Twilio did not place the call')
+  }
 
   outreach.lastCallSid = call.sid
   await outreach.save()
