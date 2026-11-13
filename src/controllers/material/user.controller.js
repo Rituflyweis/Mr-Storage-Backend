@@ -119,6 +119,11 @@ const createFormLead = async ({
   const { notifyAdminsOfNewLead } = require('../../utils/leadCreatedNotify.util')
   await notifyAdminsOfNewLead(lead, { customerId, inbound: true, source: lead.source }).catch(() => {})
 
+  const { enqueueInquiryCallback } = require('../../services/twilio/outboundCall.service')
+  enqueueInquiryCallback({ lead, customerId }).catch((err) => {
+    console.warn('[VoiceOutbound] enqueue failed:', err.message)
+  })
+
   return lead
 }
 

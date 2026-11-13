@@ -26,6 +26,7 @@ const {
   canAdvanceLifecycle,
 } = require('../ai/requirementsChecklist.service')
 const env = require('../../config/env')
+const outboundCall = require('./outboundCall.service')
 
 const PENDING_VOICE_EMAIL_DOMAIN = 'pending.voice.local'
 
@@ -417,6 +418,64 @@ const handleInbound = async (body = {}, req = null) => {
   return respondWithVoice(req, session, greeting)
 }
 
+const handleOutbound = async (body = {}, req = null) => {
+  const callSid = body.CallSid
+  const customerNumber = body.To || ''
+  const ourNumber = body.From || ''
+  const answeredBy = String(body.AnsweredBy || '').toLowerCase()
+
+  if (!callSid) {
+    return twiml.sayHangup({ message: 'We could not start this call. Please try again. Goodbye.' })
+  }
+
+  if (answeredBy.startsWith('machine') || answeredBy === 'fax') {
+    const person = await findCustomerByTwilioFrom(customerNumber)
+    return twiml.sayHangup({ message: outboundCall.voicemailMessage(person) })
+  }
+
+  let customer = await findCustomerByTwilioFrom(customerNumber)
+  let isNewFromCall = false
+  if (!customer) {
+    const created = await createCustomerFromInboundCall(customerNumber)
+    customer = created.customer
+    isNewFromCall = created.created
+  }
+
+  const needsContact = customerNeedsContactDetails(customer)
+  const lead = await resolveActiveLead(customer._id, { createIfMissing: true })
+  let session = await CallSession.findOne({ twilioCallSid: callSid })
+  if (!session) {
+    session = await CallSession.create({
+      twilioCallSid: callSid,
+      direction: 'outbound',
+      customerId: customer._id,
+      leadId: lead._id,
+      fromNumber: customerNumber,
+      toNumber: ourNumber,
+      status: 'in-progress',
+      isHandedToSales: Boolean(lead.isHandedToSales),
+      needsContactDetails: needsContact || isNewFromCall,
+      unknownCaller: false,
+    })
+  }
+
+  await outboundCall.markInProgress(callSid)
+
+  if (lead.isHandedToSales || lead.isStaffChatActive) {
+    return twiml.sayHangup({
+      message: 'Your sales representative will follow up with you shortly. Thank you. Goodbye.',
+    })
+  }
+
+  const returning = buildReturningGreeting(customer, lead)
+  const greeting = returning.includes('What can I help you with today')
+    ? outboundCall.outboundGreeting(customer, lead, null)
+    : returning
+
+  await saveTurnAndMessage({ session, role: 'ai', transcript: greeting })
+  return respondWithVoice(req, session, greeting)
+}
+
 const handleGather = async (body = {}, query = {}, req = null) => {
   const sessionId = query.sessionId || body.sessionId
   // Twilio field names vary slightly by speech product / region
@@ -796,6 +855,10 @@ const handleStatus = async (body = {}) => {
   const callSid = body.CallSid
   if (!callSid) return { ok: true }
 
+  await outboundCall.noteCallResult(body).catch((err) => {
+    console.warn('[VoiceOutbound] status:', err.message)
+  })
+
   const session = await CallSession.findOne({ twilioCallSid: callSid })
   if (!session) return { ok: true }
 
@@ -899,6 +962,7 @@ const getCallDetail = async (callSessionId) => {
 
 module.exports = {
   handleInbound,
+  handleOutbound,
   handleGather,
   handleRelayPrompt,
   recordInterruptedReply,

@@ -34,6 +34,8 @@ const CustomerSchema = new mongoose.Schema(
     onlineAt:          { type: Date, default: null },
     lastSeenAt:        { type: Date, default: null },
     source:            { type: String, enum: LEAD_SOURCES, default: 'chat' },
+    /** Set when they reply STOP. Outbound calls and follow-up texts are skipped. */
+    voiceOptOut:       { type: Boolean, default: false },
     /** Set when sales creates customer via POST /api/sales/customers/basic (no lead yet). */
     createdBySales:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     company:           { type: String, default: '', trim: true },

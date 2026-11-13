@@ -106,6 +106,17 @@ module.exports = {
   VOICE_SILENCE_MS: parseInt(process.env.VOICE_SILENCE_MS || '8000', 10),
   /** How many "are you still there?" checks before the call is ended. */
   VOICE_SILENCE_CHECKS: parseInt(process.env.VOICE_SILENCE_CHECKS || '3', 10),
+  /** Call a new inquiry back. Set "false" to queue nothing and dial nothing automatically. */
+  VOICE_OUTBOUND_ENABLED: process.env.VOICE_OUTBOUND_ENABLED !== 'false',
+  VOICE_OUTBOUND_DELAY_MINUTES: parseInt(process.env.VOICE_OUTBOUND_DELAY_MINUTES || '30', 10),
+  VOICE_OUTBOUND_MAX_ATTEMPTS: parseInt(process.env.VOICE_OUTBOUND_MAX_ATTEMPTS || '3', 10),
+  /** Minutes after a miss before the next try. Then snapped into business hours. */
+  VOICE_OUTBOUND_SPACING_MINUTES: parseInt(process.env.VOICE_OUTBOUND_SPACING_MINUTES || '120', 10),
+  VOICE_OUTBOUND_HOUR_START: parseInt(process.env.VOICE_OUTBOUND_HOUR_START || '9', 10),
+  VOICE_OUTBOUND_HOUR_END: parseInt(process.env.VOICE_OUTBOUND_HOUR_END || '19', 10),
+  VOICE_OUTBOUND_DEFAULT_TZ: (process.env.VOICE_OUTBOUND_DEFAULT_TZ || 'America/Chicago').trim(),
+  VOICE_OUTBOUND_SMS: process.env.VOICE_OUTBOUND_SMS !== 'false',
+  VOICE_OUTBOUND_VOICEMAIL: process.env.VOICE_OUTBOUND_VOICEMAIL !== 'false',
 
   CLIENT_URL: process.env.CLIENT_URL || "https://steelbuildingdepot.com",
   MASTER_OTP:

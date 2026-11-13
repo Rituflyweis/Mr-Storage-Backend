@@ -740,6 +740,11 @@ exports.createProject = asyncHandler(async (req, res) => {
 
   await syncLeadBuildings(lead, { createdBy: null })
 
+  const { enqueueInquiryCallback } = require('../services/twilio/outboundCall.service')
+  enqueueInquiryCallback({ lead, customer: req.customer }).catch((err) => {
+    console.warn('[VoiceOutbound] enqueue failed:', err.message)
+  })
+
   return created(res, {
     lead: {
       _id:              lead._id,

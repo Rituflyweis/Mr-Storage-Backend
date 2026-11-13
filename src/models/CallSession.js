@@ -5,6 +5,7 @@ const CALL_SESSION_STATUSES = ['in-progress', 'completed', 'failed', 'no-answer'
 const CallSessionSchema = new mongoose.Schema(
   {
     twilioCallSid: { type: String, required: true, unique: true, trim: true, index: true },
+    direction: { type: String, enum: ['inbound', 'outbound'], default: 'inbound' },
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null, index: true },
     leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null, index: true },
     fromNumber: { type: String, default: '', trim: true },

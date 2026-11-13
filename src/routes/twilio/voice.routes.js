@@ -15,6 +15,8 @@ router.use(voiceLimiter)
 router.use(validateTwilioSignature)
 
 router.post('/inbound', ctrl.inbound)
+router.post('/outbound', ctrl.outbound)
+router.post('/amd', ctrl.amd)
 router.post('/gather', ctrl.gather)
 router.post('/status', ctrl.status)
 router.post('/fallback', ctrl.fallback)

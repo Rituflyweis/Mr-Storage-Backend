@@ -58,6 +58,7 @@ app.use('/api/customer',       require('./src/routes/customerPortal.routes'))
 app.use('/api/public',        require('./src/routes/public.routes'))
 // Twilio Voice webhooks — no JWT; validated via X-Twilio-Signature when enabled
 app.use('/api/twilio/voice',  require('./src/routes/twilio/voice.routes'))
+app.use('/api/twilio/sms',    require('./src/routes/twilio/sms.routes'))
 app.use('/api/packing-lists', require('./src/routes/packingListPublicAlias.routes'))
 app.use('/api/packing-list', require('./src/routes/packingListPublicAlias.routes'))
 app.use('/api/admin',   require('./src/routes/admin/index'))

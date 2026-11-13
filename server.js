@@ -34,6 +34,7 @@ connectDB().then(async () => {
   await initFollowUpScheduler(); // pending followups schedule
   initDbBackupScheduler();
   startAutomationRunner();
+  require("./src/services/twilio/outboundCall.service").startOutboundRunner();
 
   const customerPresence = require("./src/services/socket/customerPresence.service");
   await customerPresence.resetAllPresenceOnStartup();

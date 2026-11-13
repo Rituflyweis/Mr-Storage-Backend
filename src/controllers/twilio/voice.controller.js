@@ -22,6 +22,27 @@ exports.inbound = asyncHandler(async (req, res) => {
   }
 })
 
+exports.outbound = asyncHandler(async (req, res) => {
+  try {
+    const xml = await voiceCall.handleOutbound(req.body, req)
+    return sendTwiml(res, xml)
+  } catch (err) {
+    console.error('[VoiceCall] outbound error:', err.message)
+    return sendTwiml(
+      res,
+      twiml.sayHangup({
+        message: 'We hit a temporary issue starting this call. Please try again in a moment. Goodbye.',
+      }),
+    )
+  }
+})
+
+exports.amd = asyncHandler(async (req, res) => {
+  const outbound = require('../../services/twilio/outboundCall.service')
+  await outbound.handleAmd(req.body)
+  return res.status(200).send('OK')
+})
+
 exports.gather = asyncHandler(async (req, res) => {
   try {
     // Always 200 + TwiML so Twilio does not play generic "application error"

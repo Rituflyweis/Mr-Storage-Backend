@@ -142,6 +142,10 @@ exports.chatInit = asyncHandler(async (req, res) => {
       inbound: true,
       source: 'chat',
     }).catch(() => {})
+    const { enqueueInquiryCallback } = require('../services/twilio/outboundCall.service')
+    enqueueInquiryCallback({ lead, customer }).catch((err) => {
+      console.warn('[VoiceOutbound] enqueue failed:', err.message)
+    })
   }
 
   return success(res, {
