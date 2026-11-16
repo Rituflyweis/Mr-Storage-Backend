@@ -116,13 +116,10 @@ const smsBody = (customer) => {
   return `${hi} this is Sam with Steel Building Depot. We tried to reach you about the building you asked about. Call us back at ${ourNumber()}, or reply STOP to opt out.`
 }
 
-const outboundGreeting = (customer, lead, hasProjectGreeting) => {
+const outboundGreeting = (customer, _lead, hasProjectGreeting) => {
   if (hasProjectGreeting) return hasProjectGreeting
-  const who = firstName(customer)
-  const hi = who
-    ? `Hi ${who}, this is Sam with Steel Building Depot,`
-    : 'Hi, this is Sam with Steel Building Depot,'
-  return `${hi} following up on the building you asked about.`
+  const { samFollowUpGreeting } = require('../ai/chat.service')
+  return samFollowUpGreeting(firstName(customer))
 }
 
 let client = null

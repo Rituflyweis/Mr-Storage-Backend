@@ -148,6 +148,30 @@ exports.chatInit = asyncHandler(async (req, res) => {
     })
   }
 
+  const { samFollowUpGreeting } = require('../services/ai/chat.service')
+  const greeting = samFollowUpGreeting(customer.firstName)
+  const oldOpener = await Message.findOne({
+    leadId: lead._id,
+    senderType: 'ai',
+    origin: { $ne: 'call' },
+    content: /I['’]m Alex|I am Alex/i,
+  }).sort({ createdAt: 1 })
+  if (oldOpener) {
+    oldOpener.content = greeting
+    await oldOpener.save()
+  } else {
+    const hasChat = await Message.exists({ leadId: lead._id, origin: { $ne: 'call' } })
+    if (!hasChat) {
+      await Message.create({
+        leadId: lead._id,
+        customerId: customer._id,
+        senderType: 'ai',
+        content: greeting,
+        origin: 'chat',
+      })
+    }
+  }
+
   return success(res, {
     customerId: customer._id,
     leadId: lead._id,

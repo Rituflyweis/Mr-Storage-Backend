@@ -29,6 +29,15 @@ const capSummaryText = (text, maxChars) => {
   return `${s.slice(0, maxChars - 20)}\n…(trimmed)…`
 }
 
+/** Same first line on the website chat and on the phone. */
+const samFollowUpGreeting = (firstName) => {
+  const who = String(firstName || '').trim()
+  const skip = !who || ['caller', 'guest', 'facebook'].includes(who.toLowerCase())
+  return skip
+    ? 'Hi, this is Sam with Steel Building Depot, following up on the building you asked about.'
+    : `Hi ${who}, this is Sam with Steel Building Depot, following up on the building you asked about.`
+}
+
 // ─── SYSTEM PROMPT ──────────────────────────────────────────────────────────────
 // TODO: Replace company details, pricing bands, and project fields with your own.
 const buildSalesSystemPrompt = () => {
@@ -491,4 +500,5 @@ module.exports = {
   isPendingVoiceEmail,
   parseAssistantTurn,
   buildProjectMemoryBlock,
+  samFollowUpGreeting,
 }
