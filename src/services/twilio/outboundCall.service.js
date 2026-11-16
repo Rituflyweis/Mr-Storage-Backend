@@ -129,10 +129,20 @@ const outboundGreeting = (customer, lead, hasProjectGreeting) => {
 }
 
 let client = null
+const voiceCredentials = () => {
+  if (env.TWILIO_VOICE_ACCOUNT_SID && env.TWILIO_VOICE_AUTH_TOKEN) {
+    return { sid: env.TWILIO_VOICE_ACCOUNT_SID, token: env.TWILIO_VOICE_AUTH_TOKEN }
+  }
+  if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
+    return { sid: env.TWILIO_ACCOUNT_SID, token: env.TWILIO_AUTH_TOKEN }
+  }
+  return null
+}
+
 const getClient = () => {
-  if (!isTwilioConfigured() && !(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && ourNumber())) return null
-  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN) return null
-  if (!client) client = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN)
+  const creds = voiceCredentials()
+  if (!creds || !ourNumber()) return null
+  if (!client) client = twilio(creds.sid, creds.token)
   return client
 }
 
@@ -310,7 +320,11 @@ const dialOutreach = async (outreach, { ignoreHours = false, detectMachine = env
     asyncAmdStatusCallbackMethod: 'POST',
     timeout: 25,
   }
-  const callerIds = [...new Set([env.TWILIO_PHONE_NUMBER, env.TWILIO_FROM_PHONE].map((n) => String(n || '').trim()).filter(Boolean))]
+  const callerIds = [...new Set(
+    (env.TWILIO_VOICE_ACCOUNT_SID ? [env.TWILIO_PHONE_NUMBER] : [env.TWILIO_PHONE_NUMBER, env.TWILIO_FROM_PHONE])
+      .map((n) => String(n || '').trim())
+      .filter(Boolean),
+  )]
   let call = null
   let lastError = null
   for (const from of callerIds) {
@@ -335,7 +349,7 @@ const dialOutreach = async (outreach, { ignoreHours = false, detectMachine = env
 
   outreach.lastCallSid = call.sid
   await outreach.save()
-  console.log(`[VoiceOutbound] dialing ${outreach.toNumber} callSid=${call.sid} attempt=${outreach.attemptCount}`)
+  console.log(`[VoiceOutbound] dialing ${outreach.toNumber} from=${call.from} callSid=${call.sid} attempt=${outreach.attemptCount}`)
   return call
 }
 

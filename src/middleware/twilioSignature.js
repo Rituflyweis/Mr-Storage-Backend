@@ -13,8 +13,8 @@ const validateTwilioSignature = (req, res, next) => {
 
   if (!shouldValidate) return next()
 
-  const authToken = env.TWILIO_AUTH_TOKEN
-  if (!authToken) {
+  const authTokens = [...new Set([env.TWILIO_AUTH_TOKEN, env.TWILIO_VOICE_AUTH_TOKEN].map((t) => String(t || '').trim()).filter(Boolean))]
+  if (!authTokens.length) {
     return res.status(500).type('text/xml').send(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Configuration error.</Say><Hangup/></Response>',
     )
@@ -40,7 +40,9 @@ const validateTwilioSignature = (req, res, next) => {
   ].filter(Boolean)
 
   const params = req.body || {}
-  const valid = candidates.some((url) => twilio.validateRequest(authToken, signature, url, params))
+  const valid = candidates.some((url) =>
+    authTokens.some((authToken) => twilio.validateRequest(authToken, signature, url, params)),
+  )
 
   if (!valid) {
     console.warn('[TwilioSignature] validation failed for urls:', candidates.join(' | '))

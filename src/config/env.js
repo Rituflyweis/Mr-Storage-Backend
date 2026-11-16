@@ -87,7 +87,10 @@ module.exports = {
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
   TWILIO_FROM_PHONE: process.env.TWILIO_FROM_PHONE || '',
-  /** Inbound AI voice number (defaults to SMS from-number if unset). */
+  /** Account that owns TWILIO_PHONE_NUMBER. SMS stays on TWILIO_ACCOUNT_SID. */
+  TWILIO_VOICE_ACCOUNT_SID: (process.env.TWILIO_VOICE_ACCOUNT_SID || '').trim(),
+  TWILIO_VOICE_AUTH_TOKEN: (process.env.TWILIO_VOICE_AUTH_TOKEN || '').trim(),
+  /** Outbound caller ID. Defaults to the SMS number only when no voice account is set. */
   TWILIO_PHONE_NUMBER:
     process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_FROM_PHONE || '',
   /** Public HTTPS origin Twilio posts to, e.g. https://api.example.com (no trailing slash). */
