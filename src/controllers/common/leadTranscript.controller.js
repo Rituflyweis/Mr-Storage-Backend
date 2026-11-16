@@ -45,9 +45,9 @@ const mapMessage = (m) => ({
 exports.getLeadTranscripts = asyncHandler(async (req, res) => {
   const { leadId } = req.params
   const channel = String(req.query.channel || 'all').toLowerCase()
-  const allowed = new Set(['all', 'chat', 'call', 'summary'])
+  const allowed = new Set(['all', 'chat', 'call', 'summary', 'messenger'])
   if (!allowed.has(channel)) {
-    return badRequest(res, 'channel must be one of: all, chat, call, summary')
+    return badRequest(res, 'channel must be one of: all, chat, call, summary, messenger')
   }
 
   const access = await assertLeadAccess(req, leadId)
@@ -57,13 +57,17 @@ exports.getLeadTranscripts = asyncHandler(async (req, res) => {
   }
   const { lead } = access
 
-  const wantChat = channel === 'all' || channel === 'chat'
+  const wantChat = channel === 'all' || channel === 'chat' || channel === 'messenger'
   const wantCall = channel === 'all' || channel === 'call'
   const wantSummary = channel === 'all' || channel === 'summary'
+  const wantMessenger = channel === 'all' || channel === 'messenger'
 
   const [chatMessages, callSessions] = await Promise.all([
     wantChat
-      ? Message.find({ leadId, origin: { $ne: 'call' } })
+      ? Message.find({
+          leadId,
+          ...(channel === 'messenger' ? { origin: 'messenger' } : { origin: { $ne: 'call' } }),
+        })
           .sort({ createdAt: 1 })
           .populate('senderId', 'name')
           .select('senderType senderId senderName content createdAt isRead origin callSessionId channel')
@@ -132,6 +136,7 @@ exports.getLeadTranscripts = asyncHandler(async (req, res) => {
     jobId: lead.jobId || null,
     tabs: {
       hasChat: wantChat ? chatRows.length > 0 : undefined,
+      hasMessenger: wantMessenger ? chatRows.some((row) => row.origin === 'messenger') : undefined,
       hasCall: wantCall ? callPayload.sessionCount > 0 : undefined,
       hasSummary: wantSummary ? Boolean(String(summaryText).trim()) : undefined,
     },
@@ -149,11 +154,20 @@ exports.getLeadTranscripts = asyncHandler(async (req, res) => {
     }
   }
 
-  if (wantChat) {
+  if (wantChat && channel !== 'messenger') {
     data.chat = {
       messageCount: chatRows.length,
       messages: chatRows,
     }
+  }
+
+  if (wantMessenger) {
+    const messengerRows = chatRows.filter((row) => row.origin === 'messenger')
+    data.messenger = {
+      messageCount: messengerRows.length,
+      messages: messengerRows,
+    }
+    data.tabs.hasMessenger = messengerRows.length > 0
   }
 
   if (wantCall) {

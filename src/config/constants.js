@@ -1,5 +1,5 @@
 const USER_ROLES = ["admin", "sales", "construction", "plant", "account"];
-const LEAD_SOURCES = ["chat", "manual", "import", "customer_portal", "call"];
+const LEAD_SOURCES = ["chat", "manual", "import", "customer_portal", "call", "messenger"];
 const LEAD_TEMPERATURES = ["hot", "warm", "cold"];
 
 /** Which of the client's businesses a project (lead) belongs to. */

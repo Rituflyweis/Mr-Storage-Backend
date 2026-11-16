@@ -309,6 +309,7 @@ const buildChatRequest = (currentMessages, options = {}) => {
     currentConversationSummary = '',
     needsContactDetails = false,
     voiceMode = false,
+    messengerMode = false,
     projectLead = null,
   } = options
 
@@ -316,7 +317,11 @@ const buildChatRequest = (currentMessages, options = {}) => {
     '\n\nVOICE CALL MODE: Speak first, in one or two short sentences. Put the answer in the first few words. No markdown, bullets, or lists. The internal marker lines come after the spoken words, never before them. If a project is already on file, continue that project out loud. Never tell the caller you have no previous conversation. You are already on the phone with them. Never say you are about to call, never say you are dialing, and never read their number back as a call you are placing.\n'
   const chatCallRule =
     '\n\nIf the customer asks you to call them, say you are calling the phone number on file now. Do not say you are unable to place a call.\n'
-  const stablePrompt = buildSalesSystemPrompt() + (voiceMode ? voiceRules : chatCallRule)
+  const messengerRules =
+    '\n\nFACEBOOK MESSENGER: This conversation is in Facebook Messenger. Write short plain-text replies with no markdown. Do not say you are placing a phone call. If they share a phone number or email, acknowledge it and keep gathering the project details.\n'
+  const stablePrompt = buildSalesSystemPrompt() + (
+    voiceMode ? voiceRules : messengerMode ? messengerRules : chatCallRule
+  )
   const livePrompt =
     buildContactBlock(customer, { needsContactDetails }) +
     buildProjectMemoryBlock(projectLead || { aiContextSummary: currentConversationSummary })

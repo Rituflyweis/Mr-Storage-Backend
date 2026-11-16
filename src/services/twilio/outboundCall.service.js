@@ -88,6 +88,11 @@ const timezoneFor = ({ e164, state }) => {
   return env.VOICE_OUTBOUND_DEFAULT_TZ || 'America/Chicago'
 }
 
+const isMessengerPlaceholder = (customer) =>
+  customer?.source === 'messenger' ||
+  String(customer?.phone?.countryCode || '') === '+0' ||
+  String(customer?.email || '').endsWith('@pending.messenger.local')
+
 const toE164 = (customer) => {
   const cc = digitsOnly(customer?.phone?.countryCode || '1') || '1'
   let national = digitsOnly(customer?.phone?.number)
@@ -154,7 +159,7 @@ const requestCallFromChat = async ({ lead, customer, text }) => {
 
   const leadId = lead?._id || lead
   const person = await loadCustomer(customer || lead?.customerId)
-  if (!person || person.voiceOptOut) return null
+  if (!person || person.voiceOptOut || isMessengerPlaceholder(person)) return null
   const toNumber = toE164(person)
   if (!toNumber) return null
 
@@ -193,7 +198,7 @@ const enqueueInquiryCallback = async ({ lead, customer, customerId }) => {
   if (!env.VOICE_OUTBOUND_ENABLED) return null
   const leadId = lead?._id || lead
   const person = await loadCustomer(customer || customerId || lead?.customerId)
-  if (!person || person.voiceOptOut) return null
+  if (!person || person.voiceOptOut || isMessengerPlaceholder(person)) return null
   const toNumber = toE164(person)
   if (!toNumber) return null
 

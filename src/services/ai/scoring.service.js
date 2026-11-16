@@ -153,8 +153,10 @@ const updateLeadScore = async (leadId, messages, leadName = '') => {
       })
     }
     await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'ai_scoring', includeScoreRow: true })
+    return { scoreData, lead }
   } catch (err) {
     console.error('[Scoring] updateLeadScore failed:', err.message)
+    return null
   }
 }
 

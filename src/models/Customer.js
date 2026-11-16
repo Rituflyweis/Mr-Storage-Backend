@@ -34,6 +34,8 @@ const CustomerSchema = new mongoose.Schema(
     onlineAt:          { type: Date, default: null },
     lastSeenAt:        { type: Date, default: null },
     source:            { type: String, enum: LEAD_SOURCES, default: 'chat' },
+    /** Facebook Page-scoped id. Set for leads that start in Messenger. */
+    facebookPsid:      { type: String, default: null, trim: true },
     /** Set when they reply STOP. Outbound calls and follow-up texts are skipped. */
     voiceOptOut:       { type: Boolean, default: false },
     /** Set when sales creates customer via POST /api/sales/customers/basic (no lead yet). */
@@ -60,6 +62,7 @@ const CustomerSchema = new mongoose.Schema(
 
 // email is already indexed via unique:true — only add phone index separately
 CustomerSchema.index({ 'phone.number': 1 })
+CustomerSchema.index({ facebookPsid: 1 }, { unique: true, sparse: true })
 
 CustomerSchema.methods.toJSON = function () {
   const obj = this.toObject()

@@ -181,4 +181,10 @@ module.exports = {
     (process.env.DB_BACKUP_TIMEZONE || "").trim() || "Asia/Kolkata",
   PROJECT_ID_TIMEZONE:
     (process.env.PROJECT_ID_TIMEZONE || "").trim() || "America/New_York",
+
+  FACEBOOK_PAGE_ACCESS_TOKEN: (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim(),
+  FACEBOOK_APP_SECRET: (process.env.FACEBOOK_APP_SECRET || "").trim(),
+  FACEBOOK_VERIFY_TOKEN: (process.env.FACEBOOK_VERIFY_TOKEN || "").trim(),
+  FACEBOOK_PAGE_ID: (process.env.FACEBOOK_PAGE_ID || "").trim(),
+  FACEBOOK_GRAPH_VERSION: (process.env.FACEBOOK_GRAPH_VERSION || "v21.0").trim(),
 };

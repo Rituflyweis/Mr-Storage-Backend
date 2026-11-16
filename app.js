@@ -23,7 +23,12 @@ app.use(
 )
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json({
+  limit: '2mb',
+  verify: (req, _res, buf) => {
+    if (req.originalUrl.startsWith('/api/facebook/')) req.rawBody = buf
+  },
+}))
 app.use(express.urlencoded({ extended: true }))
 
 // express.json()/urlencoded() leave req.body as undefined (not {}) when the request
@@ -59,6 +64,7 @@ app.use('/api/public',        require('./src/routes/public.routes'))
 // Twilio Voice webhooks — no JWT; validated via X-Twilio-Signature when enabled
 app.use('/api/twilio/voice',  require('./src/routes/twilio/voice.routes'))
 app.use('/api/twilio/sms',    require('./src/routes/twilio/sms.routes'))
+app.use('/api/facebook/messenger', require('./src/routes/facebook/messenger.routes'))
 app.use('/api/packing-lists', require('./src/routes/packingListPublicAlias.routes'))
 app.use('/api/packing-list', require('./src/routes/packingListPublicAlias.routes'))
 app.use('/api/admin',   require('./src/routes/admin/index'))
