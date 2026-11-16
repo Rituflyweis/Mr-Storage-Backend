@@ -25,7 +25,7 @@ const mapMessage = (m) => ({
       : m.senderType === 'admin'
         ? m.senderId?.name || m.senderName || 'Admin'
         : m.senderType === 'ai'
-          ? 'Alex'
+          ? 'Sam'
           : m.senderName || undefined,
   content: m.content,
   createdAt: m.createdAt,

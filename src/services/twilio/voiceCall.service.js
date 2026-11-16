@@ -213,7 +213,9 @@ const formatSqft = (sqft) => {
 const buildReturningGreeting = (customer, lead) => {
   const rawName = String(customer?.firstName || '').trim()
   const name = rawName && !['caller', 'guest'].includes(rawName.toLowerCase()) ? rawName : ''
-  const hi = name ? `Hi ${name}, this is Alex.` : 'Hi, this is Alex.'
+  const hi = name
+    ? `Hi ${name}, this is Sam with Steel Building Depot.`
+    : 'Hi, this is Sam with Steel Building Depot.'
   const type = String(lead?.buildingType || '').trim()
   const sqft = formatSqft(lead?.sqft)
   const where = [lead?.city, lead?.state, lead?.location].filter(Boolean).join(', ')
@@ -406,7 +408,7 @@ const handleInbound = async (body = {}, req = null) => {
   }
 
   const greeting = session.needsContactDetails
-    ? `Thanks for calling. I'm Alex from our sales team. To get started, may I have your name please?`
+    ? `Hi, this is Sam with Steel Building Depot. To get started, may I have your name please?`
     : buildReturningGreeting(customer, lead)
 
   await saveTurnAndMessage({
@@ -467,10 +469,7 @@ const handleOutbound = async (body = {}, req = null) => {
     })
   }
 
-  const returning = buildReturningGreeting(customer, lead)
-  const greeting = returning.includes('What can I help you with today')
-    ? outboundCall.outboundGreeting(customer, lead, null)
-    : returning
+  const greeting = outboundCall.outboundGreeting(customer, lead, null)
 
   await saveTurnAndMessage({ session, role: 'ai', transcript: greeting })
   return respondWithVoice(req, session, greeting)

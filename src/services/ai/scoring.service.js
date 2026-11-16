@@ -27,7 +27,7 @@ const scoreLead = async (messages, leadName = '') => {
 
   const transcript = messages
     .filter(m => m.senderType === 'customer' || m.senderType === 'ai')
-    .map(m => `${m.senderType === 'customer' ? (leadName || 'Customer') : 'Alex'}: ${m.content}`)
+    .map(m => `${m.senderType === 'customer' ? (leadName || 'Customer') : 'Sam'}: ${m.content}`)
     .join('\n')
     .slice(0, maxChars)
 
@@ -75,7 +75,7 @@ Timeline normalization (current calendar year is ${currentYear}):
 - If the customer answered a start/timeline question with only a month name (e.g. "September"), record timeline as that month in ${currentYear} in scoreBreakdown.timeline.reason and requirements summary.
 - Do NOT leave timeline incomplete just because the customer omitted the year.
 
-requirementsComplete MUST be false if budget OR decision-maker OR any of the 10 fields is still missing or only asked by Alex but not answered by the customer.
+requirementsComplete MUST be false if budget OR financing OR any required field is still missing or only asked by Sam but not answered by the customer.
 projectClarity points must be 0-15 (never exceed 15).
 
 TRANSCRIPT:

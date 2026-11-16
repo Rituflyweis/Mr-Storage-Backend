@@ -157,7 +157,7 @@ const saveMessage = async ({ lead, customer, senderType, content, facebookMid })
     content,
     origin: 'messenger',
     ...(facebookMid ? { facebookMid } : {}),
-    senderName: senderType === 'customer' ? customer.firstName || 'Facebook' : 'Alex',
+    senderName: senderType === 'customer' ? customer.firstName || 'Facebook' : 'Sam',
   })
   if (global.io) {
     const payload = {

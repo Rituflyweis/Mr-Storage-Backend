@@ -26,9 +26,6 @@ const STATE_TZ = {
   AK: 'America/Anchorage', HI: 'Pacific/Honolulu',
 }
 
-const companyName = () =>
-  String(env.INVOICE_COMPANY_NAME || 'Steel Building Depot').replace(/\s+/g, ' ').trim() || 'Steel Building Depot'
-
 const ourNumber = () => env.TWILIO_PHONE_NUMBER || env.TWILIO_FROM_PHONE || ''
 
 const webhookBase = () => (env.TWILIO_WEBHOOK_BASE_URL || '').replace(/\/$/, '')
@@ -110,22 +107,22 @@ const firstName = (customer) => {
 const voicemailMessage = (customer) => {
   const who = firstName(customer)
   const hi = who ? `Hi ${who}.` : 'Hi.'
-  return `${hi} This is Alex with ${companyName()}. I'm following up on the building you asked about. Please call us back at ${ourNumber()} or we will try you again. Goodbye.`
+  return `${hi} This is Sam with Steel Building Depot, following up on the building you asked about. Please call us back at ${ourNumber()} or we will try you again. Goodbye.`
 }
 
 const smsBody = (customer) => {
   const who = firstName(customer)
   const hi = who ? `Hi ${who},` : 'Hi,'
-  return `${hi} this is Alex from ${companyName()}. We tried to reach you about your building inquiry. Call us back at ${ourNumber()}, or reply STOP to opt out.`
+  return `${hi} this is Sam with Steel Building Depot. We tried to reach you about the building you asked about. Call us back at ${ourNumber()}, or reply STOP to opt out.`
 }
 
 const outboundGreeting = (customer, lead, hasProjectGreeting) => {
   if (hasProjectGreeting) return hasProjectGreeting
   const who = firstName(customer)
   const hi = who
-    ? `Hi ${who}, this is Alex with ${companyName()}.`
-    : `Hi, this is Alex with ${companyName()}.`
-  return `${hi} I'm following up on the building you asked about. Do you have a minute to talk?`
+    ? `Hi ${who}, this is Sam with Steel Building Depot,`
+    : 'Hi, this is Sam with Steel Building Depot,'
+  return `${hi} following up on the building you asked about.`
 }
 
 let client = null
