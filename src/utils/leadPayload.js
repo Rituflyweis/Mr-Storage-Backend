@@ -26,6 +26,9 @@ const LEAD_EDIT_BODY_KEYS = [
   'numberOfBuildings',
   'lifecycleStatus',
   'notes',
+  'email',
+  'phone',
+  'countryCode',
 ]
 
 const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
