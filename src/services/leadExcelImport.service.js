@@ -269,13 +269,17 @@ const importOneRow = async (row, ctx) => {
   const dupKey = buildDuplicateKey(projectName, city, state, postalCode)
   if (!ctx.duplicateKeys) ctx.duplicateKeys = new Set()
   if (ctx.duplicateKeys.has(dupKey)) {
-    return { status: 'skipped', reason: 'duplicate project' }
+    return { status: 'skipped', reason: `duplicate project: ${projectName}`, projectName }
   }
   // Claim the project before any await so a parallel row of the same project cannot pass this check.
   ctx.duplicateKeys.add(dupKey)
   const dup = await resolveDuplicateLead(projectName, city, state, postalCode)
   if (dup) {
-    return { status: 'skipped', reason: 'duplicate project', leadId: dup._id }
+    return {
+      status: 'skipped',
+      reason: `duplicate project: ${dup.projectName || projectName}`,
+      projectName: dup.projectName || projectName,
+    }
   }
 
   const { email, phone, name } = pickCustomerIdentity(row)
@@ -387,7 +391,12 @@ const applyRowOutcome = (results, rowIndex, outcome, maxErrors) => {
   if (outcome.status === 'created') results.created++
   else results.skipped++
   if (outcome.reason && outcome.status === 'skipped' && results.errors.length < maxErrors) {
-    results.errors.push({ row: rowIndex + 1, reason: outcome.reason, leadId: outcome.leadId })
+    results.errors.push({
+      row: rowIndex + 1,
+      reason: outcome.reason,
+      ...(outcome.projectName ? { projectName: outcome.projectName } : {}),
+      ...(outcome.leadId ? { leadId: outcome.leadId } : {}),
+    })
   }
 }
 

@@ -138,7 +138,7 @@ No `async` / `jobId` fields.
     "skipped": 3,
     "totalRows": 15,
     "errors": [
-      { "row": 4, "reason": "duplicate project", "leadId": "671a2b3c4d5e6f7a8b9c0d1e" }
+      { "row": 4, "reason": "duplicate project: Bob Grazulis - 80x100 PEMB", "projectName": "Bob Grazulis - 80x100 PEMB" }
     ],
     "headerRowIndex": 4,
     "sheetName": "Leads"
@@ -254,7 +254,7 @@ Same fields as async POST `data`. While running, `processedRows`, `created`, `sk
     "created": 18,
     "skipped": 42,
     "progressPct": 60,
-    "errors": [{ "row": 2, "reason": "duplicate project", "leadId": "..." }],
+    "errors": [{ "row": 2, "reason": "duplicate project: Bob Grazulis - 80x100 PEMB", "projectName": "Bob Grazulis - 80x100 PEMB" }],
     "headerRowIndex": 4,
     "sheetName": "Leads",
     "sourceFileName": "leads.xlsx",
@@ -384,7 +384,7 @@ Row-level issues are **not** HTTP errors — they appear in `data.errors[]` (max
 
 | `errors[].reason` | Meaning |
 |-------------------|---------|
-| `duplicate project` | Lead already exists (same project + city + state + ZIP) |
+| `duplicate project: <project name>` | Lead already exists (same project + city + state + ZIP). Show `projectName` or `reason`. Do not append `leadId`. |
 | `missing projectName` | Empty row |
 
 ---
@@ -392,7 +392,7 @@ Row-level issues are **not** HTTP errors — they appear in `data.errors[]` (max
 ## 6. Business rules (for copy in UI)
 
 - **Required column:** **Project** (TractIQ header row is auto-detected; often row 4).
-- **No customer email/phone in sheet:** backend creates placeholder customers; leads still import.
+- **No customer email/phone in sheet:** the customer is saved without email and phone. Leads still import.
 - **Duplicates:** skipped, not updated.
 - **Assignment:** new leads are assigned to sales staff in **round-robin** (`assignedSales`, `isHandedToSales: true`).
 - **Source:** `import`; extra TractIQ columns go into lead **notes**.
