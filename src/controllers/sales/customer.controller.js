@@ -12,6 +12,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
 const { withProjectIdFields, enrichLeadDocument } = require('../../utils/leadProjectId')
 const { buildLeadCreatePayload, escapeRegex } = require('../../utils/leadPayload')
+const { applyCustomerContactUpdate } = require('../../utils/customerContactUpdate')
 const { applyBusinessUnitFilter, businessUnitFields } = require('../../utils/businessUnit')
 const {
   SALES_ASSIGNED_LEAD_MATCH,
@@ -202,30 +203,8 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
     customer.firstName = trimmed
   }
 
-  if (email !== undefined) {
-    const normalizedEmail = String(email).toLowerCase().trim()
-    if (!normalizedEmail) return badRequest(res, 'email cannot be empty')
-    const emailTaken = await Customer.findOne({
-      email: normalizedEmail,
-      _id: { $ne: customer._id },
-    }).lean()
-    if (emailTaken) return badRequest(res, 'Customer with this email already exists')
-    customer.email = normalizedEmail
-  }
-
-  if (phone !== undefined) {
-    const trimmedPhone = String(phone).trim()
-    if (!trimmedPhone) return badRequest(res, 'phone cannot be empty')
-    customer.phone = {
-      number: trimmedPhone,
-      countryCode: countryCode !== undefined ? String(countryCode).trim() : (customer.phone?.countryCode || ''),
-    }
-  } else if (countryCode !== undefined) {
-    customer.phone = {
-      number: customer.phone?.number || '',
-      countryCode: String(countryCode).trim(),
-    }
-  }
+  const contact = await applyCustomerContactUpdate(customer, { email, phone, countryCode })
+  if (contact.error) return badRequest(res, contact.error)
 
   await customer.save()
 

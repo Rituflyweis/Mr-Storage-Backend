@@ -17,6 +17,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES, LEAD_TEMPERATURES, PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES, PO_STATUSES } = require('../../config/constants')
 const { buildLeadCreatePayload, applyLeadUpdateFromBody, escapeRegex } = require('../../utils/leadPayload')
+const { applyCustomerContactUpdate } = require('../../utils/customerContactUpdate')
 const {
   buildSalesLeadFilter,
   buildSalesLeadsByScoreFilter,
@@ -621,6 +622,15 @@ exports.editLead = asyncHandler(async (req, res) => {
   const { error: updateError, lifecycleStatus } = applyLeadUpdateFromBody(lead, req.body)
   if (updateError) return badRequest(res, updateError)
 
+  let customer = null
+  if (req.body.email !== undefined || req.body.phone !== undefined || req.body.countryCode !== undefined) {
+    customer = await Customer.findById(lead.customerId)
+    if (!customer) return notFound(res, 'Customer not found')
+    const contact = await applyCustomerContactUpdate(customer, req.body)
+    if (contact.error) return badRequest(res, contact.error)
+    if (contact.changed) await customer.save()
+  }
+
   if (req.body.projectName !== undefined && lead.projectName) {
     const duplicate = await Lead.findOne({
       customerId: lead.customerId,
@@ -665,7 +675,10 @@ exports.editLead = asyncHandler(async (req, res) => {
   })
   await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'lead_edited', includeScoreRow: true })
 
-  return success(res, { lead: enrichLeadDocument(lead) })
+  return success(res, {
+    lead: enrichLeadDocument(lead),
+    ...(customer ? { customer: customer.toJSON() } : {}),
+  })
 })
 
 exports.getArchivedLeads = asyncHandler(async (req, res) => {

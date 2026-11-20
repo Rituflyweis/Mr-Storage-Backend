@@ -60,6 +60,9 @@ const leadEditFieldValidators = [
   body('numberOfBuildings').optional({ nullable: true }).isInt({ min: 1 }),
   body('lifecycleStatus').optional().trim(),
   body('notes').optional().trim(),
+  body('email').optional({ values: 'falsy' }).isEmail().withMessage('email must be a valid email'),
+  body('phone').optional({ values: 'falsy' }).trim(),
+  body('countryCode').optional({ values: 'falsy' }).trim(),
 ]
 
 module.exports = {
