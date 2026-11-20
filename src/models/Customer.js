@@ -34,8 +34,8 @@ const CustomerSchema = new mongoose.Schema(
     onlineAt:          { type: Date, default: null },
     lastSeenAt:        { type: Date, default: null },
     source:            { type: String, enum: LEAD_SOURCES, default: 'chat' },
-    /** Facebook Page-scoped id. Set for leads that start in Messenger. */
-    facebookPsid:      { type: String, default: null, trim: true },
+    /** Facebook Page-scoped id. Omitted unless the lead actually came from Messenger. */
+    facebookPsid:      { type: String, trim: true },
     /** Set when they reply STOP. Outbound calls and follow-up texts are skipped. */
     voiceOptOut:       { type: Boolean, default: false },
     /** Set when sales creates customer via POST /api/sales/customers/basic (no lead yet). */
@@ -57,12 +57,22 @@ const CustomerSchema = new mongoose.Schema(
     resetOtpVerified:  { type: Boolean, default: false },
     documents:         { type: [CustomerDocumentSchema], default: [] },
   },
-  { timestamps: true }
+  { timestamps: true, autoIndex: false }
 )
 
 // email is already indexed via unique:true — only add phone index separately
 CustomerSchema.index({ 'phone.number': 1 })
-CustomerSchema.index({ facebookPsid: 1 }, { unique: true, sparse: true })
+// Unique only when a real PSID is stored. A missing id must not collide with other customers.
+CustomerSchema.index(
+  { facebookPsid: 1 },
+  { unique: true, partialFilterExpression: { facebookPsid: { $type: 'string' } } },
+)
+
+CustomerSchema.pre('save', function stripBlankFacebookPsid() {
+  if (this.facebookPsid == null || String(this.facebookPsid).trim() === '') {
+    this.facebookPsid = undefined
+  }
+})
 
 CustomerSchema.methods.toJSON = function () {
   const obj = this.toObject()
