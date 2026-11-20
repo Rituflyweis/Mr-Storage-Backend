@@ -286,40 +286,48 @@ const importOneRow = async (row, ctx) => {
   if (ctx.duplicateKeys.has(dupKey)) {
     return { status: 'skipped', reason: 'duplicate project' }
   }
+  // Claim the project before any await so a parallel row of the same project cannot pass this check.
+  ctx.duplicateKeys.add(dupKey)
   const dup = await resolveDuplicateLead(projectName, city, state, postalCode)
   if (dup) {
-    ctx.duplicateKeys.add(dupKey)
     return { status: 'skipped', reason: 'duplicate project', leadId: dup._id }
   }
-  ctx.duplicateKeys.add(dupKey)
 
   const { email, phone, name } = pickCustomerIdentity(row)
   if (!ctx.customerCache) ctx.customerCache = new Map()
+  if (!ctx.customerInflight) ctx.customerInflight = new Map()
   let customer = ctx.customerCache.get(email)
   if (!customer) {
-    customer = await Customer.findOne({ email })
-    if (!customer) {
-      const existingPhone = await Customer.findOne({ 'phone.number': phone })
-      if (existingPhone) customer = existingPhone
+    let pending = ctx.customerInflight.get(email)
+    if (!pending) {
+      pending = (async () => {
+        let found = await Customer.findOne({ email })
+        if (!found) {
+          const existingPhone = await Customer.findOne({ 'phone.number': phone })
+          if (existingPhone) found = existingPhone
+        }
+        if (!found) {
+          const custId = await generateCustomerId()
+          const hashed = await bcrypt.hash(phone, 12)
+          const nameParts = name.split(/\s+/)
+          found = await Customer.create({
+            customerId: custId,
+            firstName: nameParts[0] || 'Import',
+            lastName: nameParts.slice(1).join(' '),
+            email,
+            phone: { number: phone, countryCode: '+1' },
+            password: hashed,
+            source: 'import',
+            company: row.ownerLlc || row.developerOwner || '',
+            location: buildLocationString(row),
+          })
+        }
+        ctx.customerCache.set(email, found)
+        return found
+      })()
+      ctx.customerInflight.set(email, pending)
     }
-    if (customer) ctx.customerCache.set(email, customer)
-  }
-  if (!customer) {
-    const custId = await generateCustomerId()
-    const hashed = await bcrypt.hash(phone, 12)
-    const nameParts = name.split(/\s+/)
-    customer = await Customer.create({
-      customerId: custId,
-      firstName: nameParts[0] || 'Import',
-      lastName: nameParts.slice(1).join(' '),
-      email,
-      phone: { number: phone, countryCode: '+1' },
-      password: hashed,
-      source: 'import',
-      company: row.ownerLlc || row.developerOwner || '',
-      location: buildLocationString(row),
-    })
-    ctx.customerCache.set(email, customer)
+    customer = await pending
   }
 
   const useRoundRobin = ctx.useRoundRobin !== false
