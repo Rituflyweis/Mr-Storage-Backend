@@ -1,4 +1,3 @@
-const crypto = require('crypto')
 const ExcelJS = require('exceljs')
 const bcrypt = require('bcryptjs')
 const { parse } = require('csv-parse/sync')
@@ -9,8 +8,6 @@ const { normalizeBusinessUnit } = require('../utils/businessUnit')
 const { syncLeadBuildings } = require('./leadBuilding.service')
 const roundRobinService = require('./roundRobin.service')
 const leadListSocket = require('./leadListSocket.service')
-
-const IMPORT_EMAIL_DOMAIN = 'imports.mrstorage.internal'
 
 const EMPTY_CELL_VALUES = new Set(['none', 'null', 'n/a', 'na', '-', '—'])
 
@@ -181,8 +178,9 @@ const pickCustomerIdentity = (row) => {
     row.businessContact?.replace(/[^\d+]/g, '') ||
     ''
 
-  let email = emailRaw.toLowerCase().trim()
-  let phone = phoneRaw.replace(/[^\d]/g, '').slice(-15)
+  const email = emailRaw.toLowerCase().trim()
+  const digits = phoneRaw.replace(/[^\d]/g, '').slice(-15)
+  const phone = digits.length >= 7 ? digits : ''
 
   const name =
     row.customerName ||
@@ -192,19 +190,6 @@ const pickCustomerIdentity = (row) => {
     row.ownerLlc ||
     (row.projectName ? row.projectName.split(' ').slice(0, 2).join(' ') : '') ||
     'Import Contact'
-
-  if (!email) {
-    const hash = crypto
-      .createHash('sha256')
-      .update(`${row.projectName}|${buildLocationString(row)}`)
-      .digest('hex')
-      .slice(0, 20)
-    email = `import.${hash}@${IMPORT_EMAIL_DOMAIN}`
-  }
-  if (!phone || phone.length < 7) {
-    const hash = crypto.createHash('md5').update(email).digest('hex').replace(/\D/g, '').slice(0, 10)
-    phone = `900${hash}`.slice(0, 15)
-  }
 
   return { email, phone, name: String(name).trim().slice(0, 120) }
 }
@@ -296,38 +281,44 @@ const importOneRow = async (row, ctx) => {
   const { email, phone, name } = pickCustomerIdentity(row)
   if (!ctx.customerCache) ctx.customerCache = new Map()
   if (!ctx.customerInflight) ctx.customerInflight = new Map()
-  let customer = ctx.customerCache.get(email)
-  if (!customer) {
-    let pending = ctx.customerInflight.get(email)
-    if (!pending) {
-      pending = (async () => {
-        let found = await Customer.findOne({ email })
-        if (!found) {
-          const existingPhone = await Customer.findOne({ 'phone.number': phone })
-          if (existingPhone) found = existingPhone
-        }
-        if (!found) {
-          const custId = await generateCustomerId()
-          const hashed = await bcrypt.hash(phone, 12)
-          const nameParts = name.split(/\s+/)
-          found = await Customer.create({
-            customerId: custId,
-            firstName: nameParts[0] || 'Import',
-            lastName: nameParts.slice(1).join(' '),
-            email,
-            phone: { number: phone, countryCode: '+1' },
-            password: hashed,
-            source: 'import',
-            company: row.ownerLlc || row.developerOwner || '',
-            location: buildLocationString(row),
-          })
-        }
-        ctx.customerCache.set(email, found)
-        return found
-      })()
-      ctx.customerInflight.set(email, pending)
+  const identityKey = email || (phone ? `phone:${phone}` : '')
+  const findOrCreateCustomer = async () => {
+    let found = null
+    if (email) found = await Customer.findOne({ email })
+    if (!found && phone) found = await Customer.findOne({ 'phone.number': phone })
+    if (!found) {
+      const custId = await generateCustomerId()
+      const nameParts = name.split(/\s+/)
+      const doc = {
+        customerId: custId,
+        firstName: nameParts[0] || 'Import',
+        lastName: nameParts.slice(1).join(' '),
+        source: 'import',
+        company: row.ownerLlc || row.developerOwner || '',
+        location: buildLocationString(row),
+      }
+      if (email) doc.email = email
+      if (phone) {
+        doc.phone = { number: phone, countryCode: '+1' }
+        doc.password = await bcrypt.hash(phone, 12)
+      }
+      found = await Customer.create(doc)
     }
-    customer = await pending
+    if (email) ctx.customerCache.set(email, found)
+    return found
+  }
+  let customer = identityKey ? ctx.customerCache.get(identityKey) : null
+  if (!customer) {
+    if (!identityKey) {
+      customer = await findOrCreateCustomer()
+    } else {
+      let pending = ctx.customerInflight.get(identityKey)
+      if (!pending) {
+        pending = findOrCreateCustomer()
+        ctx.customerInflight.set(identityKey, pending)
+      }
+      customer = await pending
+    }
   }
 
   const useRoundRobin = ctx.useRoundRobin !== false

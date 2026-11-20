@@ -20,13 +20,13 @@ const CustomerSchema = new mongoose.Schema(
     customerId:        { type: String, unique: true },
     firstName:         { type: String, required: true, trim: true },
     lastName:          { type: String, default: '' },
-    email:             { type: String, required: true, unique: true, lowercase: true, trim: true },
+    email:             { type: String, lowercase: true, trim: true },
     phone: {
-      number:          { type: String, required: true, trim: true },
-      countryCode:     { type: String, required: true, trim: true },
+      number:          { type: String, trim: true },
+      countryCode:     { type: String, trim: true },
     },
     mobile:            { type: String, default: '', trim: true },
-    password:          { type: String, required: true },
+    password:          { type: String },
     passwordChangedAt: { type: Date, default: null },
     photo:             { type: String, default: null },
     isActive:          { type: Boolean, default: true },
@@ -60,17 +60,27 @@ const CustomerSchema = new mongoose.Schema(
   { timestamps: true, autoIndex: false }
 )
 
-// email is already indexed via unique:true — only add phone index separately
 CustomerSchema.index({ 'phone.number': 1 })
+// Unique only when an email is stored, so many imported leads can omit it.
+CustomerSchema.index(
+  { email: 1 },
+  { unique: true, partialFilterExpression: { email: { $type: 'string' } } },
+)
 // Unique only when a real PSID is stored. A missing id must not collide with other customers.
 CustomerSchema.index(
   { facebookPsid: 1 },
   { unique: true, partialFilterExpression: { facebookPsid: { $type: 'string' } } },
 )
 
-CustomerSchema.pre('save', function stripBlankFacebookPsid() {
+CustomerSchema.pre('save', function stripBlankContactFields() {
   if (this.facebookPsid == null || String(this.facebookPsid).trim() === '') {
     this.facebookPsid = undefined
+  }
+  if (this.email == null || String(this.email).trim() === '') {
+    this.email = undefined
+  }
+  if (!String(this.phone?.number || '').trim()) {
+    this.phone = undefined
   }
 })
 

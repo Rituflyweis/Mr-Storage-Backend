@@ -24,6 +24,19 @@ const repairFacebookPsidIndex = async () => {
     if (cleared.modifiedCount) {
       console.log(`[DB] cleared blank facebookPsid on ${cleared.modifiedCount} customers`)
     }
+    const emailIndex = indexes.find((index) => index.name === 'email_1')
+    const emailPartial = emailIndex?.partialFilterExpression?.email?.$type === 'string'
+    if (emailIndex && !emailPartial) {
+      await coll.dropIndex('email_1')
+      console.log('[DB] dropped non-partial email index')
+    }
+    const clearedEmails = await coll.updateMany(
+      { email: { $in: [null, ''] } },
+      { $unset: { email: '' } },
+    )
+    if (clearedEmails.modifiedCount) {
+      console.log(`[DB] cleared blank email on ${clearedEmails.modifiedCount} customers`)
+    }
   } catch (err) {
     if (err.code !== 26 && err.codeName !== 'NamespaceNotFound') {
       console.warn('[DB] facebookPsid index repair:', err.message)
