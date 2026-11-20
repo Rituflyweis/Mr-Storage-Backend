@@ -31,6 +31,9 @@ const projectFieldValidators = [
   body('insulation').optional().isNumeric(),
   body('door').optional().isNumeric(),
   body('window').optional().isNumeric(),
+  body('email').optional({ values: 'falsy' }).isEmail().withMessage('email must be a valid email'),
+  body('phone').optional({ values: 'falsy' }).trim(),
+  body('countryCode').optional({ values: 'falsy' }).trim(),
 ]
 
 /** Lead section — same project fields + optional `source`. */

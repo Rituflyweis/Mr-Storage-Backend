@@ -17,7 +17,7 @@ const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES, LEAD_TEMPERATURES, PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES, PO_STATUSES } = require('../../config/constants')
 const { buildLeadCreatePayload, applyLeadUpdateFromBody, escapeRegex } = require('../../utils/leadPayload')
-const { applyCustomerContactUpdate } = require('../../utils/customerContactUpdate')
+const { applyCustomerContactUpdate, saveManualContactOnCustomer } = require('../../utils/customerContactUpdate')
 const {
   buildSalesLeadFilter,
   buildSalesLeadsByScoreFilter,
@@ -174,9 +174,12 @@ exports.getLeadsStats = asyncHandler(async (req, res) => {
 exports.createLead = asyncHandler(async (req, res) => {
   const { customerId, leadStatus, notes } = req.body
 
-  const customer = await Customer.findById(customerId).lean()
+  const customer = await Customer.findById(customerId)
   if (!customer) return notFound(res, 'Customer not found')
   if (customer.isActive === false) return badRequest(res, 'Customer is inactive')
+
+  const contact = await saveManualContactOnCustomer(customer, req.body)
+  if (contact.error) return badRequest(res, contact.error)
 
   const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
     customerId,

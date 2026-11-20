@@ -15,9 +15,9 @@ router.get('/', ctrl.getCustomers)
 router.post('/basic',
   [
     body('firstName').notEmpty().trim(),
-    body('email').isEmail(),
-    body('phone').notEmpty().trim(),
-    body('countryCode').optional().trim(),
+    body('email').optional({ values: 'falsy' }).isEmail().withMessage('email must be a valid email'),
+    body('phone').optional({ values: 'falsy' }).trim(),
+    body('countryCode').optional({ values: 'falsy' }).trim(),
   ],
   validate,
   ctrl.createCustomerBasic
@@ -27,8 +27,8 @@ router.post('/basic',
 router.put('/:customerId',
   [
     body('firstName').optional().notEmpty().trim(),
-    body('email').optional().isEmail(),
-    body('phone').optional().notEmpty().trim(),
+    body('email').optional({ values: 'falsy' }).isEmail().withMessage('email must be a valid email'),
+    body('phone').optional({ values: 'falsy' }).trim(),
     body('countryCode').optional().trim(),
   ],
   validate,

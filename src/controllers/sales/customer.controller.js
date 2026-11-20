@@ -1,48 +1,69 @@
-const Customer = require('../../models/Customer')
-const Lead = require('../../models/Lead')
-const Invoice = require('../../models/Invoice')
-const Building = require('../../models/Building')
-const ProjectBudget = require('../../models/ProjectBudget')
-const auditService = require('../../services/audit.service')
-const { syncLeadBuildings } = require('../../services/leadBuilding.service')
-const generateCustomerId = require('../../utils/generateCustomerId')
-const bcrypt = require('bcryptjs')
-const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
-const asyncHandler = require('../../utils/asyncHandler')
-const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../../config/constants')
-const { withProjectIdFields, enrichLeadDocument } = require('../../utils/leadProjectId')
-const { buildLeadCreatePayload, escapeRegex } = require('../../utils/leadPayload')
-const { applyCustomerContactUpdate } = require('../../utils/customerContactUpdate')
-const { applyBusinessUnitFilter, businessUnitFields } = require('../../utils/businessUnit')
+const Customer = require("../../models/Customer");
+const Lead = require("../../models/Lead");
+const Invoice = require("../../models/Invoice");
+const Building = require("../../models/Building");
+const ProjectBudget = require("../../models/ProjectBudget");
+const auditService = require("../../services/audit.service");
+const { syncLeadBuildings } = require("../../services/leadBuilding.service");
+const generateCustomerId = require("../../utils/generateCustomerId");
+const {
+  success,
+  created,
+  notFound,
+  forbidden,
+  badRequest,
+} = require("../../utils/apiResponse");
+const asyncHandler = require("../../utils/asyncHandler");
+const { AUDIT_ACTIONS, CLOSED_STAGES } = require("../../config/constants");
+const {
+  withProjectIdFields,
+  enrichLeadDocument,
+} = require("../../utils/leadProjectId");
+const {
+  buildLeadCreatePayload,
+  escapeRegex,
+} = require("../../utils/leadPayload");
+const {
+  applyCustomerContactUpdate,
+  buildManualCustomerContact,
+  saveManualContactOnCustomer,
+} = require("../../utils/customerContactUpdate");
+const {
+  applyBusinessUnitFilter,
+  businessUnitFields,
+} = require("../../utils/businessUnit");
 const {
   SALES_ASSIGNED_LEAD_MATCH,
   getSalesPortfolioCustomerIds,
-} = require('../../utils/customerPoFilter')
-const { applyCustomerSourceScope } = require('../../utils/customerImportScope')
-const { startOfMonth, endOfMonth } = require('date-fns')
+} = require("../../utils/customerPoFilter");
+const { applyCustomerSourceScope } = require("../../utils/customerImportScope");
+const { startOfMonth, endOfMonth } = require("date-fns");
 
 /** Assigned leads + customers created via sales basic create (may have no lead yet). */
 const getSalesVisibleCustomerIds = async (salesId) => {
   const [portfolioIds, createdIds] = await Promise.all([
     getSalesPortfolioCustomerIds(salesId),
-    Customer.find({ createdBySales: salesId }).distinct('_id'),
-  ])
-  return [...new Set([...portfolioIds.map(String), ...createdIds.map(String)])]
-}
+    Customer.find({ createdBySales: salesId }).distinct("_id"),
+  ]);
+  return [...new Set([...portfolioIds.map(String), ...createdIds.map(String)])];
+};
 
 const salesCanAccessCustomer = async (salesId, customerId) => {
-  const visible = await getSalesVisibleCustomerIds(salesId)
-  return visible.some((id) => String(id) === String(customerId))
-}
+  const visible = await getSalesVisibleCustomerIds(salesId);
+  return visible.some((id) => String(id) === String(customerId));
+};
 
 exports.getCustomerStats = asyncHandler(async (req, res) => {
-  const salesId = req.user._id
-  const now = new Date()
-  const monthStart = startOfMonth(now)
-  const monthEnd = endOfMonth(now)
+  const salesId = req.user._id;
+  const now = new Date();
+  const monthStart = startOfMonth(now);
+  const monthEnd = endOfMonth(now);
 
-  const visibleCustomerIds = await getSalesVisibleCustomerIds(salesId)
-  const scopeBase = applyCustomerSourceScope({ _id: { $in: visibleCustomerIds } }, req.query)
+  const visibleCustomerIds = await getSalesVisibleCustomerIds(salesId);
+  const scopeBase = applyCustomerSourceScope(
+    { _id: { $in: visibleCustomerIds } },
+    req.query,
+  );
 
   const [total, active, newThisMonth, returningAgg] = await Promise.all([
     Customer.countDocuments(scopeBase),
@@ -53,59 +74,66 @@ exports.getCustomerStats = asyncHandler(async (req, res) => {
     }),
     Lead.aggregate([
       { $match: { assignedSales: salesId, ...SALES_ASSIGNED_LEAD_MATCH } },
-      { $group: { _id: '$customerId', count: { $sum: 1 } } },
+      { $group: { _id: "$customerId", count: { $sum: 1 } } },
       { $match: { count: { $gt: 1 } } },
       {
         $lookup: {
-          from: 'customers',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'customer',
+          from: "customers",
+          localField: "_id",
+          foreignField: "_id",
+          as: "customer",
         },
       },
-      { $unwind: '$customer' },
+      { $unwind: "$customer" },
       {
         $match: applyCustomerSourceScope({}, req.query),
       },
-      { $count: 'total' },
+      { $count: "total" },
     ]),
-  ])
+  ]);
 
   return success(res, {
     total,
     active,
     newThisMonth,
     returning: returningAgg[0]?.total || 0,
-  })
-})
+  });
+});
 
 exports.getCustomers = asyncHandler(async (req, res) => {
-  const { search, isActive, page = 1, limit = 20 } = req.query
-  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
-  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
+  const { search, isActive, page = 1, limit = 20 } = req.query;
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1);
 
-  const visibleCustomerIds = await getSalesVisibleCustomerIds(req.user._id)
+  const visibleCustomerIds = await getSalesVisibleCustomerIds(req.user._id);
 
-  const filter = applyCustomerSourceScope({ _id: { $in: visibleCustomerIds } }, req.query)
+  const filter = applyCustomerSourceScope(
+    { _id: { $in: visibleCustomerIds } },
+    req.query,
+  );
   if (search && search.trim()) {
-    const regex = new RegExp(search.trim(), 'i')
-    filter.$or = [{ firstName: regex }, { email: regex }, { customerId: regex }]
+    const regex = new RegExp(search.trim(), "i");
+    filter.$or = [
+      { firstName: regex },
+      { email: regex },
+      { customerId: regex },
+    ];
   }
-  if (isActive === 'true') filter.isActive = true
-  else if (isActive === 'false') filter.isActive = false
+  if (isActive === "true") filter.isActive = true;
+  else if (isActive === "false") filter.isActive = false;
 
-  const skip = (parsedPage - 1) * parsedLimit
+  const skip = (parsedPage - 1) * parsedLimit;
   const [customers, total] = await Promise.all([
     Customer.find(filter)
-      .select('_id customerId firstName email phone source isActive createdAt')
+      .select("_id customerId firstName email phone source isActive createdAt")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
       .lean(),
     Customer.countDocuments(filter),
-  ])
+  ]);
 
-  const customerIds = customers.map(c => c._id)
+  const customerIds = customers.map((c) => c._id);
   const projectCounts = await Lead.aggregate([
     {
       $match: {
@@ -114,211 +142,232 @@ exports.getCustomers = asyncHandler(async (req, res) => {
         ...SALES_ASSIGNED_LEAD_MATCH,
       },
     },
-    { $group: { _id: '$customerId', count: { $sum: 1 } } },
-  ])
-  const countMap = new Map(projectCounts.map(p => [String(p._id), p.count]))
+    { $group: { _id: "$customerId", count: { $sum: 1 } } },
+  ]);
+  const countMap = new Map(projectCounts.map((p) => [String(p._id), p.count]));
 
-  const result = customers.map(c => ({ ...c, totalProjects: countMap.get(String(c._id)) || 0 }))
-  return success(res, { customers: result, total })
-})
+  const result = customers.map((c) => ({
+    ...c,
+    totalProjects: countMap.get(String(c._id)) || 0,
+  }));
+  return success(res, { customers: result, total });
+});
 
 exports.createCustomerBasic = asyncHandler(async (req, res) => {
-  const { firstName, email, phone, countryCode } = req.body
-  const normalizedEmail = email.toLowerCase().trim()
-  const phoneNumber = String(phone).trim()
+  const { firstName } = req.body;
+  const contact = await buildManualCustomerContact(req.body);
+  if (contact.error) return badRequest(res, contact.error);
 
-  const existing = await Customer.findOne({ email: normalizedEmail })
-  if (existing) return badRequest(res, 'Customer with this email already exists')
-
-  const custId = await generateCustomerId()
-  const hashed = await bcrypt.hash(phoneNumber, 12)
+  const custId = await generateCustomerId();
 
   const customer = await Customer.create({
     customerId: custId,
     firstName: firstName.trim(),
-    email: normalizedEmail,
-    phone: { number: phoneNumber, countryCode: countryCode?.trim() || '' },
-    password: hashed,
-    source: 'manual',
+    ...contact.fields,
+    source: "manual",
     createdBySales: req.user._id,
-  })
+  });
 
   await auditService.log({
-    type: 'lead',
+    type: "lead",
     action: AUDIT_ACTIONS.CUSTOMER_CREATED,
     customerId: customer._id,
     performedBy: req.user._id,
-    metadata: { email: customer.email, source: 'sales_basic_create' },
-  })
+    metadata: { email: customer.email, source: "sales_basic_create" },
+  });
 
-  return created(res, { customer })
-})
+  return created(res, { customer });
+});
 
 exports.getCustomerDetail = asyncHandler(async (req, res) => {
-  const { customerId } = req.params
+  const { customerId } = req.params;
   const {
     resolveCustomerDoc,
     buildCustomerDetailFinancials,
-  } = require('../../utils/customerDetailFinancials')
+  } = require("../../utils/customerDetailFinancials");
 
   const customer = await resolveCustomerDoc(
     customerId,
-    '_id customerId firstName lastName email phone location isActive source photo company createdAt'
-  )
-  if (!customer) return notFound(res, 'Customer not found')
+    "_id customerId firstName lastName email phone location isActive source photo company createdAt",
+  );
+  if (!customer) return notFound(res, "Customer not found");
 
   if (!(await salesCanAccessCustomer(req.user._id, customer._id))) {
-    return forbidden(res, 'Access denied')
+    return forbidden(res, "Access denied");
   }
 
-  const financialPayload = await buildCustomerDetailFinancials(customer._id)
+  const financialPayload = await buildCustomerDetailFinancials(customer._id);
 
   return success(res, {
     customer: {
       ...customer,
-      address: customer.location || '',
+      address: customer.location || "",
     },
     ...financialPayload,
-  })
-})
+  });
+});
 
 exports.updateCustomer = asyncHandler(async (req, res) => {
-  const { customerId } = req.params
-  const { firstName, email, phone, countryCode } = req.body
+  const { customerId } = req.params;
+  const { firstName, email, phone, countryCode } = req.body;
 
   if (firstName === undefined && email === undefined && phone === undefined) {
-    return badRequest(res, 'At least one of firstName, email, or phone is required')
+    return badRequest(
+      res,
+      "At least one of firstName, email, or phone is required",
+    );
   }
 
   if (!(await salesCanAccessCustomer(req.user._id, customerId))) {
-    return forbidden(res, 'Access denied')
+    return forbidden(res, "Access denied");
   }
 
-  const customer = await Customer.findById(customerId)
-  if (!customer) return notFound(res, 'Customer not found')
+  const customer = await Customer.findById(customerId);
+  if (!customer) return notFound(res, "Customer not found");
 
   if (firstName !== undefined) {
-    const trimmed = String(firstName).trim()
-    if (!trimmed) return badRequest(res, 'firstName cannot be empty')
-    customer.firstName = trimmed
+    const trimmed = String(firstName).trim();
+    if (!trimmed) return badRequest(res, "firstName cannot be empty");
+    customer.firstName = trimmed;
   }
 
-  const contact = await applyCustomerContactUpdate(customer, { email, phone, countryCode })
-  if (contact.error) return badRequest(res, contact.error)
+  const contact = await applyCustomerContactUpdate(customer, {
+    email,
+    phone,
+    countryCode,
+  });
+  if (contact.error) return badRequest(res, contact.error);
 
-  await customer.save()
+  await customer.save();
 
   await auditService.log({
-    type: 'lead',
+    type: "lead",
     action: AUDIT_ACTIONS.CUSTOMER_UPDATED,
     customerId: customer._id,
     performedBy: req.user._id,
     metadata: { firstName: customer.firstName, email: customer.email },
-  })
+  });
 
-  return success(res, { customer: customer.toJSON() })
-})
+  return success(res, { customer: customer.toJSON() });
+});
 
 exports.getCustomerProjects = asyncHandler(async (req, res) => {
-  const { customerId } = req.params
+  const { customerId } = req.params;
 
   if (!(await salesCanAccessCustomer(req.user._id, customerId))) {
-    return forbidden(res, 'Access denied')
+    return forbidden(res, "Access denied");
   }
 
-  const leadFilter = { customerId, assignedSales: req.user._id, ...SALES_ASSIGNED_LEAD_MATCH }
-  applyBusinessUnitFilter(leadFilter, req.query.businessUnit)
-  const leads = await Lead.find(leadFilter)
-    .sort({ createdAt: -1 })
-    .lean()
+  const leadFilter = {
+    customerId,
+    assignedSales: req.user._id,
+    ...SALES_ASSIGNED_LEAD_MATCH,
+  };
+  applyBusinessUnitFilter(leadFilter, req.query.businessUnit);
+  const leads = await Lead.find(leadFilter).sort({ createdAt: -1 }).lean();
 
-  const leadIds = leads.map(l => l._id)
-  const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
-  const budgets = await ProjectBudget.find({ leadId: { $in: leadIds } }).lean()
-  const budgetMap = new Map(budgets.map(b => [String(b.leadId), b]))
+  const leadIds = leads.map((l) => l._id);
+  const { resolveTotalBudget } = require("../../utils/budgetVsActual.util");
+  const budgets = await ProjectBudget.find({ leadId: { $in: leadIds } }).lean();
+  const budgetMap = new Map(budgets.map((b) => [String(b.leadId), b]));
 
-  const projects = leads.map(l => {
-    const budget = budgetMap.get(String(l._id))
-    const total = budget ? resolveTotalBudget(budget) : 0
-    return withProjectIdFields({
-      _id: l._id,
-      projectName: l.projectName || '',
-      ...businessUnitFields(l),
-      numberOfBuildings: l.numberOfBuildings,
-      lifecycleStatus: l.lifecycleStatus,
-      quoteValue: l.quoteValue || 0,
-      budget: budget
-        ? {
-            totalBudget: total,
-            customLines: budget.customLines || [],
-            expectedProfit: (l.quoteValue || 0) - total,
-          }
-        : null,
-      createdAt: l.createdAt,
-    }, l.jobId)
-  })
+  const projects = leads.map((l) => {
+    const budget = budgetMap.get(String(l._id));
+    const total = budget ? resolveTotalBudget(budget) : 0;
+    return withProjectIdFields(
+      {
+        _id: l._id,
+        projectName: l.projectName || "",
+        ...businessUnitFields(l),
+        numberOfBuildings: l.numberOfBuildings,
+        lifecycleStatus: l.lifecycleStatus,
+        quoteValue: l.quoteValue || 0,
+        budget: budget
+          ? {
+              totalBudget: total,
+              customLines: budget.customLines || [],
+              expectedProfit: (l.quoteValue || 0) - total,
+            }
+          : null,
+        createdAt: l.createdAt,
+      },
+      l.jobId,
+    );
+  });
 
-  return success(res, { projects, total: projects.length })
-})
+  return success(res, { projects, total: projects.length });
+});
 
 exports.createProject = asyncHandler(async (req, res) => {
-  const { customerId } = req.params
+  const { customerId } = req.params;
 
-  const customer = await Customer.findById(customerId).lean()
-  if (!customer) return notFound(res, 'Customer not found')
+  const customer = await Customer.findById(customerId);
+  if (!customer) return notFound(res, "Customer not found");
 
   if (!(await salesCanAccessCustomer(req.user._id, customerId))) {
-    return forbidden(res, 'Access denied — customer not in your portfolio')
+    return forbidden(res, "Access denied — customer not in your portfolio");
   }
 
-  const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
-    customerId,
-    assignedBy: req.user._id,
-    defaultSource: 'manual',
-    acceptSource: false,
-    forceAssignedSales: req.user._id,
-  })
-  if (leadError) return badRequest(res, leadError)
+  const contact = await saveManualContactOnCustomer(customer, req.body);
+  if (contact.error) return badRequest(res, contact.error);
+
+  const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(
+    req.body,
+    {
+      customerId,
+      assignedBy: req.user._id,
+      defaultSource: "manual",
+      acceptSource: false,
+      forceAssignedSales: req.user._id,
+    },
+  );
+  if (leadError) return badRequest(res, leadError);
 
   if (leadPayload.projectName) {
     const existingLead = await Lead.findOne({
       customerId,
-      projectName: { $regex: new RegExp(`^${escapeRegex(leadPayload.projectName)}$`, 'i') },
+      projectName: {
+        $regex: new RegExp(`^${escapeRegex(leadPayload.projectName)}$`, "i"),
+      },
     })
-      .select('_id projectName')
-      .lean()
+      .select("_id projectName")
+      .lean();
     if (existingLead) {
       return badRequest(
         res,
-        'A project with this name already exists for this customer. Please edit the existing lead instead.',
-        { existingLead }
-      )
+        "A project with this name already exists for this customer. Please edit the existing lead instead.",
+        { existingLead },
+      );
     }
   }
 
   const lead = await Lead.create({
     ...leadPayload,
     lifecycleHistory: [
-      { stage: 'initial_contact', changedAt: new Date(), changedBy: req.user._id },
+      {
+        stage: "initial_contact",
+        changedAt: new Date(),
+        changedBy: req.user._id,
+      },
     ],
-  })
+  });
 
   await auditService.log({
-    type: 'lead',
+    type: "lead",
     action: AUDIT_ACTIONS.LEAD_CREATED,
     leadId: lead._id,
     customerId,
     performedBy: req.user._id,
     metadata: { source: lead.source, projectName: lead.projectName },
-  })
+  });
 
-  const leadListSocket = require('../../services/leadListSocket.service')
+  const leadListSocket = require("../../services/leadListSocket.service");
   await leadListSocket.emitLeadListCreated(lead._id, {
-    trigger: 'sales_create_project',
+    trigger: "sales_create_project",
     actorUserId: req.user._id,
-  })
+  });
 
-  await syncLeadBuildings(lead, { createdBy: req.user._id })
+  await syncLeadBuildings(lead, { createdBy: req.user._id });
 
-  return created(res, { lead: enrichLeadDocument(lead) })
-})
+  return created(res, { lead: enrichLeadDocument(lead) });
+});

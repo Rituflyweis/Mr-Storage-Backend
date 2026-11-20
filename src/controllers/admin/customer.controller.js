@@ -1,30 +1,43 @@
-const Customer = require('../../models/Customer')
-const Lead = require('../../models/Lead')
-const POOrder = require('../../models/POOrder')
-const Invoice = require('../../models/Invoice')
-const Quotation = require('../../models/Quotation')
-const ProjectBudget = require('../../models/ProjectBudget')
-const auditService = require('../../services/audit.service')
-const { syncLeadBuildings } = require('../../services/leadBuilding.service')
-const generateCustomerId = require('../../utils/generateCustomerId')
-const bcrypt = require('bcryptjs')
-const { success, created, notFound, badRequest } = require('../../utils/apiResponse')
-const asyncHandler = require('../../utils/asyncHandler')
-const { buildDateFilter } = require('../../utils/dateRange')
-const { AUDIT_ACTIONS, INVOICE_STATUSES } = require('../../config/constants')
-const { withProjectIdFields, enrichLeadDocument } = require('../../utils/leadProjectId')
-const { buildLeadCreatePayload } = require('../../utils/leadPayload')
-const { applyCustomerContactUpdate } = require('../../utils/customerContactUpdate')
-const { applyBusinessUnitFilter, businessUnitFields } = require('../../utils/businessUnit')
+const Customer = require("../../models/Customer");
+const Lead = require("../../models/Lead");
+const POOrder = require("../../models/POOrder");
+const Invoice = require("../../models/Invoice");
+const Quotation = require("../../models/Quotation");
+const ProjectBudget = require("../../models/ProjectBudget");
+const auditService = require("../../services/audit.service");
+const { syncLeadBuildings } = require("../../services/leadBuilding.service");
+const generateCustomerId = require("../../utils/generateCustomerId");
+const {
+  success,
+  created,
+  notFound,
+  badRequest,
+} = require("../../utils/apiResponse");
+const asyncHandler = require("../../utils/asyncHandler");
+const { buildDateFilter } = require("../../utils/dateRange");
+const { AUDIT_ACTIONS, INVOICE_STATUSES } = require("../../config/constants");
+const {
+  withProjectIdFields,
+  enrichLeadDocument,
+} = require("../../utils/leadProjectId");
+const { buildLeadCreatePayload } = require("../../utils/leadPayload");
+const {
+  applyCustomerContactUpdate,
+  buildManualCustomerContact,
+} = require("../../utils/customerContactUpdate");
+const {
+  applyBusinessUnitFilter,
+  businessUnitFields,
+} = require("../../utils/businessUnit");
 const {
   PO_PROJECT_MATCH,
   getCustomerIdsWithRaisedPO,
-} = require('../../utils/customerPoFilter')
-const { applyCustomerSourceScope } = require('../../utils/customerImportScope')
+} = require("../../utils/customerPoFilter");
+const { applyCustomerSourceScope } = require("../../utils/customerImportScope");
 const {
   computeProjectInvoiceStats,
   mapProjectInvoiceRow,
-} = require('../../utils/projectInvoiceMetrics')
+} = require("../../utils/projectInvoiceMetrics");
 const {
   ACTIVE_PROJECT_MATCH,
   COMPLETED_PROJECT_MATCH,
@@ -32,31 +45,45 @@ const {
   getProjectScopeFilter,
   mapCustomerListRow,
   mapProjectListRow,
-} = require('../../utils/customerProjectScope')
+} = require("../../utils/customerProjectScope");
 
 const loadCustomerProject = async (customerId, leadId) => {
-  const customer = await Customer.findById(customerId).select('_id').lean()
-  if (!customer) return { error: 'Customer not found', code: 404 }
+  const customer = await Customer.findById(customerId).select("_id").lean();
+  if (!customer) return { error: "Customer not found", code: 404 };
 
-  const lead = await Lead.findOne({ _id: leadId, customerId, ...PO_PROJECT_MATCH })
-    .select('_id jobId projectName quoteValue customerId')
-    .lean()
-  if (!lead) return { error: 'Project not found', code: 404 }
+  const lead = await Lead.findOne({
+    _id: leadId,
+    customerId,
+    ...PO_PROJECT_MATCH,
+  })
+    .select("_id jobId projectName quoteValue customerId")
+    .lean();
+  if (!lead) return { error: "Project not found", code: 404 };
 
-  return { customer, lead }
-}
+  return { customer, lead };
+};
 exports.getCustomerStats = asyncHandler(async (req, res) => {
-  const poCustomerIds = await getCustomerIdsWithRaisedPO()
-  const customerScope = applyCustomerSourceScope({ _id: { $in: poCustomerIds } }, req.query)
+  const poCustomerIds = await getCustomerIdsWithRaisedPO();
+  const customerScope = applyCustomerSourceScope(
+    { _id: { $in: poCustomerIds } },
+    req.query,
+  );
 
-  const [totalCustomers, activeCustomers, totalProjects, activeProjects, notAssigned, completed] = await Promise.all([
+  const [
+    totalCustomers,
+    activeCustomers,
+    totalProjects,
+    activeProjects,
+    notAssigned,
+    completed,
+  ] = await Promise.all([
     Customer.countDocuments(customerScope),
     Customer.countDocuments({ ...customerScope, isActive: true }),
     Lead.countDocuments(PO_PROJECT_MATCH),
     Lead.countDocuments(ACTIVE_PROJECT_MATCH),
     Lead.countDocuments(NOT_ASSIGNED_PROJECT_MATCH),
     Lead.countDocuments(COMPLETED_PROJECT_MATCH),
-  ])
+  ]);
 
   return success(res, {
     totalCustomers,
@@ -65,283 +92,303 @@ exports.getCustomerStats = asyncHandler(async (req, res) => {
     activeProjects,
     projectsNotAssigned: notAssigned,
     completedProjects: completed,
-  })
-})
+  });
+});
 
 exports.getAllCustomers = asyncHandler(async (req, res) => {
-  const { scope, isActive, search, page = 1, limit = 20 } = req.query
-  const dateFilter = buildDateFilter(req.query)
+  const { scope, isActive, search, page = 1, limit = 20 } = req.query;
+  const dateFilter = buildDateFilter(req.query);
 
-  const filter = applyCustomerSourceScope({ ...dateFilter }, req.query)
-  if (scope === 'active') filter.isActive = true
-  else if (isActive !== undefined) filter.isActive = isActive === 'true'
+  const filter = applyCustomerSourceScope({ ...dateFilter }, req.query);
+  if (scope === "active") filter.isActive = true;
+  else if (isActive !== undefined) filter.isActive = isActive === "true";
   if (search && search.trim()) {
-    const regex = new RegExp(search.trim(), 'i')
+    const regex = new RegExp(search.trim(), "i");
     filter.$or = [
       { firstName: regex },
       { email: regex },
       { customerId: regex },
-    ]
+    ];
   }
 
-  const poCustomerIds = await getCustomerIdsWithRaisedPO()
-  filter._id = { $in: poCustomerIds }
+  const poCustomerIds = await getCustomerIdsWithRaisedPO();
+  filter._id = { $in: poCustomerIds };
 
-  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
-  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
-  const skip = (parsedPage - 1) * parsedLimit
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1);
+  const skip = (parsedPage - 1) * parsedLimit;
 
   const [customers, total] = await Promise.all([
     Customer.find(filter)
-      .select('_id customerId firstName email phone isActive source createdAt')
+      .select("_id customerId firstName email phone isActive source createdAt")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
       .lean(),
     Customer.countDocuments(filter),
-  ])
+  ]);
 
-  const customerIds = customers.map(c => c._id)
+  const customerIds = customers.map((c) => c._id);
   const projectCounts = await Lead.aggregate([
     { $match: { customerId: { $in: customerIds }, ...PO_PROJECT_MATCH } },
-    { $group: { _id: '$customerId', count: { $sum: 1 } } },
-  ])
-  const countMap = new Map(projectCounts.map(p => [String(p._id), p.count]))
+    { $group: { _id: "$customerId", count: { $sum: 1 } } },
+  ]);
+  const countMap = new Map(projectCounts.map((p) => [String(p._id), p.count]));
 
-  const result = customers.map(c => mapCustomerListRow(c, countMap.get(String(c._id)) || 0))
-  return success(res, { customers: result, total, page: parsedPage, limit: parsedLimit })
-})
+  const result = customers.map((c) =>
+    mapCustomerListRow(c, countMap.get(String(c._id)) || 0),
+  );
+  return success(res, {
+    customers: result,
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+  });
+});
 
 exports.getAdminProjectList = asyncHandler(async (req, res) => {
-  const { scope = 'total', search, page = 1, limit = 20 } = req.query
-  const dateFilter = buildDateFilter(req.query)
+  const { scope = "total", search, page = 1, limit = 20 } = req.query;
+  const dateFilter = buildDateFilter(req.query);
 
-  const filter = { ...getProjectScopeFilter(scope), ...dateFilter }
+  const filter = { ...getProjectScopeFilter(scope), ...dateFilter };
   if (search && search.trim()) {
-    const regex = new RegExp(search.trim(), 'i')
+    const regex = new RegExp(search.trim(), "i");
     const matchingCustomers = await Customer.find({
       $or: [{ firstName: regex }, { email: regex }, { customerId: regex }],
-    }).select('_id').lean()
+    })
+      .select("_id")
+      .lean();
     filter.$or = [
       { projectName: regex },
       { jobId: regex },
-      { customerId: { $in: matchingCustomers.map(c => c._id) } },
-    ]
+      { customerId: { $in: matchingCustomers.map((c) => c._id) } },
+    ];
   }
 
-  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
-  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
-  const skip = (parsedPage - 1) * parsedLimit
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1);
+  const skip = (parsedPage - 1) * parsedLimit;
 
   const [leads, total] = await Promise.all([
     Lead.find(filter)
-      .select('_id jobId projectName quoteValue lifecycleStatus customerId createdAt')
+      .select(
+        "_id jobId projectName quoteValue lifecycleStatus customerId createdAt",
+      )
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
       .lean(),
     Lead.countDocuments(filter),
-  ])
+  ]);
 
-  const customerIds = [...new Set(leads.map(l => String(l.customerId)))]
+  const customerIds = [...new Set(leads.map((l) => String(l.customerId)))];
   const customers = await Customer.find({ _id: { $in: customerIds } })
-    .select('_id firstName')
-    .lean()
-  const customerMap = new Map(customers.map(c => [String(c._id), c]))
+    .select("_id firstName")
+    .lean();
+  const customerMap = new Map(customers.map((c) => [String(c._id), c]));
 
-  let poRaisedMap = new Map()
-  if (scope === 'not-assigned' && leads.length) {
-    const poOrders = await POOrder.find({ leadId: { $in: leads.map(l => l._id) } })
-      .select('leadId createdAt')
-      .lean()
-    poRaisedMap = new Map(poOrders.map(o => [String(o.leadId), o.createdAt]))
+  let poRaisedMap = new Map();
+  if (scope === "not-assigned" && leads.length) {
+    const poOrders = await POOrder.find({
+      leadId: { $in: leads.map((l) => l._id) },
+    })
+      .select("leadId createdAt")
+      .lean();
+    poRaisedMap = new Map(poOrders.map((o) => [String(o.leadId), o.createdAt]));
   }
 
-  const includePoRaisedAt = scope === 'not-assigned'
-  const projects = leads.map(lead => mapProjectListRow(
-    lead,
-    customerMap.get(String(lead.customerId)),
-    {
+  const includePoRaisedAt = scope === "not-assigned";
+  const projects = leads.map((lead) =>
+    mapProjectListRow(lead, customerMap.get(String(lead.customerId)), {
       includePoRaisedAt,
       poRaisedAt: poRaisedMap.get(String(lead._id)) || null,
-    }
-  ))
+    }),
+  );
 
-  return success(res, { projects, total, page: parsedPage, limit: parsedLimit, scope })
-})
+  return success(res, {
+    projects,
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+    scope,
+  });
+});
 
 exports.createCustomerWithLead = asyncHandler(async (req, res) => {
-  const { firstName, email, phone, countryCode } = req.body
-  const normalizedEmail = email.toLowerCase().trim()
+  const { firstName } = req.body;
+  const contact = await buildManualCustomerContact(req.body);
+  if (contact.error) return badRequest(res, contact.error);
 
-  const existing = await Customer.findOne({ email: normalizedEmail })
-  if (existing) return badRequest(res, 'Customer with this email already exists')
+  const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(
+    req.body,
+    {
+      customerId: null,
+      assignedBy: req.user._id,
+      defaultSource: "manual",
+      acceptSource: false,
+    },
+  );
+  if (leadError) return badRequest(res, leadError);
 
-  const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
-    customerId: null,
-    assignedBy: req.user._id,
-    defaultSource: 'manual',
-    acceptSource: false,
-  })
-  if (leadError) return badRequest(res, leadError)
-
-  const custId = await generateCustomerId()
-  const hashed = await bcrypt.hash(phone.trim(), 12)
+  const custId = await generateCustomerId();
 
   const customer = await Customer.create({
     customerId: custId,
     firstName: firstName.trim(),
-    email: normalizedEmail,
-    phone: { number: phone.trim(), countryCode: countryCode || '' },
-    password: hashed,
-    source: 'manual',
-  })
+    ...contact.fields,
+    source: "manual",
+  });
 
   await auditService.log({
-    type: 'lead',
+    type: "lead",
     action: AUDIT_ACTIONS.CUSTOMER_CREATED,
     customerId: customer._id,
     performedBy: req.user._id,
     metadata: { email: customer.email },
-  })
+  });
 
   const lead = await Lead.create({
     ...leadPayload,
     customerId: customer._id,
-  })
+  });
 
   await auditService.log({
-    type: 'lead',
+    type: "lead",
     action: AUDIT_ACTIONS.LEAD_CREATED,
     leadId: lead._id,
     customerId: customer._id,
     performedBy: req.user._id,
     metadata: { source: lead.source, projectName: lead.projectName },
-  })
+  });
 
-  await syncLeadBuildings(lead, { createdBy: req.user._id })
+  await syncLeadBuildings(lead, { createdBy: req.user._id });
 
-  return created(res, { customer, lead: enrichLeadDocument(lead) })
-})
+  return created(res, { customer, lead: enrichLeadDocument(lead) });
+});
 
 exports.createCustomerBasic = asyncHandler(async (req, res) => {
-  const { firstName, email, phone, countryCode } = req.body
-  const normalizedEmail = email.toLowerCase().trim()
-  const phoneNumber = String(phone).trim()
+  const { firstName } = req.body;
+  const contact = await buildManualCustomerContact(req.body);
+  if (contact.error) return badRequest(res, contact.error);
 
-  const existing = await Customer.findOne({ email: normalizedEmail })
-  if (existing) return badRequest(res, 'Customer with this email already exists')
-
-  const custId = await generateCustomerId()
-  const hashed = await bcrypt.hash(phoneNumber, 12)
+  const custId = await generateCustomerId();
 
   const customer = await Customer.create({
     customerId: custId,
     firstName: firstName.trim(),
-    email: normalizedEmail,
-    phone: { number: phoneNumber, countryCode: countryCode?.trim() || '' },
-    password: hashed,
-    source: 'manual',
-  })
+    ...contact.fields,
+    source: "manual",
+  });
 
   await auditService.log({
-    type: 'lead',
+    type: "lead",
     action: AUDIT_ACTIONS.CUSTOMER_CREATED,
     customerId: customer._id,
     performedBy: req.user._id,
-    metadata: { email: customer.email, source: 'admin_basic_create' },
-  })
+    metadata: { email: customer.email, source: "admin_basic_create" },
+  });
 
-  return created(res, { customer })
-})
+  return created(res, { customer });
+});
 
 exports.updateCustomer = asyncHandler(async (req, res) => {
-  const { customerId } = req.params
-  const { firstName, email, phone, countryCode } = req.body
+  const { customerId } = req.params;
+  const { firstName, email, phone, countryCode } = req.body;
 
   if (firstName === undefined && email === undefined && phone === undefined) {
-    return badRequest(res, 'At least one of firstName, email, or phone is required')
+    return badRequest(
+      res,
+      "At least one of firstName, email, or phone is required",
+    );
   }
 
-  const customer = await Customer.findById(customerId)
-  if (!customer) return notFound(res, 'Customer not found')
+  const customer = await Customer.findById(customerId);
+  if (!customer) return notFound(res, "Customer not found");
 
   if (firstName !== undefined) {
-    const trimmed = String(firstName).trim()
-    if (!trimmed) return badRequest(res, 'firstName cannot be empty')
-    customer.firstName = trimmed
+    const trimmed = String(firstName).trim();
+    if (!trimmed) return badRequest(res, "firstName cannot be empty");
+    customer.firstName = trimmed;
   }
 
-  const contact = await applyCustomerContactUpdate(customer, { email, phone, countryCode })
-  if (contact.error) return badRequest(res, contact.error)
+  const contact = await applyCustomerContactUpdate(customer, {
+    email,
+    phone,
+    countryCode,
+  });
+  if (contact.error) return badRequest(res, contact.error);
 
-  await customer.save()
+  await customer.save();
 
   await auditService.log({
-    type: 'lead',
+    type: "lead",
     action: AUDIT_ACTIONS.CUSTOMER_UPDATED,
     customerId: customer._id,
     performedBy: req.user._id,
     metadata: { firstName: customer.firstName, email: customer.email },
-  })
+  });
 
-  const customerResponse = customer.toJSON()
-  return success(res, { customer: customerResponse })
-})
+  const customerResponse = customer.toJSON();
+  return success(res, { customer: customerResponse });
+});
 
 exports.deactivateCustomer = asyncHandler(async (req, res) => {
-  const { customerId } = req.params
+  const { customerId } = req.params;
 
-  const customer = await Customer.findById(customerId)
-  if (!customer) return notFound(res, 'Customer not found')
+  const customer = await Customer.findById(customerId);
+  if (!customer) return notFound(res, "Customer not found");
 
-  const activating = customer.isActive === false
-  customer.isActive = activating
-  await customer.save()
+  const activating = customer.isActive === false;
+  customer.isActive = activating;
+  await customer.save();
 
   await auditService.log({
-    type: 'lead',
-    action: activating ? AUDIT_ACTIONS.CUSTOMER_ACTIVATED : AUDIT_ACTIONS.CUSTOMER_DEACTIVATED,
+    type: "lead",
+    action: activating
+      ? AUDIT_ACTIONS.CUSTOMER_ACTIVATED
+      : AUDIT_ACTIONS.CUSTOMER_DEACTIVATED,
     customerId: customer._id,
     performedBy: req.user._id,
     metadata: { email: customer.email },
-  })
+  });
 
-  const message = activating ? 'Customer activated' : 'Customer deactivated'
-  return success(res, { customer: customer.toJSON() }, message)
-})
+  const message = activating ? "Customer activated" : "Customer deactivated";
+  return success(res, { customer: customer.toJSON() }, message);
+});
 
 exports.getCustomerInvoices = asyncHandler(async (req, res) => {
-  const { customerId } = req.params
-  const { status, page = 1, limit = 20 } = req.query
-  const dateFilter = buildDateFilter(req.query)
+  const { customerId } = req.params;
+  const { status, page = 1, limit = 20 } = req.query;
+  const dateFilter = buildDateFilter(req.query);
 
-  const customer = await Customer.findById(customerId).select('_id customerId firstName').lean()
-  if (!customer) return notFound(res, 'Customer not found')
+  const customer = await Customer.findById(customerId)
+    .select("_id customerId firstName")
+    .lean();
+  if (!customer) return notFound(res, "Customer not found");
 
-  const filter = { customerId: customer._id, ...dateFilter }
+  const filter = { customerId: customer._id, ...dateFilter };
   if (status) {
     if (!INVOICE_STATUSES.includes(status)) {
-      return badRequest(res, 'Invalid invoice status')
+      return badRequest(res, "Invalid invoice status");
     }
-    filter.status = status
+    filter.status = status;
   }
 
-  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
-  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1)
-  const skip = (parsedPage - 1) * parsedLimit
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+  const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1);
+  const skip = (parsedPage - 1) * parsedLimit;
 
   const [invoices, total] = await Promise.all([
     Invoice.find(filter)
-      .populate({ path: 'leadId', select: 'projectName jobId lifecycleStatus' })
-      .populate({ path: 'createdBy', select: 'name email' })
-      .populate({ path: 'paidBy', select: 'name email' })
+      .populate({ path: "leadId", select: "projectName jobId lifecycleStatus" })
+      .populate({ path: "createdBy", select: "name email" })
+      .populate({ path: "paidBy", select: "name email" })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
       .lean(),
     Invoice.countDocuments(filter),
-  ])
+  ]);
 
   return success(res, {
     customer: {
@@ -353,142 +400,151 @@ exports.getCustomerInvoices = asyncHandler(async (req, res) => {
     total,
     page: parsedPage,
     limit: parsedLimit,
-  })
-})
+  });
+});
 
 exports.getCustomerDetail = asyncHandler(async (req, res) => {
-  const { customerId } = req.params
+  const { customerId } = req.params;
   const {
     resolveCustomerDoc,
     buildCustomerDetailFinancials,
-  } = require('../../utils/customerDetailFinancials')
+  } = require("../../utils/customerDetailFinancials");
 
   const customer = await resolveCustomerDoc(
     customerId,
-    '_id customerId firstName lastName email phone location isActive source photo company createdAt'
-  )
-  if (!customer) return notFound(res, 'Customer not found')
+    "_id customerId firstName lastName email phone location isActive source photo company createdAt",
+  );
+  if (!customer) return notFound(res, "Customer not found");
 
-  const financialPayload = await buildCustomerDetailFinancials(customer._id)
+  const financialPayload = await buildCustomerDetailFinancials(customer._id);
 
   return success(res, {
     customer: {
       ...customer,
-      address: customer.location || '',
+      address: customer.location || "",
     },
     ...financialPayload,
-  })
-})
+  });
+});
 
 exports.getCustomerProjects = asyncHandler(async (req, res) => {
-  const { customerId } = req.params
+  const { customerId } = req.params;
 
-  const customer = await Customer.findById(customerId).lean()
-  if (!customer) return notFound(res, 'Customer not found')
+  const customer = await Customer.findById(customerId).lean();
+  if (!customer) return notFound(res, "Customer not found");
 
-  const leadFilter = { customerId, ...PO_PROJECT_MATCH }
-  applyBusinessUnitFilter(leadFilter, req.query.businessUnit)
+  const leadFilter = { customerId, ...PO_PROJECT_MATCH };
+  applyBusinessUnitFilter(leadFilter, req.query.businessUnit);
   const leads = await Lead.find(leadFilter)
-    .populate({ path: 'assignedSales', select: 'name' })
+    .populate({ path: "assignedSales", select: "name" })
     .sort({ createdAt: -1 })
-    .lean()
+    .lean();
 
-  const leadIds = leads.map(l => l._id)
-  const { resolveTotalBudget } = require('../../utils/budgetVsActual.util')
-  const budgets = await ProjectBudget.find({ leadId: { $in: leadIds } }).lean()
-  const budgetMap = new Map(budgets.map(b => [String(b.leadId), b]))
+  const leadIds = leads.map((l) => l._id);
+  const { resolveTotalBudget } = require("../../utils/budgetVsActual.util");
+  const budgets = await ProjectBudget.find({ leadId: { $in: leadIds } }).lean();
+  const budgetMap = new Map(budgets.map((b) => [String(b.leadId), b]));
 
-  const projects = leads.map(l => {
-    const b = budgetMap.get(String(l._id))
-    const total = b ? resolveTotalBudget(b) : 0
-    return withProjectIdFields({
-      _id: l._id,
-      projectName: l.projectName || '',
-      ...businessUnitFields(l),
-      numberOfBuildings: l.numberOfBuildings,
-      lifecycleStatus: l.lifecycleStatus,
-      assignedSales: l.assignedSales,
-      quoteValue: l.quoteValue || 0,
-      isTerminated: l.isTerminated,
-      budget: b
-        ? {
-            totalBudget: total,
-            customLines: b.customLines || [],
-            expectedProfit: (l.quoteValue || 0) - total,
-          }
-        : null,
-      createdAt: l.createdAt,
-    }, l.jobId)
-  })
+  const projects = leads.map((l) => {
+    const b = budgetMap.get(String(l._id));
+    const total = b ? resolveTotalBudget(b) : 0;
+    return withProjectIdFields(
+      {
+        _id: l._id,
+        projectName: l.projectName || "",
+        ...businessUnitFields(l),
+        numberOfBuildings: l.numberOfBuildings,
+        lifecycleStatus: l.lifecycleStatus,
+        assignedSales: l.assignedSales,
+        quoteValue: l.quoteValue || 0,
+        isTerminated: l.isTerminated,
+        budget: b
+          ? {
+              totalBudget: total,
+              customLines: b.customLines || [],
+              expectedProfit: (l.quoteValue || 0) - total,
+            }
+          : null,
+        createdAt: l.createdAt,
+      },
+      l.jobId,
+    );
+  });
 
-  return success(res, { projects, total: projects.length })
-})
+  return success(res, { projects, total: projects.length });
+});
 
 exports.getProjectInvoiceStats = asyncHandler(async (req, res) => {
-  const { customerId, leadId } = req.params
-  const loaded = await loadCustomerProject(customerId, leadId)
-  if (loaded.error) return notFound(res, loaded.error)
+  const { customerId, leadId } = req.params;
+  const loaded = await loadCustomerProject(customerId, leadId);
+  if (loaded.error) return notFound(res, loaded.error);
 
-  const invoices = await Invoice.find({ leadId, status: { $ne: 'cancelled' } })
-    .select('status totalAmount dueDate date daysToPay paidAt')
-    .lean()
+  const invoices = await Invoice.find({ leadId, status: { $ne: "cancelled" } })
+    .select("status totalAmount dueDate date daysToPay paidAt")
+    .lean();
 
-  const stats = computeProjectInvoiceStats(invoices)
+  const stats = computeProjectInvoiceStats(invoices);
 
   return success(res, {
     leadId,
     customerId,
-    projectName: loaded.lead.projectName || '',
-    jobId: loaded.lead.jobId || '',
-    projectId: loaded.lead.jobId || '',
+    projectName: loaded.lead.projectName || "",
+    jobId: loaded.lead.jobId || "",
+    projectId: loaded.lead.jobId || "",
     ...stats,
-  })
-})
+  });
+});
 
 exports.getProjectInvoices = asyncHandler(async (req, res) => {
-  const { customerId, leadId } = req.params
-  const loaded = await loadCustomerProject(customerId, leadId)
-  if (loaded.error) return notFound(res, loaded.error)
+  const { customerId, leadId } = req.params;
+  const loaded = await loadCustomerProject(customerId, leadId);
+  if (loaded.error) return notFound(res, loaded.error);
 
-  const dateFilter = buildDateFilter(req.query, 'createdAt')
-  const { status } = req.query
+  const dateFilter = buildDateFilter(req.query, "createdAt");
+  const { status } = req.query;
   if (status && !INVOICE_STATUSES.includes(status)) {
-    return badRequest(res, 'Invalid invoice status')
+    return badRequest(res, "Invalid invoice status");
   }
 
-  const filter = { leadId, ...dateFilter }
-  if (status) filter.status = status
+  const filter = { leadId, ...dateFilter };
+  if (status) filter.status = status;
 
   const invoices = await Invoice.find(filter)
-    .populate('createdBy', 'name email')
-    .populate('paidBy', 'name email')
+    .populate("createdBy", "name email")
+    .populate("paidBy", "name email")
     .sort({ createdAt: -1 })
-    .lean()
+    .lean();
 
-  const now = new Date()
-  const payments = invoices.map(inv => mapProjectInvoiceRow(inv, now))
+  const now = new Date();
+  const payments = invoices.map((inv) => mapProjectInvoiceRow(inv, now));
 
   return success(res, {
     leadId,
     customerId,
-    projectName: loaded.lead.projectName || '',
-    jobId: loaded.lead.jobId || '',
-    projectId: loaded.lead.jobId || '',
+    projectName: loaded.lead.projectName || "",
+    jobId: loaded.lead.jobId || "",
+    projectId: loaded.lead.jobId || "",
     payments,
     total: payments.length,
-  })
-})
+  });
+});
 
 exports.getCustomerProject = asyncHandler(async (req, res) => {
-  const { customerId, leadId } = req.params
+  const { customerId, leadId } = req.params;
 
-  const lead = await Lead.findOne({ _id: leadId, customerId, ...PO_PROJECT_MATCH }).populate('assignedSales').lean()
-  if (!lead) return notFound(res, 'Project not found')
+  const lead = await Lead.findOne({
+    _id: leadId,
+    customerId,
+    ...PO_PROJECT_MATCH,
+  })
+    .populate("assignedSales")
+    .lean();
+  if (!lead) return notFound(res, "Project not found");
 
   const [quotation, invoices] = await Promise.all([
     Quotation.findOne({ leadId }).sort({ createdAt: -1 }).lean(),
     Invoice.find({ leadId }).sort({ createdAt: -1 }).lean(),
-  ])
+  ]);
 
-  return success(res, { lead: enrichLeadDocument(lead), quotation, invoices })
-})
+  return success(res, { lead: enrichLeadDocument(lead), quotation, invoices });
+});

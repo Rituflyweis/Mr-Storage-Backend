@@ -35,7 +35,7 @@ const {
   buildLeadCreatePayload,
   applyLeadUpdateFromBody,
 } = require('../../utils/leadPayload')
-const { applyCustomerContactUpdate } = require('../../utils/customerContactUpdate')
+const { applyCustomerContactUpdate, saveManualContactOnCustomer } = require('../../utils/customerContactUpdate')
 const { startOfDay, endOfDay } = require('date-fns')
 const {
   buildAdminLeadFilter,
@@ -435,6 +435,9 @@ exports.createLead = asyncHandler(async (req, res) => {
 
   const customer = await Customer.findById(customerId)
   if (!customer) return notFound(res, 'Customer not found')
+
+  const contact = await saveManualContactOnCustomer(customer, req.body)
+  if (contact.error) return badRequest(res, contact.error)
 
   const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
     customerId,
@@ -1113,6 +1116,9 @@ exports.createProjectForCustomer = asyncHandler(async (req, res) => {
 
   const customer = await Customer.findById(customerId)
   if (!customer) return notFound(res, 'Customer not found')
+
+  const contact = await saveManualContactOnCustomer(customer, req.body)
+  if (contact.error) return badRequest(res, contact.error)
 
   const { payload: leadPayload, error: leadError } = buildLeadCreatePayload(req.body, {
     customerId,
