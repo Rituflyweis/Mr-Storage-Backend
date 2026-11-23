@@ -58,6 +58,7 @@ router.get('/projects/:leadId/activity',                           ctrl.getProje
 router.get('/projects/:leadId/notes',                              ctrl.getProjectNotes)
 router.get('/projects/:leadId/followups',                          ctrl.getProjectFollowUps)
 router.get('/projects/:leadId/meetings',                           ctrl.getProjectMeetings)
+router.get('/projects/:leadId/contract',                           ctrl.getProjectContract)
 router.get('/projects/:leadId/tracking',                           ctrl.getProjectTracking)
 router.get('/projects/:leadId/orders',                             ctrl.getProjectOrders)
 router.post('/projects/:leadId/orders',                            ctrl.createProjectOrder)

@@ -8,6 +8,10 @@ const {
   findLatestContractDocument,
   buildAgreementPayload,
 } = require('../../utils/leadAgreement')
+const {
+  formatSignature,
+  latestForLead,
+} = require('../../services/docusign/contractEnvelope.service')
 
 const loadUploader = async (uploadedById) => {
   if (!uploadedById) return null
@@ -17,7 +21,11 @@ const loadUploader = async (uploadedById) => {
 const respondWithAgreement = async (res, lead) => {
   const contract = findLatestContractDocument(lead)
   const uploadedBy = await loadUploader(contract?.uploadedBy)
-  return success(res, buildAgreementPayload(lead, contract, uploadedBy))
+  const envelope = await latestForLead(lead._id)
+  return success(res, {
+    ...buildAgreementPayload(lead, contract, uploadedBy),
+    signature: formatSignature(envelope),
+  })
 }
 
 /** GET /api/admin|sales/leads/:leadId/agreement */

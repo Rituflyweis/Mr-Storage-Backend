@@ -7,6 +7,20 @@ const { success, created, notFound, badRequest } = require('../../utils/apiRespo
 const asyncHandler = require('../../utils/asyncHandler')
 const { AUDIT_ACTIONS, MEETING_STATUSES } = require('../../config/constants')
 const { upsertMeetingEvent, syncMeetingStatus } = require('../../services/calendar/calendarSync.service')
+const {
+  createPublicZoomMeeting,
+  updatePublicZoomMeeting,
+  deletePublicZoomMeeting,
+} = require('../../services/zoom/zoomMeeting.service')
+
+const zoomFields = async ({ title, meetingTime, duration }) => {
+  const zoom = await createPublicZoomMeeting({ title, meetingTime, duration })
+  return {
+    meetingLink: zoom.joinUrl,
+    zoomMeetingId: zoom.meetingId,
+    zoomStartUrl: zoom.startUrl,
+  }
+}
 
 exports.getMeetings = asyncHandler(async (req, res) => {
   const { status, search, leadId } = req.query
@@ -71,8 +85,18 @@ exports.createMeeting = asyncHandler(async (req, res) => {
     reminderEmail,
   } = req.body
 
-  if (mode === 'online' && !meetingLink) {
-    return badRequest(res, 'Meeting link is required for online meetings')
+  let link = String(meetingLink || '').trim()
+  let zoomMeetingId = ''
+  let zoomStartUrl = ''
+  if (mode === 'online' && !link) {
+    try {
+      const zoom = await zoomFields({ title, meetingTime, duration })
+      link = zoom.meetingLink
+      zoomMeetingId = zoom.zoomMeetingId
+      zoomStartUrl = zoom.zoomStartUrl
+    } catch (err) {
+      return badRequest(res, err.message)
+    }
   }
 
   const meeting = await Meeting.create({
@@ -83,7 +107,9 @@ exports.createMeeting = asyncHandler(async (req, res) => {
     meetingTime: new Date(meetingTime),
     duration,
     mode,
-    meetingLink: meetingLink || '',
+    meetingLink: link,
+    zoomMeetingId,
+    zoomStartUrl,
     reminderMinutes: Number(reminderMinutes ?? 30),
     reminderSms: reminderSms !== false,
     reminderEmail: reminderEmail !== false,
@@ -104,7 +130,7 @@ exports.createMeeting = asyncHandler(async (req, res) => {
     customerId,
     leadId: leadId || null,
     title: 'Meeting scheduled',
-    body: `"${title}" — ${new Date(meetingTime).toLocaleString()}${mode === 'online' ? ' (online)' : ''}`,
+    body: `"${title}" — ${new Date(meetingTime).toLocaleString()}${link ? ` ${link}` : ''}`,
     type: 'meeting',
     priority: 'medium',
     refId: meeting._id,
@@ -120,12 +146,6 @@ exports.editMeeting = asyncHandler(async (req, res) => {
 
   const meeting = await Meeting.findById(meetingId)
   if (!meeting) return notFound(res, 'Meeting not found')
-
-  const effectiveMode = updates.mode !== undefined ? updates.mode : meeting.mode
-  const effectiveLink = updates.meetingLink !== undefined ? updates.meetingLink : meeting.meetingLink
-  if (effectiveMode === 'online' && !effectiveLink) {
-    return badRequest(res, 'Meeting link required for online meetings')
-  }
 
   if (updates.status !== undefined && !MEETING_STATUSES.includes(updates.status)) {
     return badRequest(res, 'Invalid status. Use scheduled, completed, cancelled, or rescheduled')
@@ -147,6 +167,11 @@ exports.editMeeting = asyncHandler(async (req, res) => {
     }
   }
 
+  const previousSchedule = {
+    title: meeting.title,
+    meetingTime: new Date(meeting.meetingTime).toISOString(),
+    duration: meeting.duration,
+  }
   const ALLOWED = [
     'title', 'meetingTime', 'duration', 'mode', 'meetingLink', 'notes',
     'leadId', 'customerId', 'status', 'reminderMinutes', 'reminderSms', 'reminderEmail',
@@ -157,12 +182,46 @@ exports.editMeeting = asyncHandler(async (req, res) => {
       meeting.meetingTime = new Date(updates.meetingTime)
       return
     }
+    if (k === 'meetingLink') {
+      const next = String(updates.meetingLink || '').trim()
+      if (next) meeting.meetingLink = next
+      return
+    }
     if (k === 'leadId' && (updates.leadId === null || updates.leadId === '')) {
       meeting.leadId = null
       return
     }
     meeting[k] = updates[k]
   })
+
+  try {
+    if (meeting.status === 'cancelled' && meeting.zoomMeetingId) {
+      await deletePublicZoomMeeting(meeting.zoomMeetingId)
+    } else if (meeting.mode === 'online' && !String(meeting.meetingLink || '').trim()) {
+      const zoom = await zoomFields({
+        title: meeting.title,
+        meetingTime: meeting.meetingTime,
+        duration: meeting.duration,
+      })
+      meeting.meetingLink = zoom.meetingLink
+      meeting.zoomMeetingId = zoom.zoomMeetingId
+      meeting.zoomStartUrl = zoom.zoomStartUrl
+    } else if (meeting.zoomMeetingId && meeting.status !== 'cancelled') {
+      const changed = previousSchedule.title !== meeting.title
+        || previousSchedule.meetingTime !== new Date(meeting.meetingTime).toISOString()
+        || previousSchedule.duration !== meeting.duration
+      if (changed) {
+        await updatePublicZoomMeeting(meeting.zoomMeetingId, {
+          title: meeting.title,
+          meetingTime: meeting.meetingTime,
+          duration: meeting.duration,
+        })
+      }
+    }
+  } catch (err) {
+    return badRequest(res, err.message)
+  }
+
   await meeting.save()
   await upsertMeetingEvent(meeting)
   await syncMeetingStatus(meeting)

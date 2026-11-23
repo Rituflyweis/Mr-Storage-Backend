@@ -185,6 +185,22 @@ module.exports = {
   PROJECT_ID_TIMEZONE:
     (process.env.PROJECT_ID_TIMEZONE || "").trim() || "America/New_York",
 
+  /** JWT grant. Sends the fabrication agreement and receives Connect webhooks. */
+  DOCUSIGN_INTEGRATION_KEY: (process.env.DOCUSIGN_INTEGRATION_KEY || "").trim(),
+  DOCUSIGN_USER_ID: (process.env.DOCUSIGN_USER_ID || "").trim(),
+  DOCUSIGN_ACCOUNT_ID: (process.env.DOCUSIGN_ACCOUNT_ID || "").trim(),
+  DOCUSIGN_RSA_PRIVATE_KEY: process.env.DOCUSIGN_RSA_PRIVATE_KEY || "",
+  DOCUSIGN_OAUTH_HOST: (process.env.DOCUSIGN_OAUTH_HOST || "account-d.docusign.com").trim(),
+  DOCUSIGN_BASE_URL: (process.env.DOCUSIGN_BASE_URL || "https://demo.docusign.net/restapi").replace(/\/$/, ""),
+  DOCUSIGN_CONNECT_SECRET: (process.env.DOCUSIGN_CONNECT_SECRET || "").trim(),
+
+  /** Server-to-Server OAuth app. Creates a public join link for online meetings. */
+  ZOOM_ACCOUNT_ID: (process.env.ZOOM_ACCOUNT_ID || "").trim(),
+  ZOOM_CLIENT_ID: (process.env.ZOOM_CLIENT_ID || "").trim(),
+  ZOOM_CLIENT_SECRET: (process.env.ZOOM_CLIENT_SECRET || "").trim(),
+  /** Zoom user that owns the meeting. "me" is the app account. */
+  ZOOM_HOST_USER: (process.env.ZOOM_HOST_USER || "me").trim() || "me",
+
   FACEBOOK_PAGE_ACCESS_TOKEN: (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim(),
   FACEBOOK_APP_SECRET: (process.env.FACEBOOK_APP_SECRET || "").trim(),
   FACEBOOK_VERIFY_TOKEN: (process.env.FACEBOOK_VERIFY_TOKEN || "").trim(),

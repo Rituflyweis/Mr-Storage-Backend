@@ -84,6 +84,7 @@ router.get(
 )
 
 router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
+router.use('/:leadId', require('../common/contractSigning.routes'))
 router.get('/:leadId/detail', ctrl.getLeadDetail)
 router.get('/:leadId/media',
   [query('type').optional().isIn(['photo', 'video'])],

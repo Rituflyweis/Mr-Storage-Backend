@@ -2234,6 +2234,22 @@ exports.getProjectFollowUps = asyncHandler(async (req, res) => {
   return success(res, { followUps, total, page: Number(page), limit: Number(limit), stats })
 })
 
+// GET /projects/:leadId/contract
+exports.getProjectContract = asyncHandler(async (req, res) => {
+  const lead = await assertProjectOwner(req)
+  if (!lead) return notFound(res, 'Project not found')
+  const { formatSignature, latestForLead, refreshEnvelope } = require('../services/docusign/contractEnvelope.service')
+  let row = await latestForLead(req.params.leadId)
+  if (row) {
+    try { row = await refreshEnvelope(row) } catch (err) {
+      console.error('[DocuSign] customer status refresh failed:', err.message)
+    }
+  }
+  const signature = formatSignature(row)
+  delete signature.canVoid
+  return success(res, { signature })
+})
+
 // GET /projects/:leadId/meetings
 exports.getProjectMeetings = asyncHandler(async (req, res) => {
   const lead = await assertProjectOwner(req)
@@ -2247,6 +2263,7 @@ exports.getProjectMeetings = asyncHandler(async (req, res) => {
 
   const [meetings, total] = await Promise.all([
     Meeting.find(filter)
+      .select('-zoomStartUrl')
       .populate('createdBy', 'name email')
       .sort({ meetingTime: -1 })
       .skip(skip)

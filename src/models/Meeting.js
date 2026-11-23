@@ -10,7 +10,10 @@ const MeetingSchema = new mongoose.Schema(
     meetingTime: { type: Date, required: true },
     duration:    { type: Number, default: null }, // minutes
     mode:        { type: String, enum: MEETING_MODES, required: true },
-    meetingLink: { type: String, default: '' },   // required when mode=online — validated in service
+    meetingLink: { type: String, default: '' },   // public join URL; Zoom fills this for online meetings
+    zoomMeetingId: { type: String, default: '' },
+    /** Host start URL. Never send this to the customer portal. */
+    zoomStartUrl: { type: String, default: '' },
     reminderMinutes: { type: Number, default: 30 },
     reminderSms: { type: Boolean, default: true },
     reminderEmail: { type: Boolean, default: true },

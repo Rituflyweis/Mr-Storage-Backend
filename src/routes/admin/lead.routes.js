@@ -70,6 +70,7 @@ router.get(
 )
 
 router.get('/:leadId/agreement', agreementCtrl.getLeadAgreement)
+router.use('/:leadId', require('../common/contractSigning.routes'))
 router.get('/:leadId/detail', ctrl.getLeadDetail)
 router.get('/:leadId/timeline', ctrl.getLeadTimeline)
 router.get('/:leadId/documents',

@@ -6,6 +6,13 @@ const { NODE_ENV } = require('./src/config/env')
 const errorHandler = require('./src/middleware/errorHandler')
 
 const app = express()
+const contractSigningCtrl = require('./src/controllers/common/contractSigning.controller')
+
+app.post(
+  '/api/docusign/webhook',
+  express.raw({ type: '*/*', limit: '2mb' }),
+  contractSigningCtrl.webhook
+)
 
 // Nginx / Render terminate TLS and set X-Forwarded-For. Without this,
 // express-rate-limit throws and Twilio webhooks return 500.

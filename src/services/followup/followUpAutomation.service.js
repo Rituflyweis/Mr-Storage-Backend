@@ -649,7 +649,7 @@ const processMeetingReminders = async (config) => {
     status: 'scheduled',
     reminderSentAt: null,
   })
-    .select('_id leadId customerId createdBy title meetingTime reminderMinutes reminderSms reminderEmail')
+    .select('_id leadId customerId createdBy title meetingTime meetingLink mode reminderMinutes reminderSms reminderEmail')
     .lean()
   let sent = 0
   const now = Date.now()
@@ -667,7 +667,7 @@ const processMeetingReminders = async (config) => {
     }
     await sendChannels({
       kind: 'meeting_reminder',
-      message: `Reminder: "${m.title}" meeting is scheduled at ${toReadableDateTime(m.meetingTime)} and ${dueInLine(m.reminderMinutes)}`,
+      message: `Reminder: "${m.title}" meeting is scheduled at ${toReadableDateTime(m.meetingTime)} and ${dueInLine(m.reminderMinutes)}${m.mode === 'online' && m.meetingLink ? `. Join: ${m.meetingLink}` : ''}`,
       subject: 'Meeting reminder',
       customer: staffProxyCustomer,
       leadId: m.leadId,
