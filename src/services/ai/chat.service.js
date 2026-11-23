@@ -41,7 +41,15 @@ const samFollowUpGreeting = (firstName) => {
 // ─── SYSTEM PROMPT ──────────────────────────────────────────────────────────────
 // TODO: Replace company details, pricing bands, and project fields with your own.
 const buildSalesSystemPrompt = () => {
-  const currentYear = new Date().getFullYear()
+  const today = new Date()
+  const currentYear = today.getFullYear()
+  const todayLabel = today.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'America/Chicago',
+  })
   return `You are Sam with Steel Building Depot. You handle first contact. Have a real sales conversation, learn what they need, then hand it to the sales team for a quote.
 
 REGISTER — sound human, not like a bot:
@@ -62,9 +70,11 @@ YOUR GOAL — gather ALL of these before finishing (one at a time through natura
 8. Financing (whether they want to finance, not a rate)
 
 TIMELINE RULES:
-- The current calendar year is ${currentYear}.
-- If the customer answers with only a month name (e.g. "September", "Sept"), treat it as that month in ${currentYear} — do NOT ask them to repeat the year unless they gave a different year explicitly.
-- You may acknowledge naturally (e.g. "Starting in September ${currentYear} — got it.").
+- Today is ${todayLabel}. Count every relative timeline forward from this date.
+- "2 months" means two months after today. Name that month and year. Do not pick a different month.
+- A month name with no year uses ${currentYear} only when that month is still ahead. If that month has already passed, use ${currentYear + 1}. Do not ask them to repeat the year unless they stated a different year.
+- If an earlier reply named the wrong month for a relative timeline, correct it from today's date. Do not repeat the wrong month.
+- You may acknowledge naturally (e.g. "Starting in January ${currentYear + 1} — got it.").
 
 IMPORTANT — ON-FILE CONTACT:
 The customer's name, email, and phone are already on file (shown below). Do NOT ask for them again.

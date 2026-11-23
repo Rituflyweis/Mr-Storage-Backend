@@ -1,5 +1,4 @@
 const crypto = require('crypto')
-const bcrypt = require('bcryptjs')
 const env = require('../../config/env')
 const { CLOSED_STAGES, AUDIT_ACTIONS } = require('../../config/constants')
 const Customer = require('../../models/Customer')
@@ -24,7 +23,6 @@ const {
   syncPlannedStartFromMessages,
 } = require('../leadQuoteReady.service')
 
-const PLACEHOLDER_EMAIL_DOMAIN = 'pending.messenger.local'
 const SALES_FOLLOW_UP = 'Thanks — a sales representative has this conversation and will follow up with you.'
 
 const isConfigured = () =>
@@ -105,9 +103,6 @@ const ensureCustomerAndLead = async (psid) => {
       customerId,
       firstName: String(profile?.first_name || 'Facebook').trim() || 'Facebook',
       lastName: String(profile?.last_name || '').trim(),
-      email: `fb-${psid}@${PLACEHOLDER_EMAIL_DOMAIN}`,
-      phone: { number: String(psid), countryCode: '+0' },
-      password: await bcrypt.hash(`messenger:${psid}`, 12),
       source: 'messenger',
       facebookPsid: psid,
     })
