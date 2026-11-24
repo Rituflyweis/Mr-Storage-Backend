@@ -158,12 +158,14 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
     messagesAfterAi,
     customer?.firstName || ''
   )
-  scoringService.applyScoreToLead(lead, scoreData)
-  await saveLeadScoring(leadId, lead.leadScoring)
-  await syncLeadProjectFieldsFromScore(leadId, scoreData)
-  await syncPlannedStartFromMessages(leadId, messagesAfterAi)
+  if (scoreData) {
+    scoringService.applyScoreToLead(lead, scoreData)
+    await saveLeadScoring(leadId, lead.leadScoring)
+    await syncLeadProjectFieldsFromScore(leadId, scoreData)
+    await syncPlannedStartFromMessages(leadId, messagesAfterAi)
+  }
 
-  if (canAdvanceLifecycle(messagesAfterAi) && isRequirementsGatheredFromChat(chatMeta, scoreData)) {
+  if (scoreData && canAdvanceLifecycle(messagesAfterAi) && isRequirementsGatheredFromChat(chatMeta, scoreData)) {
     await advanceLifecycleIfNeeded(leadId, 'requirements_gathered')
   }
 
@@ -181,7 +183,7 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
   }
   await leadListSocket.emitLeadListUpdated(leadId, { trigger: 'ai_scoring', includeScoreRow: true })
 
-  const readyForHandoff = isReadyForSalesHandoff(chatMeta, text, quoteReadyData, scoreData)
+  const readyForHandoff = scoreData && isReadyForSalesHandoff(chatMeta, text, quoteReadyData, scoreData)
 
   if (readyForHandoff) {
     const quoteData = quoteReadyData || buildFallbackQuoteData(lead, scoreData, messagesAfterAi)
