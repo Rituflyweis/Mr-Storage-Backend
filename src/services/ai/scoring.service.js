@@ -21,6 +21,69 @@ const parseCharLimit = (val, fallback) => {
   return Number.isNaN(n) ? fallback : n
 }
 
+const extractFirstJsonObject = (text) => {
+  const input = String(text || '').replace(/```json|```/gi, '').trim()
+  const start = input.indexOf('{')
+  if (start < 0) return null
+
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < input.length; i += 1) {
+    const ch = input[i]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return input.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+const parseScoreResponse = (raw) => {
+  const jsonStr = extractFirstJsonObject(raw)
+  if (!jsonStr) return null
+  try {
+    return JSON.parse(jsonStr)
+  } catch (err) {
+    console.error('[Scoring] Parse error:', err.message)
+    return null
+  }
+}
+
+const normalizeScoreData = (data) => {
+  if (!data || typeof data !== 'object') return null
+  const score = Number(data.score)
+  if (!Number.isFinite(score)) return null
+
+  const breakdown = data.scoreBreakdown && typeof data.scoreBreakdown === 'object'
+    ? data.scoreBreakdown
+    : {}
+
+  return {
+    score: Math.max(0, Math.min(100, Math.round(score))),
+    scoreBreakdown: breakdown,
+    requirements: String(data.requirements || '').trim(),
+    requirementsComplete: data.requirementsComplete === true,
+    projectLifecycleStage: data.projectLifecycleStage || null,
+    projectFields: data.projectFields && typeof data.projectFields === 'object' ? data.projectFields : {},
+  }
+}
+
 const scoreLead = async (messages, leadName = '') => {
   const maxChars = parseCharLimit(env.CLAUDE_MAX_SCORE_LIVE_CHARS, 18000)
   const currentYear = new Date().getFullYear()
@@ -83,21 +146,9 @@ ${transcript}`,
     }],
   })
 
-  try {
-    const raw = response.content[0].text.trim()
-    const clean = raw.replace(/```json|```/g, '').trim()
-    return JSON.parse(clean)
-  } catch (err) {
-    console.error('[Scoring] Parse error:', err.message)
-    return {
-      score: 0,
-      scoreBreakdown: {},
-      requirements: '',
-      requirementsComplete: false,
-      projectLifecycleStage: null,
-      projectFields: {},
-    }
-  }
+  const raw = response.content[0]?.text || ''
+  const parsed = parseScoreResponse(raw)
+  return normalizeScoreData(parsed)
 }
 
 const applyScoreToLead = (lead, scoreData) => {
@@ -120,6 +171,10 @@ const applyScoreToLead = (lead, scoreData) => {
 const updateLeadScore = async (leadId, messages, leadName = '') => {
   try {
     const scoreData = await scoreLead(messages, leadName)
+    if (!scoreData) {
+      console.warn('[Scoring] Skipped lead update — model output was not valid JSON')
+      return null
+    }
     const lead = await Lead.findById(leadId)
     if (!lead) return
 
@@ -160,4 +215,10 @@ const updateLeadScore = async (leadId, messages, leadName = '') => {
   }
 }
 
-module.exports = { scoreLead, applyScoreToLead, updateLeadScore }
+module.exports = {
+  scoreLead,
+  applyScoreToLead,
+  updateLeadScore,
+  parseScoreResponse,
+  normalizeScoreData,
+}

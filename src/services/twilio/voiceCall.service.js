@@ -673,16 +673,18 @@ const scheduleVoiceFollowUp = ({
         messagesAfterAi,
         customer?.firstName || '',
       )
-      scoringService.applyScoreToLead(leadForScore, scoreData)
-      await Lead.findByIdAndUpdate(session.leadId, {
-        $set: { leadScoring: leadForScore.leadScoring },
-      })
-      await syncLeadProjectFieldsFromScore(session.leadId, scoreData)
-      await syncPlannedStartFromMessages(session.leadId, messagesAfterAi)
-      if (canAdvanceLifecycle(messagesAfterAi) && isRequirementsGatheredFromChat(chatMeta, scoreData)) {
+      if (scoreData) {
+        scoringService.applyScoreToLead(leadForScore, scoreData)
+        await Lead.findByIdAndUpdate(session.leadId, {
+          $set: { leadScoring: leadForScore.leadScoring },
+        })
+        await syncLeadProjectFieldsFromScore(session.leadId, scoreData)
+        await syncPlannedStartFromMessages(session.leadId, messagesAfterAi)
+      }
+      if (scoreData && canAdvanceLifecycle(messagesAfterAi) && isRequirementsGatheredFromChat(chatMeta, scoreData)) {
         await advanceLifecycleIfNeeded(session.leadId, 'requirements_gathered')
       }
-      if (readyForHandoff || isReadyForSalesHandoff(chatMeta, text, quoteReadyData, scoreData)) {
+      if (scoreData && (readyForHandoff || isReadyForSalesHandoff(chatMeta, text, quoteReadyData, scoreData))) {
         const quoteData =
           quoteReadyData || buildFallbackQuoteData(leadForScore, scoreData, messagesAfterAi)
         await handleQuoteReady(session.leadId, session.customerId, quoteData, {
