@@ -246,7 +246,7 @@ const resetAllPresenceOnStartup = async () => {
   customerSockets.clear()
   leadSockets.clear()
   for (const timer of messengerIdleTimers.values()) clearTimeout(timer)
-  messengerIdleTimers.clear()()
+  messengerIdleTimers.clear()
 
   const now = new Date()
   await Promise.all([
