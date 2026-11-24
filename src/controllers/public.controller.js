@@ -209,6 +209,7 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
     createdAt: m.createdAt,
     isRead: m.isRead,
     origin: m.origin || 'chat',
+    ...require('../../utils/messageSource').messageSource(m.origin),
     callSessionId: m.callSessionId || null,
     senderName: m.senderType === 'sales'
       ? m.senderId?.name || 'Sales'

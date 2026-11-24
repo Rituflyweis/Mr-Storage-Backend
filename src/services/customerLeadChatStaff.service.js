@@ -2,6 +2,8 @@ const Lead = require('../models/Lead')
 const notificationService = require('./notification.service')
 const leadListSocket = require('./leadListSocket.service')
 
+const { messageSource } = require('../utils/messageSource')
+
 const messagePayload = (doc) => ({
   _id: doc._id,
   senderType: doc.senderType,
@@ -10,6 +12,8 @@ const messagePayload = (doc) => ({
   leadId: doc.leadId,
   channel: doc.channel || 'project',
   senderName: doc.senderName || '',
+  origin: doc.origin || 'chat',
+  ...messageSource(doc.origin),
 })
 
 /** Real-time + in-app notify assigned sales and admins when a customer posts on a lead thread. */

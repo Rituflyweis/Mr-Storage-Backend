@@ -4,6 +4,7 @@ const Lead = require('../../models/Lead')
 const Message = require('../../models/Message')
 const CallSession = require('../../models/CallSession')
 const CallTurn = require('../../models/CallTurn')
+const { messageSource } = require('../../utils/messageSource')
 
 const assertLeadAccess = async (req, leadId) => {
   const lead = await Lead.findById(leadId)
@@ -31,6 +32,7 @@ const mapMessage = (m) => ({
   createdAt: m.createdAt,
   isRead: Boolean(m.isRead),
   origin: m.origin || 'chat',
+  ...messageSource(m.origin),
   callSessionId: m.callSessionId || null,
   channel: m.channel || 'project',
 })

@@ -15,6 +15,7 @@ const { syncLeadBuildings } = require('../../services/leadBuilding.service')
 const { success, created, notFound, forbidden, badRequest } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
+const { withMessageSource } = require('../../utils/messageSource')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES, LEAD_TEMPERATURES, PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES, PO_STATUSES } = require('../../config/constants')
 const { buildLeadCreatePayload, applyLeadUpdateFromBody, escapeRegex } = require('../../utils/leadPayload')
 const { applyCustomerContactUpdate, saveManualContactOnCustomer } = require('../../utils/customerContactUpdate')
@@ -510,7 +511,7 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     },
     buildings,
     budget: budgetOut,
-    recentMessages,
+    recentMessages: recentMessages.map(withMessageSource),
     leadNotes,
     shipments: [],
   })

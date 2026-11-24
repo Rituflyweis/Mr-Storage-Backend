@@ -16,6 +16,7 @@ const generateCustomerId = require('../../utils/generateCustomerId')
 const { success, created, notFound, badRequest, forbidden } = require('../../utils/apiResponse')
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
+const { withMessageSource } = require('../../utils/messageSource')
 const { setLeadLifecycleStage } = require('../../utils/leadLifecycle.util')
 const {
   buildPlantProjectLifecycle,
@@ -698,7 +699,7 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     },
     buildings,
     budget: budgetOut,
-    recentMessages,
+    recentMessages: recentMessages.map(withMessageSource),
     leadNotes,
     shipments: [],
   })

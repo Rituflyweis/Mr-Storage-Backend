@@ -1,7 +1,9 @@
 const Message = require('../../models/Message')
 const Lead = require('../../models/Lead')
+const Customer = require('../../models/Customer')
 const chatLifecycle = require('../chat/chatLifecycle.service')
 const staffPresence = require('./staffPresence.service')
+const messenger = require('../facebook/messenger.service')
 
 const assertStaffCanAccessLead = async (socket, lead) => {
   const isSales = socket.user.role === 'sales'
@@ -74,14 +76,18 @@ const adminHandler = (socket, adminNS) => {
       }
 
       const senderType = socket.user.role === 'admin' ? 'admin' : 'sales'
+      const customer = await Customer.findById(lead.customerId).select('facebookPsid').lean()
+      const isMessenger = Boolean(customer?.facebookPsid)
 
       const msg = await Message.create({
         leadId,
         customerId: lead.customerId,
         senderType,
         senderId: socket.user._id,
+        senderName: socket.user.name,
         content: content.trim(),
         isRead: false,
+        ...(isMessenger ? { origin: 'messenger' } : {}),
       })
 
       const payload = {
@@ -92,6 +98,18 @@ const adminHandler = (socket, adminNS) => {
         content: msg.content,
         createdAt: msg.createdAt,
         leadId,
+        origin: msg.origin,
+        source: isMessenger ? 'facebook' : 'website',
+        sourceLabel: isMessenger ? 'Facebook' : 'Website',
+      }
+
+      if (isMessenger) {
+        try {
+          await messenger.sendText(customer.facebookPsid, msg.content)
+        } catch (err) {
+          console.error('[AdminHandler] messenger reply failed:', err.message)
+          socket.emit('error', { message: 'Saved in the CRM, but Facebook did not accept the reply' })
+        }
       }
 
       if (global.io) {

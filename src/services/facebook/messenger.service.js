@@ -8,6 +8,7 @@ const chatService = require('../ai/chat.service')
 const scoringService = require('../ai/scoring.service')
 const auditService = require('../audit.service')
 const leadListSocket = require('../leadListSocket.service')
+const customerPresence = require('../socket/customerPresence.service')
 const generateCustomerId = require('../../utils/generateCustomerId')
 const { syncLeadBuildings } = require('../leadBuilding.service')
 const {
@@ -162,6 +163,8 @@ const saveMessage = async ({ lead, customer, senderType, content, facebookMid })
       createdAt: message.createdAt,
       leadId: lead._id,
       origin: 'messenger',
+      source: 'facebook',
+      sourceLabel: 'Facebook',
     }
     global.io.of('/admin').to(`lead:${lead._id}`).emit('new_message', payload)
     global.io.of('/admin').to('admin_room').emit('new_customer_message', {
@@ -192,6 +195,9 @@ const handleIncoming = async (event) => {
   }
 
   const { customer, lead } = await ensureCustomerAndLead(psid)
+  await customerPresence.markMessengerActive(customer._id, lead._id).catch((err) => {
+    console.warn('[Messenger] presence:', err.message)
+  })
   await saveMessage({ lead, customer, senderType: 'customer', content: text, facebookMid: mid || null })
 
   if (lead.isChatEnded) return

@@ -11,6 +11,11 @@ const customerSockets = new Map()
 /** @type {Map<string, Set<string>>} */
 const leadSockets = new Map()
 
+/** @type {Map<string, NodeJS.Timeout>} */
+const messengerIdleTimers = new Map()
+
+const MESSENGER_ONLINE_MS = 5 * 60 * 1000
+
 const normalizeId = (id) => String(id)
 
 const getAdminIo = () => global.io?.of('/admin')
@@ -117,6 +122,36 @@ const markCustomerOfflineIfNeeded = async (customerId) => {
   }
 }
 
+const markMessengerIdle = async (customerId, leadId) => {
+  messengerIdleTimers.delete(normalizeId(leadId))
+  if ((leadSockets.get(normalizeId(leadId))?.size || 0) > 0) return
+
+  const lead = await setLeadOnline(leadId, false)
+  if (!lead) return
+
+  const customerStillOnSite = (customerSockets.get(normalizeId(customerId))?.size || 0) > 0
+  const customer = customerStillOnSite
+    ? await Customer.findById(customerId).select('isOnline lastSeenAt onlineAt').lean()
+    : await setCustomerOnline(customerId, false)
+
+  await emitOnlineStatus(lead, customer, 'lead', false)
+}
+
+const markMessengerActive = async (customerId, leadId) => {
+  const customer = await setCustomerOnline(customerId, true)
+  const lead = await setLeadOnline(leadId, true)
+  if (lead) await emitOnlineStatus(lead, customer, 'lead', true)
+
+  const key = normalizeId(leadId)
+  const pending = messengerIdleTimers.get(key)
+  if (pending) clearTimeout(pending)
+  messengerIdleTimers.set(key, setTimeout(() => {
+    markMessengerIdle(customerId, leadId).catch((err) => {
+      console.error('[Presence] messenger idle:', err.message)
+    })
+  }, MESSENGER_ONLINE_MS))
+}
+
 const registerJoin = async (socket, { leadId, customerId }) => {
   if (!leadId || !customerId) return { ok: false, reason: 'missing_ids' }
 
@@ -210,6 +245,8 @@ const resetAllPresenceOnStartup = async () => {
   socketRegistry.clear()
   customerSockets.clear()
   leadSockets.clear()
+  for (const timer of messengerIdleTimers.values()) clearTimeout(timer)
+  messengerIdleTimers.clear()()
 
   const now = new Date()
   await Promise.all([
@@ -223,4 +260,5 @@ module.exports = {
   leaveLead,
   unregisterSocket,
   resetAllPresenceOnStartup,
+  markMessengerActive,
 }

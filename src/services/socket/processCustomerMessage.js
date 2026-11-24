@@ -84,6 +84,9 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
       content: reply,
       createdAt: aiMsg.createdAt,
       leadId,
+      origin: 'chat',
+      source: 'website',
+      sourceLabel: 'Website',
     }
     chatNS.to(`lead:${leadId}`).emit('new_message', msgPayload)
     if (global.io) {
@@ -137,6 +140,9 @@ const processCustomerMessage = async ({ leadId, customerId, content, chatNS }) =
     content: text,
     createdAt: aiMsg.createdAt,
     leadId,
+    origin: 'chat',
+    source: 'website',
+    sourceLabel: 'Website',
   }
   chatNS.to(`lead:${leadId}`).emit('new_message', msgPayload)
   if (global.io) {

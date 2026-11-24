@@ -21,6 +21,7 @@ const formatChatStatus = (lead) => {
     canCustomerSend: !isChatEnded,
     canStaffSend: !isChatEnded,
     isCustomerOnline: Boolean(lead?.isOnline),
+    channel: lead?.source === 'messenger' || customer?.facebookPsid ? 'facebook' : 'website',
     leadOnlineAt: lead?.onlineAt || null,
     leadLastSeenAt: lead?.lastSeenAt || null,
     customerOnline: customer
@@ -35,8 +36,8 @@ const formatChatStatus = (lead) => {
 
 const getChatStatusByLeadId = async (leadId) => {
   const lead = await Lead.findById(leadId)
-    .select('isChatEnded chatEndedAt chatEndedBy isStaffChatActive isHandedToSales isOnline onlineAt lastSeenAt customerId')
-    .populate('customerId', 'isOnline onlineAt lastSeenAt')
+    .select('isChatEnded chatEndedAt chatEndedBy isStaffChatActive isHandedToSales isOnline onlineAt lastSeenAt customerId source')
+    .populate('customerId', 'isOnline onlineAt lastSeenAt facebookPsid')
     .lean()
   if (!lead) return null
   return formatChatStatus(lead)
