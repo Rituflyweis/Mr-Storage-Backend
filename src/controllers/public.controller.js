@@ -17,6 +17,7 @@ const generateCustomerId = require('../utils/generateCustomerId')
 const { success, badRequest } = require('../utils/apiResponse')
 const asyncHandler = require('../utils/asyncHandler')
 const { alertPlantUsersForLead } = require('../utils/notifyPlantUsers')
+const { messageSource } = require('../utils/messageSource')
 const { AUDIT_ACTIONS, CLOSED_STAGES } = require('../config/constants')
 const env = require('../config/env')
 
@@ -209,7 +210,7 @@ exports.getChatHistory = asyncHandler(async (req, res) => {
     createdAt: m.createdAt,
     isRead: m.isRead,
     origin: m.origin || 'chat',
-    ...require('../../utils/messageSource').messageSource(m.origin),
+    ...messageSource(m.origin),
     callSessionId: m.callSessionId || null,
     senderName: m.senderType === 'sales'
       ? m.senderId?.name || 'Sales'
