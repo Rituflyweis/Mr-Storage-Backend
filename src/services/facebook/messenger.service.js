@@ -57,6 +57,50 @@ const splitForMessenger = (text) => {
   return chunks
 }
 
+const TYPING_PULSE_MS = 18_000
+
+const sendSenderAction = async (psid, senderAction) => {
+  const token = env.FACEBOOK_PAGE_ACCESS_TOKEN
+  if (!token || !psid) return
+  const action = String(senderAction || '').trim()
+  if (!action) return
+  const response = await fetch(graphUrl('/me/messages'), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      recipient: { id: psid },
+      sender_action: action,
+    }),
+  })
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`Messenger sender_action failed (${response.status}): ${body.slice(0, 300)}`)
+  }
+}
+
+const sendTypingOn = async (psid) => sendSenderAction(psid, 'typing_on')
+const sendTypingOff = async (psid) => sendSenderAction(psid, 'typing_off')
+
+/** Meta typing bubbles expire after ~20s — pulse while async work (e.g. Claude) runs. */
+const withMessengerTyping = async (psid, work) => {
+  if (!psid || !env.FACEBOOK_PAGE_ACCESS_TOKEN) return work()
+  let interval = null
+  const pulse = () => sendTypingOn(psid).catch((err) => {
+    console.warn('[Messenger] typing_on:', err.message)
+  })
+  try {
+    await pulse()
+    interval = setInterval(pulse, TYPING_PULSE_MS)
+    return await work()
+  } finally {
+    if (interval) clearInterval(interval)
+    await sendTypingOff(psid).catch(() => {})
+  }
+}
+
 const sendText = async (psid, text) => {
   const token = env.FACEBOOK_PAGE_ACCESS_TOKEN
   if (!token) throw new Error('FACEBOOK_PAGE_ACCESS_TOKEN is not set')
@@ -205,7 +249,9 @@ const handleIncoming = async (event) => {
     const lastAi = await Message.findOne({ leadId: lead._id, senderType: 'ai' }).sort({ createdAt: -1 }).lean()
     if (lastAi?.content === SALES_FOLLOW_UP) return
     await saveMessage({ lead, customer, senderType: 'ai', content: SALES_FOLLOW_UP })
-    await sendText(psid, SALES_FOLLOW_UP)
+    await withMessengerTyping(psid, async () => {
+      await sendText(psid, SALES_FOLLOW_UP)
+    })
     return
   }
 
@@ -214,19 +260,29 @@ const handleIncoming = async (event) => {
     .select('senderType content createdAt')
     .lean()
 
-  const { text: reply, quoteReadyData, chatMeta } = await chatService.chat(history, {
-    customer,
-    currentConversationSummary: lead.aiContextSummary || '',
-    messengerMode: true,
-    projectLead: lead,
+  let visible = ''
+  let quoteReadyData
+  let chatMeta
+  let aiSent = false
+  await withMessengerTyping(psid, async () => {
+    const out = await chatService.chat(history, {
+      customer,
+      currentConversationSummary: lead.aiContextSummary || '',
+      messengerMode: true,
+      projectLead: lead,
+    })
+    quoteReadyData = out.quoteReadyData
+    chatMeta = out.chatMeta
+    visible = String(out.text || '').trim() || 'Could you tell me a bit more about the building you have in mind?'
+
+    const fresh = await Lead.findById(lead._id).select('isStaffChatActive isHandedToSales').lean()
+    if (fresh?.isStaffChatActive || fresh?.isHandedToSales) return
+
+    await saveMessage({ lead, customer, senderType: 'ai', content: visible })
+    await sendText(psid, visible)
+    aiSent = true
   })
-  const visible = String(reply || '').trim() || 'Could you tell me a bit more about the building you have in mind?'
-
-  const fresh = await Lead.findById(lead._id).select('isStaffChatActive isHandedToSales').lean()
-  if (fresh?.isStaffChatActive || fresh?.isHandedToSales) return
-
-  await saveMessage({ lead, customer, senderType: 'ai', content: visible })
-  await sendText(psid, visible)
+  if (!aiSent) return
 
   const messagesAfterAi = await Message.find({ leadId: lead._id })
     .sort({ createdAt: 1 })
@@ -269,4 +325,7 @@ module.exports = {
   signaturesMatch,
   handleWebhookBody,
   sendText,
+  sendTypingOn,
+  sendTypingOff,
+  withMessengerTyping,
 }

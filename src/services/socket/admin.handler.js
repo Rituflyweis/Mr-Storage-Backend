@@ -14,6 +14,14 @@ const assertStaffCanAccessLead = async (socket, lead) => {
   return true
 }
 
+const messengerPsidForLead = async (leadId) => {
+  const lead = await Lead.findById(leadId).select('customerId').lean()
+  if (!lead?.customerId) return null
+  const customer = await Customer.findById(lead.customerId).select('facebookPsid').lean()
+  const psid = String(customer?.facebookPsid || '').trim()
+  return psid || null
+}
+
 const adminHandler = (socket, adminNS) => {
 
   socket.on('join_lead_chat', async ({ leadId }) => {
@@ -105,6 +113,7 @@ const adminHandler = (socket, adminNS) => {
 
       if (isMessenger) {
         try {
+          await messenger.sendTypingOff(customer.facebookPsid).catch(() => {})
           await messenger.sendText(customer.facebookPsid, msg.content)
         } catch (err) {
           console.error('[AdminHandler] messenger reply failed:', err.message)
@@ -145,6 +154,14 @@ const adminHandler = (socket, adminNS) => {
   socket.on('sales_typing_start', async ({ leadId }) => {
     if (!leadId) return
     if (await chatLifecycle.isLeadChatEnded(leadId)) return
+    try {
+      const lead = await Lead.findById(leadId).lean()
+      if (!lead || !(await assertStaffCanAccessLead(socket, lead))) return
+      const psid = await messengerPsidForLead(leadId)
+      if (psid) await messenger.sendTypingOn(psid)
+    } catch (err) {
+      console.warn('[AdminHandler] messenger typing_on:', err.message)
+    }
     if (global.io) {
       global.io.of('/chat').to(`lead:${leadId}`).emit('sales_typing', { isTyping: true, name: socket.user.name })
     }
@@ -153,6 +170,12 @@ const adminHandler = (socket, adminNS) => {
   socket.on('sales_typing_stop', async ({ leadId }) => {
     if (!leadId) return
     if (await chatLifecycle.isLeadChatEnded(leadId)) return
+    try {
+      const psid = await messengerPsidForLead(leadId)
+      if (psid) await messenger.sendTypingOff(psid)
+    } catch (err) {
+      console.warn('[AdminHandler] messenger typing_off:', err.message)
+    }
     if (global.io) {
       global.io.of('/chat').to(`lead:${leadId}`).emit('sales_typing', { isTyping: false })
     }
