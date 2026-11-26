@@ -35,6 +35,7 @@ After deploy, `pm2 logs` (or your process logs) should show:
 | `[MetaLeadAds] ingest start` / `ingest success` | Lead created; `fieldNames` lists form keys |
 | `[MetaLeadAds] ingest failed` | Often missing `leads_retrieval` or invalid test `leadgen_id` |
 | `[MetaLeadAds] webhook had leadgen field but no usable leadgen_id` | Meta **Test** button — normal; use a real form submit for full ingest |
+| `[MetaLeadAds] ingest skipped (Meta webhook test` | **Test** with fake ids like `444444444444` — webhook OK; Graph fetch is not run |
 
 ## Permissions note
 
