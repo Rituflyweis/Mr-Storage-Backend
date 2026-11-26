@@ -90,8 +90,21 @@ const fetchLeadFromGraph = async (leadgenId) => {
 }
 
 const ingestLeadgen = async ({ leadgenId, formId, adId, adgroupId, pageId, createdTime }) => {
+  console.info('[MetaLeadAds] ingest start', {
+    leadgenId,
+    formId: formId || null,
+    adId: adId || null,
+    pageId: pageId || null,
+  })
+
   const existing = await MetaLeadAdSubmission.findOne({ leadgenId }).lean()
-  if (existing) return { skipped: true, leadId: existing.leadId }
+  if (existing) {
+    console.info('[MetaLeadAds] ingest skipped (duplicate leadgenId)', {
+      leadgenId,
+      leadId: String(existing.leadId),
+    })
+    return { skipped: true, leadId: existing.leadId }
+  }
 
   const graphLead = await fetchLeadFromGraph(leadgenId)
   const fieldData = Array.isArray(graphLead.field_data) ? graphLead.field_data : []
@@ -189,10 +202,15 @@ const ingestLeadgen = async ({ leadgenId, formId, adId, adgroupId, pageId, creat
     source: 'meta_lead_ads',
   }).catch(() => {})
 
-  console.info('[MetaLeadAds] lead ingested', {
+  const fieldNames = (submission.fieldData || []).map((f) => f.name).filter(Boolean)
+  console.info('[MetaLeadAds] ingest success', {
     leadId: String(lead._id),
+    jobId: lead.jobId || null,
     leadgenId: submission.leadgenId,
     customerId: String(customer._id),
+    formId: submission.formId,
+    fieldCount: fieldNames.length,
+    fieldNames,
   })
 
   return { skipped: false, leadId: lead._id, submissionId: submission._id }
@@ -205,10 +223,17 @@ const parseLeadgenWebhook = (body) => {
   for (const entry of entries) {
     const changes = Array.isArray(entry?.changes) ? entry.changes : []
     for (const change of changes) {
-      if (String(change?.field || '') !== 'leadgen') continue
+      const field = String(change?.field || '')
+      if (field !== 'leadgen') continue
       const value = change?.value || {}
       const leadgenId = String(value.leadgen_id || '').trim()
-      if (!leadgenId) continue
+      if (!leadgenId) {
+        console.warn('[MetaLeadAds] leadgen change missing leadgen_id', {
+          pageId: entry?.id || null,
+          keys: Object.keys(value),
+        })
+        continue
+      }
       out.push({
         leadgenId,
         formId: value.form_id,
@@ -223,11 +248,29 @@ const parseLeadgenWebhook = (body) => {
 }
 
 const handleWebhookBody = async (body) => {
-  for (const payload of parseLeadgenWebhook(body)) {
+  const payloads = parseLeadgenWebhook(body)
+  if (String(body?.object || '').toLowerCase() === 'page' && !payloads.length) {
+    const fields = []
+    for (const entry of Array.isArray(body?.entry) ? body.entry : []) {
+      for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+        if (change?.field) fields.push(String(change.field))
+      }
+    }
+    if (fields.includes('leadgen')) {
+      console.warn('[MetaLeadAds] webhook had leadgen field but no usable leadgen_id (Meta test pings often do this)')
+    }
+  }
+  if (!payloads.length) return
+
+  console.info('[MetaLeadAds] processing leadgen batch', { count: payloads.length })
+  for (const payload of payloads) {
     try {
       await ingestLeadgen(payload)
     } catch (err) {
-      console.error('[MetaLeadAds] ingest failed:', err.message)
+      console.error('[MetaLeadAds] ingest failed:', {
+        leadgenId: payload.leadgenId,
+        message: err.message,
+      })
     }
   }
 }
