@@ -8,7 +8,7 @@ const MessageSchema = new mongoose.Schema(
     senderId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     channel:    { type: String, enum: ['project', 'finance', 'construction'], default: 'project' },
     /** chat widget vs AI phone call — shared Claude memory across both */
-    origin:     { type: String, enum: ['chat', 'call', 'messenger'], default: 'chat', index: true },
+    origin:     { type: String, enum: ['chat', 'call', 'messenger', 'meta_lead'], default: 'chat', index: true },
     /** Facebook message id, so a retried webhook does not reply twice. */
     facebookMid: { type: String },
     callSessionId: {

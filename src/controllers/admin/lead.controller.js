@@ -47,6 +47,7 @@ const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
 const { formatLeadNotes, appendLeadNote, updateLeadNote, deleteLeadNote } = require('../../services/leadNotes.service')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
+const leadAds = require('../../services/facebook/leadAds.service')
 const { notifyStaffUser } = require('../../utils/staffRequestNotifications.util')
 const {
   normalizeBusinessUnit,
@@ -673,6 +674,9 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     })
   }
 
+  const metaLeadAd =
+  lead.source === 'meta_lead_ads' ? await leadAds.getSubmissionForLead(leadId) : null
+
   return success(res, {
     lead: enrichLeadDocument(lead),
     lifecycle: {
@@ -700,6 +704,7 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     buildings,
     budget: budgetOut,
     recentMessages: recentMessages.map(withMessageSource),
+    metaLeadAd,
     leadNotes,
     shipments: [],
   })
