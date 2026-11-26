@@ -16,6 +16,7 @@ const { success, created, notFound, forbidden, badRequest } = require('../../uti
 const asyncHandler = require('../../utils/asyncHandler')
 const { buildDateFilter } = require('../../utils/dateRange')
 const { withMessageSource } = require('../../utils/messageSource')
+const leadAds = require('../../services/facebook/leadAds.service')
 const { AUDIT_ACTIONS, LIFECYCLE_STAGES, CLOSED_STAGES, LEAD_TEMPERATURES, PO_RAISE_ELIGIBLE_LIFECYCLE_STAGES, PO_STATUSES } = require('../../config/constants')
 const { buildLeadCreatePayload, applyLeadUpdateFromBody, escapeRegex } = require('../../utils/leadPayload')
 const { applyCustomerContactUpdate, saveManualContactOnCustomer } = require('../../utils/customerContactUpdate')
@@ -487,6 +488,9 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
       }
     : null
 
+  const metaLeadAd =
+    lead.source === 'meta_lead_ads' ? await leadAds.getSubmissionForLead(leadId) : null
+
   return success(res, {
     lead: enrichedLead,
     customer,
@@ -512,6 +516,7 @@ exports.getLeadDetail = asyncHandler(async (req, res) => {
     buildings,
     budget: budgetOut,
     recentMessages: recentMessages.map(withMessageSource),
+    metaLeadAd,
     leadNotes,
     shipments: [],
   })

@@ -1,5 +1,6 @@
 const env = require('../../config/env')
 const messenger = require('../../services/facebook/messenger.service')
+const leadAds = require('../../services/facebook/leadAds.service')
 
 exports.verify = (req, res) => {
   const mode = req.query['hub.mode']
@@ -22,6 +23,9 @@ exports.webhook = (req, res) => {
     return res.sendStatus(403)
   }
   res.sendStatus(200)
+  leadAds.handleWebhookBody(req.body).catch((err) => {
+    console.error('[MetaLeadAds] webhook failed:', err.message)
+  })
   messenger.handleWebhookBody(req.body).catch((err) => {
     console.error('[Messenger] webhook failed:', err.message)
   })
