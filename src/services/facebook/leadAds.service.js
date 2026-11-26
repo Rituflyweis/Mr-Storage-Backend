@@ -12,6 +12,14 @@ const { syncLeadBuildings } = require('../leadBuilding.service')
 const graphUrl = (path) =>
   `https://graph.facebook.com/${env.FACEBOOK_GRAPH_VERSION || 'v21.0'}${path}`
 
+/** Meta “Test” on the leadgen webhook uses fake ids (e.g. 444444444444) — Graph API will 400. */
+const isMetaLeadgenTestPayload = ({ leadgenId, formId, adId, pageId }) => {
+  const id = String(leadgenId || '')
+  if (/^4{8,}$/.test(id) || id === '444444444444') return true
+  const same = [formId, adId, pageId].map((v) => String(v || ''))
+  return same.every((s) => !s || /^4+$/.test(s))
+}
+
 const fieldMap = (fieldData = []) => {
   const map = new Map()
   for (const row of fieldData) {
@@ -104,6 +112,11 @@ const ingestLeadgen = async ({ leadgenId, formId, adId, adgroupId, pageId, creat
       leadId: String(existing.leadId),
     })
     return { skipped: true, leadId: existing.leadId }
+  }
+
+  if (isMetaLeadgenTestPayload({ leadgenId, formId, adId, pageId })) {
+    console.info('[MetaLeadAds] ingest skipped (Meta webhook test — fake leadgen_id). Submit a real instant form to create a CRM lead.')
+    return { skipped: true, testWebhook: true }
   }
 
   const graphLead = await fetchLeadFromGraph(leadgenId)
