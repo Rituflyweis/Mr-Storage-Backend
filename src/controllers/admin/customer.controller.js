@@ -20,6 +20,7 @@ const {
   withProjectIdFields,
   enrichLeadDocument,
 } = require("../../utils/leadProjectId");
+const { leadSourceFields } = require("../../utils/leadSource");
 const { buildLeadCreatePayload } = require("../../utils/leadPayload");
 const {
   applyCustomerContactUpdate,
@@ -458,6 +459,7 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
         assignedSales: l.assignedSales,
         quoteValue: l.quoteValue || 0,
         isTerminated: l.isTerminated,
+        ...leadSourceFields(l.source),
         budget: b
           ? {
               totalBudget: total,

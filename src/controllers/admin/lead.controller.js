@@ -47,6 +47,7 @@ const { setLeadTemperatureManual } = require('../../utils/leadTemperature')
 const { formatLeadNotes, appendLeadNote, updateLeadNote, deleteLeadNote } = require('../../services/leadNotes.service')
 const { exportLeadsToExcelAndS3 } = require('../../services/leadExport.service')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
+const { leadSourceFields } = require('../../utils/leadSource')
 const leadAds = require('../../services/facebook/leadAds.service')
 const { notifyStaffUser } = require('../../utils/staffRequestNotifications.util')
 const {
@@ -155,7 +156,7 @@ exports.getLeadsByScore = asyncHandler(async (req, res) => {
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName email customerId' })
-      .select('_id jobId projectName businessUnit location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt')
+      .select('_id jobId projectName businessUnit location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt source')
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -338,7 +339,7 @@ exports.getAiHandledLeads = asyncHandler(async (req, res) => {
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName email' })
-      .select('_id jobId customerId buildingType businessUnit location lifecycleStatus leadScoring createdAt')
+      .select('_id jobId customerId buildingType businessUnit location lifecycleStatus leadScoring createdAt source')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -361,7 +362,7 @@ exports.getSignedContracts = asyncHandler(async (req, res) => {
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName' })
       .populate({ path: 'assignedSales', select: 'name' })
-      .select('_id jobId projectName businessUnit customerId assignedSales documents lifecycleStatus')
+      .select('_id jobId projectName businessUnit customerId assignedSales documents lifecycleStatus source')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -379,6 +380,7 @@ exports.getSignedContracts = asyncHandler(async (req, res) => {
       agreementUploadedAt: contractDoc?.uploadedAt || null,
       assignedSales: l.assignedSales,
       lifecycleStatus: l.lifecycleStatus,
+      ...leadSourceFields(l.source),
     }, l.jobId)
   })
 
@@ -397,7 +399,7 @@ exports.getTerminatedLeads = asyncHandler(async (req, res) => {
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName' })
       .populate({ path: 'assignedSales', select: 'name' })
-      .select('_id jobId projectName businessUnit customerId assignedSales terminatedAt terminationReason lifecycleStatus')
+      .select('_id jobId projectName businessUnit customerId assignedSales terminatedAt terminationReason lifecycleStatus source')
       .sort({ terminatedAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -421,7 +423,7 @@ exports.getArchivedLeads = asyncHandler(async (req, res) => {
       .populate({ path: 'customerId', select: 'firstName email' })
       .populate({ path: 'assignedSales', select: 'name' })
       .populate({ path: 'archivedBy', select: 'name' })
-      .select('_id jobId projectName businessUnit customerId assignedSales archivedAt archiveReason lifecycleStatus isTerminated')
+      .select('_id jobId projectName businessUnit customerId assignedSales archivedAt archiveReason lifecycleStatus isTerminated source')
       .sort({ archivedAt: -1 })
       .skip(skip)
       .limit(parsedLimit)

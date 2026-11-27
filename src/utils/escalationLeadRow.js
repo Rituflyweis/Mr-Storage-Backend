@@ -2,6 +2,7 @@ const Escalation = require('../models/Escalation')
 const { withProjectIdFields } = require('./leadProjectId')
 const { mapProjectNameFallbackFields } = require('./plantProjectListFields')
 const { businessUnitFields } = require('./businessUnit')
+const { leadSourceFields } = require('./leadSource')
 
 const buildUserSummary = (user) => {
   if (!user) return null
@@ -67,6 +68,7 @@ const mapEscalationLeadRow = (escalation) => {
     ...businessUnitFields(lead),
     lifecycleStatus: lead?.lifecycleStatus || '',
     quoteValue: lead?.quoteValue || 0,
+    ...leadSourceFields(lead?.source),
     customerId: customerSummary,
     customerName: customerSummary?.customerName || '',
     assignedTo,
@@ -95,7 +97,7 @@ const mapEscalationLeadRow = (escalation) => {
 const ESCALATION_LEAD_POPULATE = [
   {
     path: 'leadId',
-    select: '_id jobId projectName businessUnit lifecycleStatus quoteValue buildingType location customerId assignedSales',
+    select: '_id jobId projectName businessUnit lifecycleStatus quoteValue buildingType location customerId assignedSales source',
     populate: {
       path: 'assignedSales',
       select: '_id name email role',

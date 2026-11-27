@@ -3,6 +3,7 @@ const { buildDateFilter } = require('./dateRange')
 const { LEAD_TEMPERATURES, resolveLeadTemperatureFromScore } = require('../config/constants')
 const { buildActiveLeadMatch } = require('./activeLeadScope')
 const { applyBusinessUnitFilter, businessUnitFields } = require('./businessUnit')
+const { leadSourceFields } = require('./leadSource')
 
 // buildDateFilter only understands explicit startDate/endDate — a quick-filter pill sending
 // `period=today` (the convention already used on the Account Dashboard) was silently ignored
@@ -67,12 +68,13 @@ const buildAdminLeadFilter = async (query = {}) => {
 }
 
 const buildSalesLeadFilter = async (query = {}, salesId) => {
-  const { search, buildingType, lifecycleStatus, isQuoteReady } = query
+  const { search, buildingType, lifecycleStatus, isQuoteReady, source } = query
   const dateFilter = buildLeadDateFilter(query)
 
   const filter = { assignedSales: salesId, ...buildActiveLeadMatch(), ...dateFilter }
   if (buildingType) filter.buildingType = { $regex: buildingType, $options: 'i' }
   if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus
+  if (source) filter.source = source
   if (isQuoteReady !== undefined) filter.isQuoteReady = isQuoteReady === 'true'
   applyBusinessUnitFilter(filter, query.businessUnit)
   if (search && search.trim()) {
@@ -151,6 +153,7 @@ const mapLeadByScoreRow = (lead) => {
     isOnline: lead.isOnline === true,
     lastSeenAt: lead.lastSeenAt || null,
     updatedAt: lead.updatedAt,
+    ...leadSourceFields(lead.source),
   }
 }
 

@@ -19,6 +19,7 @@ const {
   withProjectIdFields,
   enrichLeadDocument,
 } = require("../../utils/leadProjectId");
+const { leadSourceFields } = require("../../utils/leadSource");
 const {
   buildLeadCreatePayload,
   escapeRegex,
@@ -282,6 +283,7 @@ exports.getCustomerProjects = asyncHandler(async (req, res) => {
         numberOfBuildings: l.numberOfBuildings,
         lifecycleStatus: l.lifecycleStatus,
         quoteValue: l.quoteValue || 0,
+        ...leadSourceFields(l.source),
         budget: budget
           ? {
               totalBudget: total,

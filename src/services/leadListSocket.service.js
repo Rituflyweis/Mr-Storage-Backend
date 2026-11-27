@@ -4,6 +4,7 @@ const ProjectBudget = require('../models/ProjectBudget')
 const { enrichLeadDocument, withProjectIdFields } = require('../utils/leadProjectId')
 const { mapLeadByScoreRow } = require('../utils/leadQueryFilter')
 const { businessUnitFields } = require('../utils/businessUnit')
+const { leadSourceFields } = require('../utils/leadSource')
 
 const getIo = () => global.io?.of('/admin')
 
@@ -41,7 +42,7 @@ const getLeadForAdminList = async (leadId, { includeDeleted = false } = {}) => {
 
 const getLeadForSalesList = async (leadId, { includeDeleted = false } = {}) => {
   const lead = await Lead.findById(leadId)
-    .select('_id jobId projectName businessUnit customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO assignedSales isOnline onlineAt lastSeenAt isDeleted')
+    .select('_id jobId projectName businessUnit customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO assignedSales isOnline onlineAt lastSeenAt isDeleted source')
     .populate({ path: 'customerId', select: 'firstName email isOnline onlineAt lastSeenAt' })
     .setOptions({ includeDeleted })
     .lean()
@@ -83,13 +84,14 @@ const getLeadForSalesList = async (leadId, { includeDeleted = false } = {}) => {
         priority: nextFollowUp.priority,
       }
       : null,
+    ...leadSourceFields(lead.source),
   }, lead.jobId)
 }
 
 const getScoreRow = async (leadId) => {
   const lead = await Lead.findById(leadId)
     .populate({ path: 'customerId', select: 'firstName email customerId' })
-    .select('_id jobId projectName businessUnit location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt')
+    .select('_id jobId projectName businessUnit location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt source')
     .lean()
   if (!lead) return null
   return mapLeadByScoreRow(lead)

@@ -1,4 +1,5 @@
 const { getBusinessUnitLabel } = require('./businessUnit')
+const { leadSourceFields } = require('./leadSource')
 
 /**
  * FE may use either `jobId` or `projectId` — both are the lead's project id
@@ -27,6 +28,7 @@ const enrichLeadDocument = (lead) => {
     projectId: jobId,
     businessUnit,
     businessUnitLabel: getBusinessUnitLabel(businessUnit),
+    ...leadSourceFields(plain.source),
   }
 }
 

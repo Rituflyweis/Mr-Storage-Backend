@@ -32,6 +32,7 @@ const {
 } = require('../../utils/staffRequestNotifications.util')
 const { setLeadLifecycleStage } = require('../../utils/leadLifecycle.util')
 const { enrichLeadDocument, withProjectIdFields } = require('../../utils/leadProjectId')
+const { leadSourceFields } = require('../../utils/leadSource')
 const {
   normalizeBusinessUnit,
   businessUnitFields,
@@ -75,7 +76,7 @@ exports.getLeadsByScore = asyncHandler(async (req, res) => {
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName email customerId' })
-      .select('_id jobId projectName businessUnit location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt')
+      .select('_id jobId projectName businessUnit location lifecycleStatus lifecycleHistory quoteValue leadScoring updatedAt source')
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -117,7 +118,7 @@ exports.getLeads = asyncHandler(async (req, res) => {
   const skip = (parsedPage - 1) * parsedLimit
   const [leads, total] = await Promise.all([
     Lead.find(filter)
-      .select('_id jobId projectName businessUnit customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO')
+      .select('_id jobId projectName businessUnit customerId lifecycleStatus quoteValue leadScoring buildingType location isRaisedToPO source')
       .populate({ path: 'customerId', select: 'firstName email' })
       .sort({ 'assigningHistory.assignedAt': -1 })
       .skip(skip)
@@ -153,6 +154,7 @@ exports.getLeads = asyncHandler(async (req, res) => {
     location: lead.location || '',
     isRaisedToPO: lead.isRaisedToPO === true,
     nextFollowUp: nextFollowUpByLeadId.get(String(lead._id)) || null,
+    ...leadSourceFields(lead.source),
   }, lead.jobId))
 
   return success(res, { leads: normalizedLeads, total, page: parsedPage, limit: parsedLimit })
@@ -308,7 +310,7 @@ exports.getScoredLeads = asyncHandler(async (req, res) => {
 
   const [leads, total] = await Promise.all([
     Lead.find(filter)
-      .select('_id jobId projectName businessUnit customerId lifecycleStatus quoteValue leadScoring')
+      .select('_id jobId projectName businessUnit customerId lifecycleStatus quoteValue leadScoring source')
       .populate({ path: 'customerId', select: 'firstName' })
       .sort({ 'leadScoring.score': -1 })
       .skip(skip)
@@ -332,6 +334,7 @@ exports.getScoredLeads = asyncHandler(async (req, res) => {
       decisionMaker: l.leadScoring?.scoreBreakdown?.decisionMaker || null,
       projectClarity: l.leadScoring?.scoreBreakdown?.projectClarity || null,
     },
+    ...leadSourceFields(l.source),
   }, l.jobId))
 
   return success(res, { leads: result, total })
@@ -702,7 +705,7 @@ exports.getArchivedLeads = asyncHandler(async (req, res) => {
   const [leads, total] = await Promise.all([
     Lead.find(filter)
       .populate({ path: 'customerId', select: 'firstName email' })
-      .select('_id jobId projectName businessUnit customerId archivedAt archiveReason lifecycleStatus isTerminated')
+      .select('_id jobId projectName businessUnit customerId archivedAt archiveReason lifecycleStatus isTerminated source')
       .sort({ archivedAt: -1 })
       .skip(skip)
       .limit(parsedLimit)
@@ -1065,6 +1068,7 @@ exports.getLeadsWithPo = asyncHandler(async (req, res) => {
         poNumber: lead.poNumber || o.poNumber,
         poStatus: lead.poStatus || o.status,
         customerId: lead.customerId,
+        ...leadSourceFields(lead.source),
         po: {
           _id: o._id,
           poNumber: o.poNumber,
